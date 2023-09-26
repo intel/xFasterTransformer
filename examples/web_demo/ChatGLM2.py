@@ -9,10 +9,12 @@ import time
 from demo_utils import ChatDemo
 
 
+DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm2-6b-hf", help="Path to token file")
 parser.add_argument("--model_path", type=str, default="/data/chatglm2-6b-cpu", help="Path to model file")
-parser.add_argument("--dtype", type=str, choices=["fp16", "bf16", "int8"], default="fp16", help="Data type")
+parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 
 
 class ChatGLM2Demo(ChatDemo):
@@ -31,7 +33,7 @@ class ChatGLM2Demo(ChatDemo):
         if history is None:
             history = []
         if not history:
-            prompt = query
+            prompt = "[Round 0]\n问：{}\n答：".format(query)
         else:
             history = history[-2:] if len(history) > 2 else history
             prompt = ""

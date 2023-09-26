@@ -97,7 +97,7 @@ def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dt
 
 
 def split_and_convert(args):
-    saved_dir = args.saved_dir + "/cpu/"
+    saved_dir = args.saved_dir
 
     # create directory if not exist
     if not os.path.exists(saved_dir):
@@ -222,11 +222,9 @@ if __name__ == "__main__":
     torch.multiprocessing.set_sharing_strategy("file_system")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    # parser.add_argument('-saved_dir', '-o', type=str, help='file name of output file', required=True)
-    # parser.add_argument('-in_file', '-i', type=str, help='file name of input checkpoint file', required=True)
-    parser.add_argument("-saved_dir", "-o", type=str, default="/data", help="file name of output file")
-    parser.add_argument("-in_file", "-i", type=str, default="/data/chatglm-6b", help="name of input checkpoint file")
-    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 4)", default=4)
+    parser.add_argument('-saved_dir', '-o', type=str, help='file name of output file', required=True)
+    parser.add_argument('-in_file', '-i', type=str, help='file name of input checkpoint file', required=True)
+    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
     parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16"])
 
     args = parser.parse_args()

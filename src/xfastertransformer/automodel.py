@@ -4,11 +4,7 @@ from typing import Union, Literal
 
 class AutoModel:
     def __init__(self, path, dtype: str = "fp16"):
-        if dtype == "fp16":
-            self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
-        elif dtype == "bf16":
-            self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
-        elif dtype == "int8":
+        if dtype in ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]:
             self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
         else:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")

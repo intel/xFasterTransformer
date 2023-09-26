@@ -25,13 +25,25 @@ TEST(BeamSearchTest, BeamScorerFinalizeTest) {
 TEST(BeamSearchTest, BeamSearchTest) {
     const char *modelPath = "/data/1-gpu";
     OptDecoder<float16_t> decoder(modelPath);
+    const int seqLen = 22;
     const int batchSize = 2;
     const int beamSize = 3;
 
-    BeamSearch beam_searcher(decoder, beamSize, batchSize, /*maxLen*/ 100);
+    SearcherConfig config;
+
+    if (decoder.getRank() == 0) {
+        config.maxLen = 100;
+        config.numBeams = beamSize;
+        config.numBeamHypsToKeep = 1;
+        config.lenPenalty = 1.0;
+        config.doEarlyStopping = false;
+        config.eosTokenId = -1;
+        config.padTokenId = -1;
+    }
+
+    BeamSearch beam_searcher(decoder, config);
 
     // Initial input
-    const int seqLen = 22;
     int samples[batchSize * beamSize][seqLen] = {
             {2, 100, 17, 27, 119, 10080, 10288, 6, 38, 17, 27, 119, 2602, 14, 38, 17, 27, 548, 56, 5, 945, 7},
             {2, 4993, 41, 1946, 9, 1431, 6, 9469, 6, 5, 5385, 9, 5, 446, 9, 7395, 174, 1865, 5, 80, 2380, 2442},

@@ -72,7 +72,7 @@ docker pull intel/xfastertransformer:latest
     ```bash
     cd 3rdparty
     sh prepare_oneccl.sh
-    source 3rdparty/oneCCL/build/_install/env/setvars.sh
+    source ./oneCCL/build/_install/env/setvars.sh
     ```
   - Install oneCCL through installing [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html).
 - [PyTorch](https://pytorch.org/get-started/locally/) v2.0+ (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
@@ -115,9 +115,9 @@ docker run -it \
 ##### How to build
 - Using 'CMake'
   ```bash
-  # Build llm-opt
-  git clone https://github.com/intel-sandbox/ai.llm.llm-opt.git llm-opt
-  cd llm-opt
+  # Build xFasterTransformer
+  git clone https://github.com/intel/xFasterTransformer.git xFasterTransformer
+  cd xFasterTransformer
   # Please make sure torch is installed when run python example
   mkdir build && cd build
   cmake ..

@@ -3,6 +3,8 @@
 
 # logs
 *log
+log-*
+*.csv
 
 # Distribution / packaging
 build/
@@ -21,3 +23,6 @@ dist/
 /3rdparty/oneCCL
 /3rdparty/jsoncpp
 /3rdparty/onednn
+/3rdparty/cmdline
+/3rdparty/sentencepiece
+/3rdparty/ig

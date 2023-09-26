@@ -8,10 +8,8 @@ protected:
 
     static void TearDownTestCase() {}
 
-    static Messenger myMessenger;
+    Messenger &myMessenger = Messenger::getInstance();;
 };
-
-Messenger MyTestSuite::myMessenger;
 
 TEST_F(MyTestSuite, broadcast) {
     int ids[128];
@@ -28,21 +26,50 @@ TEST_F(MyTestSuite, broadcast) {
     }
 }
 
-TEST_F(MyTestSuite, allreduce) {
-    float data[128];
-    for (int i = 0; i < sizeof(data) / sizeof(data[0]); ++i) {
+TEST_F(MyTestSuite, allreduce_ccl) {
+    int batchSize = 1;
+    int seqLen = 1024;
+    int hiddenSize = 4096;
+
+    int totalNums = batchSize * seqLen * hiddenSize + 1;
+    float* data = (float*) malloc(totalNums * sizeof(float));
+    for (int i = 0; i < totalNums; ++i) {
         data[i] = myMessenger.getRank() + 1;
     }
 
-    myMessenger.reduceAdd(data, data, sizeof(data) / sizeof(data[0]));
+    myMessenger.reduceAdd(data, data, totalNums);
 
     int size = myMessenger.getSize();
     float expected = size * (size + 1) / 2;
     float eps = 1e-5;
 
-    for (int i = 0; i < sizeof(data) / sizeof(data[0]); ++i) {
+    for (int i = 0; i < totalNums; ++i) {
         EXPECT_NEAR(data[i], expected, eps);
     }
+    free(data);
+}
+
+TEST_F(MyTestSuite, allreduce_shm) {
+    int batchSize = 1;
+    int seqLen = 1024;
+    int hiddenSize = 4096;
+
+    int totalNums = batchSize * seqLen * hiddenSize;
+    float* data = (float*) malloc(totalNums * sizeof(float));
+    for (int i = 0; i < totalNums; ++i) {
+        data[i] = myMessenger.getRank() + 1;
+    }
+
+    myMessenger.reduceAdd(data, data, totalNums);
+
+    int size = myMessenger.getSize();
+    float expected = size * (size + 1) / 2;
+    float eps = 1e-5;
+
+    for (int i = 0; i < totalNums; ++i) {
+        EXPECT_NEAR(data[i], expected, eps);
+    }
+    free(data);
 }
 
 int main(int argc, char **argv) {

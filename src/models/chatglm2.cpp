@@ -37,8 +37,7 @@ void ChatGLM2<WeiT, NormT>::setEmbeddingWeights(const std::string &modelPath) {
 
     float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize) == vocabSize * hiddenSize,
-            "GLM2 read token embedding error");
+    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
 
     embedding->setWeights(tokenEmb);
 
@@ -52,9 +51,7 @@ void ChatGLM2<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
     float *gamma = (float *)malloc(hiddenSize * sizeof(float));
     float *beta = (float *)malloc(hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize) == hiddenSize,
-            "read final LN weight error");
-    // REQUIRES(readFile(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize) == hiddenSize, "read final LN bias error");
+    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
 
     finalLN.setWeight(gamma, beta, hiddenSize);
 
@@ -144,6 +141,17 @@ int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, 
             lastBlockPositions.emplace_back(seqLen);
         }
     } else {
+        if (batchSize > lastBlockPositions.size()) {
+            int userSideBS = lastBlockPositions.size();
+            int beamSize = batchSize / userSideBS;
+            std::vector<int> tmp(lastBlockPositions);
+            lastBlockPositions.clear();
+
+            lastBlockPositions.reserve(batchSize);
+            for (int i = 0; i < userSideBS; ++i) {
+                lastBlockPositions.insert(lastBlockPositions.begin() + i * beamSize, beamSize, tmp[i]);
+            }
+        }
         for (int i = 0; i < batchSize; ++i) {
             positionIds[i] = lastBlockPositions[i];
             lastBlockPositions[i] += 1;
@@ -152,7 +160,7 @@ int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, 
     return positionIds;
 }
 
-template class ChatGLM2<float, RmsNorm>;
-template class ChatGLM2<float16_t, RmsNorm>;
-template class ChatGLM2<bfloat16_t, RmsNorm>;
-template class ChatGLM2<int8_t, RmsNorm>;
+template class ChatGLM2<float>;
+template class ChatGLM2<float16_t>;
+template class ChatGLM2<bfloat16_t>;
+template class ChatGLM2<int8_t>;

@@ -1,10 +1,5 @@
 #!/bin/bash
 
-export KMP_BLOCKTIME=INF
-export KMP_TPAUSE=0
-export KMP_SETTINGS=1
-export KMP_AFFINITY=granularity=fine,compact,1,0
-
 # On different systems, different models and differnt modes, OMP_NUM_THREADS need to be ajusted. 
 output=$(numactl -H)
 first_line=$(echo "$output" | head -n 1)

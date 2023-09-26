@@ -41,8 +41,7 @@ void ChatGLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
 
     float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize) == vocabSize * hiddenSize,
-            "read token embedding error");
+    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
 
     embedding->setWeights(tokenEmb);
 
@@ -56,10 +55,8 @@ void ChatGLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
     float *gamma = (float *)malloc(hiddenSize * sizeof(float));
     float *beta = (float *)malloc(hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize) == hiddenSize,
-            "read final LN weight error");
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize) == hiddenSize,
-            "read final LN bias error");
+    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
+    loadWeight(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize, this->getDataType());
 
     finalLN.setWeight(gamma, beta, hiddenSize);
 
@@ -192,6 +189,21 @@ int *ChatGLM<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int step
             lastBlockPositions.emplace_back(seqLen - contextLength);
         }
     } else {
+        if (batchSize > maskPositions.size()) {
+            int userSideBS = maskPositions.size();
+            int beamSize = batchSize / userSideBS;
+            std::vector<int> tmpMaskP(maskPositions);
+            std::vector<int> tmpLastBlockP(lastBlockPositions);
+            maskPositions.clear();
+            lastBlockPositions.clear();
+
+            maskPositions.reserve(batchSize);
+            lastBlockPositions.reserve(batchSize);
+            for (int i = 0; i < userSideBS; ++i) {
+                maskPositions.insert(maskPositions.begin() + i * beamSize, beamSize, tmpMaskP[i]);
+                lastBlockPositions.insert(lastBlockPositions.begin() + i * beamSize, beamSize, tmpLastBlockP[i]);
+            }
+        }
         for (int i = 0; i < batchSize; ++i) {
             positionIds[i * 2] = maskPositions[i];
             positionIds[i * 2 + 1] = lastBlockPositions[i] + 1;

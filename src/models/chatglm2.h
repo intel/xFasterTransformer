@@ -9,7 +9,7 @@
 #include "rotary_embedding_chatglm2.h"
 #include "token_embedding.h"
 
-template <typename WeiT, typename NormT>
+template <typename WeiT, typename NormT = RmsNorm>
 class ChatGLM2 : public CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>,
                          ChatGLM2MLP<WeiT, NormT, true>> {
 public:

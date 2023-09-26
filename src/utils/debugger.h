@@ -101,7 +101,7 @@ public:
             } else {
                 for (int i = 0; i < 6; ++i) {
                     if (cols <= 12) {
-                        for (int j = 0; j < cols; ++j) {
+                        for (int j = 0; j < cols - 1; ++j) {
                             oss << float(m(i, j)) << ", ";
                         }
                     } else {
@@ -122,8 +122,8 @@ public:
 
                 for (int i = rows - 6; i < rows; ++i) {
                     if (cols < 10) {
-                        for (int j = 0; j < cols; ++j) {
-                            oss << m(i, j) << ", ";
+                        for (int j = 0; j < cols - 1; ++j) {
+                            oss << float(m(i, j)) << ", ";
                         }
                     } else {
                         for (int j = 0; j < 6; ++j) {
@@ -149,31 +149,77 @@ public:
         }
     }
 
-    void dumpMatrix(float *data, int rows, int cols, int stride, int allLine = false) {
+    template <typename T>
+    void dumpMatrix(T *data, int rows, int cols, int stride, bool print_all = false) {
         std::ostringstream oss;
 
         // Collect values to string
-        for (int i = 0; i < rows; ++i) {
-            if (allLine) {
+        if (print_all == true) {
+            for (int i = 0; i < rows; ++i) {
                 for (int j = 0; j < cols - 1; ++j) {
                     oss << float(data[i * stride + j]) << ", ";
                 }
                 oss << float(data[i * stride + cols - 1]) << std::endl;
-            } else {
-                if (i < 3 || i + 3 >= rows) {
-                    if (cols > 6) {
-                        oss << float(data[i * stride + 0]) << ", " << float(data[i * stride + 1]) << ", "
-                            << float(data[i * stride + 2]) << ", ..., " << float(data[i * stride + cols - 3]) << ", "
-                            << float(data[i * stride + cols - 2]) << ", " << float(data[i * stride + cols - 1])
-                            << std::endl;
-                    } else {
+            }
+        } else {
+            if (rows <= 12) {
+                for (int i = 0; i < rows; ++i) {
+                    if (cols <= 12) {
                         for (int j = 0; j < cols - 1; ++j) {
                             oss << float(data[i * stride + j]) << ", ";
                         }
-                        oss << float(data[i * stride + cols - 1]) << std::endl;
+                    } else {
+                        for (int j = 0; j < 6; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+
+                        oss << "..., ";
+
+                        for (int j = cols - 6; j < cols - 1; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
                     }
-                } else if (i == 3) {
-                    oss << "..." << std::endl;
+                    oss << float(data[i * stride + cols - 1]) << std::endl;
+                }
+            } else {
+                for (int i = 0; i < 6; ++i) {
+                    if (cols <= 12) {
+                        for (int j = 0; j < cols - 1; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+                    } else {
+                        for (int j = 0; j < 6; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+
+                        oss << "..., ";
+
+                        for (int j = cols - 6; j < cols - 1; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+                    }
+                    oss << float(data[i * stride + cols - 1]) << std::endl;
+                }
+
+                oss << "..." << std::endl;
+
+                for (int i = rows - 6; i < rows; ++i) {
+                    if (cols < 10) {
+                        for (int j = 0; j < cols - 1; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+                    } else {
+                        for (int j = 0; j < 6; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+
+                        oss << "..., ";
+
+                        for (int j = cols - 6; j < cols - 1; ++j) {
+                            oss << float(data[i * stride + j]) << ", ";
+                        }
+                    }
+                    oss << float(data[i * stride + cols - 1]) << std::endl;
                 }
             }
         }

@@ -15,11 +15,7 @@ public:
 
     bool isDone();
 
-    std::vector<int32_t> finalize() {
-        TimeLine t("dump_file");
-        t.dump_file("timeline.json");
-        return output;
-    }
+    std::vector<int32_t> finalize();
 
 private:
     std::vector<int> search(std::tuple<float *, int, int> &result);
