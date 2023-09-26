@@ -1,57 +1,116 @@
-# Contributing
+# Contributing guidelines
 
-### License
+If you have improvements to the xFasterTransformer code, please send us your pull
+requests! To get started, see the GitHub
+[howto](https://help.github.com/en/articles/about-pull-requests).
 
-<PROJECT NAME> is licensed under the terms in [LICENSE]<link to license file in repo>. By contributing to the project, you agree to the license and copyright terms therein and release your contribution under these terms.
+You can:
 
-### Sign your work
+- Submit your changes directly with a
+  [pull request](https://github.com/intel/xFasterTransformer/pulls)
+- Log a bug or feedback with an [issue](https://github.com/intel/xFasterTransformer/issues)
 
-Please use the sign-off line at the end of the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. The rules are pretty simple: if you can certify
-the below (from [developercertificate.org](http://developercertificate.org/)):
+**See also:** [Contributor Covenant](CODE_OF_CONDUCT.md) code of conduct.
 
-```
-Developer Certificate of Origin
-Version 1.1
+## Pull request checklist
 
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-660 York Street, Suite 102,
-San Francisco, CA 94110 USA
+Before sending your pull requests, make sure that you have followed this list:
 
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
+* Check the [library functionality guidelines](CONTRIBUTING.md#library-functionality-guidelines).
 
-Developer's Certificate of Origin 1.1
 
-By making a contribution to this project, I certify that:
+* Ensure that the changes are consistent with the
+  [code contribution guidelines](CONTRIBUTING.md#code-contribution-guidelines)
+  and [coding standards](CONTRIBUTING.md#coding-standards).
 
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
+* Check that [unit tests](CONTRIBUTING.md#unit-tests) pass.
 
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
+## Library functionality guidelines
 
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
+xFasterTransformer focuses on functionality that satisfies all of the following
+criteria:
 
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
+1. *Performance*: the functionality has material impact on a workload level.
+   In other words, this means that for a optimization it should be
+   demonstrated that it brings visible performance improvement to some
+   workload.
 
-Then you just add a line to every git commit message:
+2. *Generality*: when introducing new foundational features, their API should
+    be sufficiently versatile and user-friendly to facilitate integration into
+    other frameworks.
 
-    Signed-off-by: Joe Smith <joe.smith@email.com>
+3. *Complexity*: it is not trivial to implement the functionality directly in
+   a LLM application.
 
-Use your real name (sorry, no pseudonyms or anonymous contributions.)
+## Code contribution guidelines
 
-If you set your `user.name` and `user.email` git configs, you can sign your
-commit automatically with `git commit -s`.
+When submitting your contribution, please make sure that it is:
+
+* *Tested*: xFasterTransformer uses gtests for lightweight functional testing. Please make 
+  your contribution is fully tested by unit tested.
+
+* *Documented*: Please add essential inline comments to aid others in comprehending the 
+  code. When necessary, include appropriate documentation explanations.
+
+All code in xFasterTransformer gets promoted to product branches (`main` and `rls-`) 
+only through GitHub pull requests. Requirements for promotion:
+
+- The request is reviewed and approved by maintainers for all affected
+  components.
+- All discussions in the pull request are resolved.
+- Continuous integration pipeline passed without errors.
+- Promotion to release (`rls-`) branches can be done only by maintainers
+  (enforced by GitHub)
+- The pull request author is responsible for collecting all the necessary
+  approvals, rebasing of the changes, and resolving the discussions.
+
+To simplify the work of reviewers, make sure that the commits in the pull
+request adhere to the following requirements:
+
+- Commit message should be fit into 50 (at most 72) characters and have the
+  imperative mood.
+- Commit message should follow the format:
+  `[Scope][Scope: ..] <short description>`
+  Scope examples:
+  * Top level: `Build`, `API`, `Doc`, `Tests`, `Common`, `Models`, `Kernels`
+  * Second level: `BF16`, `Layers`, `Utils`, `Searchers`
+  * Example commit message:
+~~~git
+[Kernels][BF16]: Add AMX format BA16a64b2a.
+~~~
+
+- Commit body should also fit 72 characters. Think of it as a standard e-mail
+  body or a markdown document in terms of styling - write sentences from the
+  very left border keeping capital letters and punctuation in place.
+- xFasterTransformer branches maintain linear history. Rebase the changes on top of target
+  branch before creating a pull request. Rebase again after resolving all the
+  discussions, as well as in case of merge conflicts.
+- Use `git add -p`  and `git rebase -i` liberally to split unrelated changes
+  into multiple self-contained commits. This is a courtesy to reviewers: smaller
+  commits are easier to comprehend. It also helps with bisecting in the future.
+  Of course judgement needs to be applied whether to split changes or not. For
+  example, split code cleanup and the actual fix into two separate patches.
+
+## Coding Standards
+
+Contributions to xFasterTransformer must follow the [Coding Standards](CODING_STANDARDS.md)
+in order to simplify development and review processes. The general principle is
+to follow the style of existing/surrounding code.
+
+The Coding Standards are subject to change and contributions to the Coding
+Standards are welcome.
+
+If you wish to propose changes to the Coding Standards (including `clang-format`
+ options), please submit the proposal via an pull request. The proposal should 
+ contain the following information:
+* *Motivation*: Why should the proposed standard be introduced and applied?
+* *Enforcement*: Can the proposed standard be applied via an automated process
+  or other practical means?
+* *Example*: What does the code base look like with the proposed standard
+  applied?
+
+## Unit tests
+
+xFasterTransformer uses gtests for lightweight functional testing.
+
+Be sure to extend the existing tests when fixing an issue.

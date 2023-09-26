@@ -1,0 +1,23 @@
+# C extensions
+*.so
+
+# logs
+*log
+
+# Distribution / packaging
+build/
+
+# vscode
+.vs
+.vscode
+
+# python
+__pycache__/
+*.egg-info/
+dist/
+
+# 3drparty
+/3rdparty/mklml
+/3rdparty/oneCCL
+/3rdparty/jsoncpp
+/3rdparty/onednn

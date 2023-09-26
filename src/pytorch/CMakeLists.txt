@@ -1,0 +1,38 @@
+cmake_minimum_required(VERSION 3.15.1)
+
+find_package(OpenMP REQUIRED)
+find_package(MPI REQUIRED)
+find_package(oneCCL REQUIRED)
+
+execute_process(COMMAND python -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
+                OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+string(REPLACE "share/cmake" "include" PyTorch_INCLUDE_DIR "${TORCH_CMAKE_PREFIX_PATH}")
+string(REGEX REPLACE "\n$" "" PyTorch_INCLUDE_DIR "${PyTorch_INCLUDE_DIR}")
+
+string(REPLACE "share/cmake" "lib" PyTorch_LIBRARIES_DIR "${TORCH_CMAKE_PREFIX_PATH}")
+string(REGEX REPLACE "\n$" "" PyTorch_LIBRARIES_DIR "${PyTorch_LIBRARIES_DIR}")
+
+find_library(TORCH_LIB torch HINTS ${PyTorch_LIBRARIES_DIR})
+find_library(TORCH_GLOBAL_DEPS_LIB torch_global_deps HINTS ${PyTorch_LIBRARIES_DIR})
+find_library(TORCH_CPU_LIB torch_cpu HINTS ${PyTorch_LIBRARIES_DIR})
+find_library(TORCH_PYTHON_LIB torch_python HINTS ${PyTorch_LIBRARIES_DIR})
+find_library(SHM_CPU_LIB shm HINTS ${PyTorch_LIBRARIES_DIR})
+find_library(C10_CPU_LIB c10 HINTS ${PyTorch_LIBRARIES_DIR})
+set(TORCH_LIBS ${TORCH_GLOBAL_DEPS_LIB} ${TORCH_CPU_LIB} ${TORCH_PYTHON_LIB} ${SHM_CPU_LIB}
+               ${C10_CPU_LIB})
+
+# Set the CMAKE_PREFIX_PATH
+set(CMAKE_PREFIX_PATH ${TORCH_CMAKE_PREFIX_PATH})
+
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src/xfastertransformer)
+
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} TORCH_SRCS)
+add_library(xfastertransformer_pt SHARED ${TORCH_SRCS})
+
+target_include_directories(xfastertransformer_pt PUBLIC ${PyTorch_INCLUDE_DIR})
+
+# Link against LibTorch and others
+target_link_libraries(xfastertransformer_pt PRIVATE OpenMP::OpenMP_CXX MPI::MPI_CXX ccl
+                                                    "${TORCH_LIBS}" xfastertransformer_static)
