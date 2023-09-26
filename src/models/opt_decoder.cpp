@@ -39,11 +39,8 @@ void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
     float *tokenEmb = (float *)malloc(vocabSize * embeddingSize * sizeof(float));
     float *posEmb = (float *)malloc(maxPos * hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.wte.bin", tokenEmb, vocabSize * embeddingSize)
-                    == vocabSize * embeddingSize,
-            "read token embedding error");
-    REQUIRES(readFile(modelPath + "/model.wpe.bin", posEmb, maxPos * hiddenSize) == maxPos * hiddenSize,
-            "read position embedding error");
+    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * embeddingSize, this->getDataType());
+    loadWeight(modelPath + "/model.wpe.bin", posEmb, maxPos * hiddenSize, this->getDataType());
 
     embedding->setWeights(tokenEmb, posEmb);
 
@@ -58,13 +55,10 @@ void OptDecoder<WeiT>::setFinalLnWeight(const std::string &modelPath) {
     float *gamma = (float *)malloc(hiddenSize * sizeof(float));
     float *beta = (float *)malloc(hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize) == hiddenSize,
-            "read final LN weight error");
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize) == hiddenSize,
-            "read final LN bias error");
+    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
+    loadWeight(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize, this->getDataType());
 
     finalLN.setWeight(gamma, beta, hiddenSize);
-
     free(gamma);
     free(beta);
 }

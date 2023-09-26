@@ -18,7 +18,12 @@
 template <typename WeiT>
 class LlamaMLP {
 public:
-    LlamaMLP(DecoderContext *ctx) {}
+    LlamaMLP(DecoderContext *ctx) {
+        if (ctx->intermediateSize % ctx->numSplit != 0) {
+            printf("Unsupported: split ffn (size=%d) into %d splits.\n", ctx->intermediateSize, ctx->numSplit);
+            exit(-1);
+        }
+    }
 
     // The inerface is for PyTorch, thus the weights are already transposed
     void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
@@ -186,7 +191,7 @@ private:
         }
     }
 
-private:
+protected:
     hpj::Matrix<WeiT> gateWeight;
     hpj::Vector<float> gateWeightScale; // For int8_t weight
     hpj::Vector<float> gateWeightZero; // For int8_t weight

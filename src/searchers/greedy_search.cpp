@@ -8,6 +8,7 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
 
 // Get next tokens accoring to the prompt IDs
 std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen) {
+    TimeLine t("1st Token");
     this->step = 0;
     this->batchSize = batchSize;
     this->curLen = seqLen;
@@ -33,6 +34,7 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
 
 // Get next tokens according to previous predicted ID
 std::vector<int> GreedySearch::getNextToken() {
+    TimeLine t("Next Token");
     int64_t dims[3] = {batchSize, 1, 1};
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
@@ -59,7 +61,14 @@ bool GreedySearch::isDone() {
     return true;
 }
 
+std::vector<int32_t> GreedySearch::finalize() {
+    TimeLine t("dump_file");
+    t.dump_file("timeline.json");
+    return output;
+}
+
 std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
+    TimeLine t("GreedySearch");
     DecoderContext *ctx = decoder.getContext();
 
     float *outBuf = std::get<0>(result);

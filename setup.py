@@ -33,7 +33,7 @@ class BuildCMakeExt(build_ext):
 
 setup(
     name="xfastertransformer",
-    version="0.1.0",
+    version="1.0.0",
     keywords="LLM",
     description="Boost large language model inference performance on CPU platform.",
     long_description="Boost large language model inference performance on CPU platform.",

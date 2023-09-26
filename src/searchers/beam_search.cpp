@@ -268,6 +268,8 @@ BeamSearch::BeamSearch(AbstractDecoder &dec, const SearcherConfig &config)
 
 // The first setp to get next tokens accoring to the prompt IDs
 std::vector<int> BeamSearch::getNextToken(int *ids, int batchSize, int seqLen) {
+    // Assume input has been synced with master in higher level.
+    TimeLine t("1st Token");
     this->step = 0;
     this->curLen = seqLen;
     this->batchSize = batchSize;
@@ -277,7 +279,7 @@ std::vector<int> BeamSearch::getNextToken(int *ids, int batchSize, int seqLen) {
     nextTokens.resize(batchSize * kVal);
     nextIndices.resize(batchSize * kVal);
 
-    // expand input from (bs, seq) to (bs, numBeams, seq)
+    // expand input from (bs, seq) to (bs, numBeams, seq) for future usage.
     inputIds.resize(batchSize * numBeams * seqLen);
     for (int i = 0; i < batchSize; i++) {
         for (int j = 0; j < numBeams; j++) {
@@ -286,10 +288,9 @@ std::vector<int> BeamSearch::getNextToken(int *ids, int batchSize, int seqLen) {
     }
 
     int64_t dims[3] = {batchSize, numBeams, seqLen};
-    int *p = nullptr;
-    if (decoder.getRank() == 0) { p = inputIds.data(); }
 
-    std::tuple<float *, int, int> result = decoder.forward(p, dims, this->step++);
+    // 1st token's input shape is [userSideBS][1][seqLen].
+    std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
     this->curLen++;
 
     // Initialize -1e9 to all beams except the first one
@@ -304,6 +305,7 @@ std::vector<int> BeamSearch::getNextToken(int *ids, int batchSize, int seqLen) {
 
 // Get next tokens according to previous predicted ID
 std::vector<int> BeamSearch::getNextToken() {
+    TimeLine t("Next Token");
     int64_t dims[3] = {batchSize, numBeams, 1};
 
     decoder.reorderCache(beamNextIndices.data(), batchSize * numBeams);
@@ -329,6 +331,7 @@ bool BeamSearch::isDone() {
 }
 
 void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {
+    TimeLine t("BeamSearch.searchTopK");
     float *outBuf = std::get<0>(result);
     int sampleOffset = std::get<1>(result);
     int sampleSize = std::get<2>(result);
@@ -504,6 +507,7 @@ void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {
 }
 
 void BeamSearch::beam_search(std::tuple<float *, int, int> &result) {
+    TimeLine t("BeamSearch");
     // Get candidates
     searchTopK(result);
 

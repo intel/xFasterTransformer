@@ -28,7 +28,7 @@ with section("format"):
   line_width = 100
 
   # How many spaces to tab for indent
-  tab_size = 2
+  tab_size = 4
 
   # If true, lines are indented using tab characters (utf-8 0x09) instead of
   # <tab_size> space characters (utf-8 0x20). In cases where the layout would

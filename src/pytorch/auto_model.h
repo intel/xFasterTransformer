@@ -18,6 +18,10 @@ public:
             datatype = xft::DataType::bf16;
         } else if (dtype == "int8") {
             datatype = xft::DataType::int8;
+        } else if (dtype == "bf16_fp16") {
+            datatype = xft::DataType::bf16_fp16;
+        } else if (dtype == "bf16_int8") {
+            datatype = xft::DataType::bf16_int8;
         } else {
             throw std::invalid_argument("Invalid DataType");
         }

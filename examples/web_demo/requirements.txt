@@ -1,0 +1,7 @@
+gradio==3.40.1
+gradio_client==0.4.0
+mdtex2html==1.2.0
+sentencepiece==0.1.99
+tokenizers==0.13.3
+torch==2.0.1
+transformers==4.28.1

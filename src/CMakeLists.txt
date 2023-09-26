@@ -15,8 +15,7 @@ target_link_libraries(xfastertransformer_static
                       ${SRC_LIB_LIST}
                       ${3RDPART_LIB_LIST}
                       libiomp5.so
-                      libmklml_intel.so
-                      ${GEMM_KERNEL_LIST})
+                      libmklml_intel.so)
 
 add_library(xfastertransformer SHARED)
 
@@ -24,8 +23,7 @@ target_link_libraries(xfastertransformer
                       ${SRC_LIB_LIST}
                       ${3RDPART_LIB_LIST}
                       libiomp5.so
-                      libmklml_intel.so
-                      ${GEMM_KERNEL_LIST})
+                      libmklml_intel.so)
 
 add_dependencies(xfastertransformer_static ${DEPEND_LIST})
 add_dependencies(xfastertransformer ${DEPEND_LIST})

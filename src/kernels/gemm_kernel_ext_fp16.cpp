@@ -324,3 +324,84 @@ void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int 
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// To check if the block can be skipped by checking if the attention mask is the lowest value
+// lda: leading dimension of the attention mask
+template <int COLS>
+inline bool isBlockSkippable(const float *attnMask, int lda, int rows) {
+    if constexpr (COLS != 4) {
+        printf("COLS=%d is not supported in isBlockSkippable\n", COLS);
+        exit(-1);
+    }
+
+    const float lowest = std::numeric_limits<float>::lowest();
+
+    if (*(attnMask + (rows - 1) * lda) == lowest) { // last row is the lowest, then most likely all lowest
+        for (int i = 0; i < rows; ++i) {
+            const float *p = attnMask + i * lda;
+            if (p[0] != lowest || p[1] != lowest || p[2] != lowest || p[3] != lowest) { return false; }
+        }
+        return true;
+    }
+
+    return false;
+}
+
+// M is a fixed small number
+template <int M>
+void small_gemm_transb(
+        const float *attnMask, const float *A, const float16_t *B, float *C, int N, int K, int lda, int ldb, int ldc) {
+    int j = 0;
+    const float *pA = A;
+    constexpr int NB = 4;
+
+    for (; j + NB - 1 < N; j += NB) {
+        const float16_t *pB = B + j * ldb;
+        if (isBlockSkippable<NB>(attnMask + j, N, M)) { continue; }
+
+        if constexpr (M == 6 && NB == 4) {
+            small_gemm_transb_6x4(pA, pB, C + j, K, lda, ldb, ldc);
+        } else {
+            small_gemm_transb<M, NB>(pA, pB, C + j, K, lda, ldb, ldc);
+        }
+    }
+
+    // Remain part in B
+    if (j < N) {
+        const float16_t *pB = B + j * ldb;
+        switch (N - j) {
+            case 2: small_gemm_transb<M, 2>(pA, pB, C + j, K, lda, ldb, ldc); break;
+            case 1: small_gemm_transb<M, 1>(pA, pB, C + j, K, lda, ldb, ldc); break;
+            case 3: small_gemm_transb<M, 3>(pA, pB, C + j, K, lda, ldb, ldc); break;
+        }
+    }
+}
+
+// If attention mask is the lowest value in some position, skip the computation
+// attnMask: attention mask with the shape of (M, N)
+void small_gemm_transb(const float *attnMask, const float *A, const float16_t *B, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc) {
+    int i = 0;
+    constexpr int MB = 6;
+
+    for (i = 0; i + MB - 1 < M; i += MB) {
+        const float *pA = A + i * lda;
+        small_gemm_transb<MB>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc);
+    }
+
+    // Remain part in A
+    if (i < M) {
+        const float *pA = A + i * lda;
+        const int remain = M - i;
+
+        switch (remain) {
+            case 2: small_gemm_transb<2>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 4: small_gemm_transb<4>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 1: small_gemm_transb<1>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 3: small_gemm_transb<3>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 5: small_gemm_transb<5>(attnMask + i * N, pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+        }
+    }
+}

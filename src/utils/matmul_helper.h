@@ -1,18 +1,22 @@
 #pragma once
 #include "bfloat16.h"
-#include "bgemm_f32bf16f32_simple.h"
 #include "float16.h"
-#include "hgemm_f32f16f32_simple.h"
-#include "hgemm_f32i8f32_simple.h"
+#include "ig_bgemm_f32bf16f32.h"
+#include "ig_hgemm_f32f16f32.h"
+#include "ig_hgemm_f16f16f32.h"
+#include "ig_hgemm_f32i8f32.h"
+#include "ig_sgemm.h"
+#include "ig_sgemm_f32f16f32.h"
+#include "ig_sgemm_f32i8f32.h"
 #include "my_types.h"
 #include "oneapi/dnnl/dnnl.hpp"
 #include "oneapi/dnnl/dnnl_config.h"
 #include "oneapi/dnnl/dnnl_version.h"
-#include "sgemm_f32f16f32_simple.h"
-#include "sgemm_f32i8f32_simple.h"
-#include "sgemm_simple.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
+
+#include <map>
+#include <tuple>
 
 #define USE_AMX_M 2
 
@@ -208,8 +212,8 @@ public:
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rows : colsPerSplit,
                         scaleWeight.Data(), zeroWeight.Data());
 #else
-            printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
-            exit(-1);
+                printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
+                exit(-1);
 #endif
             } else {
                 int rowsPerSplit = rows / numSplit;
@@ -233,8 +237,8 @@ public:
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rowsPerSplit : cols,
                         scaleWeight.Data(), zeroWeight.Data());
 #else
-            printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
-            exit(-1);
+                printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
+                exit(-1);
 #endif
             }
         }
@@ -255,21 +259,22 @@ public:
 
     template <typename WeiT>
     static void packWeight(bool trans, hpj::Matrix<WeiT> &src, hpj::Matrix<WeiT> &weight) {
-        weight.Resize(trans ? src.Cols() : src.Rows(), trans ? src.Rows() : src.Cols());
+        int K = trans ? src.Cols() : src.Rows();
+        int N = trans ? src.Rows() : src.Cols();
+
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            ig_sgemm_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(), src.Data(),
-                    src.Stride(), weight.Data());
+            weight.Resize(K, N);
+            ig_sgemm_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
+            weight.Resize(K, N);
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            ig_sgemm_f32f16f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(),
-                    src.Data(), src.Stride(), weight.Data());
+            ig_sgemm_f32f16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            ig_hgemm_f32f16f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(),
-                    src.Data(), src.Stride(), weight.Data());
+            ig_hgemm_f32f16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -278,12 +283,15 @@ public:
 
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
+            set_amx_data_type(dnnl::memory::format_tag::BA16a64b2a);
+            int amx_rows = (int)((K + 15) / 16) * 16;
+            int amx_cols = (int)((N + 63) / 64) * 64;
+            weight.Resize(amx_rows, amx_cols);
+            memset(weight.Data(), 0, amx_rows * amx_cols * sizeof(bfloat16_t));
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            ig_sgemm_f32bf16f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(),
-                    src.Data(), src.Stride(), weight.Data());
+            ig_sgemm_f32bf16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data(), 16, 64);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-            ig_bgemm_f32bf16f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(),
-                    src.Data(), src.Stride(), weight.Data());
+            ig_bgemm_f32bf16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data(), 16, 64);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -292,12 +300,11 @@ public:
 
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
+            weight.Resize(K, N);
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            ig_sgemm_f32i8f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(), src.Data(),
-                    src.Stride(), weight.Data());
+            ig_sgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            ig_hgemm_f32i8f32_packb(trans, trans ? src.Rows() : src.Cols(), trans ? src.Cols() : src.Rows(), src.Data(),
-                    src.Stride(), weight.Data());
+            ig_hgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -308,17 +315,19 @@ public:
     template <typename WeiT>
     static void compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
-        TimeLine t("MMHelper.compute");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute");
             ig_sgemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute");
             ig_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute");
             ig_hgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -329,11 +338,14 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute");
             ig_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
                 ig_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute");
                 ig_bgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             }
 #else
@@ -345,8 +357,10 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute");
             ig_sgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute");
             ig_hgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -359,17 +373,19 @@ public:
     static void compute_bias(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
             const float *bias) {
-        TimeLine t("MMHelper.compute_bias");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_biasadd");
             ig_sgemm_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_biasadd");
             ig_sgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_biasadd");
             ig_hgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -380,11 +396,14 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_biasadd");
             ig_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
                 ig_amx_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd");
                 ig_bgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             }
 #else
@@ -396,9 +415,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_biasadd");
             ig_sgemm_f32i8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_biasadd");
             ig_hgemm_f32i8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #else
@@ -412,17 +433,19 @@ public:
     static void compute_biasadd_relu(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
             const float *bias) {
-        TimeLine t("MMHelper.compute_biasadd_relu");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_biasadd_relu");
             ig_sgemm_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_biasadd_relu");
             ig_sgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_biasadd_relu");
             ig_hgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -433,12 +456,15 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_biasadd_relu");
             ig_sgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
                 ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd_relu");
                 ig_bgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             }
 #else
@@ -450,9 +476,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_biasadd_relu");
             ig_sgemm_f32i8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_biasadd_relu");
             ig_hgemm_f32i8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #else
@@ -465,17 +493,19 @@ public:
     template <typename WeiT>
     static void compute_silu(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
-        TimeLine t("MMHelper.compute_silu");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_silu");
             ig_sgemm_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_silu");
             ig_sgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_silu");
             ig_hgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -486,11 +516,14 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_silu");
             ig_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
                 ig_amx_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_silu");
                 ig_bgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             }
 #else
@@ -502,8 +535,10 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_silu");
             ig_sgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_silu");
             ig_hgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -516,17 +551,19 @@ public:
     static void compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
             const float *res, int ldres) {
-        TimeLine t("MMHelper.compute_resmul");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_resmul");
             ig_sgemm_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_resmul");
             ig_sgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_resmul");
             ig_hgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -537,12 +574,15 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_resmul");
             ig_sgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
                 ig_amx_sgemm_f32bf16f32_compute_resmul(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_resmul");
                 ig_bgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
             }
 #else
@@ -554,9 +594,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_resmul");
             ig_sgemm_f32i8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_resmul");
             ig_hgemm_f32i8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
 #else
@@ -570,18 +612,20 @@ public:
     static void compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
             const float *bias, const float *res, int ldres) {
-        TimeLine t("MMHelper.compute_residential");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_residential");
             ig_sgemm_compute_residential(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_residential");
             ig_sgemm_f32f16f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_residential");
             ig_hgemm_f32f16f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
 #else
@@ -593,13 +637,16 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_residential");
             ig_sgemm_f32bf16f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
                 ig_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_residential");
                 ig_bgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             }
@@ -612,9 +659,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_residential");
             ig_sgemm_f32i8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_residential");
             ig_hgemm_f32i8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
 #else
@@ -628,18 +677,20 @@ public:
     static void compute_resext(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
             const float *bias, float gamma, float *res, int ldres) {
-        TimeLine t("MMHelper.compute_resext");
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
+            TimeLine t("ig_sgemm_compute_resext");
             ig_sgemm_compute_resext(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            TimeLine t("ig_sgemm_f32f16f32_compute_resext");
             ig_sgemm_f32f16f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            TimeLine t("ig_hgemm_f32f16f32_compute_resext");
             ig_hgemm_f32f16f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
 #else
@@ -651,10 +702,12 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            TimeLine t("ig_sgemm_f32bf16f32_compute_resext");
             ig_sgemm_f32bf16f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
+                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                 for (int i = 0; i < M; ++i) {
                     for (int j = 0; j < N; ++j) {
@@ -664,6 +717,7 @@ public:
                 ig_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
+                TimeLine t("ig_bgemm_f32bf16f32_compute_resext");
                 ig_bgemm_f32bf16f32_compute_resext(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
             }
@@ -676,9 +730,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            TimeLine t("ig_sgemm_f32i8f32_compute_resext");
             ig_sgemm_f32i8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            TimeLine t("ig_hgemm_f32i8f32_compute_resext");
             ig_hgemm_f32i8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
 #else
@@ -699,332 +755,471 @@ private:
         return engine_stream;
     }
 
+    static std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> &
+    get_dnnl_matmul() {
+        static std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> matmul;
+        return matmul;
+    }
+
+    enum matmul_kinds {
+        Basic = 0,
+        BiasAdd = 1,
+        BiasAdd_Relu = 2,
+        Silu = 3,
+        Resmul = 4,
+        Residential = 5,
+        Resext = 6,
+    };
+
+    static std::string create_key(bool transA, int M, int N, int K, int matmul_kind) {
+        std::string key = std::to_string(transA) + "_" + std::to_string(M) + "_" + std::to_string(N) + "_"
+                + std::to_string(K) + "_" + std::to_string(matmul_kind);
+        return key;
+    }
+
     static void ig_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims output_dims = {M, N};
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B) and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims output_dims = {M, N};
 
-        // Create user memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
+            // Create memory descriptors and memory objects for src, weights, bias, and dst.
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            // Create primitive descriptor and primitive.
+            matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md);
+            matmul_prim = new matmul(*matmul_pd);
 
-        // Create primitive descriptor.
-        auto matmul_pd = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md);
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-        auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-        auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
-        // Create the primitive.
-        auto matmul_prim = matmul(matmul_pd);
+        // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
         matmul_args.insert({DNNL_ARG_DST, output_mem});
+        t1.release();
 
         // Executions.
-        reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-        matmul_prim.execute(get_dnnl_stream(), matmul_args);
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
     static void ig_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute_biasadd");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims bias_dims = {1, N};
-        memory::dims output_dims = {M, N};
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims bias_dims = {1, N};
+            memory::dims output_dims = {M, N};
 
-        // Create user memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
+            // Create memory descriptors and memory objects for src, weights, bias, and dst.
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            // Create primitive descriptor & primitive.
+            matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, bias_md, output_md);
+            matmul_prim = new matmul(*matmul_pd);
 
-        // Create primitive descriptor.
-        auto matmul_pd = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, bias_md, output_md);
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-        auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-        auto bias_mem = memory(matmul_pd.bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
-        auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        auto bias_mem = memory(matmul_pd->bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
-        // Create the primitive.
-        auto matmul_prim = matmul(matmul_pd);
+        // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
         matmul_args.insert({DNNL_ARG_BIAS, bias_mem});
         matmul_args.insert({DNNL_ARG_DST, output_mem});
+        t1.release();
 
         // Executions.
-        reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-        matmul_prim.execute(get_dnnl_stream(), matmul_args);
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
     static void ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims bias_dims = {1, N};
-        memory::dims output_dims = {M, N};
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims bias_dims = {1, N};
+            memory::dims output_dims = {M, N};
 
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
+            // Create primitive descriptor.
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-        // Create primitive descriptor.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            // Create primitive post-ops (ReLU).
+            const float post_alpha = 0.0f;
+            const float post_beta = 0.0f;
+            post_ops matmul_ops;
+            matmul_ops.append_eltwise(algorithm::eltwise_relu, post_alpha, post_beta);
+            primitive_attr matmul_attr;
+            matmul_attr.set_post_ops(matmul_ops);
 
-        // Create primitive post-ops (ReLU).
-        const float post_alpha = 0.0f;
-        const float post_beta = 0.0f;
-        post_ops matmul_ops;
-        matmul_ops.append_eltwise(algorithm::eltwise_relu, post_alpha, post_beta);
-        primitive_attr matmul_attr;
-        matmul_attr.set_post_ops(matmul_ops);
+            // Create primitive descriptor & primitive.
+            matmul_pd = new matmul::primitive_desc(
+                    get_dnnl_engine(), input_md, weight_md, bias_md, output_md, matmul_attr);
+            matmul_prim = new matmul(*matmul_pd);
 
-        // Create primitive descriptor.
-        auto matmul_pd
-                = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, bias_md, output_md, matmul_attr);
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-        auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-        auto bias_mem = memory(matmul_pd.bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
-        auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        auto bias_mem = memory(matmul_pd->bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
-        // Create the primitive.
-        auto matmul_prim = matmul(matmul_pd);
+        // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
         matmul_args.insert({DNNL_ARG_BIAS, bias_mem});
         matmul_args.insert({DNNL_ARG_DST, output_mem});
+        t1.release();
 
         // Executions.
-        reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-        matmul_prim.execute(get_dnnl_stream(), matmul_args);
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
     static void ig_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute_silu");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims output_dims = {M, N};
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Silu);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims output_dims = {M, N};
 
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
+            // Create primitive descriptor.
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-        // Create primitive descriptor.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            // Create primitive post-ops (SiLU).
+            const float post_alpha = 1.0f;
+            const float post_beta = 0.0f;
+            post_ops matmul_ops;
+            matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
+            primitive_attr matmul_attr;
+            matmul_attr.set_post_ops(matmul_ops);
 
-        // Create primitive post-ops (SiLU).
-        const float post_alpha = 1.0f;
-        const float post_beta = 0.0f;
-        post_ops matmul_ops;
-        matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
-        primitive_attr matmul_attr;
-        matmul_attr.set_post_ops(matmul_ops);
+            // Create primitive descriptor and primitive.
+            matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, matmul_attr);
+            matmul_prim = new matmul(*matmul_pd);
 
-        // Create primitive descriptor.
-        auto matmul_pd = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, matmul_attr);
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Silu);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-        auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-        auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
-        // Create the primitive.
-        auto matmul_prim = matmul(matmul_pd);
+        // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
         matmul_args.insert({DNNL_ARG_DST, output_mem});
+        t1.release();
 
         // Executions.
-        reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-        matmul_prim.execute(get_dnnl_stream(), matmul_args);
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
     // TODO: may be error
     static void ig_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *res, int ldres) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute_resmul");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims scale_dims = {M, N};
-        memory::dims output_dims = {M, N};
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims scale_dims = {M, N};
+            memory::dims output_dims = {M, N};
 
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
+            // Create primitive descriptor.
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto scale_md = memory::desc(scale_dims, dt::f32, tag::ab);
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-        // Create primitive descriptor.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto scale_md = memory::desc(scale_dims, dt::f32, tag::ab);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            // Create primitive post-ops (resmul).
+            post_ops binary_ops;
+            // dst_tmp = dst_tmp * scale
+            binary_ops.append_binary(algorithm::binary_mul, scale_md);
+            primitive_attr matmul_attr;
+            matmul_attr.set_post_ops(binary_ops);
 
-        // Create primitive post-ops (resmul).
-        post_ops binary_ops;
-        // dst_tmp = dst_tmp * scale
-        binary_ops.append_binary(algorithm::binary_mul, scale_md);
-        primitive_attr binary_attr;
-        binary_attr.set_post_ops(binary_ops);
+            // Create primitive descriptor and primitive.
+            matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, matmul_attr);
+            matmul_prim = new matmul(*matmul_pd);
 
-        // Create primitive descriptor.
-        auto matmul_pd = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, binary_attr);
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-        auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-        auto scale_mem = memory(scale_md, get_dnnl_engine(), const_cast<float *>(res));
-        auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+        memory::dims scale_dims = {M, N};
+        auto scale_md = memory::desc(scale_dims, dt::f32, tag::ab);
+        dnnl::memory scale_mem;
+        if (C == res) {
+            scale_mem = memory(scale_md, get_dnnl_engine());
+#pragma omp parallel for
+            for (int i = 0; i < M; ++i) {
+                memcpy((float *)scale_mem.get_data_handle() + i * N, res + i * ldres, N * sizeof(float));
+            }
+        } else {
+            scale_mem = memory(scale_md, get_dnnl_engine(), const_cast<float *>(res));
+        }
 
-        // Create the primitive.
-        auto matmul_prim = matmul(matmul_pd);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
+
+        // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
-        matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, scale_mem});
         matmul_args.insert({DNNL_ARG_DST, output_mem});
+        matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, scale_mem});
+        t1.release();
 
         // Executions.
-        reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-        matmul_prim.execute(get_dnnl_stream(), matmul_args);
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
     static void ig_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias,
             const float *res, int ldres) {
-        TimeLine t("MMHelper.ig_amx_sgemm_f32bf16f32_compute_residential");
+        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
+        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
-        // Source (A), weights (B), and destination (C) matrix dimensions.
-        memory::dims input_dims = {M, K};
-        memory::dims weight_dims = {K, N};
-        memory::dims bias_dims = {1, N};
-        memory::dims shift_dims = {M, N};
-        memory::dims output_dims = {M, N};
-
-        // Create memory descriptors and memory objects for src, weights, bias, and dst.
-        auto user_input_md = memory::desc(input_dims, dt::f32, tag::ab);
-        auto user_input_mem = memory(user_input_md, get_dnnl_engine(), const_cast<float *>(A));
-
-        // Create primitive descriptor.
-        auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-        auto weight_md = memory::desc(weight_dims, dt::bf16, tag::BA16a64b2a);
-        auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-        auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
-        auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
-
-        // Create primitive post-ops (residential): dst_tmp = dst_tmp + shift
-        post_ops matmul_ops;
-        matmul_ops.append_binary(algorithm::binary_add, shift_md);
-        primitive_attr matmul_attr;
-        matmul_attr.set_post_ops(matmul_ops);
-
-        if (bias != nullptr) {
-            // Create primitive descriptor.
-            auto matmul_pd
-                    = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, bias_md, output_md, matmul_attr);
-
-            // Repack and convert input data.
-            auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-            auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-            auto bias_mem = memory(matmul_pd.bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
-            auto shift_mem = memory(shift_md, get_dnnl_engine(), const_cast<float *>(res));
-            auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
-
-            // Create the primitive.
-            auto matmul_prim = matmul(matmul_pd);
-            std::unordered_map<int, memory> matmul_args;
-            matmul_args.insert({DNNL_ARG_SRC, input_mem});
-            matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
-            matmul_args.insert({DNNL_ARG_BIAS, bias_mem});
-            matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, shift_mem});
-            matmul_args.insert({DNNL_ARG_DST, output_mem});
-
-            // Executions.
-            reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-            matmul_prim.execute(get_dnnl_stream(), matmul_args);
-            get_dnnl_stream().wait();
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
         } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims bias_dims = {1, N};
+            memory::dims shift_dims = {M, N};
+            memory::dims output_dims = {M, N};
+
             // Create primitive descriptor.
-            auto matmul_pd = matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, matmul_attr);
+            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
+            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
 
-            // Repack and convert input data.
-            auto input_mem = memory(matmul_pd.src_desc(), get_dnnl_engine());
-            auto weight_mem = memory(matmul_pd.weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
-            auto shift_mem = memory(shift_md, get_dnnl_engine(), const_cast<float *>(res));
-            auto output_mem = memory(matmul_pd.dst_desc(), get_dnnl_engine(), C);
+            // Create primitive post-ops (residential): dst_tmp = dst_tmp + shift
+            post_ops matmul_ops;
+            matmul_ops.append_binary(algorithm::binary_add, shift_md);
+            primitive_attr matmul_attr;
+            matmul_attr.set_post_ops(matmul_ops);
 
-            // Create the primitive.
-            auto matmul_prim = matmul(matmul_pd);
-            std::unordered_map<int, memory> matmul_args;
-            matmul_args.insert({DNNL_ARG_SRC, input_mem});
-            matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
-            matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, shift_mem});
-            matmul_args.insert({DNNL_ARG_DST, output_mem});
+            if (bias != nullptr) {
+                // Create primitive descriptor and primitive.
+                matmul_pd = new matmul::primitive_desc(
+                        get_dnnl_engine(), input_md, weight_md, bias_md, output_md, matmul_attr);
+                matmul_prim = new matmul(*matmul_pd);
+            } else {
+                // Create primitive descriptor and primitive.
+                matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md, matmul_attr);
+                matmul_prim = new matmul(*matmul_pd);
+            }
 
-            // Executions.
-            reorder(user_input_mem, input_mem).execute(get_dnnl_stream(), user_input_mem, input_mem);
-            matmul_prim.execute(get_dnnl_stream(), matmul_args);
-            get_dnnl_stream().wait();
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
         }
+
+        // Repack and convert input data.
+        memory::dims shift_dims = {M, N};
+        auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
+        memory bias_mem;
+        auto shift_mem = memory(shift_md, get_dnnl_engine(), const_cast<float *>(res));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
+        if (bias != nullptr) {
+            bias_mem = memory(matmul_pd->bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
+        }
+
+        // Create the primitive args.
+        std::unordered_map<int, memory> matmul_args;
+        matmul_args.insert({DNNL_ARG_SRC, input_mem});
+        matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
+        matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, shift_mem});
+        matmul_args.insert({DNNL_ARG_DST, output_mem});
+        if (bias != nullptr) { matmul_args.insert({DNNL_ARG_BIAS, bias_mem}); }
+        t1.release();
+
+        // Executions.
+        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
+        // Reorder
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+        }
+
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
+        get_dnnl_stream().wait();
+    }
+
+private:
+    static dnnl::memory::format_tag &get_amx_data_type() {
+        static dnnl::memory::format_tag amx_weight_tag;
+        return amx_weight_tag;
+    }
+
+    static void set_amx_data_type(dnnl::memory::format_tag tag) {
+        get_amx_data_type() = tag;
     }
 };

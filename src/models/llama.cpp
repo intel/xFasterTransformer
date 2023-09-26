@@ -28,8 +28,7 @@ void LlamaLLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
 
     float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize) == vocabSize * hiddenSize,
-            "read token embedding error");
+    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
 
     embedding->setWeights(tokenEmb);
 
@@ -42,8 +41,7 @@ void LlamaLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 
     float *gamma = (float *)malloc(hiddenSize * sizeof(float));
 
-    REQUIRES(readFile(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize) == hiddenSize,
-            "read final LN weight error");
+    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
 
     finalLN.setWeight(gamma, nullptr, hiddenSize);
 

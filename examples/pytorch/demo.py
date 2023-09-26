@@ -17,11 +17,16 @@ def boolean_string(string):
     return low_string == "true"
 
 
+DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/opt-13b", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/1-gpu", help="Path to model file")
-parser.add_argument("--dtype", type=str, choices=["fp16", "bf16", "int8"], default="fp16", help="Data type")
+parser.add_argument("--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
+parser.add_argument("--model_path", type=str, default="/data/chatglm-6b-cpu", help="Path to model file")
+parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=False)
+parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
+parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
+parser.add_argument("--output_len", help="max tokens can generate excluded input.", type=int, default=100)
 
 import importlib.util
 
@@ -47,7 +52,9 @@ if __name__ == "__main__":
     )
 
     model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
-    streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=False) if model.rank == 0 else None
+    streamer = None
+    if model.rank == 0 and args.streaming and args.num_beams == 1:
+        streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=False)
 
     if model.rank == 0:
         # Master
@@ -60,7 +67,9 @@ if __name__ == "__main__":
             print("=" * 50)
 
             start_time = time.perf_counter()
-            generated_ids = model.generate(input_ids, max_length=193, streamer=streamer)
+            generated_ids = model.generate(
+                input_ids, max_length=input_ids.shape[-1] + args.output_len, streamer=streamer, num_beams=args.num_beams
+            )
             end_time = time.perf_counter()
 
             if streamer is None:

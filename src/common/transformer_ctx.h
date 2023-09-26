@@ -12,8 +12,8 @@ struct DecoderContext {
     int batchSize;
     // # of tokens
     int inputSeqLen;
-    // Max supported tokens each buffer has prepared
-    int supportedSeqLen;
+    // For custom usage
+    int reserved1;
 
     // Other configuration
     int vocabSize;
@@ -82,7 +82,6 @@ public:
         // Set the default value (don't worry, it can be changed later)
         this->batchSize = 1;
         this->inputSeqLen = 1;
-        this->supportedSeqLen = 64;
         this->numThreads = numThreads;
 
         if (numThreads == 0) {
@@ -131,7 +130,6 @@ public:
     void resize(int batchSize, int inputSeqLen, bool preSeqLen) {
         this->batchSize = batchSize;
         this->inputSeqLen = inputSeqLen;
-        this->supportedSeqLen = inputSeqLen + 16; // assume output seq_len could be a little larger
 
         // Check total required size
         const int pad = 0; // 4;

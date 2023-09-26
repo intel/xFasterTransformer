@@ -7,14 +7,6 @@
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 
-#define REQUIRES(assertion, message)   \
-    do {                               \
-        if (unlikely(!(assertion))) {  \
-            printf("%s\n", (message)); \
-            exit(-1);                  \
-        }                              \
-    } while (0)
-
 class BertUtil {
 public:
     static inline __m512 vexp(const __m512 &_x) {

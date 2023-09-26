@@ -17,14 +17,14 @@
 
 #include "attention.h"
 #include "debugger.h"
+#include "kvcache_tensor.h"
 #include "timeline.h"
 
 template <typename ATTN_CLS, typename MLP_CLS>
 class Decoder {
 public:
     Decoder(DecoderContext *_ctx, int _layerIdx)
-        : ctx(_ctx)
-        , layerIdx(_layerIdx)
+        : layerIdx(_layerIdx)
         , attn(_layerIdx, _ctx)
         , mlp(_ctx)
 #ifdef DEBUG
@@ -39,11 +39,9 @@ public:
 
     virtual ~Decoder() {}
 
-    DecoderContext *getCtx() { return this->ctx; }
-
     int getLayerId() { return layerIdx; }
 
-    void setWeights(std::vector<float *> &params, bool trans = true) {
+    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
         const float *queryWeight = params[0];
         const float *queryBias = params[1];
         const float *keyWeight = params[2];
@@ -63,15 +61,15 @@ public:
     }
 
     template <typename KVCacheT>
-    void forwardAttention(float *input, float *output, const float *attnMask, KVCacheT *presentKeys,
-            KVCacheT *presentValues, int inputSeqLen, int pastSeqLen, bool useSelfAttn, bool doLnBefore,
+    void forwardAttention(DecoderContext *ctx, float *input, float *output, const float *attnMask, KVCacheTensor<KVCacheT> &presentKey,
+            KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen, bool useSelfAttn, bool doLnBefore,
             bool returnAttn, bool returnKVs, bool forPT = true, int *positionIds = nullptr) {
         TimeLine t("Decoder.forwardAttention");
-        attn.forward(ctx, input, output, attnMask, presentKeys, presentValues, inputSeqLen, pastSeqLen, useSelfAttn,
+        attn.forward(ctx, input, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen, useSelfAttn,
                 doLnBefore, returnAttn, returnKVs, forPT, positionIds);
     }
 
-    void forwardFFN(float *input, float *output, int iStride, int oStride, bool doLnBefore = true) {
+    void forwardFFN(DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore = true) {
         TimeLine t("Decoder.forwardFFN");
         mlp.forward(ctx, input, output, iStride, oStride, doLnBefore);
     }
@@ -114,8 +112,6 @@ private:
     }
 
 private:
-    DecoderContext *ctx;
-
     // For debug usage
     int layerIdx;
 

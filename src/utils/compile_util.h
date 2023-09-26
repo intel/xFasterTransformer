@@ -4,12 +4,12 @@
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 
-#define REQUIRES(assertion, message)   \
-    do {                               \
-        if (unlikely(!(assertion))) {  \
-            printf("%s\n", (message)); \
-            exit(-1);                  \
-        }                              \
+#define REQUIRES(assertion, message)           \
+    do {                                       \
+        if (unlikely(!(assertion))) {          \
+            std::cout << message << std::endl; \
+            exit(-1);                          \
+        }                                      \
     } while (0)
 
 // A class for forced loop unrolling at compile time

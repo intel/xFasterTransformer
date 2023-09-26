@@ -18,7 +18,7 @@
 class TimeLine {
 public:
     explicit TimeLine(const std::string &tag_name) {
-        std::lock_guard<std::mutex> lock(get_lock()); // Prevent start times from coinciding
+        // std::lock_guard<std::mutex> lock(get_lock()); // Prevent start times from coinciding
         this->tag_name = tag_name;
         this->pid = getpid();
         this->tid = pthread_self();
@@ -44,7 +44,7 @@ public:
         this->trace_event["ts"] = this->start_timestap;
         this->trace_event["dur"] = this->during_time;
 
-        std::lock_guard<std::mutex> lock(get_lock());
+        // std::lock_guard<std::mutex> lock(get_lock());
         TimeLine::get_pool().push_back(trace_event);
     }
 
@@ -98,6 +98,7 @@ private:
 
     static std::vector<Json::Value> &get_pool() {
         static std::vector<Json::Value> pool;
+        pool.reserve(40*2000*20); // 40 layers * 2000 time * 20 promotes
         return pool;
     }
 

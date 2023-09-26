@@ -10,7 +10,12 @@
 template <typename WeiT, bool INPUT_AS_RESID = true>
 class MLP {
 public:
-    MLP(DecoderContext *ctx) {}
+    MLP(DecoderContext *ctx) {
+        if (ctx->intermediateSize % ctx->numSplit != 0) {
+            printf("Unsupported: split ffn (size=%d) into %d splits.\n", ctx->intermediateSize, ctx->numSplit);
+            exit(-1);
+        }
+    }
 
     // The inerface is for PyTorch, thus the weights are already transposed
     void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {

@@ -8,6 +8,8 @@
 #include <limits>
 #include <type_traits>
 
+#include <immintrin.h>
+
 #include "bit_cast.h"
 
 class bfloat16_t {
@@ -61,12 +63,101 @@ public:
         return *this;
     }
 
-    static constexpr uint16_t convert_bits_of_normal_or_zero(const uint32_t bits) {
+    static void cvt_float_to_bfloat16(const float *src, bfloat16_t *dst, int size);
+    static void cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size);
+    static void float_add_bfloat16(const float *src1, const bfloat16_t *src2, float *dst, int size);
+
+private:
+    constexpr uint16_t convert_bits_of_normal_or_zero(const uint32_t bits) {
         return uint32_t {bits + uint32_t {0x7FFFU + (uint32_t {bits >> 16} & 1U)}} >> 16;
     }
 
-private:
     uint16_t raw_bits_;
 };
 
 static_assert(sizeof(bfloat16_t) == 2, "bfloat16_t must be 2 bytes");
+
+inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst, int size) {
+    constexpr int kStep = 16;
+
+    const __m512i nan = _mm512_set1_epi32(0xffff);
+    const __m512i ones = _mm512_set1_epi32(0x1);
+    const __m512i vec_bias = _mm512_set1_epi32(0x7fff);
+
+#if (__GNUC__ > 12) || ((__GNUC__ == 12) && (__GNUC_MINOR__ >= 3))
+    auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) { return (__m256i)_mm512_cvtneps_pbh(input_vector); };
+#else
+    auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) {
+        __m512i value = _mm512_castps_si512(input_vector);
+        auto mask = _mm512_cmp_ps_mask(input_vector, input_vector, _CMP_ORD_Q);
+        auto result = _mm512_and_si512(_mm512_srli_epi32(value, 16), ones);
+        result = _mm512_add_epi32(result, vec_bias);
+        result = _mm512_add_epi32(result, value);
+        result = _mm512_srli_epi32(result, 16);
+        result = _mm512_mask_blend_epi32(mask, nan, result);
+        return _mm512_cvtusepi32_epi16(result);
+    };
+#endif
+
+    for (int i = 0; i < size; i += kStep) {
+        __m512 input_vector = _mm512_loadu_ps(src + i);
+        __m256i output_vector = cvt_fp32_to_bf16(input_vector);
+        _mm256_mask_storeu_epi16(dst + i, 0xffff, output_vector);
+    }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m512 input_vector = _mm512_maskz_loadu_ps(mask, src + size - remainder);
+        __m256i output_vector = cvt_fp32_to_bf16(input_vector);
+        _mm256_mask_storeu_epi16(dst + size - remainder, mask, output_vector);
+    }
+}
+
+inline void bfloat16_t::cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size) {
+    constexpr int kStep = 16;
+
+    auto cvt_bf16_to_fp32 = [](const __m256i src) {
+        auto y = _mm512_cvtepu16_epi32(src);
+        return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
+    };
+
+    for (int i = 0; i < size; i += kStep) {
+        __m256i input_vector = _mm256_maskz_loadu_epi16(0xFFFF, src + i);
+        __m512 output_vector = cvt_bf16_to_fp32(input_vector);
+        _mm512_storeu_ps(dst + i, output_vector);
+    }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + size - remainder);
+        __m512 output_vector = cvt_bf16_to_fp32(input_vector);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, output_vector);
+    }
+}
+
+inline void bfloat16_t::float_add_bfloat16(const float *src1, const bfloat16_t *src2, float *dst, int size) {
+    constexpr int kStep = 16;
+
+    auto cvt_bf16_to_fp32 = [](const __m256i src) {
+        auto y = _mm512_cvtepu16_epi32(src);
+        return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
+    };
+
+    for (int i = 0; i < size; i += kStep) {
+        __m512 vec1 = _mm512_loadu_ps(src1 + i);
+        __m256i _t = _mm256_maskz_loadu_epi16(0xFFFF, src2 + i);
+        __m512 vec2 = cvt_bf16_to_fp32(_t);
+        _mm512_storeu_ps(dst + i, vec1 + vec2);
+    }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m512 vec1 = _mm512_maskz_loadu_ps(mask, src1 + size - remainder);
+        __m256i _t = _mm256_maskz_loadu_epi16(mask, src2 + size - remainder);
+        __m512 vec2 = cvt_bf16_to_fp32(_t);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, vec1 + vec2);
+    }
+}

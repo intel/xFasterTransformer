@@ -10,6 +10,11 @@ typedef uint8_t u8;
 
 #define unlikely(x) __builtin_expect((x), 0)
 
+extern "C" {
+void *xft_numa_alloc(size_t size);
+void xft_numa_free(void *start, size_t size);
+}
+
 namespace hpj {
 
 template <typename T>
@@ -59,15 +64,15 @@ struct MatData {
         if (this->buf_alloc_size >= size) {
             return;
         } else {
-            if (buf) { free(buf); }
+            if (buf) { xft_numa_free(buf, sizeof(T) * buf_alloc_size); }
             this->buf_alloc_size = size;
-            buf = (T *)aligned_alloc(64, sizeof(T) * size);
+            buf = (T *)xft_numa_alloc(sizeof(T) * size);
             if (buf == NULL) { throw std::bad_alloc(); }
         }
     }
     void Release() {
         if (!shadow && buf) {
-            free(buf);
+            xft_numa_free(buf, sizeof(T) *buf_alloc_size);
             buf = NULL;
         }
         buf_alloc_size = 0;
@@ -117,9 +122,9 @@ struct MatData<T, true> {
         assert(!shadow);
         int size = rows * stride;
         if (this->buf_alloc_size < size) {
-            if (buf) { free(buf); }
+            if (buf) { xft_numa_free(buf, sizeof(T) * buf_alloc_size); }
             this->buf_alloc_size = size;
-            buf = (T *)aligned_alloc(64, sizeof(T) * size);
+            buf = (T *)xft_numa_alloc(sizeof(T) * size);
             if (buf == NULL) { throw std::bad_alloc(); }
         }
         // Check the scale and zero point buffer
@@ -139,7 +144,7 @@ struct MatData<T, true> {
     }
     void Release() {
         if (!shadow && buf) {
-            free(buf);
+            xft_numa_free(buf, sizeof(T) * buf_alloc_size);
             buf = NULL;
         }
         if (!shadow && (this->qscheme == per_channel_symmetric || this->qscheme == per_channel_affine)) {
@@ -260,17 +265,26 @@ public:
             this->Release();
             return;
         }
-        if (cols > 16) {
-            int skip = (16 - cols % 16) % 16;
-            stride = cols + skip;
-            // Only do the trick for float matrix
-            if (std::is_same<T, float>::value && (stride % 256 == 0)) { stride += 4; }
-            stride = cols;
-        } else { // for narrow matrix, not padding any more
-            stride = cols;
+
+        // Previously, we used to pad the matrix when the columns aligned with the boundary of 1024.
+        // However, we discovered that this did not enhance the performance. 
+        // As a result, we have decided to remove this approach.
+        this->stride = cols;
+        this->rows = rows;
+        this->cols = cols;
+        this->data.Resize(rows, cols, stride);
+    }
+    void Resize(int rows, int cols, int stride) {
+        assert(!data.shadow);
+
+        if (this->rows == rows && this->cols == cols && this->stride == stride) { return; }
+        if (rows <= 0 || cols <= 0 || stride <= 0) {
+            this->Release();
+            return;
         }
         this->rows = rows;
         this->cols = cols;
+        this->stride = stride;
         this->data.Resize(rows, cols, stride);
     }
     T *Data() { return data.buf; }
@@ -321,17 +335,17 @@ public:
             this->size = size;
             return;
         }
+        if (this->data) { xft_numa_free(this->data, sizeof(T) * alloc_size); }
         this->alloc_size = size + (16 - (size % 16)) % 16;
         this->size = size;
-        if (this->data) { free(this->data); }
-        this->data = (T *)aligned_alloc(64, sizeof(T) * alloc_size);
+        this->data = (T *)xft_numa_alloc(sizeof(T) * alloc_size);
         if (this->data == NULL) { throw std::bad_alloc(); }
     }
     void SetZero() { memset(data, 0, sizeof(T) * size); }
     T *Data() { return data; }
     void Release() {
         if (data) {
-            free(data);
+            xft_numa_free(data, sizeof(T) * alloc_size);
             data = NULL;
         }
         size = 0;

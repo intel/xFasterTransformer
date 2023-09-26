@@ -110,7 +110,7 @@ def fuse_qkv_weight(q, k, v):
 
 
 def split_and_convert(args):
-    saved_dir = args.saved_dir + "cpu/"
+    saved_dir = args.saved_dir
 
     if os.path.exists(saved_dir) == False:
         os.makedirs(saved_dir)
@@ -276,7 +276,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("-saved_dir", "-o", type=str, help="file name of output file", required=True)
     parser.add_argument("-in_file", "-i", type=str, help="name of input checkpoint file", required=True)
-    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 4)", default=4)
+    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
     parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16"])
 
     args = parser.parse_args()

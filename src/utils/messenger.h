@@ -10,7 +10,7 @@
 #include "timeline.h"
 
 class Messenger {
-public:
+private:
     Messenger() {
         // User has set the SINGLE_INSTANCE environment variable
         if (std::getenv("SINGLE_INSTANCE") != nullptr) {
@@ -63,17 +63,13 @@ public:
             }
         }
 
-        if (same_hostnames) {
+        if (same_hostnames && !std::getenv("XFT_ONECCL")) {
             local_ranks_flag = true;
         } else {
             local_ranks_flag = false;
         }
 
-        extern Messenger *gmessenger;
-        extern void globalBarrier();
-
-        gmessenger = this;
-        pshm = new ShmReduction(globalBarrier, rank, size);
+        pshm = new ShmReduction(rank, size, [this](int *pid_fd, size_t count) { this->broadcast(pid_fd, count); });
 #endif
     }
 
@@ -82,6 +78,12 @@ public:
 #ifdef USE_SHM
         delete pshm;
 #endif
+    }
+
+public:
+    static Messenger &getInstance() {
+        static Messenger instance;
+        return instance;
     }
 
     bool isMaster() { return rank == 0; }
@@ -96,10 +98,11 @@ public:
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (count * sizeof(T) > pshm->getSHMSize() || ((count % 16) != 0 || !local_ranks_flag))
+        if (count * sizeof(T) > pshm->getSHMSize() || !local_ranks_flag) {
             ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
-        else
+        } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
+        }
 #else
         ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
 #endif
@@ -127,8 +130,8 @@ public:
     }
 
 private:
-    Messenger(const Messenger &messenger);
-    Messenger &operator=(const Messenger &messenger);
+    Messenger(const Messenger &messenger) = delete;
+    Messenger &operator=(const Messenger &messenger) = delete;
 
     static void mpi_finalize() {
         int is_finalized = 0;

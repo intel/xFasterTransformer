@@ -115,7 +115,6 @@ inline void float16_t::cvt_float_to_float16(const float *src, float16_t *dst, in
     constexpr int kStep = 16;
 
     // Process blocks of 16 floats at a time
-    // TODO: error if size is not multiple of kStep
     for (int i = 0; i < size; i += kStep) {
         // Load the input floats into a AVX512 register
         __m512 input_vector = _mm512_loadu_ps(src + i);
@@ -126,28 +125,51 @@ inline void float16_t::cvt_float_to_float16(const float *src, float16_t *dst, in
         // Store the converted values in the output array
         _mm256_mask_storeu_epi16(reinterpret_cast<int *>(dst + i), 0xffff, output_vector);
     }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m512 input_vector = _mm512_maskz_loadu_ps(mask, src + size - remainder);
+        __m256i output_vector = _mm512_cvtps_ph(input_vector, rounding_mode);
+        _mm256_mask_storeu_epi16(reinterpret_cast<int *>(dst + size - remainder), mask, output_vector);
+    }
 }
 
 inline void float16_t::cvt_float16_to_float(const float16_t *src, float *dst, int size) {
     // Process 16 floats (AVX512 is a 512-bit SIMD register)
     constexpr int kStep = 16;
 
-    // TODO: error if size is not multiple of kStep
     for (int i = 0; i < size; i += kStep) {
         __m256i input_vector = _mm256_maskz_loadu_epi16(0xffff, src + i);
         __m512 output_vector = _mm512_cvtph_ps(input_vector);
         _mm512_storeu_ps(dst + i, output_vector);
+    }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + size - remainder);
+        __m512 output_vector = _mm512_cvtph_ps(input_vector);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, output_vector);
     }
 }
 
 inline void float16_t::float_add_float16(const float *src1, const float16_t *src2, float *dst, int size) {
     constexpr int kStep = 16;
 
-    // TODO: error if size is not multiple of kStep
     for (int i = 0; i < size; i += kStep) {
         __m512 vec1 = _mm512_loadu_ps(src1 + i);
         __m256i _t = _mm256_maskz_loadu_epi16(0xffff, src2 + i);
         __m512 vec2 = _mm512_cvtph_ps(_t);
         _mm512_storeu_ps(dst + i, vec1 + vec2);
+    }
+
+    int remainder = size % kStep;
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder);
+        __m512 vec1 = _mm512_maskz_loadu_ps(mask, src1 + size - remainder);
+        __m256i _t = _mm256_maskz_loadu_epi16(mask, src2 + size - remainder);
+        __m512 vec2 = _mm512_cvtph_ps(_t);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, vec1 + vec2);
     }
 }
