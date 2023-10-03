@@ -2,4 +2,4 @@ cmake==3.26.1
 sentencepiece==0.1.99
 tokenizers==0.13.3
 torch==2.0.1
-transformers==4.28.1
+transformers==4.30.0
