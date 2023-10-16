@@ -1,9 +1,9 @@
 #include "quantizer.h"
 #include <vector>
 
-void Quantizer::find_params(const Tensor<float>& weight, Tensor<float>& scale, Tensor<int>& zero) {
+void Quantizer::find_params(const Tensor<float> &weight, Tensor<float> &scale, Tensor<int> &zero) {
     Tensor<float> wmin(weight.columns);
-    Tensor<float> wmax(weight.columns);    
+    Tensor<float> wmax(weight.columns);
     for (int w = 0; w < weight.columns; ++w) {
         wmin[w] = weight[w];
         wmax[w] = weight[w];
@@ -23,9 +23,7 @@ void Quantizer::find_params(const Tensor<float>& weight, Tensor<float>& scale, T
         if (sym) {
             float wmin_abs = abs(wmin[i]);
             wmax[i] = wmin_abs > wmax[i] ? wmin_abs : wmax[i];
-            if (wmin[i] < 0) {
-                wmin[i] = -1 * wmax[i];
-            }
+            if (wmin[i] < 0) { wmin[i] = -1 * wmax[i]; }
         }
         if (wmin[i] == 0 && wmax[i] == 0) {
             wmin[i] -= 1;
@@ -52,7 +50,7 @@ void Quantizer::find_params(const Tensor<float>& weight, Tensor<float>& scale, T
         std::vector<float> best(weight.rows);
         for (int i = 0; i < round(maxshrink * grid); ++i) {
             float p = 1 - 1.0 * i / grid;
-            minus_multiply(scale1, wmax, wmin,  p / maxq);
+            minus_multiply(scale1, wmax, wmin, p / maxq);
             if (sym) {
                 zero1.set(zero);
             } else {

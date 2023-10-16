@@ -1,5 +1,4 @@
-#ifndef __LLM_OPT_UTILS_H__
-#define __LLM_OPT_UTILS_H__
+#pragma once
 
 #include <iostream>
 #include <math.h>
@@ -15,33 +14,34 @@ public:
         size = 1;
     }
 
-    Tensor(int size, bool zero = false): rows(1), columns(size), stride(size), size(size) {
+    Tensor(int size, bool zero = false) : rows(1), columns(size), stride(size), size(size) {
         data = new T[size];
         if (zero) set_zero();
     }
 
-    Tensor(int rows, int columns, bool zero = false): rows(rows), columns(columns), stride(columns) {
+    Tensor(int rows, int columns, bool zero = false) : rows(rows), columns(columns), stride(columns) {
         size = rows * columns;
         data = new T[size];
         if (zero) set_zero();
     }
 
-    Tensor(T* data, int size): data(data), rows(1), columns(size), stride(size), size(size) {}
+    Tensor(T *data, int size) : data(data), rows(1), columns(size), stride(size), size(size) {}
 
-    Tensor(T* data, int rows, int columns, int stride): data(data), rows(rows), columns(columns), stride(stride) {
+    Tensor(T *data, int rows, int columns, int stride) : data(data), rows(rows), columns(columns), stride(stride) {
         size = rows * columns;
     }
-    
-    Tensor(const Tensor<T>& other): data(other.data), rows(other.rows), columns(other.columns), stride(other.stride), size(other.size) {}
-    Tensor<T>& operator=(const Tensor<T>& other) {
+
+    Tensor(const Tensor<T> &other)
+        : data(other.data), rows(other.rows), columns(other.columns), stride(other.stride), size(other.size) {}
+    Tensor<T> &operator=(const Tensor<T> &other) {
         data = other.data;
         rows = other.rows;
         columns = other.columns;
         stride = other.stride;
         size = other.size;
     }
-    
-    Tensor(const Tensor<T>& other, int rows_start, int rows_end, int columns_start, int columns_end) {
+
+    Tensor(const Tensor<T> &other, int rows_start, int rows_end, int columns_start, int columns_end) {
         rows = rows_end - rows_start;
         columns = columns_end - columns_start;
         stride = other.stride;
@@ -54,7 +54,7 @@ public:
         }
     }
 
-    Tensor(Tensor<T>&& other, int rows_start, int rows_end, int columns_start, int columns_end) {
+    Tensor(Tensor<T> &&other, int rows_start, int rows_end, int columns_start, int columns_end) {
         rows = rows_end - rows_start;
         columns = columns_end - columns_start;
         stride = other.stride;
@@ -64,27 +64,22 @@ public:
 
     ~Tensor() {}
 
-    T& operator[](int index) const {
-        return data[index];
-    }
+    T &operator[](int index) const { return data[index]; }
 
-    T& get(int index) const {
-        return data[index];
-    }
+    T &get(int index) const { return data[index]; }
 
-    T& get(int _row, int _column) const {
-        return data[_row * stride + _column];
-    }
+    T &get(int _row, int _column) const { return data[_row * stride + _column]; }
 
-    void set(const Tensor<T>& other) {
+    void set(const Tensor<T> &other) {
         rows = other.rows;
         columns = other.columns;
         stride = other.stride;
         size = other.size;
-        for (int i = 0; i < size; ++i) data[i] = other[i];
+        for (int i = 0; i < size; ++i)
+            data[i] = other[i];
     }
 
-    void set(Tensor<T>&& other) {
+    void set(Tensor<T> &&other) {
         data = other.data;
         rows = other.rows;
         columns = other.columns;
@@ -111,12 +106,11 @@ public:
     }
 
     void set_zero() {
-        for (int i = 0; i < size; ++i) data[i] = 0;
+        for (int i = 0; i < size; ++i)
+            data[i] = 0;
     }
 
-    void free() {
-        delete [] data;
-    }
+    void free() { delete[] data; }
 
     void print() {
         std::cout << "Tensor shape is " << rows << "x" << columns << std::endl;
@@ -124,50 +118,55 @@ public:
         for (int h = 0; h < rows; ++h) {
             std::cout << "[ ";
             for (int w = 0; w < columns; ++w) {
-                if (w < columns - 1) std::cout << get(h, w) << ", ";
-                else std::cout << get(h, w);
+                if (w < columns - 1)
+                    std::cout << get(h, w) << ", ";
+                else
+                    std::cout << get(h, w);
             }
-            if (h < rows - 1) std::cout << "]," << std::endl;
-            else std::cout << "]" << std::endl;
+            if (h < rows - 1)
+                std::cout << "]," << std::endl;
+            else
+                std::cout << "]" << std::endl;
         }
         std::cout << "]" << std::endl;
     }
 
-    T* data;
+    T *data;
     int size;
     int rows;
     int columns;
     int stride;
 };
 
-void quantize_to_int(Tensor<int>& result, const Tensor<float>& input, const Tensor<float>& scale, const Tensor<int>& zero, int maxq);
+void quantize_to_int(
+        Tensor<int> &result, const Tensor<float> &input, const Tensor<float> &scale, const Tensor<int> &zero, int maxq);
 
-void dequantize_to_float(Tensor<float>& result, const Tensor<int>& input, const Tensor<float>& scale, const Tensor<int>& zero);
+void dequantize_to_float(
+        Tensor<float> &result, const Tensor<int> &input, const Tensor<float> &scale, const Tensor<int> &zero);
 
-void minus_multiply(Tensor<float>& result, const Tensor<float>& input1, const Tensor<float>& input2, float d);
+void minus_multiply(Tensor<float> &result, const Tensor<float> &input1, const Tensor<float> &input2, float d);
 
-void square_multiply(Tensor<float>& result, const Tensor<float>& input, float d);
+void square_multiply(Tensor<float> &result, const Tensor<float> &input, float d);
 
-void self_multiply(Tensor<float>& input, float d);
+void self_multiply(Tensor<float> &input, float d);
 
-void self_minus(Tensor<float>& input1, const Tensor<float>& input2);
+void self_minus(Tensor<float> &input1, const Tensor<float> &input2);
 
-void self_abs(Tensor<float>& input);
+void self_abs(Tensor<float> &input);
 
-void self_pow(Tensor<float>& input, float d);
+void self_pow(Tensor<float> &input, float d);
 
-void row_sum(Tensor<float>& output, Tensor<float>& input);
+void row_sum(Tensor<float> &output, Tensor<float> &input);
 
-void divide_multiply(Tensor<int>& result, const Tensor<float>& input1, const Tensor<float>& input2, float d);
+void divide_multiply(Tensor<int> &result, const Tensor<float> &input1, const Tensor<float> &input2, float d);
 
-void self_transpose(Tensor<float>& H);
+void self_transpose(Tensor<float> &H);
 
-void matmul(bool trans_A, bool trans_B, float alpha, const Tensor<float>& A, const Tensor<float>& B, float beta, Tensor<float>& C);
+void matmul(bool trans_A, bool trans_B, float alpha, const Tensor<float> &A, const Tensor<float> &B, float beta,
+        Tensor<float> &C);
 
-void matmul_AAT(float alpha, const Tensor<float>& A, float beta, Tensor<float>& B);
+void matmul_AAT(float alpha, const Tensor<float> &A, float beta, Tensor<float> &B);
 
-void cholesky_decompose(Tensor<float>& H, bool input_upper = false, bool output_upper = false);
+void cholesky_decompose(Tensor<float> &H, bool input_upper = false, bool output_upper = false);
 
-void cholesky_inverse(Tensor<float>& H, bool input_upper = false);
-
-#endif //__LLM_OPT_UTILS_H__
+void cholesky_inverse(Tensor<float> &H, bool input_upper = false);
