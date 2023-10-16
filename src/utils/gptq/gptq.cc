@@ -1,6 +1,6 @@
 #include "gptq.h"
 
-void GPTQ::add_batch(const Tensor<float>& input) {
+void GPTQ::add_batch(const Tensor<float> &input) {
     int tmp = input.rows;
     self_multiply(H, nsamples / (nsamples + tmp));
     nsamples += tmp;
@@ -36,15 +36,13 @@ void GPTQ::add_batch(const Tensor<float>& input) {
 // |_______|______|_________|___________|
 //         i1     i         i2
 
-void GPTQ::fasterquant(Tensor<int>& Q_int, Tensor<float>& Q_float, Tensor<float>& scale, Tensor<int>& zero, 
-                       int blocksize, float percdamp, int groupsize, bool actorder) {
-    
+void GPTQ::fasterquant(Tensor<int> &Q_int, Tensor<float> &Q_float, Tensor<float> &scale, Tensor<int> &zero,
+        int blocksize, float percdamp, int groupsize, bool actorder) {
+
     quantizer->find_params(W, scale, zero);
 
     for (int i = 0; i < H.columns; ++i) {
-        if (H.get(i, i) == 0) {
-            H.get(i, i) = 1;
-        }
+        if (H.get(i, i) == 0) { H.get(i, i) = 1; }
     }
     if (actorder) {
         // TODO
@@ -52,10 +50,11 @@ void GPTQ::fasterquant(Tensor<int>& Q_int, Tensor<float>& Q_float, Tensor<float>
     float H_diag_mean = 0;
     for (int i = 0; i < H.columns; ++i) {
         H_diag_mean += H.get(i, i);
-    } 
+    }
     H_diag_mean /= H.columns;
     float damp = H_diag_mean * percdamp;
-    for (int i = 0; i < H.columns; ++i) H.get(i, i) += damp;
+    for (int i = 0; i < H.columns; ++i)
+        H.get(i, i) += damp;
     cholesky_decompose(H);
     cholesky_inverse(H);
     cholesky_decompose(H);
@@ -84,10 +83,10 @@ void GPTQ::fasterquant(Tensor<int>& Q_int, Tensor<float>& Q_float, Tensor<float>
                 }
             }
 
-            quantize_to_int(q_int, w, scale, zero, quantizer->maxq);
+            quantize_to_int(q_int, w, scale, zero, quantizer->get_maxq());
             dequantize_to_float(q_float, q_int, scale, zero);
 
-            minus_multiply(err1, w, q_float, 1/d);
+            minus_multiply(err1, w, q_float, 1 / d);
             square_multiply(losses, err1, 0.5);
 
             // Part of H. A column vector. Shape: (i2 - i1 - i) * 1
