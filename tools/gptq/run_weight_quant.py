@@ -3,6 +3,7 @@ import torch
 
 from gptq import *
 
+# TODO: move to tests/ut folder in xFT
 if __name__ == '__main__':
     weight = torch.tensor([
         [0.123456, 1.234567, 3.456789],

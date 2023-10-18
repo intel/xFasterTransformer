@@ -90,6 +90,7 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
+    # TODO: read from config.ini in xFT
     model_type = args.model_type
     input_model_path = args.input_model_path
     output_model_path = args.output_model_path
