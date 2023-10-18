@@ -2,7 +2,7 @@
 
 #include "common_decoder.h"
 #include "mlp_llama.h"
-#include "rms_norm.h"
+#include "layers.h"
 #include "rotary_embedding.h"
 #include "token_embedding.h"
 
