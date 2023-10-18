@@ -3,6 +3,7 @@
 #include <iostream>
 #include <math.h>
 
+// TODO: Replace Tensor structure with xFT's Matrix
 template <typename T>
 class Tensor {
 public:

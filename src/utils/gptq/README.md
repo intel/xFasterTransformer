@@ -1,4 +1,4 @@
-# GPTQ
+# Experimental GPTQ, Need to fix some bugs and optimize its perf
 
 ``` run_cholesky.cc ```
 
