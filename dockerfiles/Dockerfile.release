@@ -3,12 +3,15 @@ ARG VERSION=dev-ubuntu22.04
 
 FROM ${BASE_IMG}:${VERSION}
 
+ARG TAG=main
+
 RUN echo 'export LD_PRELOAD=libiomp5.so:$LD_PRELOAD' >> /root/.bashrc
 
 WORKDIR /root/
 RUN git clone https://github.com/intel/xFasterTransformer.git
 
 RUN cd xFasterTransformer \
+    && git checkout ${TAG} \
     && sed -i 's/source ${CCL_ROOT}\/env\/vars.sh/. ${CCL_ROOT}\/env\/vars.sh/g' /usr/local/oneCCL/env/setvars.sh \
     && . /usr/local/oneCCL/env/setvars.sh \
     && export LD_LIBRARY_PATH=/usr/local/mklml_lnx_2019.0.5.20190502/lib:$LD_LIBRARY_PATH \
