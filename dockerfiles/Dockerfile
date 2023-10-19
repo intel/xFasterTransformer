@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnuma-dev \
     numactl \
     git \
-    libjsoncpp-dev \
     pkg-config \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 60 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 60
@@ -29,8 +28,8 @@ RUN apt install software-properties-common -y \
     && python -m pip install --upgrade pip \
     && rm get-pip.py
 
-RUN pip install cmake==3.26.1 transformers==4.28.1 sentencepiece==0.1.99 tokenizers==0.13.3
 RUN pip install torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
+RUN pip install cmake==3.26.1 transformers==4.30.0 sentencepiece==0.1.99 tokenizers==0.13.3 accelerate==0.23.0
 
 # Install oneCCL
 RUN git clone https://github.com/oneapi-src/oneCCL.git /tmp/oneCCL \
