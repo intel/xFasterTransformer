@@ -1,5 +1,5 @@
 import os
-
+from typing import Tuple, List
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -35,6 +35,19 @@ parser.add_argument("--iteration", type=int, default=10, help=" Benchmakr Iterat
 parser.add_argument("--warmup", type=int, default=2, help="Warm up Iterations")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=True)
+parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+
+def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tuple[str, str]] = []):
+    prompts = []
+    for item in query:
+        prompt = ""
+        for i, (old_query, response) in enumerate(history):
+            prompt += "[Round {}]\n\n问：{}\n\n答：{}\n\n".format(i + 1, old_query, response)
+        prompt += "[Round {}]\n\n问：{}\n\n答：".format(len(history) + 1, item)
+        prompts.append(prompt)
+    # print('### prompt={}'.format(prompt))
+    inputs = tokenizer(prompts, return_tensors="pt", padding=padding).input_ids
+    return inputs
 
 import importlib.util
 
@@ -74,7 +87,12 @@ if __name__ == "__main__":
         for _ in range(args.batch_size):
             input_prompts.append(input_prompt)
         # Master
-        input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
+        if args.chat and "chatglm" in args.model_name.lower() :
+            if args.batch_size > 1:
+                print("[INFO] chat mode only support batchsize=1")
+            input_ids = build_inputs_chatglm(tokenizer, input_prompts, args.padding)
+        else :
+            input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
         input_token_nums = int(torch.numel(input_ids) / args.batch_size)
         print("Input token Length is", input_token_nums)
         print("Batch_size:", args.batch_size)

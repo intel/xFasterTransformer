@@ -1,5 +1,5 @@
 import os
-
+from typing import Tuple, List
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -27,6 +27,16 @@ parser.add_argument("--padding", help="Enable padding, Default to True.", type=b
 parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
 parser.add_argument("--output_len", help="max tokens can generate excluded input.", type=int, default=100)
+parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+
+def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
+    prompt = ""
+    for i, (old_query, response) in enumerate(history):
+        prompt += "[Round {}]\n\n问：{}\n\n答：{}\n\n".format(i + 1, old_query, response)
+    prompt += "[Round {}]\n\n问：{}\n\n答：".format(len(history) + 1, query)
+    # print('### prompt={}'.format(prompt))
+    inputs = tokenizer(prompt, return_tensors="pt", padding=padding).input_ids
+    return inputs
 
 import importlib.util
 
@@ -63,7 +73,10 @@ if __name__ == "__main__":
             if input_prompt == "":
                 input_prompt = DEFAULT_PROMPT
                 print("[Use default prompt]:" + input_prompt)
-            input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
+            if args.chat and "chatglm" in args.model_path.lower() :
+                input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
+            else :
+                input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
 
             start_time = time.perf_counter()
