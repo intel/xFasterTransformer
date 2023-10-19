@@ -19,7 +19,6 @@ __pycache__/
 dist/
 
 # 3drparty
-/3rdparty/mklml
 /3rdparty/oneCCL
 /3rdparty/jsoncpp
 /3rdparty/onednn

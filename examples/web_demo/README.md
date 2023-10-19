@@ -23,15 +23,13 @@ Please refer to [Prepare model](../README.md#prepare-model)
 ## Step 4: Run the script corresponding to the model. 
 After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory.
 ```bash
-# Recommend preloading `libiomp5.so` to get a better performance.
-# `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-SINGLE_INSTANCE=1 LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                                     --dtype=bf16 \
-                                                     --token_path=${TOKEN_PATH} \
-                                                     --model_path=${MODEL_PATH}
+SINGLE_INSTANCE=1 python examples/web_demo/ChatGLM.py \
+                           --dtype=bf16               \
+                           --token_path=${TOKEN_PATH} \
+                           --model_path=${MODEL_PATH}
 
 # run multi-instance like
-OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+OMP_NUM_THREADS=48 mpirun \
   -n 1 numactl -N 0 -m 0 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: \
   -n 1 numactl -N 1 -m 1 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: 
 ```

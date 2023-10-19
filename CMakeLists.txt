@@ -40,13 +40,11 @@ if(EXISTS "${LOC_PATH}")
     )
 endif()
 
-include("cmake/mklml.cmake")
 include("cmake/onednn.cmake")
 include("cmake/ig.cmake")
 include(GNUInstallDirs)
 
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/mklml/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/ig)
@@ -59,12 +57,11 @@ include_directories(${CMAKE_SOURCE_DIR}/src/models)
 include_directories(${CMAKE_SOURCE_DIR}/src/common)
 
 link_directories(${CMAKE_SOURCE_DIR}/src/kernels)
-link_directories(${CMAKE_SOURCE_DIR}/3rdparty/mklml/lib)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/src)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/ig)
 
 set(3RDPART_LIB_LIST "MPI::MPI_CXX" "ccl" "dnnl" "numa")
-set(DEPEND_LIST "onednn" "mklml" "ig_lib")
+set(DEPEND_LIST "onednn" "ig_lib")
 
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)

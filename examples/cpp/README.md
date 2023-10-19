@@ -9,12 +9,10 @@ Please refer to [Prepare model](../README.md#prepare-model)
 
 ## Step 3: Run binary  
 ```bash
-# Recommend preloading `libiomp5.so` to get a better performance.
-# `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-SINGLE_INSTANCE=1 LD_PRELOAD=libiomp5.so ./example -m ${MODEL_PATH} -t ${TOKEN_PATH}
+SINGLE_INSTANCE=1 ./example -m ${MODEL_PATH} -t ${TOKEN_PATH}
 
 # run multi-instance like
-OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+OMP_NUM_THREADS=48 mpirun \
   -n 1 numactl -N 0 -m 0 ./example -m ${MODEL_PATH} -t ${TOKEN_PATH} : \
   -n 1 numactl -N 1 -m 1 ./example -m ${MODEL_PATH} -t ${TOKEN_PATH} 
 ```

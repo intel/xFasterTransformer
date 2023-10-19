@@ -198,7 +198,6 @@ std::cout << std::endl;
 ```
 
 ## How to run
-Recommend preloading `libiomp5.so` to get a better performance. `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after building xFasterTransformer successfully.
 ### Single rank
 Recommend using `SINGLE_INSTANCE=1` env to avoid MPI initialization.
 
@@ -206,7 +205,7 @@ Recommend using `SINGLE_INSTANCE=1` env to avoid MPI initialization.
 #### Command line
 Use MPI to run in the multi-ranks mode. Here is a example on local. Install oneCCL firstly, please refer to [Prepare Environment](#prepare-environment).
 ```bash
-OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+OMP_NUM_THREADS=48 mpirun \
   -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
   -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
 ```
@@ -250,12 +249,10 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. Now s
   ```
 - Run the script corresponding to the model. After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory. This demo also support multi-rank.
 ```bash
-# Recommend preloading `libiomp5.so` to get a better performance.
-# `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-SINGLE_INSTANCE=1 LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                                     --dtype=bf16 \
-                                                     --token_path=${TOKEN_PATH} \
-                                                     --model_path=${MODEL_PATH}
+SINGLE_INSTANCE=1 python examples/web_demo/ChatGLM.py \
+                           --dtype=bf16               \
+                           --token_path=${TOKEN_PATH} \
+                           --model_path=${MODEL_PATH}
 ```
 
 ## [Benchmark](benchmark/README.md)

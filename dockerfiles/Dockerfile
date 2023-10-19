@@ -46,12 +46,4 @@ RUN git clone https://github.com/oneapi-src/oneCCL.git /tmp/oneCCL \
     
 RUN echo "source /usr/local/oneCCL/env/setvars.sh" >> ~/.bashrc
 
-WORKDIR /usr/local/
-
-RUN wget https://github.com/oneapi-src/oneDNN/releases/download/v0.21/mklml_lnx_2019.0.5.20190502.tgz \
-    && tar -xzf mklml_lnx_2019.0.5.20190502.tgz \
-    && rm -f mklml_lnx_2019.0.5.20190502.tgz
-
-RUN echo 'export LD_LIBRARY_PATH=/usr/local/mklml_lnx_2019.0.5.20190502/lib:$LD_LIBRARY_PATH' >> /root/.bashrc
-
 WORKDIR /root/
