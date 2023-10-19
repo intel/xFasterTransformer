@@ -271,12 +271,12 @@ int main(int argc, char **argv) {
         model.config(maxLen, numBeams);
         model.input(input, batchSize);
 
-        std::vector<int> fisrtIds;
+        std::vector<int> firstIds;
         std::vector<int> seconedIds;
 
-        {
+        if (!model.isDone()) {
             Timer t(isMaster, "[INFO] Fisrt token");
-            fisrtIds = model.generate();
+            firstIds = model.generate();
         }
 
         if (!model.isDone()) {
@@ -285,8 +285,10 @@ int main(int argc, char **argv) {
         }
 
         if (isMaster && streamingOutput) {
-            tokenizer->printResult(fisrtIds, batchSize, numBeams);
-            tokenizer->printResult(seconedIds, batchSize, numBeams);
+            if (!firstIds.empty()) {
+                tokenizer->printResult(firstIds, batchSize, numBeams);
+                if (!seconedIds.empty()) { tokenizer->printResult(seconedIds, batchSize, numBeams); }
+            }
         }
 
         while (!model.isDone()) {
