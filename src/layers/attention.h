@@ -177,6 +177,18 @@ public:
         auto &resultBuffer1 = imBuffer;
         auto &resultBuffer2 = ctx->tmpBuf;
 
+        // init group_qkvBuffer
+        int attHeadSize = ctx->attHeadSize;
+        int qkvRows = ctx->batchSize * inputSeqLen;
+        // group attention
+        int qCols = (this->endQHead - this->startQHead) * attHeadSize;
+        int kvCols = (this->endKVHead - this->startKVHead) * attHeadSize;
+        int qkCols = qCols + kvCols;
+        int qkvCols = qkCols + kvCols;
+
+        int qkvStride = qkvCols;
+        hpj::Matrix<float> qkvGroupMatMul(qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
+
 #ifdef DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");
@@ -197,13 +209,13 @@ public:
 
         // Query, Key, Value computed together
         TimeLine t2("QKV.linear");
-        DecoderUtil::dense(resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvBias, qkvMatMul);
+        DecoderUtil::dense(resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvBias, qkvGroupMatMul);
         t2.release();
 
         int cols = hiddenSize / ctx->numSplit;
-        hpj::Matrix<float> query(qkvMatMul, 0, inputBuffer.Rows(), 0, cols);
-        hpj::Matrix<float> key(qkvMatMul, 0, inputBuffer.Rows(), cols, cols);
-        hpj::Matrix<float> value(qkvMatMul, 0, inputBuffer.Rows(), cols * 2, cols);
+        hpj::Matrix<float> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
+        hpj::Matrix<float> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, qkCols);
+        hpj::Matrix<float> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, qkvCols);
 
 #ifdef DEBUG
         dbg.debugPrint("Q:\n");
@@ -249,7 +261,7 @@ public:
             inputBuffer.Assign(presult, rows, cols, stride);
         }
         if (ctx->inputSeqLen > 256 && pastSeqLen == 0)
-            flashAttention(ctx, qkvMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
+            flashAttention(ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         else
             fusedAttention(ctx, query, key, value, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         t4.release();
