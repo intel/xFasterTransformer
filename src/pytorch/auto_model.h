@@ -98,9 +98,7 @@ public:
     }
 
     ~TorchAutoModel() {
-        if (model != nullptr) {
-            delete model;
-        }
+        if (model != nullptr) { delete model; }
     }
 
 private:

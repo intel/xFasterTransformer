@@ -64,12 +64,10 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
     }
     Messenger &messenger = decoder->getMessenger();
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
-    
-    // Slaves get exit flags and exit directly 
-    if (decoder->getRank() > 0 && 
-      configuration.maxLen == 0 &&
-      configuration.numBeams == 0 && 
-      configuration.doEarlyStopping) {
+
+    // Slaves get exit flags and exit directly
+    if (decoder->getRank() > 0 && configuration.maxLen == 0 && configuration.numBeams == 0
+            && configuration.doEarlyStopping) {
         exit(0);
     }
 

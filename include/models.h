@@ -35,7 +35,7 @@ public:
     void setDecoder(AbstractDecoder *dec);
 
     std::vector<int32_t> finalize() { return searcher->finalize(); }
-    
+
     void exitSlaves();
 
 private:
