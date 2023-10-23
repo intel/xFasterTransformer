@@ -3,7 +3,7 @@
 #include <vector>
 #include "attn_chatglm2.h"
 #include "common_decoder.h"
-#include "layers.h"
+#include "layers_norm.h"
 #include "mlp_chatglm2.h"
 #include "rotary_embedding_chatglm2.h"
 #include "token_embedding.h"

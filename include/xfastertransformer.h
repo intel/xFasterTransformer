@@ -1,5 +1,5 @@
 #pragma once
 
 #include "dtype.h"
-#include "layers.h"
+#include "layers_norm.h"
 #include "models.h"

@@ -4,7 +4,7 @@
 #include <immintrin.h>
 
 #include "layernorm_kernels.h"
-#include "layers.h"
+#include "layers_norm.h"
 #include "timeline.h"
 
 namespace xft {

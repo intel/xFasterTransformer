@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "layers.h"
+#include "layers_norm.h"
 #include "rmsnorm_kernels.h"
 #include "timeline.h"
 
