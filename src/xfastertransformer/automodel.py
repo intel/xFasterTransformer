@@ -19,7 +19,7 @@ class AutoModel:
 
     def finalize(self):
         return self.model.finalize()
-    
+
     def is_done(self):
         return self.model.is_done()
 
