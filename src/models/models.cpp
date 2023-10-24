@@ -60,9 +60,7 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
 
     // Slaves get exit flags and exit directly
-    if (decoder->getRank() > 0 && configuration.numBeams == 0) {
-        exit(0);
-    }
+    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
     createSearcher(configuration);
 }
