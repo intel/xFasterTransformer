@@ -16,8 +16,9 @@
 
 #include <immintrin.h>
 
-#include "my_types.h"
+#include "bfloat16.h"
 #include "float16.h"
+#include "my_types.h"
 
 namespace xft {
 
@@ -28,14 +29,9 @@ struct LayerNormWeight {
 };
 
 template <typename T>
-inline void invokeLayerNorm(T *output, const T *input,
-                            const T *gamma, const T *beta,
-                            const int rows, const int size,
-                            int iStride = -1, int oStride = -1,
-                            const float epsilon = 1e-5) {
-    if constexpr (std::is_same_v<T, float16_t> ||
-                  std::is_same_v<T, bfloat16_t> ||
-                  std::is_same_v<T, int8_t>) {
+void invokeLayerNorm(T *output, const T *input, const T *gamma, const T *beta, const int rows, const int size,
+        int iStride = -1, int oStride = -1, const float epsilon = 1e-5) {
+    if constexpr (std::is_same_v<T, float16_t> || std::is_same_v<T, bfloat16_t> || std::is_same_v<T, int8_t>) {
         printf("Type %s not supported!\n", typeid(T).name());
         exit(-1);
     } else {
@@ -45,11 +41,8 @@ inline void invokeLayerNorm(T *output, const T *input,
 }
 
 template <>
-inline void invokeLayerNorm(float *output, const float *input,
-                            const float *gamma, const float *beta,
-                            const int rows, const int size,
-                            int iStride, int oStride,
-                            const float epsilon) {
+void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, const int rows,
+        const int size, int iStride, int oStride, const float epsilon) {
 
     if (iStride == -1) iStride = size;
     if (oStride == -1) oStride = size;
