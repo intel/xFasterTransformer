@@ -1,5 +1,3 @@
-#pragma once
-
 #include <immintrin.h>
 
 #include "bfloat16.h"
@@ -14,19 +12,6 @@ struct LayerNormWeight {
     const T *beta = nullptr;
 };
 
-template <typename T>
-void invokeLayerNorm(T *output, const T *input, const T *gamma, const T *beta, const int rows, const int size,
-        int iStride = -1, int oStride = -1, const float epsilon = 1e-5) {
-    if constexpr (std::is_same_v<T, float16_t> || std::is_same_v<T, bfloat16_t> || std::is_same_v<T, int8_t>) {
-        printf("Type %s not supported!\n", typeid(T).name());
-        exit(-1);
-    } else {
-        printf("Type %s not supported!\n", typeid(T).name());
-        exit(-1);
-    }
-}
-
-template <>
 void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, const int rows,
         const int size, int iStride, int oStride, const float epsilon) {
 

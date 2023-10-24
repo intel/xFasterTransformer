@@ -5,7 +5,6 @@
 #include <cstring>
 
 #include "layers_norm.h"
-#include "rmsnorm_kernels.h"
 #include "timeline.h"
 
 namespace xft {
