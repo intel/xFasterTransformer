@@ -29,7 +29,7 @@ def get_weight_data_type(data_type):
         assert False, f"Invalid weight data type {data_type}"
 
 
-def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dtype):
+def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dtype, num_attention_heads, num_key_value_heads):
     def save_val(val, key, tp_num=None):
         if key.startswith("model."):
             path = saved_dir + "/" + key
@@ -62,14 +62,21 @@ def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dt
             save_val(split_vals[j], key, i * factor + j)
 
     elif "attention.query_key_value.weight" in key:
-        hidden_dim = val.shape[0]
-        local_dim = (int)(val.shape[-1] / 3)
-
-        val = val.reshape(hidden_dim, 3, local_dim)
-
-        split_vals = np.split(val, factor, axis=-1)
+        qkvcols = val.shape[-1]
+        head_size = int(qkvcols / (int(num_attention_heads) + int(num_key_value_heads) * 2))
+        qcol = int(num_attention_heads) * head_size
+        kcol = int(num_key_value_heads) * head_size
+        vcol = int(num_key_value_heads) * head_size
+        qkv = np.split(val, [qcol, (qcol + kcol)], axis=-1)
+        q = qkv[0]
+        k = qkv[1]
+        v = qkv[2]
+        q_split_vals = np.split(q, factor, axis=-1)
+        k_split_vals = np.split(k, factor, axis=-1)
+        v_split_vals = np.split(v, factor, axis=-1)
         for j in range(factor):
-            save_val(split_vals[j], key, i * factor + j)
+            val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
+            save_val(val, key, i * factor + j)
 
     elif "attention.dense.weight" in key:
         split_vals = np.split(val, factor, axis=0)
@@ -106,7 +113,9 @@ def split_and_convert(args):
     has_post_decoder_layernorm = True
     try:
         config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
-        config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
+        num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
+        num_key_value_heads = config["llama"]["kv_head_num"] = str(hf_config.get("num_key_value_heads", num_attention_heads))
+
         hidden_size = hf_config["hidden_size"]
         config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
         config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
@@ -198,6 +207,8 @@ def split_and_convert(args):
                             param.detach().cpu().numpy().astype(np_weight_data_type),
                             name,
                             np_weight_data_type,
+                            num_attention_heads,
+                            num_key_value_heads
                         )
                     )
             pool.starmap_async(split_and_convert_process, starmap_args)
