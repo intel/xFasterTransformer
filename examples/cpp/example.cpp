@@ -233,7 +233,6 @@ int main(int argc, char **argv) {
     std::string modeltype = getModelType(modelPath);
 
     auto *tokenizer = getTokenizer(modeltype, tokenPath);
-    // std::string inputPrompt("Once upon a time, there existed a little girl who liked to have adventures.");
     std::string inputPrompt = args.get<std::string>("input");
     std::vector<int> input = tokenizer->encode(inputPrompt);
 
@@ -271,8 +270,8 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] topP is " << topP << std::endl;
         std::cout << "[INFO] batch_size is " << batchSize << std::endl;
         std::cout << "[INFO] loop is " << loop << std::endl;
-        std::cout << "[INFO] Input prompt is :" << inputPrompt << std::endl;
-        std::cout << "[INFO] Input Token Ids is :";
+        std::cout << "[INFO] Input prompt is : " << inputPrompt << std::endl;
+        std::cout << "[INFO] Input Token Ids is : ";
         for (auto x : input) {
             std::cout << x << " ";
         }
@@ -280,7 +279,6 @@ int main(int argc, char **argv) {
     }
 
     for (int i = 0; i < loop; ++i) {
-        // model.config(maxLen, numBeams);
         model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
@@ -291,7 +289,7 @@ int main(int argc, char **argv) {
         std::vector<int> seconedIds;
 
         if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] Fisrt token");
+            Timer t(isMaster, "[INFO] First token");
             firstIds = model.generate();
         }
 
@@ -314,7 +312,7 @@ int main(int argc, char **argv) {
         auto result = model.finalize();
 
         if (isMaster) {
-            std::cout << "\n[INFO] Finalzie output is:" << std::endl;
+            std::cout << "\n[INFO] Finalzie output is: " << std::endl;
             std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
             for (auto str : sent) {
                 std::cout << "==============================================" << std::endl;
