@@ -1,0 +1,35 @@
+name: XFT PR Validation
+
+on:
+  push:
+      branches:
+      - "ci/**"
+
+  pull_request:
+   types: [opened, reopened, synchronize]
+   branches: [ main ]
+   paths-ignore:
+     - .github/workflows
+     - dockerfiles/
+     - 3rdparty/
+
+jobs:
+  build_and_simple_test:
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build
+        shell: bash
+        run: |
+            bash ci_build build
+
+      - name: UT
+        shell: bash
+        run: |
+            bash ci_build ut
+
+      - name: simple model test
+        shell: bash
+        run: |
+            bash ci_build model
