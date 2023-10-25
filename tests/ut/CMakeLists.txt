@@ -51,6 +51,8 @@ foreach(src ${sources})
                        ${SRC_DIR}/utils/shm_reduction.cpp
                        ${SRC_DIR}/kernels/gemm_kernel_ext.cpp
                        ${SRC_DIR}/kernels/gemm_kernel_ext_fp16.cpp)
+    elseif(${executable} STREQUAL "alibi_embedding_test")
+        add_executable(alibi_embedding_test ${src} ${SRC_DIR}/layers/alibi_embedding.cpp)
     elseif(${executable} STREQUAL "rotary_embedding_test")
         add_executable(rotary_embedding_test ${src} ${SRC_DIR}/layers/rotary_embedding.cpp)
     elseif(${executable} STREQUAL "gemm_kernel_ext_test")
