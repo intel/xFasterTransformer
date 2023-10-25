@@ -17,7 +17,6 @@
 #include <cstring>
 #include <immintrin.h>
 
-#include "layernorm_kernels.h"
 #include "layers_norm.h"
 #include "timeline.h"
 

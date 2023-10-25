@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#pragma once
-
 #include <immintrin.h>
 
 #include "bfloat16.h"
@@ -22,19 +20,6 @@
 
 namespace xft {
 
-template <typename T>
-void invokeRmsNorm(T *output, const T *input, const T *weight, int rows, int cols, int iStride = -1, int oStride = -1,
-        const float epsilon = 1e-6) {
-    if constexpr (std::is_same_v<T, float16_t> || std::is_same_v<T, bfloat16_t> || std::is_same_v<T, int8_t>) {
-        printf("Type %s not supported!\n", typeid(T).name());
-        exit(-1);
-    } else {
-        printf("Type %s not supported!\n", typeid(T).name());
-        exit(-1);
-    }
-}
-
-template <>
 void invokeRmsNorm(float *output, const float *input, const float *weight, int rows, int cols, int iStride, int oStride,
         float epsilon) {
     int size = cols;
