@@ -55,7 +55,8 @@ public:
     void config(torch::optional<int64_t> maxLength, torch::optional<int64_t> numBeamsOpt,
             torch::optional<int64_t> numReturnSequencesOpt, torch::optional<double> lenPenaltyOpt,
             torch::optional<bool> earlyStoppingOpt, torch::optional<int64_t> eosTokenIdOpt,
-            torch::optional<int64_t> padTokenIdOpt) {
+            torch::optional<int64_t> padTokenIdOpt, torch::optional<bool> doSampleOpt,
+            torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt, torch::optional<double> topPOpt) {
         TORCH_CHECK(maxLength.has_value(), "Make sure master's maxLen is not None.")
         int maxLen = static_cast<int>(maxLength.value());
         int numBeams = numBeamsOpt.has_value() ? (int)numBeamsOpt.value() : 1;
@@ -64,8 +65,13 @@ public:
         bool doEarlyStopping = earlyStoppingOpt.has_value() ? (bool)earlyStoppingOpt.value() : false;
         int eosTokenId = eosTokenIdOpt.has_value() ? static_cast<int>(eosTokenIdOpt.value()) : -1;
         int padTokenId = padTokenIdOpt.has_value() ? static_cast<int>(padTokenIdOpt.value()) : -1;
+        bool doSample = doSampleOpt.has_value() ? (bool)doSampleOpt.value() : false;
+        float temperature = temperaturOpt.has_value() ? static_cast<float>(temperaturOpt.value()) : 1.0;
+        int topK = topKOpt.has_value() ? (int)topKOpt.value() : 50;
+        float topP = topPOpt.has_value() ? static_cast<float>(topPOpt.value()) : 1.0;
 
-        model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId);
+        model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId,
+                doSample, temperature, topK, topP);
     }
 
     torch::Tensor generate() {

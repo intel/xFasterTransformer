@@ -36,7 +36,7 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
-        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, float topK_, float topP_) {
+        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_) {
     isNewInput = true;
     if (decoder->getRank() == 0) {
         configuration.maxLen = maxLen_;

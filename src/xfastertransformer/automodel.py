@@ -32,9 +32,23 @@ class AutoModel:
         early_stopping=False,
         eos_token_id=-1,
         pad_token_id=-1,
+        do_sample=False,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
     ):
         self.model.config(
-            max_length, num_beams, num_return_sequences, length_penalty, early_stopping, eos_token_id, pad_token_id
+            max_length,
+            num_beams,
+            num_return_sequences,
+            length_penalty,
+            early_stopping,
+            eos_token_id,
+            pad_token_id,
+            do_sample,
+            temperature,
+            top_k,
+            top_p,
         )
 
     def input(self, input_ids=None):
@@ -54,6 +68,10 @@ class AutoModel:
         early_stopping=False,
         eos_token_id=-1,
         pad_token_id=-1,
+        do_sample=False,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
         streamer=None,
     ):
         #  streamer: Optional["BaseStreamer"] = None):
@@ -68,7 +86,17 @@ class AutoModel:
                 streamer.put(input_ids.cpu())
 
         self.config(
-            max_length, num_beams, num_return_sequences, length_penalty, early_stopping, eos_token_id, pad_token_id
+            max_length,
+            num_beams,
+            num_return_sequences,
+            length_penalty,
+            early_stopping,
+            eos_token_id,
+            pad_token_id,
+            do_sample,
+            temperature,
+            top_k,
+            top_p,
         )
         self.input(input_ids)
 
