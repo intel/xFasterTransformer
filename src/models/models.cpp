@@ -36,7 +36,7 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
-        int eosTokenId_, int padTokenId_) {
+        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, float topK_, float topP_) {
     isNewInput = true;
     if (decoder->getRank() == 0) {
         configuration.maxLen = maxLen_;
@@ -46,6 +46,10 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
         configuration.doEarlyStopping = doEarlyStopping_;
         configuration.eosTokenId = eosTokenId_;
         configuration.padTokenId = padTokenId_;
+        configuration.doSample = doSample_;
+        configuration.temperature = temperature_;
+        configuration.topK = topK_;
+        configuration.topP = topP_;
     }
     Messenger &messenger = decoder->getMessenger();
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
@@ -81,9 +85,16 @@ std::vector<int32_t> Model::generate() {
 
 void Model::createSearcher(SearcherConfig &config_) {
     if (searcher != nullptr) { delete searcher; }
-    if (config_.numBeams == 1) {
-        searcher = new GreedySearch(*decoder, config_);
-    } else if (config_.numBeams > 1) {
+    if (config_.numBeams < 1) {
+        printf("numBeams should greater than or equal to 1.\n");
+        exit(-1);
+    } else if (config_.numBeams == 1) {
+        if (config_.doSample) {
+            searcher = new SampleSearch(*decoder, config_);
+        } else {
+            searcher = new GreedySearch(*decoder, config_);
+        }
+    } else {
         searcher = new BeamSearch(*decoder, config_);
     }
 }
