@@ -14,6 +14,7 @@
 # ============================================================================
 import os
 from typing import Tuple, List
+
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -42,15 +43,20 @@ parser.add_argument("--streaming", help="Streaming output, Default to True.", ty
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
 parser.add_argument("--output_len", help="max tokens can generate excluded input.", type=int, default=100)
 parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+parser.add_argument("--do_sample", help="Enable sampling search, Default to False.", type=boolean_string, default=False)
+parser.add_argument("--temperature", help="value used to modulate next token probabilities.", type=float, default=1.0)
+parser.add_argument("--top_p", help="retain minimal tokens above topP threshold.", type=float, default=1.0)
+parser.add_argument("--top_k", help="num of highest probability tokens to keep for generation", type=int, default=50)
+
 
 def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
     prompt = ""
     for i, (old_query, response) in enumerate(history):
         prompt += "[Round {}]\n\n问：{}\n\n答：{}\n\n".format(i + 1, old_query, response)
     prompt += "[Round {}]\n\n问：{}\n\n答：".format(len(history) + 1, query)
-    # print('### prompt={}'.format(prompt))
     inputs = tokenizer(prompt, return_tensors="pt", padding=padding).input_ids
     return inputs
+
 
 import importlib.util
 
@@ -87,15 +93,22 @@ if __name__ == "__main__":
             if input_prompt == "":
                 input_prompt = DEFAULT_PROMPT
                 print("[Use default prompt]:" + input_prompt)
-            if args.chat and "chatglm" in args.model_path.lower() :
+            if args.chat and "chatglm" in args.model_path.lower():
                 input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
-            else :
+            else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
 
             start_time = time.perf_counter()
             generated_ids = model.generate(
-                input_ids, max_length=input_ids.shape[-1] + args.output_len, streamer=streamer, num_beams=args.num_beams
+                input_ids,
+                max_length=input_ids.shape[-1] + args.output_len,
+                streamer=streamer,
+                num_beams=args.num_beams,
+                do_sample=args.do_sample,
+                temperature=args.temperature,
+                top_k=args.top_k,
+                top_p=args.top_p,
             )
             end_time = time.perf_counter()
 

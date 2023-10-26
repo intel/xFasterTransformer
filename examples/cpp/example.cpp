@@ -211,13 +211,18 @@ int main(int argc, char **argv) {
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
     args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 32));
     args.add<int>("loop", '\0', "number of loop.", false, 10);
+    args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
+    args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
+    args.add<float>("topP", '\0', "retain minimal tokens above topP threshold.", false, 1.0);
     args.add("no_stream", '\0', "disable streaming output");
+    args.add("do_sample", '\0', "use sampling");
     args.parse_check(argc, argv);
 
     std::string modelPath = args.get<std::string>("model");
     std::string tokenPath = args.get<std::string>("token");
 
     bool streamingOutput = !args.exist("no_stream");
+    bool doSample = args.exist("do_sample");
 
     std::string dtype_name = args.get<std::string>("dtype");
     xft::DataType dtype = xft::DataType::fp16;
@@ -235,11 +240,13 @@ int main(int argc, char **argv) {
     int numBeams = args.get<int>("num_beams");
     int batchSize = args.get<int>("batch_size");
     int loop = args.get<int>("loop");
+    int topK = args.get<int>("topK");
+    float temperature = args.get<float>("temperature");
+    float topP = args.get<float>("topP");
 
     std::string modeltype = getModelType(modelPath);
 
     auto *tokenizer = getTokenizer(modeltype, tokenPath);
-    // std::string inputPrompt("Once upon a time, there existed a little girl who liked to have adventures.");
     std::string inputPrompt = args.get<std::string>("input");
     std::vector<int> input = tokenizer->encode(inputPrompt);
 
@@ -271,10 +278,14 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] inputSize is " << inputSize << std::endl;
         std::cout << "[INFO] outputLen is " << outputLen << std::endl;
         std::cout << "[INFO] num_beams is " << numBeams << std::endl;
+        std::cout << "[INFO] do_samlpe is " << std::boolalpha << doSample << std::endl;
+        std::cout << "[INFO] temperature is " << temperature << std::endl;
+        std::cout << "[INFO] topK is " << topK << std::endl;
+        std::cout << "[INFO] topP is " << topP << std::endl;
         std::cout << "[INFO] batch_size is " << batchSize << std::endl;
         std::cout << "[INFO] loop is " << loop << std::endl;
-        std::cout << "[INFO] Input prompt is :" << inputPrompt << std::endl;
-        std::cout << "[INFO] Input Token Ids is :";
+        std::cout << "[INFO] Input prompt is : " << inputPrompt << std::endl;
+        std::cout << "[INFO] Input Token Ids is : ";
         for (auto x : input) {
             std::cout << x << " ";
         }
@@ -282,14 +293,17 @@ int main(int argc, char **argv) {
     }
 
     for (int i = 0; i < loop; ++i) {
-        model.config(maxLen, numBeams);
+        model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
+                /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
+                /*doSample*/ doSample, /*temperature*/ temperature,
+                /*topK*/ topK, /*topP*/ topP);
         model.input(input, batchSize);
 
         std::vector<int> firstIds;
         std::vector<int> seconedIds;
 
         if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] Fisrt token");
+            Timer t(isMaster, "[INFO] First token");
             firstIds = model.generate();
         }
 
@@ -312,7 +326,7 @@ int main(int argc, char **argv) {
         auto result = model.finalize();
 
         if (isMaster) {
-            std::cout << "\n[INFO] Finalzie output is:" << std::endl;
+            std::cout << "\n[INFO] Finalzie output is: " << std::endl;
             std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
             for (auto str : sent) {
                 std::cout << "==============================================" << std::endl;
