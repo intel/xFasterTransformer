@@ -65,11 +65,10 @@ private:
 
         if (same_hostnames && !std::getenv("XFT_ONECCL")) {
             local_ranks_flag = true;
+            pshm = new ShmReduction(rank, size, [this](int *pid_fd, size_t count) { this->broadcast(pid_fd, count); });
         } else {
             local_ranks_flag = false;
         }
-
-        pshm = new ShmReduction(rank, size, [this](int *pid_fd, size_t count) { this->broadcast(pid_fd, count); });
 #endif
     }
 
