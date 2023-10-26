@@ -28,8 +28,17 @@
 
 namespace xft {
 Model::~Model() {
+    exitSlaves();
     if (decoder != nullptr) { delete decoder; }
     if (searcher != nullptr) { delete searcher; }
+}
+
+void Model::exitSlaves() {
+    if (decoder->getRank() == 0) {
+        configuration.numBeams = 0;
+        Messenger &messenger = decoder->getMessenger();
+        messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+    }
 }
 
 void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
@@ -63,6 +72,9 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
     }
     Messenger &messenger = decoder->getMessenger();
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+
+    // Slaves get exit flags and exit directly
+    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
     createSearcher(configuration);
 }

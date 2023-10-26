@@ -50,6 +50,8 @@ public:
 
     std::vector<int32_t> finalize() { return searcher->finalize(); }
 
+    void exitSlaves();
+
 private:
     AbstractDecoder *decoder;
     AbstractSearcher *searcher;

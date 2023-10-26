@@ -111,6 +111,10 @@ public:
         return ret;
     }
 
+    ~TorchAutoModel() {
+        if (model != nullptr) { delete model; }
+    }
+
 private:
     xft::Model *model;
     std::vector<int> tokenIds;
