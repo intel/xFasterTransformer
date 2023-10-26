@@ -119,6 +119,7 @@ docker run -it \
   # Build xFasterTransformer
   git clone https://github.com/intel/xFasterTransformer.git xFasterTransformer
   cd xFasterTransformer
+  git checkout <latest-tag>
   # Please make sure torch is installed when run python example
   mkdir build && cd build
   cmake ..
