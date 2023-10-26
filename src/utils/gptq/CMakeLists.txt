@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.15.1)
+
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} UTILS_GPTQ_SRCS)
+
+add_library(utils_gptq OBJECT ${UTILS_GPTQ_SRCS})
+
+add_dependencies(utils_gptq ${DEPEND_LIST})
