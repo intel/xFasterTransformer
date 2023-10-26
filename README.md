@@ -29,6 +29,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
         - [C++](#c)
   - [Web Demo](#web-demo)
   - [Benchmark](#benchmark)
+  - [Support](#support)
 
 ## Models overview
 Large Language Models (LLMs) develops very fast and are more widely used in many AI scenarios. xFasterTransformer is an optimized solution for LLM inference using the mainstream and popular LLM models on Xeon. xFasterTransformer fully leverages the hardware capabilities of Xeon platforms to achieve the high performance and high scalability of LLM inference both on single socket and multiple sockets/multiple nodes.
@@ -48,7 +49,7 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |   Opt    | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
 
 ## Documents
-xFasterTransformer Documents provides the following resources:
+xFasterTransformer Documents and [Wiki](https://github.com/intel/xFasterTransformer/wiki) provides the following resources:
 - An introduction to xFasterTransformer.
 - Comprehensive API references for both high-level and low-level interfaces in C++ and PyTorch.
 - Practical API usage examples for xFasterTransformer in both C++ and PyTorch.
@@ -118,6 +119,7 @@ docker run -it \
   # Build xFasterTransformer
   git clone https://github.com/intel/xFasterTransformer.git xFasterTransformer
   cd xFasterTransformer
+  git checkout <latest-tag>
   # Please make sure torch is installed when run python example
   mkdir build && cd build
   cmake ..
@@ -274,3 +276,8 @@ Benchmark scripts are provided to  get the model inference performance quickly.
   - If you want the custom input, please modify the `prompt_pool.json` file.
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
+
+## Support
+
+- xFasterTransformer email: xft.maintainer@intel.com
+- xFasterTransformer [wechat](https://github.com/intel/xFasterTransformer/wiki)
