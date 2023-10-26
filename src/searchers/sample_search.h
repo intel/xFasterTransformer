@@ -53,5 +53,5 @@ private:
     int padTokenId;
     int topK;
     float topP;
-    float temperature;
+    float temperatureInv;
 };

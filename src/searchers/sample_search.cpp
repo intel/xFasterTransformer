@@ -15,14 +15,15 @@
 #include "sample_search.h"
 
 SampleSearch::SampleSearch(AbstractDecoder &dec, const SearcherConfig &config)
-    : decoder(dec), maxLen(config.maxLen), temperature(config.temperature), topK(config.topK), topP(config.topP) {
+    : decoder(dec), maxLen(config.maxLen), topK(config.topK), topP(config.topP) {
     vocabSize = decoder.getContext()->vocabSize;
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
-    if (temperature <= 0) {
+    if (config.temperature <= 0) {
         printf("Temperature should greater than 0.\n");
         exit(-1);
     }
+    temperatureInv = 1 / config.temperature;
     if (topK < 2) { topK = 2; }
 }
 
@@ -156,7 +157,7 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
     if (temperature != 1.0) {
         TimeLine t("Sample.temperature");
         for (int i = 0; i < batchSize * topK; i++) {
-            topKVals[i] /= temperature;
+            topKVals[i] *= temperatureInv;
         }
     }
     // 3. Get topP candidates, at least 2.
@@ -171,8 +172,9 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
                 probs[i] = exp(topKVals[batchIdx * topK + i]);
                 probs_sum += probs[i];
             }
+            float probs_sum_inv = 1 / probs_sum;
             for (int i = 0; i < topK; i++) {
-                cursum += probs[i] / probs_sum;
+                cursum += probs[i] * probs_sum_inv;
                 if (cursum > topP) {
                     topPNums[batchIdx] = i > 2 ? i : 2;
                     break;
@@ -197,8 +199,9 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
             probs_sum += probs[i];
         }
 
+        float probs_sum_inv = 1 / probs_sum;
         for (int i = 0; i < topPNums[batchIdx]; i++) {
-            cursum += probs[i] / probs_sum;
+            cursum += probs[i] * probs_sum_inv;
             if (cursum >= randomValue) {
                 nextTokens[batchIdx] = topKIds[batchIdx * topK + i];
                 break;
