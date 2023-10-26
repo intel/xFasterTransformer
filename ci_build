@@ -21,15 +21,18 @@ ut() {
 
 model() {
     numactl -H
+    core_count=$(lscpu | grep "Core(s) per socket" | awk '{print $NF}')
+
     echo "Running model function with arguments: $@"
     # DATASETS_LIST=( 'Llama-2-7b' 'chatglm-6b' 'chatglm2-6b' 'llama-13b' 'llama-7b' 'opt-1.3b' 'opt-13b' 'opt-30b' )
     DATASETS_LIST=( 'llama-2-7b-chat' 'llama-2-13b-chat' 'chatglm2-6b' 'llama-13b' 'llama-7b' )
     DATATYPE_LIST=( 'fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8' )
     for DATASET in ${DATASETS_LIST[@]}; do
     for DATATYPE in ${DATATYPE_LIST[@]}; do
-        # This may result in failure to run on non-HBM device.
-        # using $ numactl -N 0 -l to instead of -m option.
-        OMP_NUM_THREADS=48 numactl -N 0 -m 2 build/example --model=/data/${DATASET}-cpu/ --token=/data/${DATASET}-hf/tokenizer.model --dtype=${DATATYPE} --loop=3 --input_len=16 --output_len=32 --no_stream
+        # always run one socket
+        OMP_NUM_THREADS=$core_count numactl -N 0 -m 0 \
+            build/example --model=/data/${DATASET}-cpu/ --token=/data/${DATASET}-hf/tokenizer.model \
+            --dtype=${DATATYPE} --loop=3 --input_len=18 --output_len=32 --no_stream
     done
     done
 }
