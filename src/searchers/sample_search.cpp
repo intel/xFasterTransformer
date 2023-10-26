@@ -154,7 +154,7 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
     }
 
     // 2. Divided by temperature.
-    if (temperature != 1.0) {
+    if (temperatureInv != 1.0) {
         TimeLine t("Sample.temperature");
         for (int i = 0; i < batchSize * topK; i++) {
             topKVals[i] *= temperatureInv;
