@@ -356,8 +356,8 @@ public:
             ig_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
-                ig_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
+                onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute");
                 ig_bgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
@@ -414,8 +414,8 @@ public:
             ig_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
-                ig_amx_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd");
+                onednn_amx_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd");
                 ig_bgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
@@ -474,8 +474,8 @@ public:
             ig_sgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
-                ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+                onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd_relu");
@@ -534,8 +534,8 @@ public:
             ig_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
-                ig_amx_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
+                onednn_amx_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_silu");
                 ig_bgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
@@ -592,8 +592,8 @@ public:
             ig_sgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
-                ig_amx_sgemm_f32bf16f32_compute_resmul(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_resmul");
+                onednn_amx_sgemm_f32bf16f32_compute_resmul(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_resmul");
@@ -656,8 +656,8 @@ public:
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
-                ig_amx_sgemm_f32bf16f32_compute_residential(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+                onednn_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_residential");
@@ -721,14 +721,14 @@ public:
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                 for (int i = 0; i < M; ++i) {
                     for (int j = 0; j < N; ++j) {
                         res[i * ldres + j] = res[i * ldres + j] * gamma;
                     }
                 }
-                ig_amx_sgemm_f32bf16f32_compute_residential(
+                onednn_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
                 TimeLine t("ig_bgemm_f32bf16f32_compute_resext");
@@ -791,10 +791,10 @@ private:
         return key;
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+    static void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -840,7 +840,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -851,10 +851,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -904,7 +904,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -915,10 +915,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
+    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -977,7 +977,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -988,10 +988,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1045,7 +1045,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -1057,10 +1057,10 @@ private:
     }
 
     // TODO: may be error
-    static void ig_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *res, int ldres) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_resmul");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1129,7 +1129,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -1140,11 +1140,11 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
+    static void onednn_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias,
             const float *res, int ldres) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1216,7 +1216,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
