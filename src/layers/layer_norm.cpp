@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#pragma once
-#include <cstdlib>
-#include <cstring>
 #include <immintrin.h>
 
+#include <cstdlib>
+#include <cstring>
+
+#include "layernorm_kernels.h"
 #include "layers_norm.h"
 #include "timeline.h"
 
@@ -45,7 +46,7 @@ void LayerNorm::forward(const float *input, float *output, int rows, int iStride
     TimeLine t("LayerNorm.forward");
     const float *pgamma = weights;
     const float *pbeta = weights + normSize;
-    xft::invokeLayerNorm(output, input, pgamma, pbeta, rows, normSize, iStride, oStride);
+    invokeLayerNorm(output, input, pgamma, pbeta, rows, normSize, iStride, oStride);
 }
 
 } // namespace xft
