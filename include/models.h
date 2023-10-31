@@ -1,3 +1,17 @@
+// Copyright (c) 2023 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ============================================================================
 #pragma once
 
 #include <iostream>
@@ -16,7 +30,8 @@ public:
     void input(std::vector<int32_t> &inputIds_, int batchSize_);
 
     void config(int maxLen_ = -1, int numBeams_ = 1, int numBeamHypsToKeep_ = 1, float lenPenalty_ = 1.0,
-            bool doEarlyStopping_ = false, int eosTokenId_ = -1, int padTokenId_ = -1);
+            bool doEarlyStopping_ = false, int eosTokenId_ = -1, int padTokenId_ = -1, bool doSample_ = false,
+            float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0);
 
     bool isDone();
 
@@ -35,6 +50,8 @@ public:
     void setDecoder(AbstractDecoder *dec);
 
     std::vector<int32_t> finalize() { return searcher->finalize(); }
+
+    void exitSlaves();
 
 private:
     AbstractDecoder *decoder;

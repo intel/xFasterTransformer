@@ -1,3 +1,17 @@
+// Copyright (c) 2023 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ============================================================================
 #include "models.h"
 
 #include <string.h>
@@ -14,8 +28,17 @@
 
 namespace xft {
 Model::~Model() {
+    exitSlaves();
     if (decoder != nullptr) { delete decoder; }
     if (searcher != nullptr) { delete searcher; }
+}
+
+void Model::exitSlaves() {
+    if (decoder->getRank() == 0) {
+        configuration.numBeams = 0;
+        Messenger &messenger = decoder->getMessenger();
+        messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+    }
 }
 
 void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
@@ -36,7 +59,7 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
-        int eosTokenId_, int padTokenId_) {
+        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_) {
     isNewInput = true;
     if (decoder->getRank() == 0) {
         configuration.maxLen = maxLen_;
@@ -46,9 +69,16 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
         configuration.doEarlyStopping = doEarlyStopping_;
         configuration.eosTokenId = eosTokenId_;
         configuration.padTokenId = padTokenId_;
+        configuration.doSample = doSample_;
+        configuration.temperature = temperature_;
+        configuration.topK = topK_;
+        configuration.topP = topP_;
     }
     Messenger &messenger = decoder->getMessenger();
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+
+    // Slaves get exit flags and exit directly
+    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
     createSearcher(configuration);
 }
@@ -81,9 +111,16 @@ std::vector<int32_t> Model::generate() {
 
 void Model::createSearcher(SearcherConfig &config_) {
     if (searcher != nullptr) { delete searcher; }
-    if (config_.numBeams == 1) {
-        searcher = new GreedySearch(*decoder, config_);
-    } else if (config_.numBeams > 1) {
+    if (config_.numBeams < 1) {
+        printf("numBeams should greater than or equal to 1.\n");
+        exit(-1);
+    } else if (config_.numBeams == 1) {
+        if (config_.doSample) {
+            searcher = new SampleSearch(*decoder, config_);
+        } else {
+            searcher = new GreedySearch(*decoder, config_);
+        }
+    } else {
         searcher = new BeamSearch(*decoder, config_);
     }
 }

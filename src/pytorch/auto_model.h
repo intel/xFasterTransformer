@@ -1,3 +1,17 @@
+// Copyright (c) 2023 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ============================================================================
 #pragma once
 
 #include <torch/custom_class.h>
@@ -55,7 +69,8 @@ public:
     void config(torch::optional<int64_t> maxLength, torch::optional<int64_t> numBeamsOpt,
             torch::optional<int64_t> numReturnSequencesOpt, torch::optional<double> lenPenaltyOpt,
             torch::optional<bool> earlyStoppingOpt, torch::optional<int64_t> eosTokenIdOpt,
-            torch::optional<int64_t> padTokenIdOpt) {
+            torch::optional<int64_t> padTokenIdOpt, torch::optional<bool> doSampleOpt,
+            torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt, torch::optional<double> topPOpt) {
         TORCH_CHECK(maxLength.has_value(), "Make sure master's maxLen is not None.")
         int maxLen = static_cast<int>(maxLength.value());
         int numBeams = numBeamsOpt.has_value() ? (int)numBeamsOpt.value() : 1;
@@ -64,8 +79,13 @@ public:
         bool doEarlyStopping = earlyStoppingOpt.has_value() ? (bool)earlyStoppingOpt.value() : false;
         int eosTokenId = eosTokenIdOpt.has_value() ? static_cast<int>(eosTokenIdOpt.value()) : -1;
         int padTokenId = padTokenIdOpt.has_value() ? static_cast<int>(padTokenIdOpt.value()) : -1;
+        bool doSample = doSampleOpt.has_value() ? (bool)doSampleOpt.value() : false;
+        float temperature = temperaturOpt.has_value() ? static_cast<float>(temperaturOpt.value()) : 1.0;
+        int topK = topKOpt.has_value() ? (int)topKOpt.value() : 50;
+        float topP = topPOpt.has_value() ? static_cast<float>(topPOpt.value()) : 1.0;
 
-        model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId);
+        model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId,
+                doSample, temperature, topK, topP);
     }
 
     torch::Tensor generate() {
@@ -95,6 +115,10 @@ public:
             p[i] = outputs[i];
         }
         return ret;
+    }
+
+    ~TorchAutoModel() {
+        if (model != nullptr) { delete model; }
     }
 
 private:

@@ -13,13 +13,16 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+
+#include <cmath>
+#include <random>
 #include "abstract_decoder.h"
 #include "abstract_searcher.h"
 #include "timeline.h"
 
-class GreedySearch : public AbstractSearcher {
+class SampleSearch : public AbstractSearcher {
 public:
-    GreedySearch(AbstractDecoder &dec, const SearcherConfig &config);
+    SampleSearch(AbstractDecoder &dec, const SearcherConfig &config);
 
     // Get next tokens accoring to the prompt IDs
     std::vector<int> getNextToken(int *ids, int batchSize, int seqLen);
@@ -32,7 +35,7 @@ public:
     std::vector<int32_t> finalize();
 
 private:
-    std::vector<int> search(std::tuple<float *, int, int> &result);
+    void sample(std::tuple<float *, int, int> &result);
 
     AbstractDecoder &decoder;
 
@@ -45,6 +48,10 @@ private:
     int step;
     int curLen;
     int maxLen;
+    int vocabSize;
     int eosTokenId;
     int padTokenId;
+    int topK;
+    float topP;
+    float temperatureInv;
 };
