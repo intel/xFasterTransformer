@@ -108,6 +108,8 @@ if __name__ == "__main__":
         else :
             input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
         input_token_nums = int(torch.numel(input_ids) / args.batch_size)
+        if args.token_in is not None and int(args.token_in) != input_token_nums :
+            print(f"[WARN] input_token_size ({input_token_nums}) != required_input_size ({args.token_in})")
         print("Input token Length is", input_token_nums)
         print("Batch_size:", args.batch_size)
         max_len = input_token_nums + args.token_out
@@ -152,7 +154,7 @@ if __name__ == "__main__":
         Next_token_throughput = 1000 / latency_90 * args.batch_size
         print("\n")
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
-        print(f"First token Latency:\t{first_token_latency:.2f} ms")
+        print(f"Input token size: {input_token_nums}, First token Latency:\t{first_token_latency:.2f} ms")
         print(f"Next token Latency:\t{latency_90:.2f} ms")
         print(f"Throughput without 1st token:\t{Next_token_throughput:.2f} tokens/s")
     else:
