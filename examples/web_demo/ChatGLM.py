@@ -1,11 +1,25 @@
+# Copyright (c) 2023 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import os
+import re
 
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
-import time
 from demo_utils import ChatDemo
 
 
@@ -18,18 +32,17 @@ parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", hel
 
 
 class ChatGLMDemo(ChatDemo):
-    def post_process_generation(self, next_token_id, token_list, chatbot, query, history):
-        token_list.extend(next_token_id)
-        response = self.tokenizer.decode(token_list, skip_special_tokens=True)
-        response = self.process_response(response)
-        new_history = history + [(query, response)]
-        chatbot[-1] = (self.parse_text(query), self.parse_text(response))
-        return chatbot, new_history
+    # Replace English punctuation with Chinese punctuation in the Chinese sentences.
+    def process_response(self, response):
+        response = response.strip()
+        puncts = {",": "，", "!": "！", ":": "：", ";": "；", "\?": "？"}
+        for eng, chn in puncts.items():
+            response = re.sub(r"([\u4e00-\u9fff])%s" % eng, r"\1%s" % chn, response)
+            response = re.sub(r"%s([\u4e00-\u9fff])" % eng, r"%s\1" % chn, response)
+        return response
 
     # Refer to https://github.com/THUDM/ChatGLM-6B/blob/main/web_demo.py
-    def predict(self, query, chatbot, max_length, history):
-        chatbot.append((self.parse_text(query), ""))
-        self.model.config(max_length)
+    def create_chat_input_token(self, query, history):
         if history is None:
             history = []
         if not history:
@@ -40,28 +53,9 @@ class ChatGLMDemo(ChatDemo):
             for i, (old_query, response) in enumerate(history):
                 prompt += "[Round {}]\n问：{}\n答：{}\n".format(i, old_query, response)
             prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
+
         input_tokens = self.tokenizer([prompt], return_tensors="pt").input_ids
-
-        self.model.input(input_tokens)
-        token_list = []
-        time_cost = []
-
-        while not self.model.is_done():
-            start_time = time.perf_counter()
-            next_token_id = self.model.forward().view(-1).tolist()
-            end_time = time.perf_counter()
-            time_cost.append(end_time - start_time)
-            yield self.post_process_generation(next_token_id, token_list, chatbot, query, history)
-
-        total_cost = sum(time_cost[1:])
-        latency = total_cost * 1000 / len(time_cost[1:])
-        throughput = len(time_cost[1:]) / total_cost
-        response = self.tokenizer.decode(token_list, skip_special_tokens=True)
-        response = self.process_response(response)
-        print(f"Query is : {query.strip()}")
-        print(f"Response is : {response}")
-        print(f"Latency:\t{latency:.2f} ms/token")
-        print(f"Througput:\t{throughput:.2f} tokens/s")
+        return input_tokens
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")

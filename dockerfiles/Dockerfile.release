@@ -1,0 +1,45 @@
+# Copyright (c) 2023 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
+ARG BASE_IMG=intel/xfastertransformer
+ARG VERSION=dev-ubuntu22.04
+
+FROM ${BASE_IMG}:${VERSION}
+
+ARG TAG=main
+
+RUN echo 'export LD_PRELOAD=libiomp5.so:$LD_PRELOAD' >> /root/.bashrc
+
+WORKDIR /root/
+RUN git clone https://github.com/intel/xFasterTransformer.git
+
+RUN cd xFasterTransformer \
+    && git checkout ${TAG} \
+    && sed -i 's/source ${CCL_ROOT}\/env\/vars.sh/. ${CCL_ROOT}\/env\/vars.sh/g' /usr/local/oneCCL/env/setvars.sh \
+    && . /usr/local/oneCCL/env/setvars.sh \
+    && export LD_LIBRARY_PATH=/usr/local/mklml_lnx_2019.0.5.20190502/lib:$LD_LIBRARY_PATH \
+    && python setup.py build \
+    && python setup.py egg_info bdist_wheel --verbose \
+    && pip install dist/*
+
+RUN mkdir -p /usr/local/xft/lib \
+    && cp /root/xFasterTransformer/build/libxfastertransformer.so /usr/local/xft/lib \
+    && cp -r /root/xFasterTransformer/include /usr/local/xft/ \
+    && mkdir -p  /usr/local/include/xft/ \
+    && ln -s /usr/local/xft/include /usr/local/include/xft/include
+
+
+RUN rm -rf /root/xFasterTransformer
+
+RUN echo 'export LD_LIBRARY_PATH=/usr/local/xft/lib:$LD_LIBRARY_PATH' >> /root/.bashrc

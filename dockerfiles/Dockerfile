@@ -1,3 +1,17 @@
+# Copyright (c) 2023 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -11,7 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnuma-dev \
     numactl \
     git \
-    libjsoncpp-dev \
     pkg-config \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 60 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 60
@@ -29,8 +42,8 @@ RUN apt install software-properties-common -y \
     && python -m pip install --upgrade pip \
     && rm get-pip.py
 
-RUN pip install cmake==3.26.1 transformers==4.28.1 sentencepiece==0.1.99 tokenizers==0.13.3
 RUN pip install torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
+RUN pip install cmake==3.26.1 transformers==4.30.0 sentencepiece==0.1.99 tokenizers==0.13.3 accelerate==0.23.0
 
 # Install oneCCL
 RUN git clone https://github.com/oneapi-src/oneCCL.git /tmp/oneCCL \

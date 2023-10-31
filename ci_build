@@ -1,0 +1,51 @@
+#!/bin/bash
+set -e -x
+
+# todo(marvin): move oneccl deps into cmake.
+pushd 3rdparty/
+sh prepare_oneccl.sh
+source ./oneCCL/build/_install/env/setvars.sh
+popd
+
+# Define functions for build, UT, and model
+build() {
+    echo "Running build function with arguments: $@"
+    rm -rf build && mkdir build && cd build && cmake .. && make -j
+}
+
+ut() {
+    echo "Running UT function with arguments: $@"
+    cd tests/ut
+    # rm -rf build && mkdir build && cd build && cmake .. && make -j
+}
+
+model() {
+    numactl -H
+    core_count=$(lscpu | grep "Core(s) per socket" | awk '{print $NF}')
+
+    echo "Running model function with arguments: $@"
+    # DATASETS_LIST=( 'Llama-2-7b' 'chatglm-6b' 'chatglm2-6b' 'llama-13b' 'llama-7b' 'opt-1.3b' 'opt-13b' 'opt-30b' )
+    DATASETS_LIST=( 'llama-2-7b-chat' 'llama-2-13b-chat' 'chatglm2-6b' 'llama-13b' 'llama-7b' )
+    DATATYPE_LIST=( 'fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8' )
+    for DATASET in ${DATASETS_LIST[@]}; do
+    for DATATYPE in ${DATATYPE_LIST[@]}; do
+        # always run one socket
+        OMP_NUM_THREADS=$core_count numactl -N 0 -m 0 \
+            build/example --model=/data/${DATASET}-cpu/ --token=/data/${DATASET}-hf/tokenizer.model \
+            --dtype=${DATATYPE} --loop=3 --input_len=18 --output_len=32 --no_stream
+    done
+    done
+}
+
+# Check if a function with the given name exists and call it with provided arguments
+if [ "$#" -ge 1 ]; then
+    function_name="$1"
+    shift
+    if [ "$(type -t $function_name)" = "function" ]; then
+        $function_name "$@"
+    else
+        echo "Function $function_name not found."
+    fi
+else
+    echo "Usage: ci_build function_name [function_arguments...]"
+fi
