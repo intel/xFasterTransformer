@@ -25,10 +25,10 @@ After the web server started, open the output URL in the browser to use the demo
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
 # `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-SINGLE_INSTANCE=1 LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                                     --dtype=bf16 \
-                                                     --token_path=${TOKEN_PATH} \
-                                                     --model_path=${MODEL_PATH}
+LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
+                                    --dtype=bf16 \
+                                    --token_path=${TOKEN_PATH} \
+                                    --model_path=${MODEL_PATH}
 
 # run multi-instance like
 OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \

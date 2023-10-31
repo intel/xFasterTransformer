@@ -15,8 +15,8 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
       - [Prepare Environment](#prepare-environment)
         - [Manually](#manually)
         - [Docker(Recommended)](#dockerrecommended)
-      - [How to build](#how-to-build)
-  - [Model Preparation](#prepare-model)
+        - [How to build](#how-to-build)
+  - [Models Preparation](#models-preparation)
   - [API usage](#api-usage)
     - [Python API(PyTorch)](#python-apipytorch)
     - [C++ API](#c-api)
@@ -137,7 +137,7 @@ docker run -it \
 ## [Models Preparation](tools/README.md)
 xFasterTransformer supports a different model format from Huggingface, but it's compatible with FasterTransformer's format.
 1. Download the huggingface format model firstly.
-2. After that, convert the model into xFasterTransformer format using the script in 'tools' folder. You will see many bin files in the output directory.
+2. After that, convert the model into xFasterTransformer format using the corresponding script in 'tools' folder. Each supported model has a corresponding conversion script. You will see many bin files in the output directory.
 ```bash
     python ./tools/chatglm_convert.py -i ${HF_DATASET_DIR} -o  ${OUTPUT_DIR}
 
@@ -151,7 +151,7 @@ Firstly, please install the dependencies.
   ```bash
   pip install -r requirements.txt
   ```
-- oneCCL  
+- oneCCL (For multi ranks)  
   Install oneCCL and setup the environment. Please refer to [Prepare Environment](#prepare-environment).
 
 
@@ -202,7 +202,7 @@ std::cout << std::endl;
 ## How to run
 Recommend preloading `libiomp5.so` to get a better performance. `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after building xFasterTransformer successfully.
 ### Single rank
-Recommend using `SINGLE_INSTANCE=1` env to avoid MPI initialization.
+FasterTransformer will automatically check the MPI environment, or you can use the `SINGLE_INSTANCE=1` environment variable to forcefully deactivate MPI.  
 
 ### Multi ranks
 #### Command line
@@ -254,10 +254,10 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. Now s
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
 # `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-SINGLE_INSTANCE=1 LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                                     --dtype=bf16 \
-                                                     --token_path=${TOKEN_PATH} \
-                                                     --model_path=${MODEL_PATH}
+LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
+                                    --dtype=bf16 \
+                                    --token_path=${TOKEN_PATH} \
+                                    --model_path=${MODEL_PATH}
 ```
 
 ## [Benchmark](benchmark/README.md)

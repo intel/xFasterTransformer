@@ -27,7 +27,9 @@ class Messenger {
 private:
     Messenger() {
         // User has set the SINGLE_INSTANCE environment variable
-        if (std::getenv("SINGLE_INSTANCE") != nullptr) {
+        // or program is not with MPI.
+        if (std::getenv("SINGLE_INSTANCE") != nullptr || !withMpirun()) {
+            std::cout << "[INFO] SINGLE_INSTANCE MODE." << std::endl;
             this->pcomm = nullptr;
 #ifdef USE_SHM
             this->pshm = nullptr;
@@ -140,6 +142,13 @@ public:
     template <typename T>
     void allgatherv(const T *send_buf, size_t count, T *recv_buf, const std::vector<long unsigned int> &recv_counts) {
         if (check()) { ccl::allgatherv(send_buf, count, recv_buf, recv_counts, *pcomm).wait(); }
+    }
+
+    bool withMpirun() {
+        return (std::getenv("MPI_LOCALRANKID") || std::getenv("MPI_LOCALNRANKS") || std::getenv("PMI_RANK")
+                       || std::getenv("PMI_SIZE") || std::getenv("PMIX_RANK"))
+                ? true
+                : false;
     }
 
 private:
