@@ -13,21 +13,20 @@ static bool compare(const float *result, const float *ground_truth, const int si
 }
 
 TEST(AlibiEmbedding, AlibiEmbeddingTest) {
-    int seq_len = 6,  head_num = 6, headIdx = 4;
-    AlibiEmbedding alibi( head_num, seq_len);
+    int seq_len = 6, head_num = 6, headIdx = 4;
+    AlibiEmbedding alibi(head_num, seq_len);
     float *bias_matrx = (float *)malloc(seq_len * seq_len * sizeof(float));
     alibi.alibi_get_bias(headIdx, seq_len, bias_matrx);
-    for (size_t i = 0; i < seq_len; i++)
-    {
-        for (size_t j = 0; j < seq_len; j++)
-        {
-            std::cout<<bias_matrx[i * seq_len + j]<<" ";
+    for (size_t i = 0; i < seq_len; i++) {
+        for (size_t j = 0; j < seq_len; j++) {
+            std::cout << bias_matrx[i * seq_len + j] << " ";
         }
-        std::cout<<std::endl;
+        std::cout << std::endl;
     }
-    
-    float groundtruth[36]
-            = {0.0000,  0.0098,  0.0197,  0.0295,  0.0394,  0.0492, -0.0098,  0.0000,  0.0098,  0.0197,  0.0295,  0.0394,-0.0197, -0.0098,  0.0000,  0.0098,  0.0197,  0.0295, -0.0295, -0.0197, -0.0098,  0.0000,  0.0098,  0.0197,-0.0394, -0.0295, -0.0197, -0.0098,  0.0000,  0.0098,-0.0492, -0.0394, -0.0295, -0.0197, -0.0098,  0.0000};
+
+    float groundtruth[36] = {0.0000, 0.0098, 0.0197, 0.0295, 0.0394, 0.0492, -0.0098, 0.0000, 0.0098, 0.0197, 0.0295,
+            0.0394, -0.0197, -0.0098, 0.0000, 0.0098, 0.0197, 0.0295, -0.0295, -0.0197, -0.0098, 0.0000, 0.0098, 0.0197,
+            -0.0394, -0.0295, -0.0197, -0.0098, 0.0000, 0.0098, -0.0492, -0.0394, -0.0295, -0.0197, -0.0098, 0.0000};
     int size = 36;
     EXPECT_TRUE(compare(bias_matrx, groundtruth, size));
 
