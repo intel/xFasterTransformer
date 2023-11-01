@@ -154,7 +154,7 @@ if __name__ == "__main__":
         Next_token_throughput = 1000 / latency_90 * args.batch_size
         print("\n")
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
-        print(f"Input token size: {input_token_nums}, First token Latency:\t{first_token_latency:.2f} ms")
+        print(f"First token Latency:\t{first_token_latency:.2f} ms")
         print(f"Next token Latency:\t{latency_90:.2f} ms")
         print(f"Throughput without 1st token:\t{Next_token_throughput:.2f} tokens/s")
     else:
