@@ -33,10 +33,6 @@ template <typename WeiT>
 class LlamaMLP {
 public:
     LlamaMLP(DecoderContext *ctx) {
-        if (ctx->intermediateSize % ctx->numSplit != 0) {
-            printf("Unsupported: split ffn (size=%d) into %d splits.\n", ctx->intermediateSize, ctx->numSplit);
-            exit(-1);
-        }
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
@@ -54,6 +50,11 @@ public:
 
         // Vertically split the gate weight and up weight
         hpj::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
+
+        auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
+        gateWeight.Resize(hiddenSize, it.second - it.first);
+        upWeight.Resize(hiddenSize, it.second - it.first);
+        downWeight.Resize(it.second - it.first, hiddenSize);
 
         MMHelper::convertWeight(
                 ctx, trans, hiddenSize, imSize, gateW, true, quantizedGateWeight, gateWeightScale, gateWeightZero);

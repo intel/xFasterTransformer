@@ -78,15 +78,12 @@ public:
                     hiddenSize * kvResponsibleCols * sizeof(float));
         } else {
             int qkvStride = (ctx->attHeadNum + ctx->kvHeadNum + ctx->kvHeadNum) * ctx->attHeadSize;
+#pragma omp parallel for
             for (int i = 0; i < hiddenSize; ++i) {
                 memcpy(concatBuf + i * responsibleCols, queryWeight + i * qkvStride + this->startQHead * headSize,
                         qResponsibleCols * sizeof(float));
-            }
-            for (int i = 0; i < hiddenSize; ++i) {
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols,
                         keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(float));
-            }
-            for (int i = 0; i < hiddenSize; ++i) {
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols + kvResponsibleCols,
                         valueWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(float));
             }
@@ -110,7 +107,6 @@ public:
 
         // Merged bias
         if (queryBias && keyBias && valueBias) {
-            //responsibleCols = hiddenSize / ctx->numSplit;
             qkvBias.Resize(responsibleCols);
             memcpy(qkvBias.Data(), queryBias + ctx->splitIdx * qResponsibleCols, sizeof(float) * qResponsibleCols);
             memcpy(qkvBias.Data() + qResponsibleCols, keyBias + this->startKVHead * headSize,
@@ -122,8 +118,8 @@ public:
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
         hpj::Matrix<WeiT> convertedWeight;
-        MMHelper::convertWeight(ctx, trans, hiddenSize, hiddenSize, attnOutWeight, false, convertedWeight,
-                attnOutputWeightScale, attnOutputWeightZero);
+        MMHelper::convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, this->startQHead * headSize,
+                qResponsibleCols, false, convertedWeight, attnOutputWeightScale, attnOutputWeightZero, true);
         MMHelper::packWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG
@@ -226,10 +222,9 @@ public:
         DecoderUtil::dense(resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvBias, qkvGroupMatMul);
         t2.release();
 
-        int cols = hiddenSize / ctx->numSplit;
         hpj::Matrix<float> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
-        hpj::Matrix<float> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, qkCols);
-        hpj::Matrix<float> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, qkvCols);
+        hpj::Matrix<float> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
+        hpj::Matrix<float> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
 #ifdef DEBUG
         dbg.debugPrint("Q:\n");
@@ -240,7 +235,8 @@ public:
 
         // Apply post operattions on query and key
         TimeLine t3("QKPO");
-        int qk_shape[4] = {ctx->batchSize, ctx->inputSeqLen, ctx->attHeadNum / ctx->numSplit, ctx->attHeadSize};
+        int heads = this->endQHead - this->startQHead;
+        int qk_shape[4] = {ctx->batchSize, ctx->inputSeqLen, heads, ctx->attHeadSize};
         if (positionIds != nullptr) {
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, positionIds);
         } else {
@@ -281,8 +277,7 @@ public:
         t4.release();
 
         // For multiple nodes inference, not the whole result buffer
-        hpj::Matrix<float> attnSplit(resultBuffer1.Data(), resultBuffer1.Rows(), resultBuffer1.Cols() / ctx->numSplit,
-                resultBuffer1.Stride());
+        hpj::Matrix<float> attnSplit(resultBuffer1.Data(), resultBuffer1.Rows(), qCols, resultBuffer1.Stride());
 
 #ifdef DEBUG
         dbg.debugPrint("attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
@@ -366,7 +361,7 @@ protected:
         int mBlockNum = (ctx->inputSeqLen + mBlockSize - 1) / mBlockSize;
 
         // To get score buffer according to openmp thread ID or not (see below)
-        int scoreBufSize = batchSize * (ctx->attHeadNum / ctx->numSplit) * ctx->inputSeqLen * ctx->inputSeqLen;
+        int scoreBufSize = batchSize * responsibleHeads * ctx->inputSeqLen * ctx->inputSeqLen;
         bool scoreBufByThread = (ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen) <= scoreBufSize);
 
         // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
