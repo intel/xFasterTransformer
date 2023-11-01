@@ -149,22 +149,26 @@ public:
         const int pad = 0; // 4;
         int hiddenStride = (hiddenSize % 512 == 0 ? hiddenSize + pad
                                                   : hiddenSize); // stride for matrix with columns of hiddenSize
-        int qkvCols = hiddenSize * 3 / numSplit;
+        int responsibleHead = splitIdx < (attHeadNum % numSplit) ? (attHeadNum / numSplit + 1) : (attHeadNum / numSplit);
+        int qCols = responsibleHead * attHeadSize;
+        int kCols = qCols / (attHeadNum / kvHeadNum);
+        int vCols = kCols;
+        int qkvCols = qCols + kCols + vCols;
         int qkvStride = (qkvCols % 512 == 0 ? qkvCols + pad : qkvCols); // stride for the concated QKV
-        int imCols = intermediateSize / numSplit;
+        int imCols = splitIdx < (intermediateSize % numSplit) ? (intermediateSize / numSplit + 1)
+                                                              : (intermediateSize / numSplit);
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output
 
         int normSize = batchSize * inputSeqLen * hiddenStride;
         int qkvSize = batchSize * inputSeqLen * qkvStride;
         int imOutSize = batchSize * inputSeqLen * imStride;
 
-        int headPerSplit = attHeadNum / numSplit;
         int presentSeqLen = preSeqLen + 1;
         int paddedSize = (presentSeqLen + 15) / 16 * 16;
 
         // Note: the score buffer for first token generation is not padded
-        int scoreBufSize = preSeqLen > 0 ? batchSize * headPerSplit * inputSeqLen * paddedSize
-                                         : batchSize * headPerSplit * inputSeqLen * inputSeqLen;
+        int scoreBufSize = preSeqLen > 0 ? batchSize * responsibleHead * inputSeqLen * paddedSize
+                                         : batchSize * responsibleHead * inputSeqLen * inputSeqLen;
         int tmpBufSize = batchSize * inputSeqLen * hiddenStride;
 
         int size1 = normSize;
@@ -183,8 +187,8 @@ public:
         this->qkScores = this->rawBuffer + size1 + size2;
         normBuf.Assign(this->rawBuffer, batchSize * inputSeqLen, hiddenSize, hiddenStride);
         tmpBuf.Assign(this->qkScores, batchSize * inputSeqLen, hiddenSize, hiddenStride);
-        imOut.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, intermediateSize / numSplit, imStride);
-        qkvMatMul.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, hiddenSize / numSplit * 3, qkvStride);
+        imOut.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, imCols, imStride);
+        qkvMatMul.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, qkvCols, qkvStride);
     }
 
     ~DecoderContext() {

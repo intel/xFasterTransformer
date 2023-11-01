@@ -35,7 +35,8 @@ public:
         // Vertically split the gate weight and up weight
         hpj::Matrix<WeiT> convertedGateWeight, convertedUpWeight, convertedDownWeight;
 
-        int colSplit = intermediateSize / ctx->numSplit;
+        auto range = SplitUtil::getTaskRange(intermediateSize, ctx->numSplit, ctx->splitIdx);
+        int colSplit = range.second - range.first;
         float *gateW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
         float *upW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
         if (trans) {

@@ -87,13 +87,13 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
     if constexpr (std::is_same_v<T, WT> == true) {
         // If T and WT are the same, directly read the file
         file_size = readFile(filename, ptr, size);
-        if (required) REQUIRES(file_size == size, "read " + filename + " weight file failed!");
+        if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
     } else {
         // If T and WT are different types, perform dynamic type conversion
         WT *w_ptr = nullptr;
         w_ptr = (WT *)malloc(sizeof(WT) * size);
         file_size = readFile(filename, w_ptr, size);
-        if (required) REQUIRES(file_size == size, "read " + filename + " weight file failed!");
+        if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
 
         if constexpr (std::is_same_v<T, float16_t> && std::is_same_v<WT, float>) {
             float16_t::cvt_float_to_float16(w_ptr, ptr, size);

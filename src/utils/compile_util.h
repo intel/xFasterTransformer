@@ -15,16 +15,18 @@
 #pragma once
 #include <type_traits>
 #include <iostream>
+#include <cstdio>
 
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 
-#define REQUIRES(assertion, message)           \
-    do {                                       \
-        if (unlikely(!(assertion))) {          \
-            std::cout << message << std::endl; \
-            exit(-1);                          \
-        }                                      \
+#define REQUIRES(assertion, format, ...)            \
+    do {                                            \
+        if (unlikely(!(assertion))) {               \
+            fprintf(stderr, format, ##__VA_ARGS__); \
+            fprintf(stderr, "\n");                  \
+            exit(-1);                               \
+        }                                           \
     } while (0)
 
 // A class for forced loop unrolling at compile time
