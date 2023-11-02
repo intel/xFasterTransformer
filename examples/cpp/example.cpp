@@ -134,6 +134,15 @@ public:
     LlamaTokenizer(std::string &tokenPath) : TokenizerBase(tokenPath) { processor.SetEncodeExtraOptions("bos"); }
 };
 
+class BaichuanTokenizer : public TokenizerBase {
+public:
+    BaichuanTokenizer(std::string &tokenPath) : TokenizerBase(tokenPath) {
+        // 195: user_id 196: assistant_id
+        prefixTokenIds = {195};
+        suffixTokenIds = {196};
+    }
+};
+
 class OptTokenizer : public TokenizerBase {
 public:
     OptTokenizer(std::string &tokenPath) { vocabSize = 50265; }
@@ -172,6 +181,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new OptTokenizer(tokenPath);
     } else if (modeltype == "llama") {
         return new LlamaTokenizer(tokenPath);
+    } else if (modeltype == "baichuan") {
+        return new BaichuanTokenizer(tokenPath);
     } else if (modeltype == "chatglm") {
         return new ChatGLMTokenizer(tokenPath);
     } else if (modeltype == "chatglm2") {
