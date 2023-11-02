@@ -38,9 +38,10 @@ public:
     template <typename WeiT>
     static void dense(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
             hpj::Vector<float> &zeroWeight, hpj::Vector<float> &bias, hpj::Matrix<float> &result) {
-        REQUIRES(x.Cols() == weight.Rows(), "Error: x.Cols() != weight.Rows()");
-        REQUIRES(x.Rows() == result.Rows(), "Error: x.Rows() != result.Rows()");
-        REQUIRES(weight.Cols() == result.Cols(), "Error: weight.Cols() != result.Cols()");
+        REQUIRES(x.Cols() == weight.Rows(), "dense error: x.Cols (%d) != weight.Rows (%d)", x.Cols(), weight.Rows());
+        REQUIRES(x.Rows() == result.Rows(), "dense error: x.Rows (%d) != result.Rows (%d)", x.Rows(), result.Rows());
+        REQUIRES(weight.Cols() == result.Cols(), "dense error: weight.Cols (%d) != result.Cols (%d)", weight.Cols(),
+                result.Cols());
 
         // Bias is empty
         if (bias.Size() == 0) {
@@ -57,11 +58,16 @@ public:
     static void denseWithSum(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
             hpj::Vector<float> &zeroWeight, hpj::Vector<float> &bias, hpj::Matrix<float> &input,
             hpj::Matrix<float> &result) {
-        REQUIRES(x.Cols() == weight.Rows(), "Error: x.Cols() != weight.Rows()");
-        REQUIRES(x.Rows() == result.Rows(), "Error: x.Rows() != result.Rows()");
-        REQUIRES(weight.Cols() == result.Cols(), "Error: weight.Cols() != result.Cols()");
-        REQUIRES(input.Rows() == result.Rows(), "Error: input.Rows() != result.Rows()");
-        REQUIRES(input.Cols() == result.Cols(), "Error: input.Cols() != result.Cols()");
+        REQUIRES(x.Cols() == weight.Rows(), "denseWithSum error: x.Cols (%d) != weight.Rows (%d)", x.Cols(),
+                weight.Rows());
+        REQUIRES(x.Rows() == result.Rows(), "denseWithSum error: x.Rows (%d) != result.Rows (%d)", x.Rows(),
+                result.Rows());
+        REQUIRES(weight.Cols() == result.Cols(), "denseWithSum error: weight.Cols (%d) != result.Cols(%d)",
+                weight.Cols(), result.Cols());
+        REQUIRES(input.Rows() == result.Rows(), "denseWithSum error: input.Rows (%d) != result.Rows (%d)", input.Rows(),
+                result.Rows());
+        REQUIRES(input.Cols() == result.Cols(), "denseWithSum error: input.Cols (%d) != result.Cols (%d)", input.Cols(),
+                result.Cols());
 
         // Make sure use the correct bias
         float *pbias = bias.Data();
@@ -421,10 +427,13 @@ public:
         const int batchStride = queryLen * keyLen;
         if (stride == -1) { stride = keyLen; }
 
+        auto range = SplitUtil::getTaskRange(ctx->attHeadNum, ctx->numSplit, ctx->splitIdx);
+        int responsibleHeads = range.second - range.first;
+
 #pragma omp parallel for collapse(2)
         for (int b = 0; b < ctx->batchSize; ++b) {
-            for (int i = 0; i < ctx->attHeadNum / ctx->numSplit; ++i) {
-                int idx = b * ctx->attHeadNum / ctx->numSplit + i;
+            for (int i = 0; i < responsibleHeads; ++i) {
+                int idx = b * responsibleHeads + i;
                 float *result = ctx->qkScores + idx * queryLen * stride;
 
                 for (int seq = 0; seq < queryLen; ++seq) {
