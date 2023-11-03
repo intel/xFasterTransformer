@@ -16,7 +16,7 @@ from tqdm import tqdm
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(dir_path + "/../../../..")
+sys.path.append(os.path.join(dir_path, "../../../.."))
 sys.path.append(dir_path)
 
 
@@ -29,12 +29,14 @@ def get_weight_data_type(data_type):
         assert False, f"Invalid weight data type {data_type}"
 
 
-def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dtype, num_attention_heads, num_key_value_heads):
+def split_and_convert_process(
+    i, saved_dir, factor, key, args, val, old_name, dtype, num_attention_heads, num_key_value_heads
+):
     def save_val(val, key, tp_num=None):
         if key.startswith("model."):
-            path = saved_dir + "/" + key
+            path = os.path.join(saved_dir, key)
         else:
-            path = saved_dir + "/model." + key
+            path = os.path.join(saved_dir, "model." + key)
 
         if tp_num is not None:
             path += "." + str(tp_num)
@@ -114,7 +116,9 @@ def split_and_convert(args):
     try:
         config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
         num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
-        num_key_value_heads = config["llama"]["kv_head_num"] = str(hf_config.get("num_key_value_heads", num_attention_heads))
+        num_key_value_heads = config["llama"]["kv_head_num"] = str(
+            hf_config.get("num_key_value_heads", num_attention_heads)
+        )
 
         hidden_size = hf_config["hidden_size"]
         config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
@@ -129,7 +133,7 @@ def split_and_convert(args):
         config["llama"]["start_id"] = str(hf_config["bos_token_id"])
         config["llama"]["end_id"] = str(hf_config["eos_token_id"])
         config["llama"]["weight_data_type"] = args.weight_data_type
-        with open(saved_dir + "/config.ini", "w") as configfile:
+        with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
             config.write(configfile)
     except Exception as e:
         print("Fail to save the config in config.ini.", str(e))
@@ -181,16 +185,18 @@ def split_and_convert(args):
     pool = multiprocessing.Pool(args.processes)
     for name, param in model_named_parameters.items():
         if name == "model.embed_tokens.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.wte.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(os.path.join(saved_dir, "model.wte.bin"))
         elif name == "model.norm.weight":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.weight.bin"
+                os.path.join(saved_dir, "model.final_layernorm.weight.bin")
             )
         # elif name == 'model.final_layernorm.bias':
         #     param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-        #         saved_dir + "model.final_layernorm.bias.bin")
+        #         os.path.join(saved_dir, "model.final_layernorm.bias.bin"))
         elif name == "lm_head.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.lm_head.weight.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
+                os.path.join(saved_dir, "model.lm_head.weight.bin")
+            )
         else:
             starmap_args = []
             for i in range(len(hf_model_name_pattern)):
@@ -208,7 +214,7 @@ def split_and_convert(args):
                             name,
                             np_weight_data_type,
                             num_attention_heads,
-                            num_key_value_heads
+                            num_key_value_heads,
                         )
                     )
             pool.starmap_async(split_and_convert_process, starmap_args)
