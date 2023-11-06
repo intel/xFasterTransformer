@@ -16,7 +16,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(dir_path + "/../../../..")
+sys.path.append(os.path.join(dir_path, "../../../.."))
 sys.path.append(dir_path)
 
 
@@ -31,7 +31,7 @@ def get_weight_data_type(data_type):
 
 def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dtype):
     def save_val(val, key, tp_num=None):
-        path = saved_dir + "/model." + key
+        path = os.path.join(saved_dir, "model." + key)
         if tp_num is not None:
             path += "." + str(tp_num)
         path += ".bin"
@@ -130,7 +130,7 @@ def split_and_convert(args):
         config["chatglm"]["start_id"] = str(hf_config["bos_token_id"])
         config["chatglm"]["end_id"] = str(hf_config["eos_token_id"])
         config["chatglm"]["weight_data_type"] = args.weight_data_type
-        with open(saved_dir + "/config.ini", "w") as configfile:
+        with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
             config.write(configfile)
     except Exception as e:
         print("Fail to save the config in config.ini.", str(e))
@@ -181,17 +181,19 @@ def split_and_convert(args):
     pool = multiprocessing.Pool(args.processes)
     for name, param in model_named_parameters.items():
         if name == "transformer.word_embeddings.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.wte.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(os.path.join(saved_dir, "model.wte.bin"))
         elif name == "transformer.final_layernorm.weight":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.weight.bin"
+                os.path.join(saved_dir, "model.final_layernorm.weight.bin")
             )
         elif name == "transformer.final_layernorm.bias":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.bias.bin"
+                os.path.join(saved_dir, "model.final_layernorm.bias.bin")
             )
         elif name == "lm_head.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.lm_head.weight.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
+                os.path.join(saved_dir, "model.lm_head.weight.bin")
+            )
         else:
             starmap_args = []
             for i in range(len(huggingface_model_name_pattern)):
@@ -222,8 +224,8 @@ if __name__ == "__main__":
     torch.multiprocessing.set_sharing_strategy("file_system")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-saved_dir', '-o', type=str, help='file name of output file', required=True)
-    parser.add_argument('-in_file', '-i', type=str, help='file name of input checkpoint file', required=True)
+    parser.add_argument("-saved_dir", "-o", type=str, help="file name of output file", required=True)
+    parser.add_argument("-in_file", "-i", type=str, help="file name of input checkpoint file", required=True)
     parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
     parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16"])
 

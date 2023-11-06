@@ -16,7 +16,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(dir_path + "/../../../..")
+sys.path.append(os.path.join(dir_path, "../../../.."))
 sys.path.append(dir_path)
 
 
@@ -33,7 +33,7 @@ def split_and_convert_process(
     i, saved_dir, factor, key, args, val, old_name, dtype, num_attention_heads, multi_query_group_num, kv_channels
 ):
     def save_val(val, key, tp_num=None):
-        path = saved_dir + "/model." + key
+        path = path = os.path.join(saved_dir, "model." + key)
         if tp_num is not None:
             path += "." + str(tp_num)
         path += ".bin"
@@ -151,7 +151,7 @@ def split_and_convert(args):
         multi_query_group_num = config["chatglm2"]["kv_head_num"] = str(hf_config["multi_query_group_num"])
         config["chatglm2"]["pad_id"] = str(hf_config["pad_token_id"])
 
-        with open(saved_dir + "/config.ini", "w") as configfile:
+        with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
             config.write(configfile)
     except Exception as e:
         print("Fail to save the config in config.ini.", str(e))
@@ -201,13 +201,15 @@ def split_and_convert(args):
     pool = multiprocessing.Pool(args.processes)
     for name, param in model_named_parameters.items():
         if name == "transformer.embedding.word_embeddings.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.wte.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(os.path.join(saved_dir, "model.wte.bin"))
         elif name == "transformer.encoder.final_layernorm.weight":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.weight.bin"
+                os.path.join(saved_dir, "model.final_layernorm.weight.bin")
             )
         elif name == "transformer.output_layer.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.lm_head.weight.bin")
+            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
+                os.path.join(saved_dir, "model.lm_head.weight.bin")
+            )
         else:
             starmap_args = []
             for i in range(len(huggingface_model_name_pattern)):

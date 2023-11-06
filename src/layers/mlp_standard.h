@@ -17,6 +17,7 @@
 #include "debugger.h"
 #include "decoder_util.h"
 #include "matmul_helper.h"
+#include "split_util.h"
 
 // WeiT: weight data type
 // INPUT_AS_RESID: input as residential or not, most models use input as residential,
@@ -25,10 +26,6 @@ template <typename WeiT, bool INPUT_AS_RESID = true>
 class MLP {
 public:
     MLP(DecoderContext *ctx) {
-        if (ctx->intermediateSize % ctx->numSplit != 0) {
-            printf("Unsupported: split ffn (size=%d) into %d splits.\n", ctx->intermediateSize, ctx->numSplit);
-            exit(-1);
-        }
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
@@ -50,7 +47,8 @@ public:
         MMHelper::packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
 
         // Intermediate bias
-        int colsPerSplit = intermediateSize / ctx->numSplit;
+        auto range = SplitUtil::getTaskRange(intermediateSize, ctx->numSplit, ctx->splitIdx);
+        int colsPerSplit = range.second - range.first;
         intermediateBias.Resize(colsPerSplit);
         memcpy(intermediateBias.Data(), _imBias + colsPerSplit * ctx->splitIdx, sizeof(float) * colsPerSplit);
 
