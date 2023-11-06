@@ -31,7 +31,7 @@ from transformers import OPTForCausalLM, AutoModelForCausalLM, AutoTokenizer  # 
 from transformers.models.opt.modeling_opt import OPTAttention, OPTDecoderLayer
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(dir_path + "/../../../..")
+sys.path.append(os.path.join(dir_path, "../../../.."))
 sys.path.append(dir_path)
 
 
@@ -47,7 +47,7 @@ def get_weight_data_type(data_type):
 # def split_and_convert_process(i, saved_dir, factor, key, args, val, capture_dict, old_name, dtype):
 def split_and_convert_process(i, saved_dir, factor, key, args, val, old_name, dtype):
     def save_val(val, key, tp_num=None):
-        path = saved_dir + "/model." + key
+        path = os.path.join(saved_dir, "model." + key)
         if tp_num is not None:
             path += "." + str(tp_num)
         path += ".bin"
@@ -148,7 +148,7 @@ def split_and_convert(args):
         config["gpt"]["end_id"] = str(hf_config["eos_token_id"])
         config["gpt"]["weight_data_type"] = args.weight_data_type
         # config['gpt']['int8'] = str(save_int8) # really useful?
-        with open(saved_dir + "/config.ini", "w") as configfile:
+        with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
             config.write(configfile)
     except:
         print(f"Fail to save the config in config.ini.")
@@ -216,7 +216,7 @@ def split_and_convert(args):
     for name, param in model_named_parameters.items():
         if name == "model.decoder.embed_positions.weight":
             param[padding_offset:, ...].detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.wpe.bin"
+                os.path.join(saved_dir, "model.wpe.bin")
             )
 
         elif name == "model.decoder.embed_tokens.weight":
@@ -224,23 +224,27 @@ def split_and_convert(args):
                 project_in = model_named_parameters["model.decoder.project_in.weight"]
                 project_out = model_named_parameters["model.decoder.project_out.weight"]
                 torch.matmul(param, project_in).detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                    saved_dir + "model.wte.bin"
+                    os.path.join(saved_dir, "model.wte.bin")
                 )
                 torch.matmul(param, project_out).detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                    saved_dir + "model.lm_head.weight.bin"
+                    os.path.join(saved_dir, "model.lm_head.weight.bin")
                 )
 
             else:
-                param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.wte.bin")
-                param.detach().cpu().numpy().astype(np_weight_data_type).tofile(saved_dir + "model.lm_head.weight.bin")
+                param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
+                    os.path.join(saved_dir, "model.wte.bin")
+                )
+                param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
+                    os.path.join(saved_dir, "model.lm_head.weight.bin")
+                )
 
         elif name == "model.decoder.final_layer_norm.weight":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.weight.bin"
+                os.path.join(saved_dir, "model.final_layernorm.weight.bin")
             )
         elif name == "model.decoder.final_layer_norm.bias":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
-                saved_dir + "model.final_layernorm.bias.bin"
+                os.path.join(saved_dir, "model.final_layernorm.bias.bin")
             )
         elif "project_in" in name or "project_out" in name:
             continue
