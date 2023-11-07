@@ -3,26 +3,26 @@
 
 class AlibiEmbedding {
 public:
-    AlibiEmbedding(const int heads_num, const int seq_len);
+    AlibiEmbedding(const int headNum, const int seqLen);
 
     ~AlibiEmbedding() {
-        max_len = 0;
-        max_head_nums = 0;
-        free(pos_matrix);
-        free(slope_m);
+        maxLen = 0;
+        maxHeadNums = 0;
+        free(posMatrix);
+        free(slopeM);
     }
 
-    void alibi_get_relative_pos(const int seq_len);
+    void alibiGetRelativePos(const int seqLen);
 
-    void alibi_get_slope(const int heads_num);
+    void alibiGetSlope(const int headNum);
 
     // headIdx is [0,n]
-    void alibi_get_bias(const int headIdx, const int seq_len, float *bias_matrx);
+    void alibiGetBias(const int headIdx, const int seqLen, float *bias_matrx);
 
 private:
     static bool initialized;
-    int max_len = 0;
-    int max_head_nums = 0;
-    int *pos_matrix;
-    float *slope_m;
+    int maxLen = 0;
+    int maxHeadNums = 0;
+    int *posMatrix;
+    float *slopeM;
 };

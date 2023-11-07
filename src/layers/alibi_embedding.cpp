@@ -4,43 +4,43 @@
 
 bool AlibiEmbedding::initialized = false;
 
-AlibiEmbedding::AlibiEmbedding(const int heads_num, const int seq_len) {
-    max_len = seq_len;
-    max_head_nums = heads_num;
-    alibi_get_relative_pos(max_len);
-    alibi_get_slope(max_head_nums);
+AlibiEmbedding::AlibiEmbedding(const int headNum, const int seqLen) {
+    maxLen = seqLen;
+    maxHeadNums = headNum;
+    alibiGetRelativePos(maxLen);
+    alibiGetSlope(maxHeadNums);
     initialized = true;
 }
 
-void AlibiEmbedding::alibi_get_bias(const int headIdx, const int seq_len, float *bias_matrx) {
+void AlibiEmbedding::alibiGetBias(const int headIdx, const int seqLen, float *biasMatrx) {
     REQUIRES(initialized == true, "Alibi Embedding ERROR, Alibi is not initialized.");
-    REQUIRES(headIdx < max_head_nums, "Alibi Embedding ERROR, headIdx is exceeds max head nums.");
-    if (seq_len > max_len) {
-        max_len = seq_len;
-        alibi_get_relative_pos(max_len);
+    REQUIRES(headIdx < maxHeadNums, "Alibi Embedding ERROR, headIdx is exceeds max head nums.");
+    if (seqLen > maxLen) {
+        maxLen = seqLen;
+        alibiGetRelativePos(maxLen);
     }
-    for (size_t i = 0; i < seq_len; i++) {
-        for (size_t j = 0; j < seq_len; j++) {
-            int index = i * seq_len + j;
-            bias_matrx[index] = pos_matrix[index] * slope_m[headIdx];
+    for (size_t i = 0; i < seqLen; i++) {
+        for (size_t j = 0; j < seqLen; j++) {
+            int index = i * seqLen + j;
+            biasMatrx[index] = posMatrix[index] * slopeM[headIdx];
         }
     }
 }
 
-void AlibiEmbedding::alibi_get_relative_pos(const int seq_len) {
-    pos_matrix = (int *)aligned_alloc(64, seq_len * seq_len * sizeof(int));
-    for (int i = 0; i < seq_len; i++) {
-        for (int j = 0; j < seq_len; j++) {
-            pos_matrix[i * seq_len + j] = j - i;
+void AlibiEmbedding::alibiGetRelativePos(const int seqLen) {
+    posMatrix = (int *)aligned_alloc(64, seqLen * seqLen * sizeof(int));
+    for (int i = 0; i < seqLen; i++) {
+        for (int j = 0; j < seqLen; j++) {
+            posMatrix[i * seqLen + j] = j - i;
         }
     }
 }
 
-void AlibiEmbedding::alibi_get_slope(const int heads_num) {
-    slope_m = (float *)aligned_alloc(64, heads_num * sizeof(float));
+void AlibiEmbedding::alibiGetSlope(const int headNum) {
+    slopeM = (float *)aligned_alloc(64, headNum * sizeof(float));
     float x = std::pow(2, 8);
-    x = std::pow(x, 1.0 / heads_num);
-    for (int i = 0; i < heads_num; i++) {
-        slope_m[i] = 1 / std::pow(x, i + 1);
+    x = std::pow(x, 1.0 / headNum);
+    for (int i = 0; i < headNum; i++) {
+        slopeM[i] = 1 / std::pow(x, i + 1);
     }
 }
