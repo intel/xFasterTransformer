@@ -35,7 +35,7 @@
 using namespace xft;
 
 struct QKPO_Dummy {
-    QKPO_Dummy(int dim) {}
+    QKPO_Dummy(int dim, int maxPos) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
 };
 

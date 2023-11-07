@@ -33,7 +33,7 @@
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, bool INPUT_AS_RESID = true>
 class Attention {
 public:
-    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize) {
+    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPositions) {
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
