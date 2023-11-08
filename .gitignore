@@ -25,4 +25,4 @@ dist/
 /3rdparty/onednn
 /3rdparty/cmdline
 /3rdparty/sentencepiece
-/3rdparty/ig
+/3rdparty/xdnn

@@ -496,9 +496,9 @@ protected:
                     C = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
 
                     if constexpr (std::is_same_v<KVCacheT, float>) {
-                        ig_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
+                        xdnn_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
                     } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                        ig_sgemm_f32f16f32_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
+                        xdnn_sgemm_f32f16f32_single_thread(false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
                     }
 
 #ifdef DEBUG
