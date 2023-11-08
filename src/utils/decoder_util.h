@@ -542,7 +542,7 @@ public:
     
     // C = A * B
     // bTranspose: B need to be transposed or not
-    // ig_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
     static void sgemm(const float* A, const float* B, float* C, int m, int n, int k,
             bool transa, bool transb) {
         int lda = (transa ? m : k);

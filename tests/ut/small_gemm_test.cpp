@@ -14,8 +14,7 @@
 // ============================================================================
 #include <cmath>
 
-#include "ig_sgemm_f32f16f32.h"
-#include "ig_sgemm.h"
+#include "xdnn.h"
 #include "float16.h"
 #include "gtest/gtest.h"
 

@@ -25,11 +25,11 @@ project(dependency NONE)
 include(ExternalProject)
 
 # cmake-format: off
-ExternalProject_Add(ig_lib
-  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/ig_v1.1.tar.gz
-  URL_HASH          MD5=47e5a2cd021caad2b1367c0b71dff2e7
+ExternalProject_Add(xdnn_lib
+  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/xdnn_v1.1.tar.gz
+  URL_HASH          MD5=b49bf8808d66ea75cfba80a406c9a587
   TIMEOUT           60
-  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/ig
+  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/xdnn
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
   INSTALL_COMMAND   ""

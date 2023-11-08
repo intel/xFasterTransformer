@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#pragma once
 #include <immintrin.h>
 
 #include <cstdlib>
 #include <cstring>
 
 #include "layers_norm.h"
+#include "rmsnorm_kernels.h"
 #include "timeline.h"
 
 namespace xft {
@@ -41,7 +41,7 @@ void RmsNorm::setWeight(const float *w, const float *, int size) {
 // input and output are in shape of (rows, normSize)
 void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
-    xft::invokeRmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    invokeRmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
 
 } // namespace xft

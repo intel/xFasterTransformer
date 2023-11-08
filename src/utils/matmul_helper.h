@@ -15,13 +15,7 @@
 #pragma once
 #include "bfloat16.h"
 #include "float16.h"
-#include "ig_bgemm_f32bf16f32.h"
-#include "ig_hgemm_f32f16f32.h"
-#include "ig_hgemm_f16f16f32.h"
-#include "ig_hgemm_f32i8f32.h"
-#include "ig_sgemm.h"
-#include "ig_sgemm_f32f16f32.h"
-#include "ig_sgemm_f32i8f32.h"
+#include "xdnn.h"
 #include "my_types.h"
 #include "oneapi/dnnl/dnnl.hpp"
 #include "oneapi/dnnl/dnnl_config.h"
@@ -216,12 +210,12 @@ public:
                     zeroWeight.Resize(colsPerSplit);
                 }
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-                ig_sgemm_f32i8f32_quantize(trans, colsPerSplit, rows,
+                xdnn_sgemm_f32i8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset),
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rows : colsPerSplit,
                         scaleWeight.Data(), zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-                ig_hgemm_f32i8f32_quantize(trans, colsPerSplit, rows,
+                xdnn_hgemm_f32i8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset),
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rows : colsPerSplit,
                         scaleWeight.Data(), zeroWeight.Data());
@@ -241,12 +235,12 @@ public:
                     zeroWeight.Resize(cols);
                 }
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-                ig_sgemm_f32i8f32_quantize(trans, cols, rowsPerSplit,
+                xdnn_sgemm_f32i8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols),
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rowsPerSplit : cols,
                         scaleWeight.Data(), zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-                ig_hgemm_f32i8f32_quantize(trans, cols, rowsPerSplit,
+                xdnn_hgemm_f32i8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols),
                         trans ? rows : cols, 0.9999f, quantizedWeight.Data(), trans ? rowsPerSplit : cols,
                         scaleWeight.Data(), zeroWeight.Data());
@@ -293,16 +287,16 @@ public:
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             weight.Resize(K, N);
-            ig_sgemm_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+            xdnn_sgemm_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
             weight.Resize(K, N);
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            ig_sgemm_f32f16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+            xdnn_sgemm_f32f16f32_packb(trans, N, K, (const XDNN_FP16 *)src.Data(), src.Stride(), (XDNN_FP16 *)weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            ig_hgemm_f32f16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+            xdnn_hgemm_f32f16f32_packb(trans, N, K, (const XDNN_FP16 *)src.Data(), src.Stride(), (XDNN_FP16 *)weight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -317,9 +311,9 @@ public:
             weight.Resize(amx_rows, amx_cols);
             memset(weight.Data(), 0, amx_rows * amx_cols * sizeof(bfloat16_t));
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            ig_sgemm_f32bf16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data(), 16, 64);
+            xdnn_sgemm_f32bf16f32_packb(trans, N, K, (const XDNN_BF16 *)src.Data(), src.Stride(), (XDNN_BF16 *)weight.Data(), 16, 64);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-            ig_bgemm_f32bf16f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data(), 16, 64);
+            xdnn_bgemm_f32bf16f32_packb(trans, N, K, (const XDNN_BF16 *)src.Data(), src.Stride(), (XDNN_BF16 *)weight.Data(), 16, 64);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -330,9 +324,9 @@ public:
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
             weight.Resize(K, N);
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            ig_sgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+            xdnn_sgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            ig_hgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+            xdnn_hgemm_f32i8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -345,18 +339,18 @@ public:
             const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute");
-            ig_sgemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_compute");
+            xdnn_sgemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute");
-            ig_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute");
+            xdnn_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute");
-            ig_hgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute");
+            xdnn_hgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -366,15 +360,15 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute");
-            ig_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute");
+            xdnn_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
-                ig_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
+                onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute");
-                ig_bgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute");
+                xdnn_bgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -385,11 +379,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute");
-            ig_sgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32i8f32_compute");
+            xdnn_sgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute");
-            ig_hgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+            TimeLine t("xdnn_hgemm_f32i8f32_compute");
+            xdnn_hgemm_f32i8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -403,18 +397,18 @@ public:
             const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_biasadd");
-            ig_sgemm_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_compute_biasadd");
+            xdnn_sgemm_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_biasadd");
-            ig_sgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_biasadd");
+            xdnn_sgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_biasadd");
-            ig_hgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_biasadd");
+            xdnn_hgemm_f32f16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -424,15 +418,15 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_biasadd");
-            ig_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_biasadd");
+            xdnn_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
-                ig_amx_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd");
+                onednn_amx_sgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd");
-                ig_bgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_biasadd");
+                xdnn_bgemm_f32bf16f32_compute_biasadd(transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -443,12 +437,12 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_biasadd");
-            ig_sgemm_f32i8f32_compute_biasadd(
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_biasadd");
+            xdnn_sgemm_f32i8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_biasadd");
-            ig_hgemm_f32i8f32_compute_biasadd(
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_biasadd");
+            xdnn_hgemm_f32i8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -463,18 +457,18 @@ public:
             const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_biasadd_relu");
-            ig_sgemm_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_compute_biasadd_relu");
+            xdnn_sgemm_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_biasadd_relu");
-            ig_sgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_biasadd_relu");
+            xdnn_sgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_biasadd_relu");
-            ig_hgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_biasadd_relu");
+            xdnn_hgemm_f32f16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -484,16 +478,16 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_biasadd_relu");
-            ig_sgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_biasadd_relu");
+            xdnn_sgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
-                ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+                onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_biasadd_relu");
-                ig_bgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_biasadd_relu");
+                xdnn_bgemm_f32bf16f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -504,12 +498,12 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_biasadd_relu");
-            ig_sgemm_f32i8f32_compute_biasadd_relu(
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_biasadd_relu");
+            xdnn_sgemm_f32i8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_biasadd_relu");
-            ig_hgemm_f32i8f32_compute_biasadd_relu(
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_biasadd_relu");
+            xdnn_hgemm_f32i8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -523,18 +517,18 @@ public:
             const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_silu");
-            ig_sgemm_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_compute_silu");
+            xdnn_sgemm_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_silu");
-            ig_sgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_silu");
+            xdnn_sgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_silu");
-            ig_hgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_silu");
+            xdnn_hgemm_f32f16f32_compute_silu(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -544,15 +538,15 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_silu");
-            ig_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_silu");
+            xdnn_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
-                ig_amx_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
+                onednn_amx_sgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_silu");
-                ig_bgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_silu");
+                xdnn_bgemm_f32bf16f32_compute_silu(transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -563,11 +557,11 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_silu");
-            ig_sgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_silu");
+            xdnn_sgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_silu");
-            ig_hgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_silu");
+            xdnn_hgemm_f32i8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -581,18 +575,18 @@ public:
             const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_resmul");
-            ig_sgemm_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
+            TimeLine t("xdnn_sgemm_compute_resmul");
+            xdnn_sgemm_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_resmul");
-            ig_sgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_resmul");
+            xdnn_sgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_resmul");
-            ig_hgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_resmul");
+            xdnn_hgemm_f32f16f32_compute_resmul(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -602,16 +596,16 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_resmul");
-            ig_sgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_resmul");
+            xdnn_sgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
-                ig_amx_sgemm_f32bf16f32_compute_resmul(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_resmul");
+                onednn_amx_sgemm_f32bf16f32_compute_resmul(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_resmul");
-                ig_bgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_resmul");
+                xdnn_bgemm_f32bf16f32_compute_resmul(transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, res, ldres);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -622,12 +616,12 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_resmul");
-            ig_sgemm_f32i8f32_compute_resmul(
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_resmul");
+            xdnn_sgemm_f32i8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_resmul");
-            ig_hgemm_f32i8f32_compute_resmul(
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_resmul");
+            xdnn_hgemm_f32i8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -642,20 +636,20 @@ public:
             const float *bias, const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_residential");
-            ig_sgemm_compute_residential(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
+            TimeLine t("xdnn_sgemm_compute_residential");
+            xdnn_sgemm_compute_residential(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_residential");
-            ig_sgemm_f32f16f32_compute_residential(
-                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_residential");
+            xdnn_sgemm_f32f16f32_compute_residential(
+                    transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_residential");
-            ig_hgemm_f32f16f32_compute_residential(
-                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_residential");
+            xdnn_hgemm_f32f16f32_compute_residential(
+                    transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -665,18 +659,18 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_residential");
-            ig_sgemm_f32bf16f32_compute_residential(
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_residential");
+            xdnn_sgemm_f32bf16f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
-                ig_amx_sgemm_f32bf16f32_compute_residential(
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+                onednn_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_residential");
-                ig_bgemm_f32bf16f32_compute_residential(
-                        transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_residential");
+                xdnn_bgemm_f32bf16f32_compute_residential(
+                        transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias, res, ldres);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -687,12 +681,12 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_residential");
-            ig_sgemm_f32i8f32_compute_residential(
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_residential");
+            xdnn_sgemm_f32i8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_residential");
-            ig_hgemm_f32i8f32_compute_residential(
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_residential");
+            xdnn_hgemm_f32i8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -707,20 +701,20 @@ public:
             const float *bias, float gamma, float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
-            TimeLine t("ig_sgemm_compute_resext");
-            ig_sgemm_compute_resext(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
+            TimeLine t("xdnn_sgemm_compute_resext");
+            xdnn_sgemm_compute_resext(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
         }
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            TimeLine t("ig_sgemm_f32f16f32_compute_resext");
-            ig_sgemm_f32f16f32_compute_resext(
-                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
+            TimeLine t("xdnn_sgemm_f32f16f32_compute_resext");
+            xdnn_sgemm_f32f16f32_compute_resext(
+                    transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
-            TimeLine t("ig_hgemm_f32f16f32_compute_resext");
-            ig_hgemm_f32f16f32_compute_resext(
-                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
+            TimeLine t("xdnn_hgemm_f32f16f32_compute_resext");
+            xdnn_hgemm_f32f16f32_compute_resext(
+                    transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias, gamma, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -730,24 +724,24 @@ public:
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
-            TimeLine t("ig_sgemm_f32bf16f32_compute_resext");
-            ig_sgemm_f32bf16f32_compute_resext(
+            TimeLine t("xdnn_sgemm_f32bf16f32_compute_resext");
+            xdnn_sgemm_f32bf16f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if (M > USE_AMX_M) {
-                TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
+                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                 for (int i = 0; i < M; ++i) {
                     for (int j = 0; j < N; ++j) {
                         res[i * ldres + j] = res[i * ldres + j] * gamma;
                     }
                 }
-                ig_amx_sgemm_f32bf16f32_compute_residential(
+                onednn_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
-                TimeLine t("ig_bgemm_f32bf16f32_compute_resext");
-                ig_bgemm_f32bf16f32_compute_resext(
-                        transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, gamma, res, ldres);
+                TimeLine t("xdnn_bgemm_f32bf16f32_compute_resext");
+                xdnn_bgemm_f32bf16f32_compute_resext(
+                        transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias, gamma, res, ldres);
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -758,12 +752,12 @@ public:
         // INT8
         else if constexpr (std::is_same_v<WeiT, int8_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            TimeLine t("ig_sgemm_f32i8f32_compute_resext");
-            ig_sgemm_f32i8f32_compute_resext(
+            TimeLine t("xdnn_sgemm_f32i8f32_compute_resext");
+            xdnn_sgemm_f32i8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            TimeLine t("ig_hgemm_f32i8f32_compute_resext");
-            ig_hgemm_f32i8f32_compute_resext(
+            TimeLine t("xdnn_hgemm_f32i8f32_compute_resext");
+            xdnn_hgemm_f32i8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -805,10 +799,10 @@ private:
         return key;
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+    static void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -854,7 +848,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -865,10 +859,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -918,7 +912,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -929,10 +923,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
+    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -991,7 +985,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -1002,10 +996,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_silu");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1059,7 +1053,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -1071,10 +1065,10 @@ private:
     }
 
     // TODO: may be error
-    static void ig_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
+    static void onednn_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
             int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *res, int ldres) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_resmul");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_resmul");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1143,7 +1137,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
@@ -1154,11 +1148,11 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void ig_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
+    static void onednn_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
             const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias,
             const float *res, int ldres) {
-        TimeLine t("ig_amx_sgemm_f32bf16f32_compute_residential");
-        TimeLine t1("ig_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1230,7 +1224,7 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("ig_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
         // Reorder
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
