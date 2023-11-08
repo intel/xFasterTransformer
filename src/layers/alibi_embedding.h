@@ -8,8 +8,8 @@ public:
     ~AlibiEmbedding() {
         maxLen = 0;
         maxHeadNums = 0;
-        free(posMatrix);
-        free(slopeM);
+        if (posMatrix != nullptr) free(posMatrix);
+        if (slopeM != nullptr) free(slopeM);
     }
 
     void alibiGetRelativePos(const int seqLen);
@@ -20,7 +20,6 @@ public:
     void alibiGetBias(const int headIdx, const int seqLen, float *bias_matrx);
 
 private:
-    static bool initialized;
     int maxLen = 0;
     int maxHeadNums = 0;
     int *posMatrix;

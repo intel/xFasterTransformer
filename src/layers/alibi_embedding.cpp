@@ -2,18 +2,14 @@
 #include <cmath>
 #include "compile_util.h"
 
-bool AlibiEmbedding::initialized = false;
-
 AlibiEmbedding::AlibiEmbedding(const int headNum, const int seqLen) {
     maxLen = seqLen;
     maxHeadNums = headNum;
     alibiGetRelativePos(maxLen);
     alibiGetSlope(maxHeadNums);
-    initialized = true;
 }
 
 void AlibiEmbedding::alibiGetBias(const int headIdx, const int seqLen, float *biasMatrx) {
-    REQUIRES(initialized == true, "Alibi Embedding ERROR, Alibi is not initialized.");
     REQUIRES(headIdx < maxHeadNums, "Alibi Embedding ERROR, headIdx is exceeds max head nums.");
     if (seqLen > maxLen) {
         maxLen = seqLen;
