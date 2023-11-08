@@ -33,7 +33,7 @@
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, bool INPUT_AS_RESID = true>
 class Attention {
 public:
-    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPositions) {
+    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
@@ -239,7 +239,7 @@ public:
         int qk_shape[4] = {ctx->batchSize, ctx->inputSeqLen, heads, ctx->attHeadSize};
         if (positionIds != nullptr) {
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, positionIds);
-        } else {
+        } else if (ctx->maxPosEmbed > 0) {
             // Use the default position ids
             std::vector<int> position_ids(ctx->inputSeqLen);
             if (inputSeqLen == 1) {
@@ -438,7 +438,7 @@ protected:
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
 
                     small_gemm_transb(
-                            attnMask + b * queryLen * keyLen + startSeq * keyLen, A, B, C, m, n, k, lda, ldb, ldc);
+                            getMask(attnMask, b, i, queryLen, keyLen) + startSeq * keyLen, A, B, C, m, n, k, lda, ldb, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -454,12 +454,12 @@ protected:
                     if (pastSeqLen == 0)
                         for (int seq = 0; seq < endSeq - startSeq; ++seq) {
                             DecoderUtil::softmaxSkipMask(ctx, C + seq * strideC,
-                                    attnMask + b * queryLen * keyLen + (seq + startSeq) * keyLen, keyLen);
+                                    getMask(attnMask, b, i, queryLen, keyLen) + (seq + startSeq) * keyLen, keyLen);
                         }
                     else
                         for (int seq = 0; seq < endSeq - startSeq; ++seq) {
                             DecoderUtil::computeSoftmax(ctx, C + seq * strideC,
-                                    attnMask + b * queryLen * keyLen + (seq + startSeq) * keyLen, keyLen);
+                                    getMask(attnMask, b, i, queryLen, keyLen) + (seq + startSeq) * keyLen, keyLen);
                         }
 
 #ifdef DEBUG
@@ -537,7 +537,7 @@ protected:
         float *key = transQKV + batchSize * respQHeads * srcLen * headSize;
         float *value = transQKV + batchSize * (respQHeads + respKVHeads) * srcLen * headSize;
 
-        DecoderUtil::scaledDpAttention(query, key, value, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
+        scaledDpAttention(query, key, value, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
                 respKVHeads, headSize, tmpRes.Data());
         DecoderUtil::transposeAttnResult(tmpRes.Data(), result.Data(), batchSize, srcLen, respQHeads, headSize,
                 result.Stride());
@@ -569,6 +569,89 @@ protected:
         }
         free(transQKV);
     }
+
+    // scaled dot-product attention: bmm1 + softmax + bmm2
+    void scaledDpAttention(const float *query, const float *key, const float *value, const float *attnMask,
+            float scale, int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize,
+            float* output) {
+        // output = trans(softmax(query * trans(key)) * value)
+        int nth = omp_get_max_threads();
+        int minBlk = (nth >= batchSize * numQHead ? 256 : 512);
+        int srcBlk = std::min(minBlk, srcLen);
+        int tgtBlk = std::min(minBlk, tgtLen);
+        float refac = scale;
+        int numGroup = numQHead / numKVHead;
+
+        int numArr = 6;
+        int arrStride = (4 + tgtBlk + headSize) * srcBlk;
+        float *thrBuf = (float *)malloc(sizeof(float) * nth * arrStride);
+        float **thrPtrBuf = (float **)malloc(sizeof(float *) * nth * numArr);
+
+        float **preSum = thrPtrBuf;
+        float **sum = thrPtrBuf + nth;
+        float **preMax = thrPtrBuf + nth * 2;
+        float **max = thrPtrBuf + nth * 3;
+        float **qkArr = thrPtrBuf + nth * 4;
+        float **expQkvArr = thrPtrBuf + nth * 5;
+        for (int i = 0; i < nth; ++i) {
+            preSum[i] = thrBuf + srcBlk * i;
+            sum[i] = thrBuf + srcBlk * nth + srcBlk * i;
+            preMax[i] = thrBuf + srcBlk * nth * 2 + srcBlk * i;
+            max[i] = thrBuf + srcBlk * nth * 3 + srcBlk * i;
+            qkArr[i] = thrBuf + srcBlk * nth * 4 + srcBlk * tgtBlk * i;
+            expQkvArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk) + srcBlk * headSize * i;
+        }
+
+#pragma omp parallel for collapse(3)
+        for (int i = 0; i < batchSize; ++i) {
+            for (int j = 0; j < numQHead; ++j) {
+                for (int m = 0; m < srcLen; m += srcBlk) {
+                    int tid = omp_get_thread_num();
+                    int tgtOff =
+                        i * numKVHead * tgtLen * headSize + (j / numGroup) * tgtLen * headSize;
+                    const float* k = key + tgtOff;
+                    const float* v = value + tgtOff;
+                    const float* attnMsk = getMask(attnMask, i, j, srcLen, tgtLen) + m * tgtLen;
+
+                    int qRealBlk = std::min(srcBlk, srcLen - m);
+                    int srcOff =
+                        i * numQHead * tgtLen * headSize + j * tgtLen * headSize;
+                    const float* q = query + srcOff + m * headSize;
+                    float* out = output + srcOff + m * headSize;
+
+                    // reset out
+                    for (int ii = 0; ii < qRealBlk; ++ii) {
+#pragma omp simd
+                        for (int jj = 0; jj < headSize; ++jj) {
+                            out[ii * headSize + jj] = 0;  // reset output
+                        }
+                    }
+                    // reset sum
+#pragma omp simd
+                    for (int ii = 0; ii < qRealBlk; ++ii) {
+                        preSum[tid][ii] = 0;
+                        sum[tid][ii] = 0;
+                        preMax[tid][ii] = std::numeric_limits<float>::lowest();
+                        max[tid][ii] = std::numeric_limits<float>::lowest();
+                    }
+                    // split the target len dimension
+                    for (int b = 0; b < tgtLen; b += tgtBlk) {
+                        int kvRealBlk = std::min(tgtBlk, tgtLen - b);
+                        // TODO: mask out
+                        const float* kBlk = k + b * headSize;
+                        const float* vBlk = v + b * headSize;
+
+                        DecoderUtil::incrementalTileAttention(q, kBlk, vBlk, attnMsk + b, qRealBlk, headSize, kvRealBlk,
+                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], refac, qkArr[tid],
+                                expQkvArr[tid], out);
+                    }
+                }
+            }
+        }
+        free(thrPtrBuf);
+        free(thrBuf);
+        return;
+}
 
 private:
     std::pair<int, int> getTaskRange(int N, int splits, int splitIdx) {
@@ -607,6 +690,10 @@ protected:
     // Used in computeSoftmax
     virtual float getScalingCoeff() {
         return 0; // 0 means using the default value
+    }
+
+    virtual const float* getMask(const float* attnMask, int bId, int hId, int srcLen, int tgtLen) {
+        return attnMask + bId * srcLen * tgtLen;
     }
 
     // query, key, value weighs

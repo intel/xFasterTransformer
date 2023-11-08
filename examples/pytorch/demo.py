@@ -57,6 +57,12 @@ def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str
     inputs = tokenizer(prompt, return_tensors="pt", padding=padding).input_ids
     return inputs
 
+def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
+    inputs = tokenizer(query, return_tensors="pt", padding=padding).input_ids
+    suffix = torch.tensor([[196]])
+    prefix = torch.tensor([[195]])
+    inputs = torch.cat((prefix, inputs, suffix), dim=1)
+    return inputs
 
 import importlib.util
 
@@ -95,6 +101,8 @@ if __name__ == "__main__":
                 print("[Use default prompt]:" + input_prompt)
             if args.chat and "chatglm" in args.model_path.lower():
                 input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
+            elif "baichuan" in args.model_path.lower():
+                input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
