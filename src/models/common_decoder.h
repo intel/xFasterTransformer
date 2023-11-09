@@ -35,7 +35,7 @@
 using namespace xft;
 
 struct QKPO_Dummy {
-    QKPO_Dummy(int dim) {}
+    QKPO_Dummy(int dim, int maxPos) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
 };
 
@@ -64,8 +64,10 @@ public:
         const int imSize = reader.GetInteger(modelType, "inter_size");
         const int layers = reader.GetInteger(modelType, "num_layer");
         const int vocabSize = reader.GetInteger(modelType, "vocab_size");
-        // Use 2k as default value
-        const int maxPositions = reader.GetInteger(modelType, "max_pos_seq_len", 2048);
+        // Max Position Embedding for position embedding functions, with a default value set to 0
+        const int maxPosEmbed = reader.GetInteger(modelType, "max_pos_seq_len", 0);
+        // Max num of tokens that LLM can process. Also for allocating buffers. Default maxPosEmbed
+        const int maxPositions = reader.GetInteger(modelType, "model_max_length", maxPosEmbed);
         const int hiddenSize = attHeadNum * size_per_head;
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
@@ -89,7 +91,7 @@ public:
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions);
+                vocabSize, embeddingSize, maxPositions, maxPosEmbed);
 
         // Decoder
         for (int i = 0; i < layers; ++i) {
@@ -320,7 +322,7 @@ protected:
 
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions) {
+            int maxPositions, int maxPosEmbed) {
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
 
@@ -335,7 +337,7 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, splitIdx, splits));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, splitIdx, splits));
         }
 
         return this->context.get();

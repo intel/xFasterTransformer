@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,26 +14,18 @@
 # limitations under the License.
 # ============================================================================
 
-cmake_minimum_required(VERSION 3.18)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
-    cmake_policy(SET CMP0135 NEW)
-endif()
+echo "FP16 Performance "
+python "${SCRIPT_DIR}"/../benchmark.py \
+    --token_path /data/Baichuan2-13B-Chat \
+    --model_path /data/Baichuan2-13B-Chat/cpu \
+    --prompt_path "${SCRIPT_DIR}"/prompt_pool.json \
+    --model_name "Baichuan2-13B" \
+    --dtype fp16 \
+    --token_in 32 	\
+    --token_out 32 --beam_width 1 --iteration 100
 
-project(dependency NONE)
+# In this benchmark case, token_in only can be "demo","32","64","128","256","512","1024","2016"
+# "32" means the token length is 32, if needs more test, add it into input_token.py
 
-include(ExternalProject)
-
-# cmake-format: off
-ExternalProject_Add(ig_lib
-  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/ig_v1.1.tar.gz
-  URL_HASH          MD5=47e5a2cd021caad2b1367c0b71dff2e7
-  TIMEOUT           60
-  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/ig
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND     ""
-  INSTALL_COMMAND   ""
-  TEST_COMMAND      ""
-)
-# cmake-format: on

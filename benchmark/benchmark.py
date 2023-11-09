@@ -63,6 +63,15 @@ def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tup
     inputs = tokenizer(prompts, return_tensors="pt", padding=padding).input_ids
     return inputs
 
+def build_inputs_baichuan(tokenizer, query: List[str], padding, history: List[Tuple[str, str]] = []):
+    inputs = tokenizer(query, return_tensors="pt", padding=padding).input_ids
+    print(inputs, inputs.shape)
+    suffix = torch.tensor([[196]])
+    prefix = torch.tensor([[195]])
+    inputs = torch.cat((prefix.expand((inputs.shape[0], 1)), inputs, suffix.expand(inputs.shape[0], 1)), dim=1)
+    print(inputs, inputs.shape)
+    return inputs
+
 import importlib.util
 
 xft_spec = importlib.util.find_spec("xfastertransformer")
@@ -105,6 +114,8 @@ if __name__ == "__main__":
             if args.batch_size > 1:
                 print("[INFO] chat mode only support batchsize=1")
             input_ids = build_inputs_chatglm(tokenizer, input_prompts, args.padding)
+        elif "baichuan" in args.model_name.lower() :
+            input_ids = build_inputs_baichuan(tokenizer, input_prompts, args.padding)
         else :
             input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
         input_token_nums = int(torch.numel(input_ids) / args.batch_size)

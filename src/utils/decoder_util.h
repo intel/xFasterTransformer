@@ -321,18 +321,18 @@ public:
         // maxVal is used to avoid exp(x) = inf
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
             __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
             __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
             __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
-            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx + vmask);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx * vfactor + vmask);
         }
 
         maxVal = _mm512_reduce_max_ps(vmax);
-        vmax = _mm512_set1_ps(maxVal * ctx->attFactor);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        vmax = _mm512_set1_ps(maxVal);
 
         // Compute vexp(vx - vmax) and sum it
         for (i = 0; i < vecs; ++i) {
@@ -368,6 +368,7 @@ public:
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vlowest = _mm512_set1_ps(maxVal);
         __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
@@ -378,12 +379,11 @@ public:
             if (_mm512_cmpeq_ps_mask(vmask, vlowest) == 0xffff) { continue; }
 
             __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
-            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx + vmask);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx * vfactor + vmask);
         }
 
         maxVal = _mm512_reduce_max_ps(vmax);
-        vmax = _mm512_set1_ps(maxVal * ctx->attFactor);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        vmax = _mm512_set1_ps(maxVal);
 
         // Compute vexp(vx - vmax) and sum it
         for (i = 0; i < vecs; ++i) {
@@ -542,7 +542,7 @@ public:
     
     // C = A * B
     // bTranspose: B need to be transposed or not
-    // ig_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
     static void sgemm(const float* A, const float* B, float* C, int m, int n, int k,
             bool transa, bool transb) {
         int lda = (transa ? m : k);
@@ -561,24 +561,23 @@ public:
     // need to do for res.
     static void softmaxTile(float *AB, float *sum, float *max, float *preSum, float *preMax, float refac,
             const float *attnMask, int m, int k, int attnMskStride) {
-        float max_val = std::numeric_limits<float>::lowest();
+        float maxVal = std::numeric_limits<float>::lowest();
         __m512 vrefac = _mm512_set1_ps(refac);
         for (int i = 0; i < m; ++i) {
             float* buf = AB + i * k;
             const float* attnMsk = attnMask + i * attnMskStride;
             // max val for avoiding inf and nan
-            __m512 vmax = _mm512_set1_ps(max_val);
+            __m512 vmax = _mm512_set1_ps(maxVal);
             for (int off = 0; off < k; off += 16) {
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
                 __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
                 __m512 vmask = _mm512_maskz_loadu_ps(mask, attnMsk + off);
         
-                vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx + vmask);
+                vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vrefac + vmask);
             }
             float _max = _mm512_reduce_max_ps(vmax);
         
-            _max *= refac;
             _max = _max > max[i] ? _max : max[i];
             __m512 merr = _mm512_set1_ps(max[i] - _max);
             merr = BertUtil::vexp(merr);
@@ -590,13 +589,13 @@ public:
             for (int off = 0; off < k; off += 16) {
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-        
+
                 __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
                 __m512 vmask = _mm512_maskz_loadu_ps(mask, attnMsk + off);
                 vx = BertUtil::vexp(vx * vrefac + vmask - vmax);
-        
+
                 _mm512_mask_storeu_ps(buf + off, mask, vx);
-        
+
                 vsum = _mm512_mask_add_ps(vsum, mask, vsum, vx);
             }
             float _sum = _mm512_reduce_add_ps(vsum);
@@ -652,90 +651,4 @@ public:
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n);
     }
     
-    // scaled dot-product attention: bmm1 + softmax + bmm2
-    static void scaledDpAttention(const float *query, const float *key, const float *value, const float *attnMask,
-            float scale, int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize,
-            float* output) {
-        // output = trans(softmax(query * trans(key)) * value)
-        int nth = omp_get_max_threads();
-        int minBlk = (nth >= batchSize * numQHead ? 256 : 512);
-        int srcBlk = std::min(minBlk, srcLen);
-        int tgtBlk = std::min(minBlk, tgtLen);
-        float refac = scale;
-        int numGroup = numQHead / numKVHead; 
-    
-        int numArr = 6;
-        int arrStride = (4 + tgtBlk + headSize) * srcBlk;
-        float *thrBuf = (float *)malloc(sizeof(float) * nth * arrStride);
-        float **thrPtrBuf = (float **)malloc(sizeof(float *) * nth * numArr);
-
-        float **preSum = thrPtrBuf;
-        float **sum = thrPtrBuf + nth;
-        float **preMax = thrPtrBuf + nth * 2;
-        float **max = thrPtrBuf + nth * 3;
-        float **qkArr = thrPtrBuf + nth * 4;
-        float **expQkvArr = thrPtrBuf + nth * 5;
-        for (int i = 0; i < nth; ++i) {
-            preSum[i] = thrBuf + srcBlk * i;
-            sum[i] = thrBuf + srcBlk * nth + srcBlk * i;
-            preMax[i] = thrBuf + srcBlk * nth * 2 + srcBlk * i;
-            max[i] = thrBuf + srcBlk * nth * 3 + srcBlk * i;
-            qkArr[i] = thrBuf + srcBlk * nth * 4 + srcBlk * tgtBlk * i;
-            expQkvArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk) + srcBlk * headSize * i;
-        }
-
-#pragma omp parallel for collapse(3)
-        for (int i = 0; i < batchSize; ++i) {
-            for (int j = 0; j < numQHead; ++j) {
-                for (int m = 0; m < srcLen; m += srcBlk) {
-                    int tid = omp_get_thread_num();
-                    int tgtOff =
-                        i * numKVHead * tgtLen * headSize + (j / numGroup) * tgtLen * headSize;
-                    const float* k = key + tgtOff;
-                    const float* v = value + tgtOff;
-                    const float* attnMsk = attnMask + i * tgtLen * srcLen + m * tgtLen;
-    
-                    int qRealBlk = std::min(srcBlk, srcLen - m);
-                    int srcOff =
-                        i * numQHead * tgtLen * headSize + j * tgtLen * headSize;
-                    const float* q = query + srcOff + m * headSize;
-                    float* out = output + srcOff + m * headSize;
-    
-                    // reset out
-                    for (int ii = 0; ii < qRealBlk; ++ii) {
-#pragma omp simd
-                        for (int jj = 0; jj < headSize; ++jj) {
-                            out[ii * headSize + jj] = 0;  // reset output
-                        }
-                    }
-                    // reset sum
-#pragma omp simd
-                    for (int ii = 0; ii < qRealBlk; ++ii) {
-                        preSum[tid][ii] = 0;
-                        sum[tid][ii] = 0;
-                        preMax[tid][ii] = std::numeric_limits<float>::lowest();
-                        max[tid][ii] = std::numeric_limits<float>::lowest();
-                    }
-                    // split the target len dimension
-                    for (int b = 0; b < tgtLen; b += tgtBlk) {
-                        int kvRealBlk = std::min(tgtBlk, tgtLen - b);
-                        //if (*(attnMsk + b + qRealBlk * tgtLen) == std::numeric_limits<float>::lowest()) {
-                        //  break;
-                        //}
-                        const float* kBlk = k + b * headSize;
-                        const float* vBlk = v + b * headSize;
-    
-                        incrementalTileAttention(q, kBlk, vBlk, attnMsk + b, qRealBlk, headSize, kvRealBlk,
-                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], refac, qkArr[tid],
-                                expQkvArr[tid], out);
-                    }
-                }
-            }
-        }
-        free(thrPtrBuf);
-        free(thrBuf);
-    
-        return;
-    }
-
 };

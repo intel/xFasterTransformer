@@ -23,6 +23,7 @@
 #include "chatglm2.h"
 #include "hybrid_model.h"
 #include "llama.h"
+#include "baichuan.h"
 #include "opt_decoder.h"
 #include "searcher.h"
 
@@ -165,6 +166,17 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
                 setDecoder(new HybridModel<LlamaLLM, bfloat16_t, float16_t>(modelPath));
                 break;
             case xft::DataType::bf16_int8: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, int8_t>(modelPath)); break;
+            default: printf("Unsupported data type.\n"); exit(-1);
+        }
+    } else if (modeltype == "baichuan") {
+        switch (datatype) {
+            case xft::DataType::fp16: setDecoder(new Baichuan<float16_t>(modelPath)); break;
+            case xft::DataType::bf16: setDecoder(new Baichuan<bfloat16_t>(modelPath)); break;
+            case xft::DataType::int8: setDecoder(new Baichuan<int8_t>(modelPath)); break;
+            case xft::DataType::bf16_fp16:
+                setDecoder(new HybridModel<Baichuan, bfloat16_t, float16_t>(modelPath));
+                break;
+            case xft::DataType::bf16_int8: setDecoder(new HybridModel<Baichuan, bfloat16_t, int8_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "chatglm") {
