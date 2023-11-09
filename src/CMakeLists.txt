@@ -26,17 +26,13 @@ set(SRC_LIB_LIST "utils" "layers" "kernels" "models" "searchers")
 
 target_link_libraries(xfastertransformer_static
                       ${SRC_LIB_LIST}
-                      ${3RDPART_LIB_LIST}
-                      libiomp5.so
-                      libmklml_intel.so)
+                      ${3RDPART_LIB_LIST})
 
 add_library(xfastertransformer SHARED)
 
 target_link_libraries(xfastertransformer
                       ${SRC_LIB_LIST}
-                      ${3RDPART_LIB_LIST}
-                      libiomp5.so
-                      libmklml_intel.so)
+                      ${3RDPART_LIB_LIST})
 
 add_dependencies(xfastertransformer_static ${DEPEND_LIST})
 add_dependencies(xfastertransformer ${DEPEND_LIST})

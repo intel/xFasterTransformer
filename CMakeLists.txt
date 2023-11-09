@@ -60,7 +60,6 @@ include("cmake/xdnn.cmake")
 include(GNUInstallDirs)
 
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/mklml/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
@@ -73,12 +72,11 @@ include_directories(${CMAKE_SOURCE_DIR}/src/models)
 include_directories(${CMAKE_SOURCE_DIR}/src/common)
 
 link_directories(${CMAKE_SOURCE_DIR}/src/kernels)
-link_directories(${CMAKE_SOURCE_DIR}/3rdparty/mklml/lib)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/src)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
 
 set(3RDPART_LIB_LIST "MPI::MPI_CXX" "ccl" "dnnl" "numa")
-set(DEPEND_LIST "onednn" "mklml" "xdnn_lib")
+set(DEPEND_LIST "onednn" "xdnn_lib")
 
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)
