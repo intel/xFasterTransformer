@@ -18,7 +18,7 @@ find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 find_package(oneCCL REQUIRED)
 
-execute_process(COMMAND python -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
+execute_process(COMMAND ${Python_EXECUTABLE} -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
                 OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
 
