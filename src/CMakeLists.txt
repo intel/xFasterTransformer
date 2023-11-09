@@ -37,7 +37,10 @@ target_link_libraries(xfastertransformer
 add_dependencies(xfastertransformer_static ${DEPEND_LIST})
 add_dependencies(xfastertransformer ${DEPEND_LIST})
 
-execute_process(COMMAND python -m pip show torch
+find_package (Python COMPONENTS Interpreter Development)
+message(STATUS "Using python: ${Python_EXECUTABLE}")
+
+execute_process(COMMAND ${Python_EXECUTABLE} -m pip show torch
                 RESULT_VARIABLE EXIT_CODE
                 OUTPUT_QUIET)
 if(${EXIT_CODE} EQUAL 0)
