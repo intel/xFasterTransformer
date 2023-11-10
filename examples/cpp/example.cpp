@@ -218,9 +218,9 @@ int main(int argc, char **argv) {
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16",
             cmdline::oneof<std::string>("fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"));
     args.add<int>("input_len", 'l', "input token size", false, -1);
-    args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 4096));
+    args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
-    args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 32));
+    args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
     args.add<int>("loop", '\0', "number of loop.", false, 10);
     args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
     args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
