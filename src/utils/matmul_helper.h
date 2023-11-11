@@ -334,9 +334,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
+            const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute");
@@ -391,9 +391,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_bias(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_bias(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
             const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
@@ -451,9 +451,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_biasadd_relu(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_biasadd_relu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
             const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
@@ -512,9 +512,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_silu(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc) {
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_silu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_silu");
@@ -569,9 +569,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_resmul(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
             const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
@@ -630,9 +630,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_residential(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
             const float *bias, const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
@@ -695,9 +695,9 @@ public:
         }
     }
 
-    template <typename WeiT>
-    static void compute_resext(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, float *C, int ldc,
+    template <typename InT, typename WeiT, typename OutT>
+    static void compute_resext(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
+            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
             const float *bias, float gamma, float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
@@ -799,8 +799,9 @@ private:
         return key;
     }
 
-    static void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const bfloat16_t *packedB, float beta, float *C, int ldc) {
+    template <typename Tin, typename Tout>
+    static void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
+            const bfloat16_t *packedB, float beta, Tout *C, int ldc) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
@@ -823,7 +824,16 @@ private:
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive descriptor and primitive.
             matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md);
@@ -836,7 +846,17 @@ private:
         }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
@@ -850,17 +870,20 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
-    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const float *A,
-            int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
+    template <typename Tin, typename Tout>
+    static void onednn_amx_sgemm_f32bf16f32_compute_biasadd(bool transA, int M, int N, int K, float alpha, const Tin *A,
+            int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc, const float *bias) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd.create_primitive");
         using namespace dnnl;
@@ -885,7 +908,16 @@ private:
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive descriptor & primitive.
             matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, bias_md, output_md);
@@ -898,7 +930,17 @@ private:
         }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         auto bias_mem = memory(matmul_pd->bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
         auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
@@ -914,17 +956,20 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
+    template <typename Tin, typename Tout>
     static void onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(bool transA, int M, int N, int K, float alpha,
-            const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias) {
+            const Tin *A, int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc, const float *bias) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.create_primitive");
         using namespace dnnl;
@@ -949,7 +994,16 @@ private:
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive post-ops (ReLU).
             const float post_alpha = 0.0f;
@@ -971,7 +1025,17 @@ private:
         }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         auto bias_mem = memory(matmul_pd->bias_desc(), get_dnnl_engine(), const_cast<float *>(bias));
         auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
@@ -987,17 +1051,20 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
-    static void onednn_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const float *A,
-            int lda, const bfloat16_t *packedB, float beta, float *C, int ldc) {
+    template <typename Tin, typename Tout>
+    static void onednn_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const Tin *A,
+            int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
         using namespace dnnl;
@@ -1020,7 +1087,16 @@ private:
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive post-ops (SiLU).
             const float post_alpha = 1.0f;
@@ -1041,7 +1117,17 @@ private:
         }
 
         // Repack and convert input data.
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+           input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
@@ -1055,18 +1141,20 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
-    // TODO: may be error
-    static void onednn_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const float *A,
-            int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *res, int ldres) {
+    template <typename Tin, typename Tout>
+    static void onednn_amx_sgemm_f32bf16f32_compute_resmul(bool transA, int M, int N, int K, float alpha, const Tin *A,
+            int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc, const float *res, int ldres) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_resmul");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_resmul.create_primitive");
         using namespace dnnl;
@@ -1091,7 +1179,16 @@ private:
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
             auto scale_md = memory::desc(scale_dims, dt::f32, tag::ab);
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive post-ops (resmul).
             post_ops binary_ops;
@@ -1124,7 +1221,17 @@ private:
             scale_mem = memory(scale_md, get_dnnl_engine(), const_cast<float *>(res));
         }
 
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
 
@@ -1139,17 +1246,20 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_resmul.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
         get_dnnl_stream().wait();
     }
 
+     template <typename Tin, typename Tout>
     static void onednn_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha,
-            const float *A, int lda, const bfloat16_t *packedB, float beta, float *C, int ldc, const float *bias,
+            const Tin *A, int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc, const float *bias,
             const float *res, int ldres) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
@@ -1177,7 +1287,16 @@ private:
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
             auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
-            auto output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            memory::desc output_md;
+            if constexpr (std::is_same_v<Tin, float>) {
+                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+            }
+            else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            }
+            else {
+                printf(">>> onednn amx output date type not supported.");
+            }
 
             // Create primitive post-ops (residential): dst_tmp = dst_tmp + shift
             post_ops matmul_ops;
@@ -1205,7 +1324,18 @@ private:
         // Repack and convert input data.
         memory::dims shift_dims = {M, N};
         auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
-        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+
+        memory input_mem;
+        if constexpr (std::is_same_v<Tin, float>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine());
+        }
+        else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(A));
+        }
+        else {
+            printf(">>> onednn amx input date type not supported.");
+        }
+
         auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<bfloat16_t *>(packedB));
         memory bias_mem;
         auto shift_mem = memory(shift_md, get_dnnl_engine(), const_cast<float *>(res));
@@ -1226,9 +1356,11 @@ private:
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_bias_residential.execute_primitive");
         // Reorder
+        if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
-            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            for (int i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+            }
         }
 
         matmul_prim->execute(get_dnnl_stream(), matmul_args);
