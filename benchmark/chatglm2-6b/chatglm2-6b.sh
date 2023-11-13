@@ -19,9 +19,12 @@ data_type=bf16_fp16
 ilen=3294
 olen=512
 echo "${data_type} Performance, input len ${ilen}, output len ${olen}"
+
+export XFT_FAKE_MODEL=1
+
 python "${SCRIPT_DIR}"/../benchmark.py \
-    --token_path /data/chatglm2-6b \
-    --model_path /data/chatglm2-6b/cpu \
+    --token_path "${SCRIPT_DIR}"/../../examples/model_config/chatglm2-6b/ \
+    --model_path "${SCRIPT_DIR}"/../../examples/model_config/chatglm2-6b/ \
     --prompt_path "${SCRIPT_DIR}"/prompt_pool.json \
     --model_name "ChatGLM2-6B" \
     --dtype ${data_type} \

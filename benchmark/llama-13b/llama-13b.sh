@@ -17,9 +17,12 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "FP16 Performance "
+
+export XFT_FAKE_MODEL=1
+
 python "${SCRIPT_DIR}"/../benchmark.py \
-    --token_path /data/llama-13b \
-    --model_path /data/llama-13b/cpu \
+    --token_path "${SCRIPT_DIR}"/../../examples/model_config/llama-13b/ \
+    --model_path "${SCRIPT_DIR}"/../../examples/model_config/llama-13b/ \
     --prompt_path "${SCRIPT_DIR}"/prompt_pool.json \
     --model_name "Llama-13B" \
     --dtype fp16 \
