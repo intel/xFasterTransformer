@@ -55,6 +55,12 @@ int readFile(const std::string &path, T *values, int size) {
     int count = 0;
     int nthreads = std::min(omp_get_max_threads(), 16);
     int chunk_size = (size + nthreads - 1) / nthreads;
+    int enable = (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0);
+    if (enable) {
+        printf("Loading fake model file %s.\n", path.c_str());
+        memset(values, 0, size * sizeof(T));
+        return size;
+    }
 
     {
         std::ifstream file(path, std::ios::binary);
