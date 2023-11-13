@@ -19,6 +19,7 @@ __pycache__/
 dist/
 
 # 3drparty
+/3rdparty/ig
 /3rdparty/mklml
 /3rdparty/oneCCL
 /3rdparty/jsoncpp
