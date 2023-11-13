@@ -14,7 +14,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
     - [Built from source](#built-from-source)
       - [Prepare Environment](#prepare-environment)
         - [Manually](#manually)
-        - [Docker(Recommended)](#dockerrecommended)
+        - [Docker](#docker)
         - [How to build](#how-to-build)
   - [Models Preparation](#models-preparation)
   - [API usage](#api-usage)
@@ -46,6 +46,7 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 | ChatGLM2 | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
 |  Llama   | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
 |  Llama2  | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
+| Baichuan | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
 |   Opt    | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
 
 ## Documents
@@ -81,11 +82,7 @@ docker pull intel/xfastertransformer:latest
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
-##### Docker(Recommended)
-- Pull docker image from dockerhub
-  ```bash
-  docker pull intel/xfastertransformer:dev-ubuntu22.04
-  ```
+##### Docker
 - Build docker image from Dockerfile
   ```bash
   docker build \
@@ -94,12 +91,8 @@ docker pull intel/xfastertransformer:latest
   --build-arg "HTTPS_PROXY=${https_proxy}" \
   -t intel/xfastertransformer:dev-ubuntu22.04 .
   ```
-Then run the docker with the command or bash script in repo (Assume model files are in `/data/` directory):  
+Then run the docker with the command (Assume model files are in `/data/` directory):  
 ```bash
-# A new image will be created to ensure both the user and file directories are consistent with the host if the user is not root.
-bash run_dev_docker.sh
-
-# or run docker manually by following command.
 docker run -it \
     --name xfastertransformer-dev \
     --privileged \
