@@ -280,7 +280,7 @@ int main(int argc, char **argv) {
     std::vector<int> perfixSeq;
     if (prefixLen > 0) {
         if (prefixLen <= input.size()) {
-            perfixSeq = std::vector<int>(input.begin(), input.end() + prefixLen);
+            perfixSeq = std::vector<int>(input.begin(), input.begin() + prefixLen);
         } else {
             printf("[ERROR] Prefix length %d is larger than input size %d.\n", prefixLen, input.size());
             exit(-1);

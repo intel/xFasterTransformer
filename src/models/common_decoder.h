@@ -588,7 +588,8 @@ protected:
         // The maximum sequence length is to be the same as maxPositions, at most
         // And the cache always needs to account for beam size
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
-        this->kvCacheMgr->resize(maxPositions, userSideBS * beamSize, headsPerSplit, ctx->attHeadSize, prefix);
+        this->kvCacheMgr->resize(prefix ? this->prefixSeqLen : maxPositions, userSideBS * beamSize, headsPerSplit,
+                ctx->attHeadSize, prefix);
     }
 
     float *getAttnMask(int sizeRequired) {

@@ -82,8 +82,8 @@ template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
     for (int i = 0; i < this->layers; ++i) {
         if (prefix) {
-            this->cachedPrefixKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
-            this->cachedPrefixValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+            this->cachedPrefixKeys[i].resize(maxSeqLen, 1, headsPerSplit, headSize);
+            this->cachedPrefixValues[i].resize(maxSeqLen, 1, headsPerSplit, headSize);
         } else {
             this->cachedKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
             this->cachedValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
