@@ -82,6 +82,9 @@ public:
         this->initSeqLen = 0;
         this->accSeqLen = 0;
 
+        this->prefixSeqLen = 0;
+        this->prefixSharing = false;
+
         // Buffer related (not initialized)
         this->inputTokens = nullptr;
         this->maskSize = 0;
@@ -141,8 +144,12 @@ public:
             prepareBuffers(ctx, userSideBS, beamSize, logitsAll);
 
             // Reset initial and accumulated sequence length at the first step
-            this->initSeqLen = seqLen;
-            this->accSeqLen = 0;
+            if (this->prefixSharing) {
+                skipFirstStep(this->prefixSeqLen);
+            } else {
+                this->initSeqLen = seqLen;
+                this->accSeqLen = 0;
+            }
         }
 
         // Embedding
@@ -160,6 +167,10 @@ public:
         int hiddenSize = ctx->hiddenSize;
         for (int i = 0; i < this->decoders.size(); ++i) {
             int workers = this->messenger.getSize();
+            if (step == 0 && this->prefixSharing) {
+                // Expand the prefix KV cache for each batch
+                this->kvCacheMgr->expandPrefixCache(i, userSideBS, this->prefixSeqLen);
+            }
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
 
@@ -270,6 +281,89 @@ public:
 
         return std::tuple<float *, int, int>(
                 this->outBuf->Data(), this->predictor->getSplitOffset(), this->predictor->getSplitSize());
+    }
+
+    void setPrefix(int *ids, int seqLen) {
+        this->prefixSharing = true;
+        this->prefixSeqLen = seqLen;
+        prefixForward(ids, seqLen);
+    }
+
+    void unsetPrefix() { this->prefixSharing = false; }
+
+    void prefixForward(int *ids, int seqLen) {
+        // Assume input has been synced with master in higher level.
+        // Assume the prefix token's shape is [1][1][seqLen].
+        TimeLine t("Decoder.prefixForward");
+        TimeLine t1("Decoder.prefixEmbedding");
+
+        // Prepare context
+        DecoderContext *ctx = this->getContext();
+        ctx->resize(1, seqLen, 0);
+
+        prepareBuffers(ctx, 1, 1, false, true);
+
+        // Embedding
+        this->embeddingForward(ids, this->embBuf->Data(), 1, seqLen);
+
+        // Prepare attention mask
+        this->prepareAttnMask(ids, 0);
+
+        // Token position ids, note: different models may have different impl.
+        int *positionIds = this->getPositionIds(ids, 1, seqLen, 0);
+        t1.release();
+
+        // Decoder: forward
+        int hiddenSize = ctx->hiddenSize;
+        for (int i = 0; i < this->decoders.size(); ++i) {
+            int workers = this->messenger.getSize();
+            KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getPrefixKey(i);
+            KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
+
+            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
+                    presentKey, // presentKey,
+                    presentValue, // presentValue,
+                    seqLen, // inputSeqLen,
+                    0, // pastSeqLen
+                    true, // useSelfAttn,
+                    true, // doLnBefore,
+                    false, // returnAttn,
+                    false, // returnKVs
+                    false, // forPT
+                    positionIds);
+
+            auto &attnOut = this->getContext()->tmpBuf;
+
+            // Merge the result of attention
+            // When attention and FFN/MLP are in parallel, do not need to reduce after attention
+            if constexpr (!ATTN_MLP_PARALLEL) {
+                if (this->messenger.getSize() > 1) {
+                    this->messenger.reduceAdd(attnOut.Data(), attnOut.Data(), seqLen * attnOut.Stride());
+                }
+            }
+
+            // When attention and FFN/MLP are in parallel, use the initial embedding as input
+            if constexpr (ATTN_MLP_PARALLEL) {
+                if (this->messenger.getSize() > 1) {
+                    this->decoders[i]->forwardFFN(
+                            getContext(), this->embBuf->Data(), this->outBuf->Data(), hiddenSize, hiddenSize, true);
+                    this->messenger.reduceAdd(this->outBuf->Data(), this->embBuf->Data(), seqLen * hiddenSize);
+                } else {
+                    this->decoders[i]->forwardFFN(
+                            getContext(), this->embBuf->Data(), this->embBuf->Data(), hiddenSize, hiddenSize, true);
+                }
+            } else {
+                // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
+                if (this->messenger.getSize() > 1) {
+                    this->decoders[i]->forwardFFN(
+                            getContext(), attnOut.Data(), this->outBuf->Data(), attnOut.Stride(), hiddenSize, true);
+                    this->messenger.reduceAdd(this->outBuf->Data(), this->embBuf->Data(), seqLen * hiddenSize);
+                } else {
+                    this->decoders[i]->forwardFFN(
+                            getContext(), attnOut.Data(), this->embBuf->Data(), attnOut.Stride(), hiddenSize, true);
+                }
+            }
+        }
     }
 
     // Reorder cached keys and values, size=batchSize*beamSize
@@ -463,7 +557,8 @@ protected:
         free(weight);
     }
 
-    virtual void prepareBuffers(DecoderContext *ctx, int userSideBS, int beamSize, bool logitsAll = false) {
+    virtual void prepareBuffers(
+            DecoderContext *ctx, int userSideBS, int beamSize, bool logitsAll = false, bool prefix = false) {
         int batchSize = ctx->batchSize;
         int hiddenSize = ctx->hiddenSize;
         int seqLen = ctx->inputSeqLen;
@@ -493,7 +588,7 @@ protected:
         // The maximum sequence length is to be the same as maxPositions, at most
         // And the cache always needs to account for beam size
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
-        this->kvCacheMgr->resize(maxPositions, userSideBS * beamSize, headsPerSplit, ctx->attHeadSize);
+        this->kvCacheMgr->resize(maxPositions, userSideBS * beamSize, headsPerSplit, ctx->attHeadSize, prefix);
     }
 
     float *getAttnMask(int sizeRequired) {
@@ -525,6 +620,8 @@ protected:
     int initSeqLen;
     // Accumulated sequence length, = past_seq_len + current_seq_len
     int accSeqLen;
+    // The prefix input  sequence length
+    int prefixSeqLen;
 
     // If not the master, need to receive token IDs from the master
     int *inputTokens;
@@ -547,6 +644,8 @@ private:
     int endId;
 
     WDataType wType;
+
+    bool prefixSharing;
 #ifdef DEBUG
     Debugger dbg;
 #endif

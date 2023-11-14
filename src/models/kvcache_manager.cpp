@@ -19,7 +19,6 @@
 #include <cstring>
 #include "float16.h"
 
-
 /******************** Start functions used by reorderCache *******************/
 
 static void swapValues(float *p1, float *p2, int size) {
@@ -80,10 +79,15 @@ static bool valueExist(T *arr, int size, T val) {
 /******************** end functions used by reorderCache *******************/
 
 template <typename KVCacheT>
-void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize) {
+void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
     for (int i = 0; i < this->layers; ++i) {
-        this->cachedKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
-        this->cachedValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+        if (prefix) {
+            this->cachedPrefixKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+            this->cachedPrefixValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+        } else {
+            this->cachedKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+            this->cachedValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+        }
     }
 }
 
@@ -97,6 +101,31 @@ void KVCacheManager<KVCacheT>::expandCache(int layerId, int userSideBS, int beam
     for (int i = 0; i < 2; ++i) {
         for (int seq = 0; seq < seqLen; ++seq) {
             pTensors[i]->expandOneSequence(userSideBS, beamSize, seq);
+        }
+    }
+}
+
+template <typename KVCacheT>
+void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, int seqLen) {
+    KVCacheTensor<KVCacheT> *dstTensors[2];
+    dstTensors[0] = &this->cachedKeys[layerId];
+    dstTensors[1] = &this->cachedValues[layerId];
+
+    KVCacheTensor<KVCacheT> *srcTensors[2];
+    srcTensors[0] = &this->cachedPrefixKeys[layerId];
+    srcTensors[1] = &this->cachedPrefixValues[layerId];
+
+    int headNum = dstTensors[0]->getHeadNum();
+    int headSize = dstTensors[0]->getHeadSize();
+
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < 2; ++i) {
+        for (int seq = 0; seq < seqLen; ++seq) {
+            auto *src = srcTensors[i]->getSequence(seq, 0, 0);
+            for (int b = userSideBS - 1; b >= 0; --b) {
+                auto *dst = dstTensors[i]->getSequence(seq, b, 0);
+                memcpy(dst, src, headNum * headSize * sizeof(KVCacheT));
+            }
         }
     }
 }

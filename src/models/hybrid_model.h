@@ -79,6 +79,10 @@ public:
 
     int getEndId() { return firstModel->getEndId(); }
 
+    void setPrefix(int *ids, int seqLen) { firstModel->setPrefix(ids, seqLen); }
+
+    void unsetPrefix() { firstModel->unsetPrefix(); }
+
 private:
     Model<FirstTokenDtype> *firstModel;
     Model<NextTokenDtype> *nextModel;

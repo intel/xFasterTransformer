@@ -24,19 +24,27 @@ public:
         this->layers = layers;
         this->cachedKeys = new KVCacheTensor<KVCacheT>[layers];
         this->cachedValues = new KVCacheTensor<KVCacheT>[layers];
+        this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
+        this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
     }
 
     ~KVCacheManager() {
         delete[] this->cachedKeys;
         delete[] this->cachedValues;
+        delete[] this->cachedPrefixKeys;
+        delete[] this->cachedPrefixValues;
     }
 
     // Resize, enlarge key/value buffers if not big enough
-    void resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize);
+    void resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix = false);
 
     KVCacheTensor<KVCacheT> &getKey(int layerId) { return cachedKeys[layerId]; }
 
     KVCacheTensor<KVCacheT> &getValue(int layerId) { return cachedValues[layerId]; }
+
+    KVCacheTensor<KVCacheT> &getPrefixKey(int layerId) { return cachedPrefixKeys[layerId]; }
+
+    KVCacheTensor<KVCacheT> &getPrefixValue(int layerId) { return cachedPrefixValues[layerId]; }
 
     /**
      * Expand both key and value cache for a specified layer
@@ -44,6 +52,12 @@ public:
      * See more in KVCacheTensor::expandAllSequence
     */
     void expandCache(int layerId, int userSideBS, int beamSize, int seqLen);
+
+    /**
+     * Fill both key and value prefix cache for a specified layer
+     * Needed when prefix sharing = ture
+    */
+    void expandPrefixCache(int layerId, int userSideBS, int seqLen);
 
     /**
      * Reorder cached keys/values, needed by beam search
@@ -58,4 +72,6 @@ private:
     int layers; // how many layers
     KVCacheTensor<KVCacheT> *cachedKeys; // all accumulated keys
     KVCacheTensor<KVCacheT> *cachedValues; // all accumulated values
+    KVCacheTensor<KVCacheT> *cachedPrefixKeys; // all accumulated prefix keys
+    KVCacheTensor<KVCacheT> *cachedPrefixValues; // all accumulated prefix values
 };
