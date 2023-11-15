@@ -16,6 +16,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -31,7 +32,21 @@ public:
     }
 
     Debugger(const std::string &filename) {
-        debugFile = fopen(filename.c_str(), "w");
+        std::string debugFilePath = filename;
+        if (std::getenv("XFT_DEBUG_DIR") != nullptr) {
+            std::string debugDir = std::getenv("XFT_DEBUG_DIR");
+            if (debugDir.back() != '/') { debugDir += '/'; }
+            debugFilePath = debugDir + filename;
+
+            if (!std::filesystem::exists(debugDir)) {
+                if (!std::filesystem::create_directories(debugDir)) {
+                    std::cout << "[Error] Error creating debug directory: " << debugDir << std::endl;
+                    exit(-1);
+                }
+            }
+        }
+
+        debugFile = fopen(debugFilePath.c_str(), "w");
         ownByMe = true;
     }
 
