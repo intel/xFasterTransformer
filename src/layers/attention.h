@@ -245,7 +245,7 @@ public:
             if (inputSeqLen == 1) {
                 position_ids[0] = pastSeqLen;
             } else {
-                std::iota(position_ids.begin(), position_ids.end(), 0);
+                std::iota(position_ids.begin(), position_ids.end(), pastSeqLen);
             }
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, position_ids.data());
         }
