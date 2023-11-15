@@ -109,7 +109,7 @@ def split_and_convert(args):
         config["baichuan"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
         config["baichuan"]["inter_size"] = str(hf_config["intermediate_size"])
         config["baichuan"]["max_pos_seq_len"] = str(hf_config.get("max_position_embeddings", 0))
-        config["baichuan"]["model_max_length"] = str(hf_config["model_max_length"])
+        config["baichuan"]["model_max_length"] = str(hf_config.get("model_max_length", config["baichuan"]["max_pos_seq_len"]))
         config["baichuan"]["num_layer"] = str(hf_config["num_hidden_layers"])
         config["baichuan"]["rms_norm_eps"] = "1e-6"
         config["baichuan"]["layernorm_type"] = "pre_layernorm"
