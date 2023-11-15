@@ -271,7 +271,8 @@ public:
             inputBuffer.Assign(presult, rows, cols, stride);
         }
         if (ctx->inputSeqLen > 256 && pastSeqLen == 0)
-            flashAttention(ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
+            flashAttention(
+                    ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         else
             fusedAttention(ctx, query, key, value, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         t4.release();
@@ -437,8 +438,8 @@ protected:
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
 
-                    small_gemm_transb(
-                            getMask(attnMask, b, i, queryLen, keyLen) + startSeq * keyLen, A, B, C, m, n, k, lda, ldb, ldc);
+                    small_gemm_transb(getMask(attnMask, b, i, queryLen, keyLen) + startSeq * keyLen, A, B, C, m, n, k,
+                            lda, ldb, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -498,7 +499,8 @@ protected:
                     if constexpr (std::is_same_v<KVCacheT, float>) {
                         xdnn_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
                     } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                        xdnn_sgemm_f32f16f32_single_thread(false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
+                        xdnn_sgemm_f32f16f32_single_thread(
+                                false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
                     }
 
 #ifdef DEBUG
@@ -529,7 +531,7 @@ protected:
         int srcLen = ctx->inputSeqLen;
         int tgtLen = pastSeqLen + srcLen;
 
-        float *transQKV = (float*)malloc(sizeof(float) * batchSize * qkvCols * srcLen * headSize);
+        float *transQKV = (float *)malloc(sizeof(float) * batchSize * qkvCols * srcLen * headSize);
 
         DecoderUtil::transposeQKV(qkvMatMul.Data(), transQKV, batchSize, srcLen, respQHeads, respKVHeads, headSize);
 
@@ -537,11 +539,11 @@ protected:
         float *key = transQKV + batchSize * respQHeads * srcLen * headSize;
         float *value = transQKV + batchSize * (respQHeads + respKVHeads) * srcLen * headSize;
 
-        scaledDpAttention(query, key, value, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
-                respKVHeads, headSize, tmpRes.Data());
-        DecoderUtil::transposeAttnResult(tmpRes.Data(), result.Data(), batchSize, srcLen, respQHeads, headSize,
-                result.Stride());
-        
+        scaledDpAttention(query, key, value, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads, respKVHeads,
+                headSize, tmpRes.Data());
+        DecoderUtil::transposeAttnResult(
+                tmpRes.Data(), result.Data(), batchSize, srcLen, respQHeads, headSize, result.Stride());
+
         // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
         // When M dimension is split, also multiple tasks per copy, so do copy seperately
 #pragma omp parallel for collapse(3)
@@ -571,9 +573,8 @@ protected:
     }
 
     // scaled dot-product attention: bmm1 + softmax + bmm2
-    void scaledDpAttention(const float *query, const float *key, const float *value, const float *attnMask,
-            float scale, int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize,
-            float* output) {
+    void scaledDpAttention(const float *query, const float *key, const float *value, const float *attnMask, float scale,
+            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, float *output) {
         // output = trans(softmax(query * trans(key)) * value)
         int nth = omp_get_max_threads();
         int minBlk = (nth >= batchSize * numQHead ? 256 : 512);
@@ -607,23 +608,21 @@ protected:
             for (int j = 0; j < numQHead; ++j) {
                 for (int m = 0; m < srcLen; m += srcBlk) {
                     int tid = omp_get_thread_num();
-                    int tgtOff =
-                        i * numKVHead * tgtLen * headSize + (j / numGroup) * tgtLen * headSize;
-                    const float* k = key + tgtOff;
-                    const float* v = value + tgtOff;
-                    const float* attnMsk = getMask(attnMask, i, j, srcLen, tgtLen) + m * tgtLen;
+                    int tgtOff = i * numKVHead * tgtLen * headSize + (j / numGroup) * tgtLen * headSize;
+                    const float *k = key + tgtOff;
+                    const float *v = value + tgtOff;
+                    const float *attnMsk = getMask(attnMask, i, j, srcLen, tgtLen) + m * tgtLen;
 
                     int qRealBlk = std::min(srcBlk, srcLen - m);
-                    int srcOff =
-                        i * numQHead * tgtLen * headSize + j * tgtLen * headSize;
-                    const float* q = query + srcOff + m * headSize;
-                    float* out = output + srcOff + m * headSize;
+                    int srcOff = i * numQHead * tgtLen * headSize + j * tgtLen * headSize;
+                    const float *q = query + srcOff + m * headSize;
+                    float *out = output + srcOff + m * headSize;
 
                     // reset out
                     for (int ii = 0; ii < qRealBlk; ++ii) {
 #pragma omp simd
                         for (int jj = 0; jj < headSize; ++jj) {
-                            out[ii * headSize + jj] = 0;  // reset output
+                            out[ii * headSize + jj] = 0; // reset output
                         }
                     }
                     // reset sum
@@ -638,12 +637,12 @@ protected:
                     for (int b = 0; b < tgtLen; b += tgtBlk) {
                         int kvRealBlk = std::min(tgtBlk, tgtLen - b);
                         // TODO: mask out
-                        const float* kBlk = k + b * headSize;
-                        const float* vBlk = v + b * headSize;
+                        const float *kBlk = k + b * headSize;
+                        const float *vBlk = v + b * headSize;
 
                         DecoderUtil::incrementalTileAttention(q, kBlk, vBlk, attnMsk + b, qRealBlk, headSize, kvRealBlk,
-                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], refac, qkArr[tid],
-                                expQkvArr[tid], out);
+                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], refac, qkArr[tid], expQkvArr[tid],
+                                out);
                     }
                 }
             }
@@ -651,7 +650,7 @@ protected:
         free(thrPtrBuf);
         free(thrBuf);
         return;
-}
+    }
 
 private:
     std::pair<int, int> getTaskRange(int N, int splits, int splitIdx) {
@@ -692,7 +691,7 @@ protected:
         return 0; // 0 means using the default value
     }
 
-    virtual const float* getMask(const float* attnMask, int bId, int hId, int srcLen, int tgtLen) {
+    virtual const float *getMask(const float *attnMask, int bId, int hId, int srcLen, int tgtLen) {
         return attnMask + bId * srcLen * tgtLen;
     }
 
