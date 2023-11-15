@@ -134,33 +134,54 @@ public:
         int beamSize = dims[1];
         int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as samples are duplicated at step 0
         int seqLen = dims[2];
+        int pastSeqLen = this->accSeqLen;
+        int inputSeqLen = seqLen;
 
         // Prepare context
         DecoderContext *ctx = this->getContext();
-        ctx->resize(batchSize, seqLen, (step == 0 ? 0 : this->accSeqLen));
+        if (step == 0) {
+            ctx->resize(batchSize, this->prefixSharing ? this->prefixSeqLen : seqLen, 0);
+        } else {
+            ctx->resize(batchSize, seqLen, pastSeqLen);
+        }
 
         if (step == 0) {
             // Enlarge buffer if needed
             prepareBuffers(ctx, userSideBS, beamSize, logitsAll);
 
             // Reset initial and accumulated sequence length at the first step
+            this->initSeqLen = seqLen;
+            this->accSeqLen = 0;
             if (this->prefixSharing) {
-                skipFirstStep(this->prefixSeqLen);
-            } else {
-                this->initSeqLen = seqLen;
-                this->accSeqLen = 0;
+                pastSeqLen = this->prefixSeqLen;
+                inputSeqLen = seqLen - pastSeqLen;
+
+                int *prefixIDs = (int *)malloc(userSideBS * pastSeqLen * sizeof(int));
+                int *newIDs = (int *)malloc(userSideBS * inputSeqLen * sizeof(int));
+                for (int bs = 0; bs < userSideBS; bs++) {
+                    memcpy(prefixIDs + pastSeqLen * bs, ids + seqLen * bs, pastSeqLen * sizeof(int));
+                    memcpy(newIDs + inputSeqLen * bs, ids + seqLen * bs + pastSeqLen, inputSeqLen * sizeof(int));
+                }
+
+                this->prepareAttnMask(prefixIDs, 0);
+
+                this->getPositionIds(prefixIDs, batchSize, pastSeqLen, 0);
+
+                free(prefixIDs);
+                ids = newIDs;
+                ctx->resize(batchSize, inputSeqLen, pastSeqLen);
             }
         }
 
         // Embedding
-        this->embeddingForward(ids, this->embBuf->Data(), batchSize, seqLen);
+        this->embeddingForward(ids, this->embBuf->Data(), batchSize, inputSeqLen);
         this->accSeqLen += seqLen;
 
         // Prepare attention mask
-        this->prepareAttnMask(ids, step);
+        this->prepareAttnMask(ids, step + this->prefixSharing);
 
         // Token position ids, note: different models may have different impl.
-        int *positionIds = this->getPositionIds(ids, batchSize, seqLen, step);
+        int *positionIds = this->getPositionIds(ids, batchSize, seqLen, step + this->prefixSharing);
         t1.release();
 
         // Decoder: forward
@@ -177,8 +198,8 @@ public:
             this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
-                    seqLen, // inputSeqLen,
-                    this->accSeqLen - seqLen, // pastSeqLen
+                    inputSeqLen, // inputSeqLen,
+                    pastSeqLen, // pastSeqLen
                     step == 0, // useSelfAttn,
                     true, // doLnBefore,
                     false, // returnAttn,
@@ -195,7 +216,8 @@ public:
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
             if constexpr (!ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->messenger.reduceAdd(attnOut.Data(), attnOut.Data(), batchSize * seqLen * attnOut.Stride());
+                    this->messenger.reduceAdd(
+                            attnOut.Data(), attnOut.Data(), batchSize * inputSeqLen * attnOut.Stride());
                 }
             }
 
@@ -205,7 +227,7 @@ public:
                     this->decoders[i]->forwardFFN(
                             getContext(), this->embBuf->Data(), this->outBuf->Data(), hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(
-                            this->outBuf->Data(), this->embBuf->Data(), batchSize * seqLen * hiddenSize);
+                            this->outBuf->Data(), this->embBuf->Data(), batchSize * inputSeqLen * hiddenSize);
                 } else {
                     this->decoders[i]->forwardFFN(
                             getContext(), this->embBuf->Data(), this->embBuf->Data(), hiddenSize, hiddenSize, true);
@@ -216,7 +238,7 @@ public:
                     this->decoders[i]->forwardFFN(
                             getContext(), attnOut.Data(), this->outBuf->Data(), attnOut.Stride(), hiddenSize, true);
                     this->messenger.reduceAdd(
-                            this->outBuf->Data(), this->embBuf->Data(), batchSize * seqLen * hiddenSize);
+                            this->outBuf->Data(), this->embBuf->Data(), batchSize * inputSeqLen * hiddenSize);
                 } else {
                     this->decoders[i]->forwardFFN(
                             getContext(), attnOut.Data(), this->embBuf->Data(), attnOut.Stride(), hiddenSize, true);
@@ -227,11 +249,11 @@ public:
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
         float *lnIn = this->embBuf->Data();
-        if (seqLen > 1 && !logitsAll) { // copy is not needed when seqLen = 1 or logitsAll is true
+        if (inputSeqLen > 1 && !logitsAll) { // copy is not needed when seqLen = 1 or logitsAll is true
             lnIn = this->outBuf->Data();
 #pragma omp parallel for
             for (int b = 0; b < batchSize; ++b) {
-                memcpy(lnIn + b * hiddenSize, this->embBuf->Data() + ((b + 1) * seqLen - 1) * hiddenSize,
+                memcpy(lnIn + b * hiddenSize, this->embBuf->Data() + ((b + 1) * inputSeqLen - 1) * hiddenSize,
                         hiddenSize * sizeof(float));
             }
         }
