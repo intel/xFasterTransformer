@@ -19,15 +19,32 @@
 #include <stdexcept>
 
 #include "INIReader.h"
+#include "baichuan.h"
 #include "chatglm.h"
 #include "chatglm2.h"
 #include "hybrid_model.h"
 #include "llama.h"
-#include "baichuan.h"
 #include "opt_decoder.h"
 #include "searcher.h"
 
 namespace xft {
+enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
+
+GenerationMode getGenerationMode(SearcherConfig &config_) {
+    if (config_.numBeams == 1) {
+        if (config_.doSample) {
+            return GenerationMode::SAMPLE;
+        } else {
+            return GenerationMode::GREEDY_SEARCH;
+        }
+    } else if (config_.numBeams > 1) {
+        return GenerationMode::BEAM_SEARCH;
+    } else {
+        printf("numBeams should greater than or equal to 1.\n");
+        exit(-1);
+    }
+}
+
 Model::~Model() {
     exitSlaves();
     if (decoder != nullptr) { delete decoder; }
@@ -84,6 +101,18 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
     createSearcher(configuration);
 }
 
+void Model::config(SearcherConfig &config_) {
+    isNewInput = true;
+    if (decoder->getRank() == 0) { configuration = config_; }
+    Messenger &messenger = decoder->getMessenger();
+    messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+
+    // Slaves get exit flags and exit directly
+    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
+
+    createSearcher(configuration);
+}
+
 bool Model::isDone() {
     if (searcher == nullptr || inputIds.empty()) {
         printf("Please set input and config first.\n");
@@ -112,17 +141,14 @@ std::vector<int32_t> Model::generate() {
 
 void Model::createSearcher(SearcherConfig &config_) {
     if (searcher != nullptr) { delete searcher; }
-    if (config_.numBeams < 1) {
-        printf("numBeams should greater than or equal to 1.\n");
-        exit(-1);
-    } else if (config_.numBeams == 1) {
-        if (config_.doSample) {
-            searcher = new SampleSearch(*decoder, config_);
-        } else {
-            searcher = new GreedySearch(*decoder, config_);
-        }
-    } else {
+
+    GenerationMode genMode = getGenerationMode(config_);
+    if (genMode == GenerationMode::GREEDY_SEARCH) {
+        searcher = new GreedySearch(*decoder, config_);
+    } else if (genMode == GenerationMode::BEAM_SEARCH) {
         searcher = new BeamSearch(*decoder, config_);
+    } else if (genMode == GenerationMode::SAMPLE) {
+        searcher = new SampleSearch(*decoder, config_);
     }
 }
 

@@ -33,6 +33,8 @@ public:
             bool doEarlyStopping_ = false, int eosTokenId_ = -1, int padTokenId_ = -1, bool doSample_ = false,
             float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0);
 
+    void config(SearcherConfig &config_);
+
     bool isDone();
 
     std::vector<int32_t> generate();
