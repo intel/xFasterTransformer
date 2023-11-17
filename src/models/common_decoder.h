@@ -181,7 +181,7 @@ public:
         this->prepareAttnMask(ids, step + this->prefixSharing);
 
         // Token position ids, note: different models may have different impl.
-        int *positionIds = this->getPositionIds(ids, batchSize, seqLen, step + this->prefixSharing);
+        int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
         t1.release();
 
         // Decoder: forward
