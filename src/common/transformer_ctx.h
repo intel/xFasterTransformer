@@ -125,6 +125,16 @@ public:
         }
     }
 
+    DecoderContext(int _batchSize, int _inputSeqLen, int _hiddenSize, int _imSize)
+        : batchSize(_batchSize)
+        , inputSeqLen(_inputSeqLen)
+        , hiddenSize(_hiddenSize)
+        , intermediateSize(_imSize)
+        , attHeadNum(-1)
+        , kvHeadNum(-1)
+        , splitIdx(-1)
+        , numSplit(-1) {}
+
     void dump() {
         printf("batch_size=%d\n", batchSize);
         printf("inputSeqLen=%d\n", inputSeqLen);
@@ -151,7 +161,8 @@ public:
         const int pad = 0; // 4;
         int hiddenStride = (hiddenSize % 512 == 0 ? hiddenSize + pad
                                                   : hiddenSize); // stride for matrix with columns of hiddenSize
-        int responsibleHead = splitIdx < (attHeadNum % numSplit) ? (attHeadNum / numSplit + 1) : (attHeadNum / numSplit);
+        int responsibleHead
+                = splitIdx < (attHeadNum % numSplit) ? (attHeadNum / numSplit + 1) : (attHeadNum / numSplit);
         int qCols = responsibleHead * attHeadSize;
         int kCols = qCols / (attHeadNum / kvHeadNum);
         int vCols = kCols;
@@ -193,7 +204,5 @@ public:
         qkvMatMul.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, qkvCols, qkvStride);
     }
 
-    ~DecoderContext() {
-        free(this->rawBuffer);
-    }
+    ~DecoderContext() { free(this->rawBuffer); }
 };
