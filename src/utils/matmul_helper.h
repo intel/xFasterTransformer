@@ -26,6 +26,7 @@
 
 #include <map>
 #include <tuple>
+#include <cstring>
 
 #define USE_AMX_M 8
 
