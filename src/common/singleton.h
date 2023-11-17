@@ -20,7 +20,7 @@ template <typename T>
 class SingletonBase {
 public:
     static T &getInstance() {
-        // 使用双检锁机制确保线程安全性
+        // Use double-checked locking to ensure thread safety.
         if (instance_ == nullptr) {
             std::lock_guard<std::mutex> lock(mutex_);
             if (instance_ == nullptr) {
@@ -31,19 +31,15 @@ public:
         return *instance_;
     }
 
-    // 禁用拷贝构造函数和赋值运算符
+    // Disable copy constructor and assignment operator.
     SingletonBase(const SingletonBase &) = delete;
     SingletonBase &operator=(const SingletonBase &) = delete;
 
 protected:
-    // 构造函数和析构函数为受保护，确保只能通过派生类访问
-    SingletonBase() {
-        // 可以在这里初始化一些资源
-    }
+    // Constructors and destructors are protected to ensure access only through derived classes.
+    SingletonBase() {}
 
-    virtual ~SingletonBase() {
-        // 可以在这里释放资源
-    }
+    virtual ~SingletonBase() {}
 
 private:
     static void cleanup() {
@@ -57,7 +53,6 @@ private:
     static std::mutex mutex_;
 };
 
-// 静态成员初始化
 template <typename T>
 T *SingletonBase<T>::instance_ = nullptr;
 
