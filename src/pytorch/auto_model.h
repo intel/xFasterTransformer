@@ -42,6 +42,10 @@ public:
         model = new xft::AutoModel(modelPath, datatype);
     };
 
+    ~TorchAutoModel() {
+        if (model != nullptr) { delete model; }
+    }
+
     int64_t getRank() { return static_cast<int64_t>(model->getRank()); }
 
     bool isDone() { return model->isDone(); }
@@ -117,9 +121,24 @@ public:
         return ret;
     }
 
-    ~TorchAutoModel() {
-        if (model != nullptr) { delete model; }
-    }
+    void setPrefix(torch::Tensor inputIds) {
+        TORCH_CHECK(inputIds.dim() <= 2, "Prefix sharing input expected dim <= 2 but tensor has ", inputIds.dim());
+        inputIds.squeeze();
+        TORCH_CHECK(inputIds.dim() == 2, "Prefix sharing only support 1 prompt but input has ", inputIds.size(0));
+
+        int seqLen = inputIds.size(-1);
+
+        std::vector<int> prefixIds(seqLen);
+        int64_t *p = inputIds.data_ptr<int64_t>();
+        for (int i = 0; i < seqLen; ++i) {
+            prefixIds[i] = static_cast<int>(*p);
+            p += 1;
+        }
+
+        model->setPrefix(prefixIds);
+    };
+
+    void unsetPrefix() { model->unsetPrefix(); };
 
 private:
     xft::Model *model;
