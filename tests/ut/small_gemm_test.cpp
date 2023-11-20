@@ -107,7 +107,7 @@ static void testFP16(int M, int N, int K) {
     float *reference_C = new float[M * N];
     reference_sgemm(M, N, K, A, K, B, N, reference_C, N);
 
-    small_sgemm_f32f16f32(M, N, K, A, K, f16_B, N, C, N);
+    small_sgemm_f32f16f32(M, N, K, A, K, (const XDNN_FP16 *)f16_B, N, C, N);
 
     for (int i = 0; i < M; ++i) {
         for (int j = 0; j < N; ++j) {
