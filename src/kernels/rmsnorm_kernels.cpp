@@ -129,7 +129,10 @@ void invokeRmsNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t
 
 void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols, int iStride,
         int oStride, float epsilon) {
-    if (dt == DataType::bf16) {
+    if (dt == DataType::fp32) {
+        invokeRmsNorm((float *)output, (const float *)input, (const float *)weight, rows, cols, iStride,
+                oStride, epsilon);
+    } else if (dt == DataType::bf16) {
         invokeRmsNorm((bfloat16_t *)output, (const bfloat16_t *)input, (const bfloat16_t *)weight, rows, cols, iStride,
                 oStride, epsilon);
     }
