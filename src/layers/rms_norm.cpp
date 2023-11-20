@@ -32,10 +32,10 @@ RmsNorm::~RmsNorm() {
     if (weight) { free(weight); }
 }
 
-void RmsNorm::setWeight(const float *w, const float *, int size) {
-    this->normSize = size;
-    this->weight = (float *)aligned_alloc(64, size * sizeof(float));
-    memcpy(weight, w, size * sizeof(float));
+void RmsNorm::setWeight(const float *w, const float *, int cols) {
+    this->normSize = cols;
+    this->weight = (float *)aligned_alloc(64, cols * sizeof(float));
+    memcpy(weight, w, cols * sizeof(float));
 }
 
 // input and output are in shape of (rows, normSize)

@@ -29,10 +29,13 @@ struct LayerNormWeight {
     const T *beta = nullptr;
 };
 
-void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, const int rows,
-        const int size, int iStride = -1, int oStride = -1, const float epsilon = 1e-5);
+void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, int rows,
+        int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
+
+void invokeLayerNorm(float16_t *output, const float16_t *input, const float16_t *gamma, const float16_t *beta,
+        int rows, int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
 
 void invokeLayerNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *gamma, const bfloat16_t *beta,
-        const int rows, const int size, int iStride = -1, int oStride = -1, const float epsilon = 1e-5);
+        int rows, int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
 
 } // namespace xft

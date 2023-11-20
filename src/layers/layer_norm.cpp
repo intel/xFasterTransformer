@@ -33,11 +33,11 @@ LayerNorm::~LayerNorm() {
     if (weights) { free(weights); }
 }
 
-void LayerNorm::setWeight(const float *gamma, const float *beta, int size) {
-    this->normSize = size;
-    this->weights = (float *)aligned_alloc(64, 2 * size * sizeof(float));
-    memcpy(weights, gamma, size * sizeof(float));
-    memcpy(weights + size, beta, size * sizeof(float));
+void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
+    this->normSize = cols;
+    this->weights = (float *)aligned_alloc(64, 2 * cols * sizeof(float));
+    memcpy(weights, gamma, cols * sizeof(float));
+    memcpy(weights + cols, beta, cols * sizeof(float));
 }
 
 // input and output are in shape of (rows, normSize)
