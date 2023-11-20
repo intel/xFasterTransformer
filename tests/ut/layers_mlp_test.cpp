@@ -69,7 +69,6 @@ static void compareMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize)
 }
 
 TEST(MLPLLaMA, bfloat16_t) {
-    // compareMLPLLaMA<bfloat16_t>(1, 6, 32, 128);
     compareMLPLLaMA<bfloat16_t>(128, 4096, 11008);
 }
 
