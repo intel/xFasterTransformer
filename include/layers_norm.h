@@ -18,8 +18,8 @@
 
 namespace xft {
 
-void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, const int rows,
-        const int size, int iStride = -1, int oStride = -1, const float epsilon = 1e-5);
+void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
+        int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
 
 void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols,
         int iStride = -1, int oStride = -1, float epsilon = 1e-6);
@@ -30,7 +30,7 @@ public:
     LayerNorm();
     ~LayerNorm();
 
-    void setWeight(const float *gamma, const float *beta, int size);
+    void setWeight(const float *gamma, const float *beta, int cols);
 
     // input and output are in shape of (rows, normSize)
     // TODO: column-wise parallel
@@ -49,7 +49,7 @@ public:
     RmsNorm();
     ~RmsNorm();
 
-    void setWeight(const float *w, const float *, int size);
+    void setWeight(const float *w, const float *, int cols);
 
     // input and output are in shape of (rows, normSize)
     void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);

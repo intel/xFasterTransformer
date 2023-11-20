@@ -84,6 +84,7 @@ foreach(src ${sources})
     target_link_libraries(${executable} PUBLIC stdc++)
     target_link_libraries(${executable} PUBLIC mpi)
     target_link_libraries(${executable} PUBLIC numa)
+    target_link_libraries(${executable} PUBLIC xfastertransformer)
 
     # List of executable names and their corresponding libraries
     set(executables_need_gemm kv_reorder_test beam_search_test small_gemm_test)

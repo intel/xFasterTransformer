@@ -23,9 +23,10 @@
 
 namespace xft {
 
-void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, const int rows,
-        const int size, int iStride, int oStride, const float epsilon) {
+void invokeLayerNorm(float *output, const float *input, const float *gamma, const float *beta, int rows, int cols,
+        int iStride, int oStride, float epsilon) {
 
+    int size = cols;
     if (iStride == -1) iStride = size;
     if (oStride == -1) oStride = size;
 
@@ -78,8 +79,9 @@ void invokeLayerNorm(float *output, const float *input, const float *gamma, cons
 }
 
 void invokeLayerNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *gamma, const bfloat16_t *beta,
-        const int rows, const int size, int iStride, int oStride, const float epsilon) {
+        int rows, int cols, int iStride, int oStride, float epsilon) {
 
+    int size = cols;
     if (iStride == -1) iStride = size;
     if (oStride == -1) oStride = size;
 
@@ -131,11 +133,11 @@ void invokeLayerNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16
     }
 }
 
-void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, const int rows,
-        const int size, int iStride, int oStride, const float epsilon) {
+void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
+        int cols, int iStride, int oStride, float epsilon) {
     if (dt == DataType::bf16) {
         invokeLayerNorm((bfloat16_t *)output, (const bfloat16_t *)input, (const bfloat16_t *)gamma,
-                (const bfloat16_t *)beta, rows, size, iStride, oStride, epsilon);
+                (const bfloat16_t *)beta, rows, cols, iStride, oStride, epsilon);
     }
 }
 
