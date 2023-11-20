@@ -125,16 +125,6 @@ public:
         }
     }
 
-    DecoderContext(int _batchSize, int _inputSeqLen, int _hiddenSize, int _imSize)
-        : batchSize(_batchSize)
-        , inputSeqLen(_inputSeqLen)
-        , hiddenSize(_hiddenSize)
-        , intermediateSize(_imSize)
-        , attHeadNum(-1)
-        , kvHeadNum(-1)
-        , splitIdx(-1)
-        , numSplit(-1) {}
-
     void dump() {
         printf("batch_size=%d\n", batchSize);
         printf("inputSeqLen=%d\n", inputSeqLen);

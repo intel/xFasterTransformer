@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#include "mlp.h"
+#include "layers_mlp.h"
 
 #include "mlp_llama.h"
 
@@ -23,8 +23,10 @@ void invokeMLPLLaMA(DataType dt, int batchSize, int inputSeqLen, int hiddenSize,
         const void *downWeight) {
     if (dt == DataType::bf16) {
         LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
-        DecoderContext ctx(batchSize, inputSeqLen, hiddenSize, intermediateSize);
-        std::vector<float *> params {(float *)gateWeight, (float *)upWeight, (float *)nullptr, (float *)downWeight};
+        DecoderContext ctx(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 1);
+        ctx.resize(batchSize, inputSeqLen, 0);
+        std::vector<float *> params {(float *)gateWeight, (float *)nullptr, (float *)upWeight, (float *)nullptr,
+                (float *)nullptr, (float *)nullptr, (float *)downWeight};
         llama_mlp.setWeights(&ctx, params);
         llama_mlp.forward(&ctx, (float *)const_cast<void *>(input), (float *)output, inputStride, outputStride, false);
     }
