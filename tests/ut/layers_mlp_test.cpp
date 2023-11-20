@@ -21,42 +21,42 @@
 #include "gtest/gtest.h"
 
 template <typename T>
-static void refMLPLLaMA(int batchSize, int inputSeqLen, int hiddenSize, int intermediateSize, T *output,
+static void refMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize, T *output,
         int outputStride, const T *input, int inputStride, const T *gateWeight, const T *upWeight,
         const T *downWeight) {
-    memset(output, 0, batchSize * inputSeqLen * hiddenSize * sizeof(T));
+    memset(output, 0, numTokens * hiddenSize * sizeof(T));
 }
 
 template <typename T>
-static void compareMLPLLaMA(int batch_size, int seq_length, int hidden_size, int intermediate_size) {
+static void compareMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize) {
 
-    float *input = (float *)aligned_alloc(64, batch_size * seq_length * hidden_size * sizeof(float));
-    float *gateW = (float *)aligned_alloc(64, hidden_size * intermediate_size * sizeof(float));
-    float *upW = (float *)aligned_alloc(64, hidden_size * intermediate_size * sizeof(float));
-    float *downW = (float *)aligned_alloc(64, intermediate_size * hidden_size * sizeof(float));
-    float *ourOutput = (float *)aligned_alloc(64, batch_size * seq_length * hidden_size * sizeof(float));
-    float *refOutput = (float *)aligned_alloc(64, batch_size * seq_length * hidden_size * sizeof(float));
+    float *input = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
+    float *ourOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *refOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
 
-    for (int i = 0; i < batch_size * seq_length * hidden_size; ++i) {
+    for (int i = 0; i < numTokens * hiddenSize; ++i) {
         input[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
     }
 
-    for (int i = 0; i < hidden_size * intermediate_size; ++i) {
+    for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
         gateW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
         upW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
         downW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
     }
 
     if constexpr (std::is_same<T, bfloat16_t>::value) {
-        invokeMLPLLaMA(xft::DataType::bf16, batch_size, seq_length, hidden_size, intermediate_size, (void *)ourOutput,
-                hidden_size, (const void *)input, hidden_size, (const void *)gateW, (const void *)upW,
+        invokeMLPLLaMA(xft::DataType::bf16, numTokens, hiddenSize, intermediateSize, (void *)ourOutput,
+                hiddenSize, (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW,
                 (const void *)downW);
-        refMLPLLaMA<bfloat16_t>(batch_size, seq_length, hidden_size, intermediate_size, (bfloat16_t *)refOutput,
-                hidden_size, (const bfloat16_t *)input, hidden_size, (const bfloat16_t *)gateW, (const bfloat16_t *)upW,
+        refMLPLLaMA<bfloat16_t>(numTokens, hiddenSize, intermediateSize, (bfloat16_t *)refOutput,
+                hiddenSize, (const bfloat16_t *)input, hiddenSize, (const bfloat16_t *)gateW, (const bfloat16_t *)upW,
                 (const bfloat16_t *)downW);
     }
 
-    for (int i = 0; i < batch_size * seq_length * hidden_size; ++i) {
+    for (int i = 0; i < numTokens * hiddenSize; ++i) {
         EXPECT_LT(std::abs(refOutput[i] - (float)ourOutput[i]), 0.01);
     }
 
@@ -70,7 +70,7 @@ static void compareMLPLLaMA(int batch_size, int seq_length, int hidden_size, int
 
 TEST(MLPLLaMA, bfloat16_t) {
     // compareMLPLLaMA<bfloat16_t>(1, 6, 32, 128);
-    compareMLPLLaMA<bfloat16_t>(1, 128, 4096, 11008);
+    compareMLPLLaMA<bfloat16_t>(128, 4096, 11008);
 }
 
 int main(int argc, char **argv) {

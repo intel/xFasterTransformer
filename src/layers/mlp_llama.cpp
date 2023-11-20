@@ -18,13 +18,13 @@
 
 namespace xft {
 
-void invokeMLPLLaMA(DataType dt, int batchSize, int inputSeqLen, int hiddenSize, int intermediateSize, void *output,
+void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediateSize, void *output,
         int outputStride, const void *input, int inputStride, const void *gateWeight, const void *upWeight,
         const void *downWeight) {
     if (dt == DataType::bf16) {
         LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
         DecoderContext ctx(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 1);
-        ctx.resize(batchSize, inputSeqLen, 0);
+        ctx.resize(1, numTokens, 0);
         std::vector<float *> params {(float *)gateWeight, (float *)nullptr, (float *)upWeight, (float *)nullptr,
                 (float *)nullptr, (float *)nullptr, (float *)downWeight};
         llama_mlp.setWeights(&ctx, params);
