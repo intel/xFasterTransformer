@@ -72,7 +72,11 @@ static void compareLayerNorm(int rows, int cols) {
         beta[i] = static_cast<T>(0.0f);
     }
 
-    if constexpr (std::is_same<T, float16_t>::value) {
+    if constexpr (std::is_same<T, float>::value) {
+        xft::invokeLayerNorm(xft::DataType::fp32, (void *)ourOutput, (const void *)input, (const void *)gamma,
+                (const void *)beta, rows, cols);
+        layer_norm_ref<float>(refOutput, (const T *)input, (const T *)gamma, (const T *)beta, rows, cols);
+    } else if constexpr (std::is_same<T, float16_t>::value) {
         xft::invokeLayerNorm(xft::DataType::fp16, (void *)ourOutput, (const void *)input, (const void *)gamma,
                 (const void *)beta, rows, cols);
         layer_norm_ref<float16_t>(refOutput, (const T *)input, (const T *)gamma, (const T *)beta, rows, cols);

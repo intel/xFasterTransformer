@@ -135,7 +135,10 @@ void invokeLayerNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16
 
 void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
         int cols, int iStride, int oStride, float epsilon) {
-    if (dt == DataType::bf16) {
+    if (dt == DataType::fp32) {
+        invokeLayerNorm((float *)output, (const float *)input, (const float *)gamma,
+                (const float *)beta, rows, cols, iStride, oStride, epsilon);
+    } else if (dt == DataType::bf16) {
         invokeLayerNorm((bfloat16_t *)output, (const bfloat16_t *)input, (const bfloat16_t *)gamma,
                 (const bfloat16_t *)beta, rows, cols, iStride, oStride, epsilon);
     }
