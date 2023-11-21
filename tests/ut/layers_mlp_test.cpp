@@ -94,7 +94,7 @@ static void compareMLPLLaMA(
                 (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
         auto t1 = std::chrono::high_resolution_clock::now();
         float during_time = std::chrono::duration<float>(t1 - t0).count();
-        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA %.6f\n", during_time);
+        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA %.6f sec\n", during_time);
 
         refMLPLLaMA<bfloat16_t>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize,
                 (const float *)input, hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
