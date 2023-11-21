@@ -22,13 +22,14 @@ class ChatGLM2Attention : public Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RE
 public:
     ChatGLM2Attention(int layerId, DecoderContext *ctx)
         : Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID>(layerId, ctx) {}
-    virtual ~ChatGLM2Attention() { }
+    virtual ~ChatGLM2Attention() {}
 
 public:
     template <typename KVCacheT>
-    void forward(DecoderContext *ctx, float *input, float *output, const float *attnMask, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen, bool useSelfAttn, bool doLnBefore,
-            bool returnAttn, bool returnKVs, bool forPT = true, int *positionIds = nullptr) {
+    void forward(DecoderContext *ctx, float *input, float *output, const float *attnMask,
+            KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
+            bool useSelfAttn, bool doLnBefore, bool returnAttn, bool returnKVs, bool forPT = true,
+            int *positionIds = nullptr) {
         if (forPT) {
             printf("For better perf, need to manage cached key/vaues by ourself, PyTorch extension is not supported "
                    "any more.\n");
@@ -96,7 +97,7 @@ public:
             if (inputSeqLen == 1) {
                 position_ids[0] = pastSeqLen;
             } else {
-                std::iota(position_ids.begin(), position_ids.end(), 0);
+                std::iota(position_ids.begin(), position_ids.end(), pastSeqLen);
             }
             this->qkpo.forward(qkvGroupMatMul.Data(), qkvGroupMatMul.Stride(), ctx->batchSize, inputSeqLen, qkCols,
                     attHeadSize, position_ids.data());
@@ -135,8 +136,7 @@ public:
             this->flashAttention(
                     ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         else
-            this->fusedAttention(
-                    ctx, query, key, value, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
+            this->fusedAttention(ctx, query, key, value, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
         t4.release();
         hpj::Matrix<float> attnSplit(resultBuffer1.Data(), resultBuffer1.Rows(), resultBuffer1.Cols() / ctx->numSplit,
                 resultBuffer1.Stride());
