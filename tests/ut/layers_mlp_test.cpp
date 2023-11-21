@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
+#include <chrono>
 #include <cmath>
 #include <type_traits>
 
@@ -21,55 +22,119 @@
 #include "gtest/gtest.h"
 
 template <typename T>
-static void refMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize, T *output,
-        int outputStride, const T *input, int inputStride, const T *gateWeight, const T *upWeight,
-        const T *downWeight) {
-    memset(output, 0, numTokens * hiddenSize * sizeof(T));
+static void matmul(int m, int n, int k, const float *A, const float *B, float *C) {
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < m; ++i) {
+        for (int j = 0; j < n; ++j) {
+            for (int q = 0; q < k; ++q) {
+                C[i * n + j] += static_cast<float>(static_cast<T>(A[i * k + q]))
+                        * static_cast<float>(static_cast<T>(B[q * n + j]));
+            }
+        }
+    }
 }
 
 template <typename T>
-static void compareMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize) {
+static void refMLPLLaMA(int numTokens, int hiddenSize, int intermediateSize, float *output, int outputStride,
+        const float *input, int inputStride, const float *gateWeight, const float *upWeight, const float *downWeight) {
+    // self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+    float *gate_proj = (float *)aligned_alloc(64, numTokens * intermediateSize * sizeof(float));
+    float *up_proj = (float *)aligned_alloc(64, numTokens * intermediateSize * sizeof(float));
+    memset(gate_proj, 0, numTokens * intermediateSize * sizeof(float));
+    memset(up_proj, 0, numTokens * intermediateSize * sizeof(float));
 
-    float *input = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
-    float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
-    float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
-    float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
-    float *ourOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
-    float *refOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    matmul<T>(numTokens, intermediateSize, hiddenSize, input, gateWeight, gate_proj);
 
-    for (int i = 0; i < numTokens * hiddenSize; ++i) {
-        input[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < numTokens; ++i) {
+        for (int j = 0; j < intermediateSize; ++j) {
+            gate_proj[i * intermediateSize + j] = (1.0f / (1.0f + std::exp(-gate_proj[i * intermediateSize + j])))
+                    * gate_proj[i * intermediateSize + j];
+        }
     }
 
-    for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
-        gateW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
-        upW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
-        downW[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
+    matmul<T>(numTokens, intermediateSize, hiddenSize, input, upWeight, up_proj);
+
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < numTokens; ++i) {
+        for (int j = 0; j < intermediateSize; ++j) {
+            gate_proj[i * intermediateSize + j] *= up_proj[i * intermediateSize + j];
+        }
+    }
+
+    matmul<T>(numTokens, hiddenSize, intermediateSize, gate_proj, downWeight, output);
+
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < numTokens; ++i) {
+        for (int j = 0; j < hiddenSize; ++j) {
+            output[i * hiddenSize + j] += input[i * hiddenSize + j];
+        }
+    }
+
+    free(gate_proj);
+    free(up_proj);
+}
+
+template <typename T>
+static void compareMLPLLaMA(
+        int numTokens, int hiddenSize, int intermediateSize, float *gateW, float *upW, float *downW) {
+    float *input = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *ourOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *refOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    memset(ourOutput, 0, numTokens * hiddenSize * sizeof(float));
+    memset(refOutput, 0, numTokens * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < numTokens * hiddenSize; ++i) {
+        input[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
     }
 
     if constexpr (std::is_same<T, bfloat16_t>::value) {
-        invokeMLPLLaMA(xft::DataType::bf16, numTokens, hiddenSize, intermediateSize, (void *)ourOutput,
-                hiddenSize, (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW,
-                (const void *)downW);
-        refMLPLLaMA<bfloat16_t>(numTokens, hiddenSize, intermediateSize, (bfloat16_t *)refOutput,
-                hiddenSize, (const bfloat16_t *)input, hiddenSize, (const bfloat16_t *)gateW, (const bfloat16_t *)upW,
-                (const bfloat16_t *)downW);
+        auto t0 = std::chrono::high_resolution_clock::now();
+        invokeMLPLLaMA(xft::DataType::bf16, numTokens, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize,
+                (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        float during_time = std::chrono::duration<float>(t1 - t0).count();
+        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA %.6f\n", during_time);
+
+        refMLPLLaMA<bfloat16_t>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize,
+                (const float *)input, hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
     }
 
     for (int i = 0; i < numTokens * hiddenSize; ++i) {
-        EXPECT_LT(std::abs(refOutput[i] - (float)ourOutput[i]), 0.01);
+        EXPECT_EQ(std::abs(refOutput[i] - ourOutput[i]) < 0.3 || std::abs((refOutput[i] - ourOutput[i]) / refOutput[i]) < 0.3,
+                true);
     }
 
     free(input);
-    free(gateW);
-    free(upW);
-    free(downW);
     free(ourOutput);
     free(refOutput);
 }
 
 TEST(MLPLLaMA, bfloat16_t) {
-    compareMLPLLaMA<bfloat16_t>(128, 4096, 11008);
+    int hiddenSize = 4096;
+    int intermediateSize = 11008;
+
+    float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
+        gateW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
+        upW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
+        downW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
+    }
+
+    compareMLPLLaMA<bfloat16_t>(18, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(10, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(14, hiddenSize, intermediateSize, gateW, upW, downW);
+
+    free(gateW);
+    free(upW);
+    free(downW);
 }
 
 int main(int argc, char **argv) {

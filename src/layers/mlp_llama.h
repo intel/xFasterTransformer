@@ -114,7 +114,7 @@ public:
         dbg.dumpMatrix(normBuffer);
 #endif
 
-        gateProj(normBuffer, imBuffer);
+        gateProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
         dbg.debugPrint("gateWeight:\n");
@@ -123,7 +123,7 @@ public:
         dbg.dumpMatrix(imBuffer);
 #endif
 
-        upProj(normBuffer, imBuffer);
+        upProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
         dbg.debugPrint("upWeight:\n");
