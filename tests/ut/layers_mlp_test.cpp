@@ -129,8 +129,8 @@ TEST(MLPLLaMA, bfloat16_t) {
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
-    compareMLPLLaMA<bfloat16_t>(10, hiddenSize, intermediateSize, gateW, upW, downW);
-    compareMLPLLaMA<bfloat16_t>(14, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(1, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(2, hiddenSize, intermediateSize, gateW, upW, downW);
 
     free(gateW);
     free(upW);
