@@ -270,6 +270,7 @@ public:
             resultBuffer1.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
             inputBuffer.Assign(presult, rows, cols, stride);
         }
+        // TODO: support large inputSeqLen when pastSeqLen > 0
         if (ctx->inputSeqLen > 256 && pastSeqLen == 0)
             flashAttention(
                     ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
@@ -338,6 +339,7 @@ protected:
         // WARN: reserve field in context is used to make it effective for all layers, do not change it in other places
         int &mBlockSize = ctx->reserved1;
         if (layerId == 0) {
+            // TODO: if pastSeqLen > 0 and inputSeqLen large.
             if (pastSeqLen == 0) {
                 const int l2CacheSize = 2 * 1024 * 1024; // TODO: get it dynamically
                 const int sizeA = ctx->inputSeqLen * ctx->attHeadSize;
@@ -424,6 +426,7 @@ protected:
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
                     int ldb = keyMatInfo.second;
+                    // TODO: optimize padding for prefix sharing 
                     int strideC = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
                     int ldc = strideC;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
@@ -446,8 +449,23 @@ protected:
                         dbg.debugPrint("Q * K, first head:\n");
                         auto p = ctx->qkScores;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
-                                p[2] * ctx->attFactor, p[keyLen - 3] * ctx->attFactor, p[keyLen - 2] * ctx->attFactor,
-                                p[keyLen - 1] * ctx->attFactor);
+                                p[2] * ctx->attFactor, p[strideC - 3] * ctx->attFactor, p[strideC - 2] * ctx->attFactor,
+                                p[strideC - 1] * ctx->attFactor);
+                        // for (int qki = 0; qki < queryLen; qki++) {
+                        //     for (int qkj = 0; qkj < keyLen; qkj++) {
+                        //         dbg.debugPrint("%.2f\t", p[qki * strideC + qkj] * ctx->attFactor);
+                        //     }
+                        //     dbg.debugPrint("\n");
+                        // }
+
+                        // dbg.debugPrint("Attention Mask:\n");
+                        // for (int qki = 0; qki < queryLen; qki++) {
+                        //     for (int qkj = 0; qkj < keyLen; qkj++) {
+                        //         dbg.debugPrint("%.0f\t",
+                        //                 attnMask[qki * keyLen + qkj] < 0 ? -1.0 : attnMask[qki * keyLen + qkj]);
+                        //     }
+                        //     dbg.debugPrint("\n");
+                        // }
                     }
 #endif
 

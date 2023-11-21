@@ -367,7 +367,5 @@ int main(int argc, char **argv) {
         }
     }
 
-    model.unsetPrefix();
-
     return 0;
 }
