@@ -88,11 +88,7 @@ def split_and_convert(args):
         os.makedirs(saved_dir)
 
     # load the model
-    model = AutoModelForCausalLM.from_pretrained(
-        args.in_file,
-        device_map="auto",
-        trust_remote_code=True
-    )
+    model = AutoModelForCausalLM.from_pretrained(args.in_file, device_map="auto", trust_remote_code=True)
 
     hf_config = vars(model.config)
 
@@ -103,13 +99,17 @@ def split_and_convert(args):
     config["baichuan"] = {}
     has_post_decoder_layernorm = True
     try:
-        config["baichuan"]["model_name"] = "baichuan" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+        config["baichuan"]["model_name"] = (
+            "baichuan" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+        )
         config["baichuan"]["head_num"] = str(hf_config["num_attention_heads"])
         hidden_size = hf_config["hidden_size"]
         config["baichuan"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
         config["baichuan"]["inter_size"] = str(hf_config["intermediate_size"])
         config["baichuan"]["max_pos_seq_len"] = str(hf_config.get("max_position_embeddings", 0))
-        config["baichuan"]["model_max_length"] = str(hf_config.get("model_max_length", config["baichuan"]["max_pos_seq_len"]))
+        config["baichuan"]["model_max_length"] = str(
+            hf_config.get("model_max_length", config["baichuan"]["max_pos_seq_len"])
+        )
         config["baichuan"]["num_layer"] = str(hf_config["num_hidden_layers"])
         config["baichuan"]["rms_norm_eps"] = "1e-6"
         config["baichuan"]["layernorm_type"] = "pre_layernorm"
@@ -200,10 +200,10 @@ if __name__ == "__main__":
     torch.multiprocessing.set_sharing_strategy("file_system")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("-saved_dir", "-o", type=str, help="file name of output file", required=True)
-    parser.add_argument("-in_file", "-i", type=str, help="file name of input checkpoint file", required=True)
-    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
-    parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16"])
+    parser.add_argument("--saved_dir", "-o", type=str, help="file name of output file", required=True)
+    parser.add_argument("--in_file", "-i", type=str, help="file name of input checkpoint file", required=True)
+    parser.add_argument("--processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
+    parser.add_argument("--weight_data_type", "-d", type=str, default="fp16", choices=["fp32", "fp16"])
 
     args = parser.parse_args()
     print("\n=============== Argument ===============")

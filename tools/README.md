@@ -5,6 +5,6 @@ xFasterTransformer supports a different model format than huggingface, compatibe
 ## Step 2: Run convert script corresponding to the model.
 After that, convert the model into xFasterTransformer format using the script. You will see many bin files in the output directory.
 ```bash
-    python chatglm_convert.py -i ${HF_DATASET_DIR} -o  ${OUTPUT_DIR}
+    python chatglm_convert.py -i ${HF_DATASET_DIR} -o ${OUTPUT_DIR}
 
 ```

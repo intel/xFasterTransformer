@@ -224,10 +224,10 @@ if __name__ == "__main__":
     torch.multiprocessing.set_sharing_strategy("file_system")
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("-saved_dir", "-o", type=str, help="file name of output file", required=True)
-    parser.add_argument("-in_file", "-i", type=str, help="file name of input checkpoint file", required=True)
-    parser.add_argument("-processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
-    parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16"])
+    parser.add_argument("--saved_dir", "-o", type=str, help="file name of output file", required=True)
+    parser.add_argument("--in_file", "-i", type=str, help="file name of input checkpoint file", required=True)
+    parser.add_argument("--processes", "-p", type=int, help="processes to spawn for conversion (default: 8)", default=8)
+    parser.add_argument("--weight_data_type", "-d", type=str, default="fp16", choices=["fp32", "fp16"])
 
     args = parser.parse_args()
     print("\n=============== Argument ===============")
