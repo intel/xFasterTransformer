@@ -32,6 +32,7 @@ public:
     void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
     void lastLayerNormForward(float *input, float *output, int rows);
     int *getPositionIds(int *ids, int batchSize, int seqLen, int step) override;
+    void setPrefix(int *ids, int seqLen) override;
 
 private:
     void setEmbeddingWeights(const std::string &modelPath);
