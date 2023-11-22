@@ -56,7 +56,7 @@ template <>
 void ShmReduction::reduceAdd(float *sendBuf, float *recvBuf, size_t size, int rank, int rankSize) {
     int nbytes = size * sizeof(float);
     int nBlockBytes = SHM_BLOCK_SIZE * sizeof(float);
-    int nblocks = (size +  SHM_BLOCK_SIZE - 1) / SHM_BLOCK_SIZE;
+    int nblocks = (size + SHM_BLOCK_SIZE - 1) / SHM_BLOCK_SIZE;
     int nthreads = std::min(nblocks, omp_get_max_threads());
 
     float *address = (float *)shmCtx_.address;
@@ -64,12 +64,11 @@ void ShmReduction::reduceAdd(float *sendBuf, float *recvBuf, size_t size, int ra
     int *states = shmCtx_.state;
 
     if (rank == 0) {
-	    for (int i = 1; i < rankSize; i++) {
+        for (int i = 1; i < rankSize; i++) {
             xft::wait_state_until(&shmCtx_, i, 0);
         }
         multiThreadCopy((char *)address, (char *)sendBuf, nbytes);
-    }
-    else {
+    } else {
         xft::wait_state_until(&shmCtx_, rank, 0);
         xft::wait_state_until(&shmCtx_, 0, 1);
     }
@@ -77,15 +76,14 @@ void ShmReduction::reduceAdd(float *sendBuf, float *recvBuf, size_t size, int ra
 
     if (rank != 0) {
 #pragma omp parallel for num_threads(nthreads)
-        for (int blockIndex=0; blockIndex < nblocks; blockIndex++) {
+        for (int blockIndex = 0; blockIndex < nblocks; blockIndex++) {
 
             float *lSendBuf = sendBuf + SHM_BLOCK_SIZE * blockIndex;
             float *lAddrBuf = address + SHM_BLOCK_SIZE * blockIndex;
-            int realBlockSize = (blockIndex == (nblocks - 1) ? (size - SHM_BLOCK_SIZE * (nblocks - 1)) : SHM_BLOCK_SIZE);
+            int realBlockSize
+                    = (blockIndex == (nblocks - 1) ? (size - SHM_BLOCK_SIZE * (nblocks - 1)) : SHM_BLOCK_SIZE);
 
-            if (rank != 1) {
-                xft::wait_block_until(&shmCtx_, blockIndex*rankSize+rank-1, 1);
-            }
+            if (rank != 1) { xft::wait_block_until(&shmCtx_, blockIndex * rankSize + rank - 1, 1); }
 
             __m512 in1_val, inout_val;
             for (int index = 0; index < realBlockSize; index += 16) {
@@ -96,8 +94,8 @@ void ShmReduction::reduceAdd(float *sendBuf, float *recvBuf, size_t size, int ra
                 inout_val = _mm512_add_ps(inout_val, in1_val);
                 _mm512_mask_storeu_ps(lAddrBuf + index, mask, inout_val);
             }
-            shmCtx_.blockState[blockIndex*rankSize+rank-1]=0;
-            shmCtx_.blockState[blockIndex*rankSize+rank]=1;
+            shmCtx_.blockState[blockIndex * rankSize + rank - 1] = 0;
+            shmCtx_.blockState[blockIndex * rankSize + rank] = 1;
         }
         shmCtx_.state[rank] = 2;
     }
@@ -107,15 +105,14 @@ void ShmReduction::reduceAdd(float *sendBuf, float *recvBuf, size_t size, int ra
     multiThreadCopy((char *)recvBuf, (char *)address, nbytes);
 
     if (rank == rankSize - 1) {
-        for (int i = 0; i < rankSize-1; i++) {
+        for (int i = 0; i < rankSize - 1; i++) {
             xft::wait_state_until(&shmCtx_, i, 3);
         }
 
         for (int i = 0; i < rankSize; i++) {
             shmCtx_.state[i] = 0;
         }
-    }
-    else {
+    } else {
         shmCtx_.state[rank] = 3;
     }
 }

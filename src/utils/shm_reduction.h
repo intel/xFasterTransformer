@@ -55,16 +55,14 @@ static inline int memfd_create(const char *name, unsigned int flags) {
 
 inline void wait_state_until(const ShmContext *ctx, const int index, int state) {
     volatile int *state_ptr = ctx->state + index;
-    while (*state_ptr != state){
-	    ;
-    }
-
+    while (*state_ptr != state)
+        ;
 }
 
 inline void wait_block_until(const ShmContext *ctx, const int index, uint8_t state) {
     volatile uint8_t *state_ptr = ctx->blockState + index;
     while (*state_ptr != state)
-	;
+        ;
 }
 
 inline void connect_shm(ShmContext *ctx) {
