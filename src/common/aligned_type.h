@@ -11,15 +11,13 @@ struct AlignedType {
     AlignedType() = default;
 
     // Constructor to initialize with a value of type T
-    explicit AlignedType(const T& value) : data(value) {}
+    explicit AlignedType(const T &value) : data(value) {}
 
     // Conversion operator to convert AlignedType to T
-    operator T() const {
-        return data;
-    }
+    operator T() const { return data; }
 
     // Overload the assignment operator to assign a value of type T
-    AlignedType& operator=(const T& value) {
+    AlignedType &operator=(const T &value) {
         data = value;
         return *this;
     }

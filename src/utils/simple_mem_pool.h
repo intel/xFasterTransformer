@@ -1,13 +1,13 @@
 #pragma once
 
-#include <iostream>
-#include <unordered_map>
-#include <string>
 #include <cstdlib>
+#include <iostream>
+#include <string>
+#include <unordered_map>
 
 class SimpleMemPool {
 private:
-    std::unordered_map<std::string, std::pair<void*, size_t>> memoryMap;
+    std::unordered_map<std::string, std::pair<void *, size_t>> memoryMap;
 
     // Private constructor to enforce Singleton pattern
     SimpleMemPool() {}
@@ -17,13 +17,13 @@ private:
 
 public:
     // Static method to get the singleton instance
-    static SimpleMemPool& instance() {
+    static SimpleMemPool &instance() {
         static SimpleMemPool memManager;
         return memManager;
     }
 
     // Allocate or reallocate memory buffer based on name and size
-    void* getBuffer(const std::string& name, size_t size, size_t alignment = 64) {
+    void *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
         auto it = memoryMap.find(name);
 
         if (it != memoryMap.end()) {
@@ -38,7 +38,7 @@ public:
         }
 
         // Allocate new aligned buffer
-        void* buffer = aligned_alloc(alignment, size);
+        void *buffer = aligned_alloc(alignment, size);
         if (buffer == nullptr) {
             // Allocation failed
             std::cerr << "Memory allocation failed for buffer: " << name << std::endl;
@@ -53,7 +53,7 @@ public:
 
     // Destructor to free all allocated memory on program termination
     ~SimpleMemPool() {
-        for (auto& entry : memoryMap) {
+        for (auto &entry : memoryMap) {
             free(entry.second.first);
         }
         memoryMap.clear();
