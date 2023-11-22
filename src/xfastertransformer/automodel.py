@@ -71,8 +71,8 @@ class AutoModel:
     def forward(self):
         return self.model.generate()
 
-    def prefix_sharing(self, input_ids, truncate_tail=0):
-        if truncate_tail > 0:
+    def prefix_sharing(self, input_ids=None, truncate_tail=0):
+        if input_ids is not None and truncate_tail > 0:
             input_ids = input_ids[:, :-truncate_tail]
 
         self.model.set_prefix(input_ids)
