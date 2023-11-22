@@ -24,6 +24,8 @@
 #include "matmul_helper.h"
 #include "transformer_ctx.h"
 #include "transformer_util.h"
+#include "aligned_type.h"
+#include "simple_mem_pool.h"
 
 // WeiT: weight data type
 // QKPO_CLS: class for post operation of query/key, it is generally the rotary embedding
@@ -364,10 +366,15 @@ protected:
         int scoreBufSize = batchSize * responsibleHeads * ctx->inputSeqLen * ctx->inputSeqLen;
         bool scoreBufByThread = (ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen) <= scoreBufSize);
 
-        // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
-        // When M dimension is split, also multiple tasks per copy, so do copy seperately
+        // If total tasks are too small (compared to total thread number), need to shard the head
+        bool shardHead = (ctx->inputSeqLen == 1) && (ctx->numThreads >= batchSize * responsibleHeads * 2);
+
+        // Need to copy current key/values to cache seperately if:
+        // (1) For group attention (#kvHeads != #qHeads)
+        // (2) When M dimension is split, multiple tasks per copy, so do copy seperately
+        // (3) When head is sharded, also multiple tasks per copy
         bool kvCopied = false;
-        if (ctx->kvHeadNum < ctx->attHeadNum || mBlockSize != ctx->inputSeqLen) {
+        if (ctx->kvHeadNum < ctx->attHeadNum || mBlockSize != ctx->inputSeqLen || shardHead) {
 #pragma omp parallel for collapse(3)
             for (int b = 0; b < batchSize; ++b) {
                 for (int i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
@@ -392,6 +399,11 @@ protected:
                 }
             }
             kvCopied = true;
+        }
+
+        // Seperate impl. when head is sharded
+        if (shardHead) {
+            return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
         }
 
 #pragma omp parallel for collapse(3)
@@ -510,6 +522,157 @@ protected:
                     }
 #endif
                 } // end for mb
+            } // end for i
+        } // end for b
+    }
+
+    // When #heads is very few, need to shard each head to use more resources
+    template <typename KVCacheT>
+    void crossAttnShardHead(DecoderContext *ctx, hpj::Matrix<float> &query, hpj::Matrix<float> &key,
+            hpj::Matrix<float> &value, hpj::Matrix<float> &result, KVCacheTensor<KVCacheT> &presentKey,
+            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+        const int responsibleHeads = this->endQHead - this->startQHead;
+        const int batchSize = ctx->batchSize;
+        const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
+
+        int N = pastSeqLen + ctx->inputSeqLen;
+        int splits = ctx->numThreads / (batchSize * responsibleHeads);
+        int nb = (N + splits - 1) / splits;
+
+        REQUIRES(splits > 1, "Do not call me when splits=%d", splits);
+
+        // max(xi), sum(exp(xi)), finish_tag for each split
+        int totalTasks = batchSize * responsibleHeads * splits;
+        AlignedType<std::tuple<float, float, float>, 32> splitInfo[totalTasks];
+        for (int i = 0; i < totalTasks; ++i) {
+            std::get<1>(splitInfo[i].data) = 0;
+            std::get<2>(splitInfo[i].data) = 0;
+        }
+
+        float *shardedOut = (float *)SimpleMemPool::instance().getBuffer("shardedOutput", 
+                totalTasks * ctx->attHeadSize * sizeof(float));
+        
+#pragma omp parallel for collapse(3)
+        for (int b = 0; b < batchSize; ++b) {
+            for (int i = 0; i < responsibleHeads; ++i) {
+                for (int s = 0; s < splits; ++s) {
+                    int headStartIdx = b * responsibleHeads * splits + i * splits;
+                    int threadIdx = b * responsibleHeads * splits + i * splits + s;
+
+                    // Q * K
+                    int nOff = s * nb;
+                    auto keyMatInfo = presentKey.getHead(b, i / groupNum);
+                    int m = 1;
+                    int k = ctx->attHeadSize;
+                    int n = (s < splits - 1 ? nb : N - nOff);
+                    int lda = query.Stride();
+                    int ldb = keyMatInfo.second;
+                    int strideC = pastSeqLen > 0 ? (N + 15) / 16 * 16 : ctx->inputSeqLen;
+                    int ldc = strideC;
+                    auto A = query.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize;
+                    auto B = keyMatInfo.first + nOff * ldb;
+                    auto C = ctx->qkScores + (b * responsibleHeads + i) * ctx->inputSeqLen * strideC + nOff;
+
+                    const int queryLen = ctx->inputSeqLen;
+                    const int keyLen = N;
+
+                    small_gemm_transb(getMask(attnMask, b, i, queryLen, keyLen), A, B, C, m, n, k, lda, ldb, ldc);
+
+#ifdef DEBUG
+                    if (b == 0 && i == 0 && s == splits - 1) {
+                        dbg.debugPrint("Q * K, first head (some value may not be ready):\n");
+                        auto p = ctx->qkScores;
+                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
+                                p[2] * ctx->attFactor, p[keyLen - 3] * ctx->attFactor, p[keyLen - 2] * ctx->attFactor,
+                                p[keyLen - 1] * ctx->attFactor);
+                    }
+#endif
+
+                    // Softmax and the stats info
+                    auto info = DecoderUtil::softmaxWithStats(ctx, C, getMask(attnMask, b, i, queryLen, keyLen) + nOff, n);
+                    std::get<0>(splitInfo[threadIdx].data) = info.first;
+                    std::get<1>(splitInfo[threadIdx].data) = info.second;
+
+#ifdef DEBUG
+                    if (b == 0 && i == 0 && s == splits - 1) {
+                        dbg.debugPrint("Softmax(Q * K), first head (some value may not be ready):\n");
+                        auto p = ctx->qkScores;
+                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[keyLen - 3], p[keyLen - 2],
+                                p[keyLen - 1]);
+                    }
+#endif
+
+                    // Softmax * V
+                    auto valueMatInfo = presentValue.getHead(b, i / groupNum);
+                    std::swap(k, n);
+                    lda = strideC;
+                    ldb = valueMatInfo.second;
+                    ldc = result.Stride();
+                    A = C;
+                    B = valueMatInfo.first + nOff * ldb;
+                    C = (s == 0 ? result.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize : &shardedOut[threadIdx * ctx->attHeadSize]);
+
+                    if constexpr (std::is_same_v<KVCacheT, float>) {
+                        xdnn_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
+                    } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
+                        xdnn_sgemm_f32f16f32_single_thread(false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
+                    }
+
+                    std::get<2>(splitInfo[threadIdx].data) = 1; // set finished flag
+
+                    // Wait for all threads to finish and reduce the result
+                    // Firstly get the max value, and then revise the value by considering the factor on numerator and denominator
+                    if (s == 0) {
+                        float realMax = std::get<0>(splitInfo[threadIdx].data);
+                        for (int idx = headStartIdx + 1; idx < headStartIdx + splits; ++idx) {
+                            while (std::get<2>(splitInfo[idx].data) == 0) {
+                                _mm_pause();
+                            }
+                            if (std::get<0>(splitInfo[idx].data) > realMax) {
+                                realMax = std::get<0>(splitInfo[idx].data);
+                            }
+                        }
+
+                        float realSum = 0;
+                        for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
+                            float splitMax = std::get<0>(splitInfo[idx].data);
+                            float splitSum = std::get<1>(splitInfo[idx].data);
+                            float revFactor = std::exp(splitMax - realMax); // revise factor
+                            std::get<2>(splitInfo[idx].data) = revFactor; // borrow finish flag for revise factor
+                            realSum += splitSum * revFactor;
+                        }
+
+                        float *p = C;
+#pragma simd
+                        for (int t = 0; t < ctx->attHeadSize; ++t) {
+                            int idx = threadIdx;
+                            float splitMax = std::get<0>(splitInfo[idx].data);
+                            float splitSum = std::get<1>(splitInfo[idx].data);
+                            float revFactor = std::get<2>(splitInfo[idx].data);
+                            C[t] = p[t] * revFactor * (splitSum / realSum);
+                        }
+
+                        for (int idx = headStartIdx + 1; idx < headStartIdx + splits; ++idx) {
+                            float *p = &shardedOut[idx * ctx->attHeadSize];
+#pragma simd
+                            for (int t = 0; t < ctx->attHeadSize; ++t) {
+                                float splitMax = std::get<0>(splitInfo[idx].data);
+                                float splitSum = std::get<1>(splitInfo[idx].data);
+                                float revFactor = std::get<2>(splitInfo[idx].data);
+                                C[t] += p[t] * revFactor * (splitSum / realSum);
+                            }
+                        }
+                    }
+
+#ifdef DEBUG
+                    if (b == 0 && i == 0 && s == 0) {
+                        dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
+                        auto p = C;
+                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[ctx->attHeadSize - 3],
+                                p[ctx->attHeadSize - 2], p[ctx->attHeadSize - 1]);
+                    }
+#endif
+                } // end for s
             } // end for i
         } // end for b
     }

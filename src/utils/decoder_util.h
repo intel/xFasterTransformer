@@ -444,6 +444,54 @@ public:
         }
     }
 
+    // Same implementation with softmax, but:
+    // Return max value, and the sum value of exp
+    static std::pair<float, float> softmaxWithStats(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+        int vecs = (size + 15) / 16; // how many avx512 vectors
+        __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
+
+        __m512 vsum = _mm512_set1_ps(0);
+
+        // maxVal is used to avoid exp(x) = inf
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+
+        int i = 0;
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx * vfactor + vmask);
+        }
+
+        maxVal = _mm512_reduce_max_ps(vmax);
+        vmax = _mm512_set1_ps(maxVal);
+
+        // Compute vexp(vx - vmax) and sum it
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
+            vx = BertUtil::vexp(vx * vfactor + vmask - vmax);
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
+        }
+
+        float sum = _mm512_reduce_add_ps(vsum);
+        __m512 vrsum = _mm512_set1_ps(1.0f / sum);
+
+        // Compute exp/sum(exp) and store
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = vx * vrsum;
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+        }
+
+        return std::make_pair(maxVal, sum);
+    }
+
     template <typename T, typename Tt>
     static void arrayCpy(T* dst, const Tt* src, int n) {
 #pragma omp simd
