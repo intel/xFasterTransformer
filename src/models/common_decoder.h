@@ -646,6 +646,8 @@ protected:
     // The prefix input  sequence length
     int prefixSeqLen;
 
+    bool prefixSharing;
+
     // If not the master, need to receive token IDs from the master
     int *inputTokens;
 
@@ -668,7 +670,6 @@ private:
 
     WDataType wType;
 
-    bool prefixSharing;
 #ifdef DEBUG
     Debugger dbg;
 #endif
