@@ -48,5 +48,10 @@ add_library(xfastertransformer_pt SHARED ${TORCH_SRCS})
 target_include_directories(xfastertransformer_pt PUBLIC ${PyTorch_INCLUDE_DIR})
 
 # Link against LibTorch and others
-target_link_libraries(xfastertransformer_pt PRIVATE OpenMP::OpenMP_CXX MPI::MPI_CXX ccl
-                                                    "${TORCH_LIBS}" xfastertransformer_static)
+target_link_libraries(xfastertransformer_pt
+                      PRIVATE OpenMP::OpenMP_CXX
+                              MPI::MPI_CXX
+                              ccl
+                              "${TORCH_LIBS}"
+                              xfastertransformer_static
+                              stdc++fs)
