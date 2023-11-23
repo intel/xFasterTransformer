@@ -134,7 +134,7 @@ public:
         int beamSize = dims[1];
         int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as samples are duplicated at step 0
         int seqLen = dims[2];
-        int pastSeqLen = this->accSeqLen;
+        int pastSeqLen = step == 0 ? 0 : this->accSeqLen;
         int inputSeqLen = seqLen;
 
         // Prepare context

@@ -426,7 +426,7 @@ protected:
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
                     int ldb = keyMatInfo.second;
-                    // TODO: optimize padding for prefix sharing 
+                    // TODO: optimize padding for prefix sharing
                     int strideC = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
                     int ldc = strideC;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
