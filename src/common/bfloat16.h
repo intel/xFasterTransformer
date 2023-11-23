@@ -78,7 +78,9 @@ public:
     }
 
     static void cvt_float_to_bfloat16(const float *src, bfloat16_t *dst, int size);
+    static void batch_cvt_float_to_bfloat16(const float *src, bfloat16_t *dst, int size);
     static void cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size);
+    static void batch_cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size);
     static void float_add_bfloat16(const float *src1, const bfloat16_t *src2, float *dst, int size);
 
 private:
@@ -128,6 +130,18 @@ inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst,
     }
 }
 
+inline void bfloat16_t::batch_cvt_float_to_bfloat16(const float *src, bfloat16_t *dst, int count){
+    constexpr int sizePerSplit = 1024;
+    int splits = (count + sizePerSplit - 1) / sizePerSplit;
+
+#pragma omp parallel for
+    for (int i = 0; i < splits; ++i) {
+        int size = (i == splits - 1) ? (count - i * sizePerSplit) : sizePerSplit;
+        cvt_float_to_bfloat16(src + i * sizePerSplit, dst + i * sizePerSplit, size);
+    }
+}
+
+
 inline void bfloat16_t::cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size) {
     constexpr int kStep = 16;
 
@@ -148,6 +162,17 @@ inline void bfloat16_t::cvt_bfloat16_to_float(const bfloat16_t *src, float *dst,
         __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + size - remainder);
         __m512 output_vector = cvt_bf16_to_fp32(input_vector);
         _mm512_mask_storeu_ps(dst + size - remainder, mask, output_vector);
+    }
+}
+
+inline void bfloat16_t::batch_cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int count){
+    constexpr int sizePerSplit = 1024;
+    int splits = (count + sizePerSplit - 1) / sizePerSplit;
+
+#pragma omp parallel for
+    for (int i = 0; i < splits; ++i) {
+        int size = (i == splits - 1) ? (count - i * sizePerSplit) : sizePerSplit;
+        cvt_bfloat16_to_float(src + i * sizePerSplit, dst + i * sizePerSplit, size);
     }
 }
 

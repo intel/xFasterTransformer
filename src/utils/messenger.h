@@ -18,10 +18,13 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "bfloat16.h"
 #include "compile_util.h"
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "timeline.h"
+
+#define MAX_BF16_BUFFER (8 * 1024 * 5120)
 
 class Messenger {
 private:
@@ -37,6 +40,12 @@ private:
             this->rank = 0;
             this->size = 1;
             return;
+        }
+
+        bf16_enable = (getenv("XFT_ONECCL_BF16") ? atoi(getenv("XFT_ONECCL_BF16")) : 0);
+        if (bf16_enable) {
+            printf("got 'XFT_ONECCL_BF16=%d', enable BF16 dtype comm.\n", bf16_enable);
+            buf_bf16 = new bfloat16_t[MAX_BF16_BUFFER];
         }
 
         ccl::init();
@@ -89,6 +98,10 @@ private:
     }
 
     ~Messenger() {
+        if (buf_bf16) {
+            delete buf_bf16;
+        }
+
         delete pcomm;
 #ifdef USE_SHM
         delete pshm;
@@ -110,7 +123,20 @@ public:
     // From some example code of oneCCL, inplace reducing is supported
     template <typename T>
     void reduceAdd(T *sendBuf, T *recvBuf, size_t count) {
+        if constexpr (!std::is_same_v<T, float>) {
+            //todo(marvin): Consideration for additional optimization scenarios
+            printf("Currently unsupport about data types other than float.\n");
+            exit(-1);
+        }
+
         TimeLine t("Messenger.reduceAdd");
+        if (bf16_enable) {
+            bfloat16_t::batch_cvt_float_to_bfloat16(sendBuf, buf_bf16, count);
+            ccl::allreduce(
+            buf_bf16, buf_bf16, count, ccl::datatype::bfloat16, ccl::reduction::sum, *pcomm).wait();
+            bfloat16_t::batch_cvt_bfloat16_to_float(buf_bf16, recvBuf, count);
+            return;
+        }
 
 #ifdef USE_SHM
         if (count * sizeof(T) > pshm->getSHMSize() || !local_ranks_flag) {
@@ -175,7 +201,8 @@ private:
     int size;
     int rank;
     bool local_ranks_flag;
-
+    bfloat16_t* buf_bf16 = nullptr;
+    int bf16_enable;
     ccl::shared_ptr_class<ccl::kvs> kvs;
     ccl::kvs::address_type main_addr;
 
