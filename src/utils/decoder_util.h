@@ -444,14 +444,62 @@ public:
         }
     }
 
+    // Same implementation with softmax, but:
+    // Return max value, and the sum value of exp
+    static std::pair<float, float> softmaxWithStats(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+        int vecs = (size + 15) / 16; // how many avx512 vectors
+        __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
+
+        __m512 vsum = _mm512_set1_ps(0);
+
+        // maxVal is used to avoid exp(x) = inf
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+
+        int i = 0;
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx * vfactor + vmask);
+        }
+
+        maxVal = _mm512_reduce_max_ps(vmax);
+        vmax = _mm512_set1_ps(maxVal);
+
+        // Compute vexp(vx - vmax) and sum it
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
+            vx = BertUtil::vexp(vx * vfactor + vmask - vmax);
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
+        }
+
+        float sum = _mm512_reduce_add_ps(vsum);
+        __m512 vrsum = _mm512_set1_ps(1.0f / sum);
+
+        // Compute exp/sum(exp) and store
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = vx * vrsum;
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+        }
+
+        return std::make_pair(maxVal, sum);
+    }
+
     template <typename T, typename Tt>
-    static void arrayCpy(T* dst, const Tt* src, int n) {
+    static void arrayCpy(T *dst, const Tt *src, int n) {
 #pragma omp simd
         for (int i = 0; i < n; i++) {
             dst[i] = static_cast<T>(src[i]);
         }
     }
-    
+
     // batchs x seqlen x 3 x head x heads ->  3 x batchs x head x seqlen x heads (2
     // 0 3 1 4)
     template <typename T, typename Tt>
@@ -462,46 +510,37 @@ public:
         int hiddenQKVSize = hiddenQSize + hiddenKVSize * 2;
 
         int blockSize = hiddenQKVSize * seqLen;
-    
+
         const T *qBuffer = qkvBuffer;
         const T *kBuffer = qkvBuffer + hiddenQSize;
         const T *vBuffer = qkvBuffer + hiddenQSize + hiddenKVSize;
-    
+
         Tt *qTransBuffer = qkvTransBuffer;
         Tt *kTransBuffer = qkvTransBuffer + batchSize * hiddenQSize * seqLen;
         Tt *vTransBuffer = qkvTransBuffer + batchSize * (hiddenQSize + hiddenKVSize) * seqLen;
-    
+
 #pragma omp parallel for collapse(3)
         for (int i = 0; i < batchSize; i++) {
             for (int k = 0; k < headQNum; k++) { // assume headQNum >= headKVNum
                 for (int j = 0; j < seqLen; j++) {
-                    const float *qSrcEachBatch =
-                        reinterpret_cast<const T*>(qBuffer) + blockSize * i;
-                    const float *kSrcEachBatch =
-                        reinterpret_cast<const T*>(kBuffer) + blockSize * i;
-                    const float *vSrcEachBatch =
-                        reinterpret_cast<const T*>(vBuffer) + blockSize * i;
-    
+                    const float *qSrcEachBatch = reinterpret_cast<const T *>(qBuffer) + blockSize * i;
+                    const float *kSrcEachBatch = reinterpret_cast<const T *>(kBuffer) + blockSize * i;
+                    const float *vSrcEachBatch = reinterpret_cast<const T *>(vBuffer) + blockSize * i;
+
                     int dstOffEachHead = k * seqLen * headSize;
                     int srcOffEachLine = k * headSize;
-    
+
                     int dstOffEachLine = j * headSize;
                     int srcOffEachHead = j * hiddenQKVSize;
-    
-                    Tt *qDstEachLine = qTransBuffer + i * hiddenQSize * seqLen +
-                                          dstOffEachHead + dstOffEachLine;
-                    const T* qSrcEachLine =
-                        qSrcEachBatch + srcOffEachHead + srcOffEachLine;
-    
-                    Tt *kDstEachLine = kTransBuffer + i * hiddenKVSize * seqLen +
-                                          dstOffEachHead + dstOffEachLine;
-                    const T *kSrcEachLine =
-                        kSrcEachBatch + srcOffEachHead + srcOffEachLine;
-    
-                    Tt *vDstEachLine = vTransBuffer + i * hiddenKVSize * seqLen +
-                                          dstOffEachHead + dstOffEachLine;
-                    const T *vSrcEachLine =
-                        vSrcEachBatch + srcOffEachHead + srcOffEachLine;
+
+                    Tt *qDstEachLine = qTransBuffer + i * hiddenQSize * seqLen + dstOffEachHead + dstOffEachLine;
+                    const T *qSrcEachLine = qSrcEachBatch + srcOffEachHead + srcOffEachLine;
+
+                    Tt *kDstEachLine = kTransBuffer + i * hiddenKVSize * seqLen + dstOffEachHead + dstOffEachLine;
+                    const T *kSrcEachLine = kSrcEachBatch + srcOffEachHead + srcOffEachLine;
+
+                    Tt *vDstEachLine = vTransBuffer + i * hiddenKVSize * seqLen + dstOffEachHead + dstOffEachLine;
+                    const T *vSrcEachLine = vSrcEachBatch + srcOffEachHead + srcOffEachLine;
                     arrayCpy<Tt, T>(qDstEachLine, qSrcEachLine, headSize);
                     if (k < headKVNum) {
                         arrayCpy<Tt, T>(kDstEachLine, kSrcEachLine, headSize);
@@ -511,40 +550,37 @@ public:
             }
         }
     }
-    
+
     // batchs x head x seqlen x heads -> batchs x seqlen x head x heads (0 2 1 3)
     template <typename T, typename Tt>
-    static void transposeAttnResult(T *Buffer, Tt *TransBuffer, int batchSize, int seqLen, int headNum,
-            int headSize, int dstStride) {
+    static void transposeAttnResult(
+            T *Buffer, Tt *TransBuffer, int batchSize, int seqLen, int headNum, int headSize, int dstStride) {
         int hiddenSize = headNum * headSize;
-        int blockSize = seqLen * hiddenSize;  // dst buffer stride in each batch
-    
+        int blockSize = seqLen * hiddenSize; // dst buffer stride in each batch
+
 #pragma omp parallel for collapse(2)
         for (int i = 0; i < batchSize; i++) {
             for (int k = 0; k < seqLen; k++) {
                 int srcOffEachHead = k * headSize;
                 int dstOffEachLine = k * dstStride;
-    
+
                 for (int j = 0; j < headNum; j++) {
                     int srcOffEachLine = j * seqLen * headSize;
                     int dstOffEachHead = j * headSize;
-    
-                    Tt *qDstEachLine = TransBuffer + dstOffEachHead +
-                                  dstOffEachLine + i * seqLen * dstStride;
-                    const T *qSrcEachLine = Buffer + srcOffEachLine +
-                                       srcOffEachHead + i * blockSize;
-    
+
+                    Tt *qDstEachLine = TransBuffer + dstOffEachHead + dstOffEachLine + i * seqLen * dstStride;
+                    const T *qSrcEachLine = Buffer + srcOffEachLine + srcOffEachHead + i * blockSize;
+
                     arrayCpy<Tt, T>(qDstEachLine, qSrcEachLine, headSize);
                 }
             }
         }
     }
-    
+
     // C = A * B
     // bTranspose: B need to be transposed or not
     // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
-    static void sgemm(const float* A, const float* B, float* C, int m, int n, int k,
-            bool transa, bool transb) {
+    static void sgemm(const float *A, const float *B, float *C, int m, int n, int k, bool transa, bool transb) {
         int lda = (transa ? m : k);
         int ldb = (transb ? k : n);
         int ldc = n;
@@ -554,18 +590,18 @@ public:
         char tb[] = "N";
         if (transa) ta[0] = 'T';
         if (transb) tb[0] = 'T';
-    
+
         dnnl_sgemm(ta[0], tb[0], m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
     }
-    
+
     // need to do for res.
     static void softmaxTile(float *AB, float *sum, float *max, float *preSum, float *preMax, float refac,
             const float *attnMask, int m, int k, int attnMskStride) {
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vrefac = _mm512_set1_ps(refac);
         for (int i = 0; i < m; ++i) {
-            float* buf = AB + i * k;
-            const float* attnMsk = attnMask + i * attnMskStride;
+            float *buf = AB + i * k;
+            const float *attnMsk = attnMask + i * attnMskStride;
             // max val for avoiding inf and nan
             __m512 vmax = _mm512_set1_ps(maxVal);
             for (int off = 0; off < k; off += 16) {
@@ -573,16 +609,16 @@ public:
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
                 __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
                 __m512 vmask = _mm512_maskz_loadu_ps(mask, attnMsk + off);
-        
+
                 vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vrefac + vmask);
             }
             float _max = _mm512_reduce_max_ps(vmax);
-        
+
             _max = _max > max[i] ? _max : max[i];
             __m512 merr = _mm512_set1_ps(max[i] - _max);
             merr = BertUtil::vexp(merr);
             max[i] = _max;
-        
+
             // exp and get sum
             __m512 vsum = _mm512_set1_ps(0);
             vmax = _mm512_set1_ps(_max);
@@ -602,26 +638,26 @@ public:
             float fac = _mm512_cvtss_f32(merr);
             sum[i] = sum[i] * fac + _sum;
             _sum = sum[i];
-        
+
             // Compute exp/sum(exp) and store
             __m512 vrsum = _mm512_set1_ps(1.0f / _sum);
             for (int off = 0; off < k; off += 16) {
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-        
+
                 __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
                 vx = vx * vrsum;
-        
+
                 _mm512_mask_storeu_ps(buf + off, mask, vx);
             }
         }
     }
-    
-    static void updateOutTile(float* output, const float* expABC, float* preSum, float* sum, float* preMax,
-            float* max, int m, int n) {
+
+    static void updateOutTile(
+            float *output, const float *expABC, float *preSum, float *sum, float *preMax, float *max, int m, int n) {
         for (int i = 0; i < m; ++i) {
-            const float* buf = expABC + i * n;
-            float* outbuf = output + i * n;
+            const float *buf = expABC + i * n;
+            float *outbuf = output + i * n;
             __m512 merr = _mm512_set1_ps(preMax[i] - max[i]);
             merr = BertUtil::vexp(merr);
             __m512 vfac = _mm512_set1_ps(preSum[i] / sum[i]);
@@ -637,18 +673,17 @@ public:
             preMax[i] = max[i];
         }
     }
-    
+
     // hard code: axis = 1
     // sum += sum(exp(A[i]))
     // output = output * preSum / sum + (exp(A) / sum) x B
     // preSum = sum
-    static void incrementalTileAttention(const float* A, const float* B, const float* C, const float* attnMask,
-            int m, int n, int k, int attnMskStride, float* preSum, float* sum, float* preMax, float* max,
-            float refac, float* AB, float* expABC, float* output) {
+    static void incrementalTileAttention(const float *A, const float *B, const float *C, const float *attnMask, int m,
+            int n, int k, int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float refac,
+            float *AB, float *expABC, float *output) {
         sgemm(A, B, AB, m, k, n, false, true);
         softmaxTile(AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
         sgemm(AB, C, expABC, m, n, k, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n);
     }
-    
 };
