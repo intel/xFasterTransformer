@@ -24,8 +24,8 @@ public:
         this->layers = layers;
         this->cachedKeys = new KVCacheTensor<KVCacheT>[layers];
         this->cachedValues = new KVCacheTensor<KVCacheT>[layers];
-        this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
-        this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
+        this->cachedPrefixKeys = nullptr;
+        this->cachedPrefixValues = nullptr;
     }
 
     ~KVCacheManager() {

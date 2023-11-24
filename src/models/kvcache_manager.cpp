@@ -80,6 +80,10 @@ static bool valueExist(T *arr, int size, T val) {
 
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
+    if (prefix && this->cachedPrefixKeys == nullptr) {
+        this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
+        this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
+    }
     for (int i = 0; i < this->layers; ++i) {
         if (prefix) {
             this->cachedPrefixKeys[i].resize(maxSeqLen, 1, headsPerSplit, headSize);

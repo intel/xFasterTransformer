@@ -163,8 +163,6 @@ public:
                     memcpy(newIDs + inputSeqLen * bs, ids + seqLen * bs + pastSeqLen, inputSeqLen * sizeof(int));
                 }
 
-                this->prepareAttnMask(prefixIDs, 0);
-
                 this->getPositionIds(prefixIDs, batchSize, pastSeqLen, 0);
 
                 free(prefixIDs);
@@ -300,6 +298,9 @@ public:
                 }
             }
         }
+
+        // free temporary new ids for prefix sharing
+        if (step == 0 && this->prefixSharing) { free(ids); }
 
         return std::tuple<float *, int, int>(
                 this->outBuf->Data(), this->predictor->getSplitOffset(), this->predictor->getSplitSize());
