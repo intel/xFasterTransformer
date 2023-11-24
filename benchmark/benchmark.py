@@ -130,11 +130,13 @@ if __name__ == "__main__":
         execution_times = []
         first_token_times = []
         remained_token_times = []
+        total_times = []
         # warm up
         for i in range(args.warmup):
             model.generate(input_ids, num_beams=args.beam_width, max_length=max_len, streamer=None)
         print("Start benchmark:")
         for i in range(args.iteration):
+            total_time = 0.0
             print("iteration", i, ":")
             model.config(max_length=max_len, num_beams=args.beam_width)
             model.input(input_ids)
@@ -143,6 +145,7 @@ if __name__ == "__main__":
             next_tokens = model.forward()
             end_time = time.perf_counter()
             first_token_time = end_time - start_time
+            total_time += first_token_time
             first_token_times.append(first_token_time)
             # remaining tokens
             cost_list = []
@@ -150,9 +153,11 @@ if __name__ == "__main__":
                 start_time = time.perf_counter()
                 next_tokens = model.forward()
                 end_time = time.perf_counter()
+                total_time += (end_time - start_time)
                 cost_list.append(end_time - start_time)
                 # print(next_tokens)
             generated_ids = model.finalize()
+            total_times.append(total_time)
             remained_token_times.append(sum(cost_list))
 
         output_token_nums = int(torch.numel(generated_ids) / args.batch_size) - input_token_nums
@@ -160,11 +165,14 @@ if __name__ == "__main__":
         remained_token_times.sort()
         # Get the 90th element (index 89) from the sorted list
         latency_90 = remained_token_times[int(args.iteration * 0.9) - 1] * 1000 / (output_token_nums - 1)
+        # Calculate total latency
+        inference_latency = sum(total_times) / len(total_times)
         # Calculate the first token latency
         first_token_latency = sum(first_token_times) / len(first_token_times) * 1000
         Next_token_throughput = 1000 / latency_90 * args.batch_size
         print("\n")
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
+        print(f"Inference Latency:\t{inference_latency:.2f} s")
         print(f"First token Latency:\t{first_token_latency:.2f} ms")
         print(f"Next token Latency:\t{latency_90:.2f} ms")
         print(f"Throughput without 1st token:\t{Next_token_throughput:.2f} tokens/s")
