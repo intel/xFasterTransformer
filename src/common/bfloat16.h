@@ -120,6 +120,22 @@ inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst,
         __m256i output_vector = cvt_fp32_to_bf16(input_vector);
         _mm256_mask_storeu_epi16(dst + i, mask, output_vector);
     }
+
+    int blockSize = size / kStep;
+    int remainder = size % kStep;
+
+    for (int i = 0; i < blockSize; ++i) {
+        __m512 input_vector = _mm512_loadu_ps(src + i * kStep);
+        __m256i output_vector = cvt_fp32_to_bf16(input_vector);
+        _mm256_mask_storeu_epi16(dst + i * kStep, 0xffff, output_vector);
+    }
+
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (kStep - remainder);
+        __m512 input_vector = _mm512_maskz_loadu_ps(mask, src + size - remainder);
+        __m256i output_vector = cvt_fp32_to_bf16(input_vector);
+        _mm256_mask_storeu_epi16(dst + size - remainder, mask, output_vector);
+    }
 }
 
 inline void bfloat16_t::cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size) {
@@ -130,12 +146,20 @@ inline void bfloat16_t::cvt_bfloat16_to_float(const bfloat16_t *src, float *dst,
         return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
     };
 
-    for (int i = 0; i < size; i += kStep) {
-        int remain = size - i;
-        __mmask16 mask = (remain >= kStep ? 0xffff : (1 << remain) - 1);
-        __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + i);
+    int blockSize = size / kStep;
+    int remainder = size % kStep;
+
+    for (int i = 0; i < blockSize; ++i) {
+        __m256i input_vector = _mm256_maskz_loadu_epi16(0xFFFF, src + i * kStep);
         __m512 output_vector = cvt_bf16_to_fp32(input_vector);
-        _mm512_mask_storeu_ps(dst + i, mask, output_vector);
+        _mm512_storeu_ps(dst + i * kStep, output_vector);
+    }
+
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (kStep - remainder);
+        __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + size - remainder);
+        __m512 output_vector = cvt_bf16_to_fp32(input_vector);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, output_vector);
     }
 }
 
@@ -147,12 +171,21 @@ inline void bfloat16_t::float_add_bfloat16(const float *src1, const bfloat16_t *
         return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
     };
 
-    for (int i = 0; i < size; i += kStep) {
-        int remain = size - i;
-        __mmask16 mask = (remain >= kStep ? 0xffff : (1 << remain) - 1);
-        __m512 vec1 = _mm512_maskz_loadu_ps(mask, src1 + i);
-        __m256i _t = _mm256_maskz_loadu_epi16(mask, src2 + i);
+    int blockSize = size / kStep;
+    int remainder = size % kStep;
+
+    for (int i = 0; i < blockSize; ++i) {
+        __m512 vec1 = _mm512_loadu_ps(src1 + i * kStep);
+        __m256i _t = _mm256_maskz_loadu_epi16(0xFFFF, src2 + i * kStep);
         __m512 vec2 = cvt_bf16_to_fp32(_t);
-        _mm512_mask_storeu_ps(dst + i, mask, vec1 + vec2);
+        _mm512_storeu_ps(dst + i * kStep, vec1 + vec2);
+    }
+
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (kStep - remainder);
+        __m512 vec1 = _mm512_maskz_loadu_ps(mask, src1 + size - remainder);
+        __m256i _t = _mm256_maskz_loadu_epi16(mask, src2 + size - remainder);
+        __m512 vec2 = cvt_bf16_to_fp32(_t);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, vec1 + vec2);
     }
 }
