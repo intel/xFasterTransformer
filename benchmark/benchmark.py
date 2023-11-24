@@ -22,6 +22,7 @@ import time
 from transformers import AutoTokenizer, TextStreamer
 import json
 import pathlib
+import numpy as np
 
 import argparse
 
@@ -163,7 +164,10 @@ if __name__ == "__main__":
         output_token_nums = int(torch.numel(generated_ids) / args.batch_size) - input_token_nums
         # Sort the execution times in ascending order
         remained_token_times.sort()
-        # Get the 90th element (index 89) from the sorted list
+        # Get the max, min, avg and 90th element (index 89) from the sorted list
+        latency_max = remained_token_times[-1] * 1000 / (output_token_nums - 1)
+        latency_min = remained_token_times[0] * 1000 / (output_token_nums - 1)
+        latency_avg = np.mean(remained_token_times) * 1000 / (output_token_nums - 1)
         latency_90 = remained_token_times[int(args.iteration * 0.9) - 1] * 1000 / (output_token_nums - 1)
         # Calculate total latency
         inference_latency = sum(total_times) / len(total_times)
@@ -174,6 +178,10 @@ if __name__ == "__main__":
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
         print(f"Inference Latency:\t{inference_latency:.2f} s")
         print(f"First token Latency:\t{first_token_latency:.2f} ms")
+        print(f"Next token Max Latency:\t{latency_max:.2f} ms")
+        print(f"Next token Min Latency:\t{latency_min:.2f} ms")
+        print(f"Next token P90 Latency:\t{latency_90:.2f} ms")
+        print(f"Next token Avg Latency:\t{latency_avg:.2f} ms")
         print(f"Next token Latency:\t{latency_90:.2f} ms")
         print(f"Throughput without 1st token:\t{Next_token_throughput:.2f} tokens/s")
     else:
