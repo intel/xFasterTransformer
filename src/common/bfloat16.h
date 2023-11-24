@@ -113,14 +113,6 @@ inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst,
     };
 #endif
 
-    for (int i = 0; i < size; i += kStep) {
-        int remain = size - i;
-        __mmask16 mask = (remain >= kStep ? 0xffff : (1 << remain) - 1);
-        __m512 input_vector = _mm512_maskz_loadu_ps(mask, src + i);
-        __m256i output_vector = cvt_fp32_to_bf16(input_vector);
-        _mm256_mask_storeu_epi16(dst + i, mask, output_vector);
-    }
-
     int blockSize = size / kStep;
     int remainder = size % kStep;
 
