@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-import torch
-import os
 
-torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
-
-from .automodel import AutoModel
-
-from .tools import LlamaConvert
-from .tools import ChatGLMConvert
-from .tools import ChatGLM2Convert
-from .tools import OPTConvert
-from .tools import BaichuanConvert
+from .llama_convert import LlamaConvert
+from .chatglm_convert import ChatGLMConvert
+from .chatglm2_convert import ChatGLM2Convert
+from .opt_convert import OPTConvert
+from .baichuan_convert import BaichuanConvert
