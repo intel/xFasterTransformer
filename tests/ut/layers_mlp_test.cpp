@@ -26,6 +26,7 @@ static void matmul(int m, int n, int k, const float *A, const float *B, float *C
 #pragma omp parallel for collapse(2)
     for (int i = 0; i < m; ++i) {
         for (int j = 0; j < n; ++j) {
+            C[i * n + j] = 0.0f;
             for (int q = 0; q < k; ++q) {
                 C[i * n + j] += static_cast<float>(static_cast<T>(A[i * k + q]))
                         * static_cast<float>(static_cast<T>(B[q * n + j]));
@@ -85,7 +86,7 @@ static void compareMLPLLaMA(
     memset(refOutput, 0, numTokens * hiddenSize * sizeof(float));
 
     for (int i = 0; i < numTokens * hiddenSize; ++i) {
-        input[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
+        input[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
     }
 
     if constexpr (std::is_same<T, bfloat16_t>::value) {
@@ -101,8 +102,9 @@ static void compareMLPLLaMA(
     }
 
     for (int i = 0; i < numTokens * hiddenSize; ++i) {
-        EXPECT_EQ(std::abs(refOutput[i] - ourOutput[i]) < 0.3 || std::abs((refOutput[i] - ourOutput[i]) / refOutput[i]) < 0.3,
-                true);
+        EXPECT_EQ(std::abs(refOutput[i] - ourOutput[i]) > 0.01
+                        && std::abs((refOutput[i] - ourOutput[i]) / refOutput[i]) > 0.01,
+                false);
     }
 
     free(input);
@@ -119,9 +121,9 @@ TEST(MLPLLaMA, bfloat16_t) {
     float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
 
     for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
-        gateW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
-        upW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
-        downW[i] = static_cast<float>(1.0f * rand() / RAND_MAX - 0.5f);
+        gateW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
+        upW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
+        downW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
     }
 
     compareMLPLLaMA<bfloat16_t>(18, hiddenSize, intermediateSize, gateW, upW, downW);
@@ -129,8 +131,15 @@ TEST(MLPLLaMA, bfloat16_t) {
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(10, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(4, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(2, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(1, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(2, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(4, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(6, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
 
     free(gateW);
     free(upW);

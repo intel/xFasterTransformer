@@ -22,38 +22,39 @@ namespace xft {
 void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediateSize, void *output, int outputStride,
         const void *input, int inputStride, const void *gateWeight, const void *upWeight, const void *downWeight) {
     static std::mutex mutex;
-    std::lock_guard<std::mutex> lock(mutex);
 
     if (dt == DataType::bf16) {
-        static std::unordered_map<std::string, std::tuple<DecoderContext *, LlamaMLP<bfloat16_t> *>> llama_mlp_hub;
+        static std::unordered_map<std::string, LlamaMLP<bfloat16_t> *> llama_mlp_hub;
 
-        // create hash key
+        static DecoderContext *ctx;
+        if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
+            delete ctx;
+            printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
+            ctx = new DecoderContext(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 1);
+        }
+
+        // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
         std::stringstream weights_addr;
         weights_addr << gateWeight << "_" << upWeight << "_" << downWeight;
-        std::string llama_mlp_key
-                = std::to_string(hiddenSize) + "_" + std::to_string(intermediateSize) + "_" + weights_addr.str();
-
-        DecoderContext *ctx;
+        std::string llama_mlp_key = weights_addr.str();
         LlamaMLP<bfloat16_t> *llama_mlp;
 
         auto it_created = llama_mlp_hub.find(llama_mlp_key);
         if (it_created == llama_mlp_hub.end()) {
             // LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
-            ctx = new DecoderContext(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 1);
             std::vector<float *> params {(float *)gateWeight, (float *)nullptr, (float *)upWeight, (float *)nullptr,
                     (float *)nullptr, (float *)nullptr, (float *)downWeight};
 
             llama_mlp = new LlamaMLP<bfloat16_t>;
             llama_mlp->setWeights(ctx, params, false);
-
-            std::tuple<DecoderContext *, LlamaMLP<bfloat16_t> *> value(ctx, llama_mlp);
-            llama_mlp_hub[llama_mlp_key] = value;
-            printf("create llama_mlp_key: %s\n", llama_mlp_key.c_str());
+            llama_mlp_hub[llama_mlp_key] = llama_mlp;
+            printf(">> create llama_mlp_key: %s\n", llama_mlp_key.c_str());
         } else {
-            ctx = std::get<0>(it_created->second);
-            llama_mlp = std::get<1>(it_created->second);
+            llama_mlp = it_created->second;
         }
 
+        // Unsupport different type model serving simultaneously because of same DecoderContext
+        std::lock_guard<std::mutex> lock(mutex);
         ctx->resize(1, numTokens, 0);
         llama_mlp->forward(ctx, (float *)const_cast<void *>(input), (float *)output, inputStride, outputStride, false);
     }
