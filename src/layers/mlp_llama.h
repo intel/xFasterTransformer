@@ -17,6 +17,7 @@
 #include "debugger.h"
 #include "decoder_util.h"
 #include "matmul_helper.h"
+#include "singleton.h"
 #include "timeline.h"
 
 // C++ implementation for the python code in modeling_llama.py:
@@ -30,10 +31,11 @@
 //         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 // But please also be noted: we extended the MLP to include layer norm
 template <typename WeiT>
-class LlamaMLP {
+class LlamaMLP : public SingletonBase<LlamaMLP<WeiT>> {
 public:
-    LlamaMLP(DecoderContext *ctx) {
-    }
+    LlamaMLP() {}
+
+    LlamaMLP(DecoderContext *ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
     void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
@@ -88,9 +90,7 @@ public:
     }
 
 #ifdef DEBUG
-    void setDebugger(const Debugger &debugger) {
-        this->dbg = debugger;
-    }
+    void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
     // Forward for FFN (Feed Forward Network)
@@ -105,14 +105,16 @@ public:
         auto &normBuffer = ctx->normBuf;
         auto &imBuffer = ctx->imOut;
 
-        DecoderUtil::rmsNorm(inBuffer, normBuffer, normWeight, 1e-6);
+        if (doLnBefore == true) {
+            DecoderUtil::rmsNorm(inBuffer, normBuffer, normWeight, 1e-6);
+        }
 
 #ifdef DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
         dbg.dumpMatrix(normBuffer);
 #endif
 
-        gateProj(normBuffer, imBuffer);
+        gateProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
         dbg.debugPrint("gateWeight:\n");
@@ -121,7 +123,7 @@ public:
         dbg.dumpMatrix(imBuffer);
 #endif
 
-        upProj(normBuffer, imBuffer);
+        upProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
         dbg.debugPrint("upWeight:\n");

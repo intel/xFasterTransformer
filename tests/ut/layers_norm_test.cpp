@@ -87,7 +87,7 @@ static void compareLayerNorm(int rows, int cols) {
     }
 
     for (int i = 0; i < rows * cols; ++i) {
-        EXPECT_LT(((float)refOutput[i] - (float)ourOutput[i]), 0.01);
+        EXPECT_LT(std::abs((float)refOutput[i] - (float)ourOutput[i]), 0.01);
     }
 
     free(input);
