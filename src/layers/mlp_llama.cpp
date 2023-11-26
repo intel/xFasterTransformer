@@ -22,6 +22,7 @@ namespace xft {
 void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediateSize, void *output, int outputStride,
         const void *input, int inputStride, const void *gateWeight, const void *upWeight, const void *downWeight) {
     static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
 
     if (dt == DataType::bf16) {
         static std::unordered_map<std::string, LlamaMLP<bfloat16_t> *> llama_mlp_hub;
@@ -53,8 +54,6 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
             llama_mlp = it_created->second;
         }
 
-        // Unsupport different type model serving simultaneously because of same DecoderContext
-        std::lock_guard<std::mutex> lock(mutex);
         ctx->resize(1, numTokens, 0);
         llama_mlp->forward(ctx, (float *)const_cast<void *>(input), (float *)output, inputStride, outputStride, false);
     }
