@@ -149,6 +149,11 @@ public:
         this->embeddingForward(ids, this->embBuf->Data(), batchSize, seqLen);
         this->accSeqLen += seqLen;
 
+        if (this->accSeqLen > ctx->maxPositions){
+            throw std::invalid_argument(
+                "The token number attempting to generate exceeds 'config.ini: max_pos_seq_len'");
+        }
+
         // Prepare attention mask
         this->prepareAttnMask(ids, step);
 
