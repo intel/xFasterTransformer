@@ -50,7 +50,9 @@ setup(
     python_requires=">=3.8",
     package_dir={"": "src"},
     packages=find_packages(where="src", include=["xfastertransformer"]),
-    package_data={"xfastertransformer": ["*.so"]},
+    package_data={
+        "xfastertransformer": ["*.so", "tools/*.*"],
+    },
     platforms="x86_64",
     ext_modules=[CMakeExtension(name="xft")],
     cmdclass={"build_ext": BuildCMakeExt},
