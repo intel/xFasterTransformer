@@ -34,7 +34,7 @@ public:
 
     // input and output are in shape of (rows, normSize)
     // TODO: column-wise parallel
-    void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1);
+    void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
 
 private:
     int normSize;

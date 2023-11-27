@@ -42,7 +42,7 @@ void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
 
 // input and output are in shape of (rows, normSize)
 // TODO: column-wise parallel
-void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride) {
+void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("LayerNorm.forward");
     const float *pgamma = weights;
     const float *pbeta = weights + normSize;
