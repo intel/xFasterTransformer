@@ -22,9 +22,6 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpfullversion
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
 message(STATUS "Notice: GCC version: ${GCC_VERSION}")
 
-find_package(MPI REQUIRED)
-find_package(oneCCL REQUIRED)
-
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -58,11 +55,13 @@ endif()
 include("cmake/mklml.cmake")
 include("cmake/onednn.cmake")
 include("cmake/xdnn.cmake")
+include("cmake/oneccl.cmake")
 include(GNUInstallDirs)
 
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/include)
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src/kernels)
@@ -74,10 +73,12 @@ include_directories(${CMAKE_SOURCE_DIR}/src/common)
 
 link_directories(${CMAKE_SOURCE_DIR}/src/kernels)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/src)
+link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib)
+link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
 
-set(3RDPART_LIB_LIST "MPI::MPI_CXX" "ccl" "dnnl" "numa")
-set(DEPEND_LIST "onednn" "xdnn_lib")
+set(3RDPART_LIB_LIST "mpicxx" "mpi" "rt" "dl" "ccl" "dnnl" "numa")
+set(DEPEND_LIST "oneccl" "onednn" "xdnn_lib")
 
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)
