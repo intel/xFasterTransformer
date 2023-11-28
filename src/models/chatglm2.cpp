@@ -108,6 +108,18 @@ void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
                 std::fill_n(pmask + i * seqLen + zeroLen, seqLen - zeroLen, std::numeric_limits<float>::lowest());
             }
         }
+    } else if (seqLen > 1) {
+        int sizeRequired = ctx->batchSize * this->accSeqLen * seqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        for (int b = 0; b < ctx->batchSize; ++b) {
+            auto pmask = mask + b * this->accSeqLen * seqLen;
+            int pastLen = this->accSeqLen - seqLen;
+            for (int i = 0; i < seqLen; ++i) {
+                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float));
+                std::fill_n(pmask + i * this->accSeqLen + pastLen + i + 1, seqLen - i - 1,
+                        std::numeric_limits<float>::lowest());
+            }
+        }
     } else {
         int sizeRequired = ctx->batchSize * this->accSeqLen;
         float *mask = this->getAttnMask(sizeRequired);
@@ -137,16 +149,15 @@ void ChatGLM2<WeiT, NormT>::lastLayerNormForward(float *input, float *output, in
 // return position_ids
 template <typename WeiT, typename NormT>
 int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
-    // printf("ChatGLM2 getPositionIds batchSize=%d, seqLen=%d, step=%d\n", batchSize, seqLen, step);
+    // Prepare buffer
+    int sizeNeeded = (batchSize * seqLen + 63) / 64 * 64; // position_ids + block_position_ids
+    if (posBufSize < sizeNeeded) {
+        if (positionIds) { free(positionIds); }
+        posBufSize = sizeNeeded + 8; // whatever, a little bigger
+        positionIds = (int *)aligned_alloc(64, posBufSize * sizeof(int));
+    }
     if (step == 0) {
-        // Prepare buffer
         lastBlockPositions.clear();
-        int sizeNeeded = (batchSize * seqLen + 63) / 64 * 64; // position_ids + block_position_ids
-        if (posBufSize < sizeNeeded) {
-            if (positionIds) { free(positionIds); }
-            posBufSize = sizeNeeded + 8; // whatever, a little bigger
-            positionIds = (int *)aligned_alloc(64, posBufSize * sizeof(int));
-        }
         for (int i = 0; i < batchSize; ++i) {
             int *pos = positionIds + i * seqLen;
             for (int j = 0; j < seqLen; ++j) {
@@ -167,8 +178,10 @@ int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, 
             }
         }
         for (int i = 0; i < batchSize; ++i) {
-            positionIds[i] = lastBlockPositions[i];
-            lastBlockPositions[i] += 1;
+            for (int j = 0; j < seqLen; j++) {
+                positionIds[i * seqLen + j] = lastBlockPositions[i] + j;
+            }
+            lastBlockPositions[i] += seqLen;
         }
     }
     return positionIds;
