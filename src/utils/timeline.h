@@ -16,8 +16,6 @@
 
 #include <string>
 
-#ifdef TIMELINE
-
 #include <fcntl.h>
 #include <unistd.h>
 #include <json/json.h>
@@ -32,6 +30,7 @@
 class TimeLine {
 public:
     explicit TimeLine(const std::string &tag_name) {
+        if (!get_env()) return;
         // std::lock_guard<std::mutex> lock(get_lock()); // Prevent start times from coinciding
         this->tag_name = tag_name;
         this->pid = getpid();
@@ -47,10 +46,12 @@ public:
     }
 
     ~TimeLine() {
+        if (!get_env()) return;
         if (during_time < 0) release();
     }
 
     void release() {
+        if (!get_env()) return;
         this->end = std::chrono::high_resolution_clock::now();
         this->start_timestap = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
         this->during_time = std::chrono::duration<float, std::micro>(end - start).count();
@@ -63,6 +64,7 @@ public:
     }
 
     void dump_file(const std::string &file_name) {
+        if (!get_env()) return;
         release();
 
         std::string time_file_name = extract_name(file_name);
@@ -112,7 +114,7 @@ private:
 
     static std::vector<Json::Value> &get_pool() {
         static std::vector<Json::Value> pool;
-        pool.reserve(40*2000*20); // 40 layers * 2000 time * 20 promotes
+        pool.reserve(40 * 2000 * 20); // 40 layers * 2000 time * 20 promotes
         return pool;
     }
 
@@ -171,6 +173,12 @@ private:
         close(lockFileDescriptor);
     }
 
+    bool get_env() {
+        int enable = getenv("XFT_TIMELINE") ? atoi(getenv("XFT_TIMELINE")) : 0;
+        if (enable) return true;
+        return false;
+    }
+
     std::string tag_name;
     int64_t pid;
     int64_t tid;
@@ -179,15 +187,3 @@ private:
     int64_t start_timestap, during_time;
     Json::Value trace_event;
 };
-
-#else
-
-class TimeLine {
-public:
-    TimeLine(const std::string &tag_name) {}
-    ~TimeLine() {}
-    void release() {}
-    void dump_file(const std::string &file_name) {}
-};
-
-#endif

@@ -23,6 +23,7 @@
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "timeline.h"
+#include "timer.h"
 
 class Messenger {
 private:
@@ -38,6 +39,8 @@ private:
             this->size = 1;
             return;
         }
+
+        enable = getenv("XFT_COMM_TIME") ? atoi(getenv("XFT_COMM_TIME")) : 0;
 
         commHelperHanlde = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
         if (commHelperHanlde == nullptr) {
@@ -91,6 +94,13 @@ public:
     void reduceAdd(float *sendBuf, float *recvBuf, size_t count) {
         TimeLine t("Messenger.reduceAdd");
 
+        Timer *t0;
+        if (enable && rank == 0) {
+            std::string mystring = "FP32 count ";
+            mystring += std::to_string(count);
+            t0 = new Timer(true, mystring.c_str());
+        }
+
 #ifdef USE_SHM
         if (count * sizeof(float) > pshm->getSHMSize() || !localRanksFlag) {
             (*helperAllreduce)(sendBuf, recvBuf, count);
@@ -100,6 +110,7 @@ public:
 #else
         (*helperAllreduce)(sendBuf, recvBuf, count);
 #endif
+        if (enable && rank == 0) { delete t0; }
     }
 
     // Only int is used now
@@ -158,6 +169,7 @@ private:
 private:
     int size;
     int rank;
+    int enable;
     bool localRanksFlag;
 
 #ifdef USE_SHM

@@ -123,19 +123,16 @@ add_definitions(-DAVX512_FP32_WEIGHT_ONLY_NF4=true)
 
 # add_definitions(-DDEBUG=true)
 # add_definitions(-DSTEP_BY_STEP_ATTN=true)
-# add_definitions(-DTIMELINE=true)
 add_definitions(-DUSE_SHM=true)
 option(XFT_BUILD_TESTS "Build xfastertransformer unit tests" OFF)
 
 get_directory_property(MYDEFS COMPILE_DEFINITIONS)
 
-if(MYDEFS MATCHES "^TIMELINE=" OR MYDEFS MATCHES ";TIMELINE=")
-    include("cmake/jsoncpp.cmake")
-    include_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/include)
-    link_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/${CMAKE_INSTALL_LIBDIR})
-    list(APPEND 3RDPART_LIB_LIST "jsoncpp")
-    list(APPEND DEPEND_LIST "jsoncpp_lib")
-endif()
+include("cmake/jsoncpp.cmake")
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/include)
+link_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/${CMAKE_INSTALL_LIBDIR})
+list(APPEND 3RDPART_LIB_LIST "jsoncpp")
+list(APPEND DEPEND_LIST "jsoncpp_lib")
 
 # .so file
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
