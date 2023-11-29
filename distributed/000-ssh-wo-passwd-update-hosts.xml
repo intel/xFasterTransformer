@@ -1,0 +1,49 @@
+---
+- name: Enable passwordless login between hosts.
+  hosts: all_hosts
+
+  tasks:
+    - name: register all hosts
+      shell: echo "{{ hostvars[item]['ansible_default_ipv4']['address'] + ' ' + hostvars[item]['ansible_hostname'] }}"
+      register: hosts
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['all_hosts'] }}"
+
+    - name: feed in /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ item.stdout }}"
+        create: true
+      with_items: "{{ hosts.results }}"
+
+    - name: delete /root/.ssh/
+      file:
+        path: /root/.ssh/
+        state: absent
+
+    - name: generating public/private rsa key pair
+      shell: ssh-keygen -t rsa -b 2048 -N '' -f /root/.ssh/id_rsa
+
+    - name: Create /root/.ssh/config
+      file:
+        path: /root/.ssh/config
+        state: touch
+
+    - name: Update configuration block in /root/.ssh/config
+      blockinfile:
+          path: /root/.ssh/config
+          block: |
+              StrictHostKeyChecking no
+
+    - name: register public key
+      shell: cat /root/.ssh/id_rsa.pub
+      register: public_keys
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['all_hosts'] }}"
+
+    - name: feed in /root/.ssh/authorized_keys
+      lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ item.stdout }}"
+        create: true
+      with_items: "{{ public_keys.results }}"

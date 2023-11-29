@@ -1,0 +1,11 @@
+[all_hosts:vars]
+# ansible_ssh_common_args='-o ProxyCommand="nc -X connect -x child-prc.intel.com:913 %h %p"' # ubuntu
+# ansible_ssh_common_args='-o ProxyCommand="connect-proxy -H child-prc.intel.com:913 %h %p"' # centos
+ansible_ssh_pass=xxxxxx
+
+# replace all the devices for your needed.
+[all_hosts]
+192.168.0.1
+192.168.0.2
+192.168.0.3
+192.168.0.4

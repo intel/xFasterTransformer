@@ -1,0 +1,5 @@
+ansible
+numpy
+pandas
+xlsxwriter
+matplotlib # yum -y install libjpeg-turbo-devel
