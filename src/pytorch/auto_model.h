@@ -42,6 +42,10 @@ public:
         model = new xft::AutoModel(modelPath, datatype);
     };
 
+    ~TorchAutoModel() {
+        if (model != nullptr) { delete model; }
+    }
+
     int64_t getRank() { return static_cast<int64_t>(model->getRank()); }
 
     bool isDone() { return model->isDone(); }
@@ -117,9 +121,30 @@ public:
         return ret;
     }
 
-    ~TorchAutoModel() {
-        if (model != nullptr) { delete model; }
-    }
+    void setPrefix(torch::optional<torch::Tensor> inputIds) {
+        std::vector<int> prefixIds;
+        if (model->getRank() == 0) {
+            TORCH_CHECK(inputIds.has_value(), "Make sure master's prefix input is not None.")
+            TORCH_CHECK(inputIds.value().dim() <= 2, "Prefix sharing input expected dim <= 2 but tensor has ",
+                    inputIds.value().dim());
+            inputIds.value().squeeze();
+            TORCH_CHECK(inputIds.value().dim() == 2, "Prefix sharing only support 1 prompt but input has ",
+                    inputIds.value().size(0));
+
+            int seqLen = inputIds.value().size(-1);
+
+            prefixIds.resize(seqLen);
+            int64_t *p = inputIds.value().data_ptr<int64_t>();
+            for (int i = 0; i < seqLen; ++i) {
+                prefixIds[i] = static_cast<int>(*p);
+                p += 1;
+            }
+        }
+
+        model->setPrefix(prefixIds);
+    };
+
+    void unsetPrefix() { model->unsetPrefix(); };
 
 private:
     xft::Model *model;

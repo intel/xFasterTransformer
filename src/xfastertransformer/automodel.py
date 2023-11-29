@@ -71,6 +71,15 @@ class AutoModel:
     def forward(self):
         return self.model.generate()
 
+    def prefix_sharing(self, input_ids=None, truncate_tail=0):
+        if input_ids is not None and truncate_tail > 0:
+            input_ids = input_ids[:, :-truncate_tail]
+
+        self.model.set_prefix(input_ids)
+
+    def disable_prefix_sharing(self):
+        self.model.unset_prefix()
+
     @torch.no_grad()
     def generate(
         self,

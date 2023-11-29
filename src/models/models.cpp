@@ -160,6 +160,24 @@ void Model::setDecoder(AbstractDecoder *dec) {
     decoder = dec;
 }
 
+void Model::setPrefix(std::vector<int32_t> &prefixIDs_) {
+    Messenger &messenger = decoder->getMessenger();
+    int prefixSeqLen = prefixIDs_.size();
+
+    messenger.broadcast(&prefixSeqLen, 1);
+
+    std::vector<int32_t> perfixIDs;
+    perfixIDs.resize(prefixSeqLen);
+    if (decoder->getRank() == 0) { perfixIDs = prefixIDs_; }
+    messenger.broadcast(perfixIDs.data(), prefixSeqLen);
+
+    decoder->setPrefix(perfixIDs.data(), prefixSeqLen);
+}
+
+void Model::unsetPrefix() {
+    decoder->unsetPrefix();
+}
+
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);

@@ -55,6 +55,10 @@ public:
 
     void exitSlaves();
 
+    void setPrefix(std::vector<int32_t> &prefixIDs);
+
+    void unsetPrefix();
+
 private:
     AbstractDecoder *decoder;
     AbstractSearcher *searcher;

@@ -219,6 +219,7 @@ int main(int argc, char **argv) {
             cmdline::oneof<std::string>("fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"));
     args.add<int>("input_len", 'l', "input token size", false, -1);
     args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
+    args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
     args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
     args.add<int>("loop", '\0', "number of loop.", false, 10);
@@ -248,6 +249,7 @@ int main(int argc, char **argv) {
 
     int inputSize = args.get<int>("input_len");
     int outputLen = args.get<int>("output_len");
+    int prefixLen = args.get<int>("prefix_len");
     int numBeams = args.get<int>("num_beams");
     int batchSize = args.get<int>("batch_size");
     int loop = args.get<int>("loop");
@@ -272,7 +274,18 @@ int main(int argc, char **argv) {
     } else if (inputSize > 0) {
         printf("[Warning] Do not support token size of %d, use %ld instead.\n", inputSize, input.size());
     }
+    inputSize = input.size();
     int maxLen = input.size() + outputLen;
+
+    std::vector<int> perfixSeq;
+    if (prefixLen > 0) {
+        if (prefixLen <= input.size()) {
+            perfixSeq = std::vector<int>(input.begin(), input.begin() + prefixLen);
+        } else {
+            printf("[ERROR] Prefix length %d is larger than input size %d.\n", prefixLen, input.size());
+            exit(-1);
+        }
+    }
 
     if (batchSize > 1) {
         int len = input.size();
@@ -295,6 +308,11 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] topP is " << topP << std::endl;
         std::cout << "[INFO] batch_size is " << batchSize << std::endl;
         std::cout << "[INFO] loop is " << loop << std::endl;
+        if (prefixLen > 0) {
+            std::cout << "[INFO] prefixSharing is ON, perfixLen is " << prefixLen << std::endl;
+        } else {
+            std::cout << "[INFO] prefixSharing is OFF" << std::endl;
+        }
         std::cout << "[INFO] Input prompt is : " << inputPrompt << std::endl;
         std::cout << "[INFO] Input Token Ids is : ";
         for (auto x : input) {
@@ -302,6 +320,9 @@ int main(int argc, char **argv) {
         }
         std::cout << std::endl;
     }
+
+    // Set prefix
+    if (prefixLen > 0) { model.setPrefix(perfixSeq); }
 
     for (int i = 0; i < loop; ++i) {
         model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
