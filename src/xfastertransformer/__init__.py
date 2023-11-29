@@ -21,9 +21,10 @@ from typing import TYPE_CHECKING
 
 torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
 
-from .automodel import AutoModel
-
-_import_structure = {"tools": ["LlamaConvert", "ChatGLMConvert", "ChatGLM2Convert", "OPTConvert", "BaichuanConvert"]}
+_import_structure = {
+    "automodel": ["AutoModel"],
+    "tools": ["LlamaConvert", "ChatGLMConvert", "ChatGLM2Convert", "OPTConvert", "BaichuanConvert"],
+}
 
 if TYPE_CHECKING:
     from .tools import LlamaConvert
@@ -36,8 +37,8 @@ else:
     # Source code url https://github.com/optuna/optuna/blob/master/optuna/integration/__init__.py
     class _LazyImportModule(ModuleType):
         """
-        This class applies lazy import under `xfastertransformer` excluding `AutoModel`, where submodules are imported
-        when they are actually accessed. Otherwise, `import xfastertransformer` will import some unnecessary dependencise.
+        This class applies lazy import under `xfastertransformer`, where submodules are imported when they
+        are actually accessed. Otherwise, `import xfastertransformer` will import some unnecessary dependencise.
         """
 
         __file__ = globals()["__file__"]
