@@ -28,9 +28,15 @@ OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
 ```
 More parameter options settings:
 - `-h`, `--help`            show help message and exit.
-- `--token_path TOKEN_PATH` Path to tokenizer directory.
-- `--model_path MODEL_PATH` Path to model directory.
+- `--token_path`            Path to tokenizer directory.
+- `--model_path`            Path to model directory.
 - `--dtype`                 Data type, default using `fp16`, supports `{fp16,bf16,int8,bf16_fp16,bf16_int8}`.
 - `--streaming`             Streaming output, Default to True.
 - `--num_beams`             Num of beams, default to 1 which is greedy search.
 - `--output_len`            max tokens can generate excluded input.
+- `--padding`               Enable tokenizer padding, Default to True.
+- `--chat`                  Enable chat mode for ChatGLM models, Default to False.
+- `--do_sample`             Enable sampling search, Default to False.
+- `--temperature`           value used to modulate next token probabilities.
+- `--top_p`                 retain minimal tokens above topP threshold.
+- `--top_k`                 num of highest probability tokens to keep for generation.
