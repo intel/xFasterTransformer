@@ -22,6 +22,7 @@
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "timeline.h"
+#include "timer.h"
 
 class Messenger {
 private:
@@ -38,6 +39,8 @@ private:
             this->size = 1;
             return;
         }
+
+        enable = getenv("XFT_COMM_TIME") ? atoi(getenv("XFT_COMM_TIME")) : 0;
 
         ccl::init();
 
@@ -112,6 +115,13 @@ public:
     void reduceAdd(T *sendBuf, T *recvBuf, size_t count) {
         TimeLine t("Messenger.reduceAdd");
 
+        Timer *t0;
+        if (enable && rank == 0) {
+            std::string mystring = "FP32 count ";
+            mystring += std::to_string(count);
+            t0 = new Timer(true, mystring.c_str());
+        }
+
 #ifdef USE_SHM
         if (count * sizeof(T) > pshm->getSHMSize() || !local_ranks_flag) {
             ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
@@ -121,6 +131,7 @@ public:
 #else
         ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
 #endif
+        if (enable && rank == 0) { delete t0; }
     }
 
     template <typename T>
@@ -174,6 +185,7 @@ private:
 private:
     int size;
     int rank;
+    int enable;
     bool local_ranks_flag;
 
     ccl::shared_ptr_class<ccl::kvs> kvs;

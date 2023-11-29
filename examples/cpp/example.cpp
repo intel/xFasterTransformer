@@ -333,31 +333,28 @@ int main(int argc, char **argv) {
 
         std::vector<int> firstIds;
         std::vector<int> seconedIds;
+        {
+            Timer infer_time(isMaster, "[INFO] inference latency");
+            if (!model.isDone()) {
+                Timer t(isMaster, "[INFO] First token");
+                firstIds = model.generate();
+            }
 
-        if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] First token");
-            firstIds = model.generate();
-        }
+            if (isMaster && streamingOutput) {
+                if (!firstIds.empty()) {
+                    tokenizer->printResult(firstIds, batchSize, numBeams);
+                }
+            }
 
-        if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] Second token");
-            seconedIds = model.generate();
-        }
-
-        if (isMaster && streamingOutput) {
-            if (!firstIds.empty()) {
-                tokenizer->printResult(firstIds, batchSize, numBeams);
-                if (!seconedIds.empty()) { tokenizer->printResult(seconedIds, batchSize, numBeams); }
+            while (!model.isDone()) {
+                Timer t(isMaster, "[INFO] Second token");
+                auto nextIds = model.generate();
+                if (isMaster && streamingOutput) { tokenizer->printResult(nextIds, batchSize, numBeams); }
             }
         }
 
-        while (!model.isDone()) {
-            auto nextIds = model.generate();
-            if (isMaster && streamingOutput) { tokenizer->printResult(nextIds, batchSize, numBeams); }
-        }
-        auto result = model.finalize();
-
         if (isMaster) {
+            auto result = model.finalize();
             std::cout << "\n[INFO] Finalzie output is: " << std::endl;
             std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
             for (auto str : sent) {
