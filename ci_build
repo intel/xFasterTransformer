@@ -1,10 +1,9 @@
 #!/bin/bash
 set -e -x
 
-# todo(marvin): move oneccl deps into cmake.
 pushd 3rdparty/
 sh prepare_oneccl.sh
-source ./oneCCL/build/_install/env/setvars.sh
+source ./oneccl/build/_install/env/setvars.sh
 popd
 
 # Define functions for build, UT, and model
