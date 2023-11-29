@@ -69,14 +69,6 @@ docker pull intel/xfastertransformer:latest
 ### Built from source
 #### Prepare Environment
 ##### Manually
-- [oneCCL](https://github.com/oneapi-src/oneCCL)
-  - Use provided scripts to build it from source code. 
-    ```bash
-    cd 3rdparty
-    sh prepare_oneccl.sh
-    source ./oneCCL/build/_install/env/setvars.sh
-    ```
-  - Install oneCCL through installing [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html).
 - [PyTorch](https://pytorch.org/get-started/locally/) v2.0+ (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -199,12 +191,29 @@ FasterTransformer will automatically check the MPI environment, or you can use t
 
 ### Multi ranks
 #### Command line
-Use MPI to run in the multi-ranks mode. Here is a example on local. Install oneCCL firstly, please refer to [Prepare Environment](#prepare-environment).
-```bash
-OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
-  -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
-  -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
-```
+Use MPI to run in the multi-ranks mode, please install oneCCL firstly.
+- [oneCCL Installation](https://github.com/oneapi-src/oneCCL)
+  - If you have built xfastertransformer from source, oneCCL is installed in 3rdparty when compilation.
+    ```
+    source ./3rdparty/oneccl/build/_install/env/setvars.sh
+    ```
+  - Use provided scripts to build it from source code. 
+    ```bash
+    cd 3rdparty
+    sh prepare_oneccl.sh
+    source ./oneccl/build/_install/env/setvars.sh
+    ```
+  - Install oneCCL through installing [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html). And source the enviroment by:
+    ```
+    source /opt/intel/oneapi/setvars.sh
+    ```
+
+- Here is a example on local. 
+  ```bash
+  OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+    -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
+    -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
+  ```
 
 #### Code
 For more details, please refer to examples.

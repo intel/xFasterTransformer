@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Prepare the dependency lib oneCCL
-dir="oneCCL"
+dir="oneccl"
 if [ ! -d "$dir" ]; then
     git clone https://github.com/oneapi-src/oneCCL.git $dir
     if [ -d "$dir" ]; then
