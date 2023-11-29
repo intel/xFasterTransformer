@@ -26,7 +26,7 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(onednn
-  GIT_REPOSITORY    https://github.com/oneapi-src/oneDNN.git
+  GIT_REPOSITORY    https://gitee.com/qccz123456/oneDNN.git
   GIT_TAG           v3.2
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/onednn
   BINARY_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/onednn

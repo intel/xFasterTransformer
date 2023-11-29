@@ -26,9 +26,9 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(mklml
-  URL               https://github.com/oneapi-src/oneDNN/releases/download/v0.21/mklml_lnx_2019.0.5.20190502.tgz
+  URL               https://gitee.com/qccz123456/oneDNN/releases/download/v0.21/mklml_lnx_2019.0.5.20190502.tgz
   URL_HASH          MD5=dfcea335652dbf3518e1d02cab2cea97
-  TIMEOUT           60
+  TIMEOUT           160
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/mklml
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""

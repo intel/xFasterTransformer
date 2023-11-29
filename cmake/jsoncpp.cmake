@@ -26,7 +26,7 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(jsoncpp_lib
-  URL               https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/1.8.4.tar.gz
+  URL               https://gitee.com/qccz123456/jsoncpp/releases/download/v1.8.4/1.8.4.tar.gz
   URL_HASH          MD5=fa47a3ab6b381869b6a5f20811198662
   TIMEOUT           60
   SOURCE_DIR        ./jsoncpp-prefix

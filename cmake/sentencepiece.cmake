@@ -26,7 +26,7 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(sentencepiece_lib
-  URL               https://github.com/google/sentencepiece/releases/download/v0.1.99/sentencepiece-0.1.99.tar.gz
+  URL               https://gitee.com/qccz123456/sentencepiece/releases/download/v0.1.99/sentencepiece-0.1.99.tar.gz
   URL_HASH          MD5=6af04027121d138eb12c458a53df937e
   TIMEOUT           60
   SOURCE_DIR        ./sentencepiece-prefix

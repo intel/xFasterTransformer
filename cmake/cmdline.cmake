@@ -26,7 +26,7 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(cmdline
-  URL               https://github.com/tanakh/cmdline/archive/refs/heads/master.zip
+  URL               https://gitee.com/qccz123456/cmdline/releases/download/master/master.zip
   URL_HASH          MD5=69f98dc95edcae8c423a62ceccf81644
   TIMEOUT           60
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/cmdline

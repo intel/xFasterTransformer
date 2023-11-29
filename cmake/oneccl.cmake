@@ -26,7 +26,7 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(oneccl
-  GIT_REPOSITORY    https://github.com/oneapi-src/oneCCL.git
+  GIT_REPOSITORY    https://gitee.com/qccz123456/oneCCL.git
   GIT_TAG           2021.10
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/oneccl
   BINARY_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/oneccl
