@@ -116,17 +116,29 @@ docker run -it \
   python setup.py build
 
   # Install xFasterTransformer into pip environment.
+  # Run `python setup.py build` before installation.
   python setup.py install
   ```
 
 ## [Models Preparation](tools/README.md)
 xFasterTransformer supports a different model format from Huggingface, but it's compatible with FasterTransformer's format.
 1. Download the huggingface format model firstly.
-2. After that, convert the model into xFasterTransformer format using the corresponding script in 'tools' folder. Each supported model has a corresponding conversion script. You will see many bin files in the output directory.
-```bash
-    python ./tools/chatglm_convert.py -i ${HF_DATASET_DIR} -o  ${OUTPUT_DIR}
+2. After that, convert the model into xFasterTransformer format.
+   - Using model convert module in xfastertransformer. If output directory is not provided, converted model will be placed into `${HF_DATASET_DIR}-xft`.
+      ```
+      python -c "import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")"
+      ```
+      Supported model convert list:
+      - LlamaConvert
+      - ChatGLMConvert
+      - ChatGLM2Convert
+      - OPTConvert
+      - BaichuanConvert
+   - Using the corresponding script in `tools` folder. Each supported model has a corresponding conversion script. You will see many bin files in the output directory.
+    ```bash
+        python ./tools/chatglm_convert.py -i ${HF_DATASET_DIR} -o ${OUTPUT_DIR}
 
-```
+    ```
 
 ## API usage
 For more details, please see API document and [examples](examples/README.md).
@@ -144,8 +156,8 @@ xFasterTransformer's Python API is similar to transformers and also supports tra
 ```Python
 import xfastertransformer
 from transformers import AutoTokenizer, TextStreamer
-# Assume huggingface model dir is `/data/chatglm-6b-hf` and converted model dir is `/data/chatglm-6b-cpu`.
-MODEL_PATH="/data/chatglm-6b-cpu"
+# Assume huggingface model dir is `/data/chatglm-6b-hf` and converted model dir is `/data/chatglm-6b-xft`.
+MODEL_PATH="/data/chatglm-6b-xft"
 TOKEN_PATH="/data/chatglm-6b-hf"
 
 INPUT_PROMPT = "Once upon a time, there existed a little girl who liked to have adventures."
@@ -167,8 +179,8 @@ generated_ids = model.generate(input_ids, max_length=200, streamer=streamer)
 std::vector<int> input(
         {3393, 955, 104, 163, 6, 173, 9166, 104, 486, 2511, 172, 7599, 103, 127, 17163, 7, 130001, 130004});
 
-// Assume converted model dir is `/data/chatglm-6b-cpu`.
-xft::AutoModel model("/data/chatglm-6b-cpu", xft::DataType::bf16);
+// Assume converted model dir is `/data/chatglm-6b-xft`.
+xft::AutoModel model("/data/chatglm-6b-xft", xft::DataType::bf16);
 
 model.config(/*max length*/ 100, /*num beams*/ 1);
 model.input(/*input token ids*/ input, /*batch size*/ 1);
@@ -221,7 +233,7 @@ For more details, please refer to examples.
 `model.rank` can get the process's rank, `model.rank == 0` is the Master.  
 For Slaves, after loading the model, the only thing needs to do is `model.generate()`. The input and generation configuration will be auto synced.
 ```Python
-model = xfastertransformer.AutoModel.from_pretrained(MODEL_PATH, dtype="bf16")
+model = xfastertransformer.AutoModel.from_pretrained("/data/chatglm-6b-xft", dtype="bf16")
 
 # Slave
 while True:
@@ -231,7 +243,7 @@ while True:
 `model.getRank()` can get the process's rank, `model.getRank() == 0` is the Master.  
 For Slaves, any value can be input to `model.config()` and `model.input` since Master's value will be synced.
 ```C++
-xft::AutoModel model("/data/chatglm-6b-cpu", xft::DataType::bf16);
+xft::AutoModel model("/data/chatglm-6b-xft", xft::DataType::bf16);
 
 // Slave
 while (1) {

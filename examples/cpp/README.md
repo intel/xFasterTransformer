@@ -30,3 +30,8 @@ More parameter options settings:
 -   `--output_len`    max tokens can generate excluded input, default 100.
 -   `--loop`          number of loop, default 10.
 -   `--no_stream`     disable streaming output.
+-   `--do_sample`     use sampling.
+-   `--prefix_len`    shared prefix tokens num.
+-   `--topK`          number of highest probability tokens to keep for top-k-filtering.
+-   `--temperature`   value used to modulate the next token probabilities.
+-   `--topP`          retain minimal tokens above topP threshold.
