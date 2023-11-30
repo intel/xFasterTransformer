@@ -55,13 +55,13 @@ endif()
 include("cmake/mklml.cmake")
 include("cmake/onednn.cmake")
 include("cmake/xdnn.cmake")
-include("cmake/oneccl.cmake")
 include(GNUInstallDirs)
+
+set(DEPEND_LIST "onednn" "xdnn_lib")
 
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/include)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src/kernels)
@@ -73,13 +73,27 @@ include_directories(${CMAKE_SOURCE_DIR}/src/common)
 
 link_directories(${CMAKE_SOURCE_DIR}/src/kernels)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/src)
-link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib)
-link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
 
-set(3RDPART_LIB_LIST "mpicxx" "mpi" "rt" "dl" "ccl" "dnnl" "numa")
-set(DEPEND_LIST "oneccl" "onednn" "xdnn_lib")
+find_package(oneCCL REQUIRED)
 
+if(MPI_FOUND AND oneCCL_FOUND)
+    set(MPI_LIBS MPI::MPI_CXX)
+
+    message(STATUS "oneCCL & MPI found. Using found oneCCL instead of building from source.")
+else()
+    message(STATUS "oneCCL or MPI not found. Build oneCCL from source.")
+
+    include("cmake/oneccl.cmake")
+    list(APPEND DEPEND_LIST "oneccl")
+    set(MPI_LIBS "mpicxx" "mpi" "rt" "dl")
+
+    include_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/include)
+    link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib)
+    link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
+endif()
+
+set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa")
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)
     message(STATUS "Notice: Building with shared libraries.")
