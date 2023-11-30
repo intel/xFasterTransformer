@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <new>
+#include "verbose.h"
 
 typedef int8_t s8;
 typedef uint8_t u8;
@@ -235,12 +236,24 @@ public:
         this->rows = rows;
         this->cols = cols;
         this->stride = m.stride;
+        if (xft_get_verbose() == 2) {
+            size_t totalmem = (size_t)(rows * stride) * sizeof(T);
+            printf("xft_verbose,Matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", 
+                    rows, cols, stride, totalmem);
+            fflush(stdout);
+        }
     }
 
     Matrix(Matrix &m) : data(m.data) {
         this->rows = m.rows;
         this->cols = m.cols;
         this->stride = m.stride;
+        if (xft_get_verbose() == 2) {
+            size_t totalmem = (size_t)(rows * stride) * sizeof(T);
+            printf("xft_verbose,Matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", 
+                    rows, cols, stride, totalmem);
+            fflush(stdout);
+        }
     }
 
     // Create dilated matrix, for example, if dilation = 2, then select the 1st, 3rd, 5th, ... lines
@@ -248,18 +261,36 @@ public:
         this->rows = m.rows / dilation;
         this->cols = m.cols;
         this->stride = m.stride * dilation;
+        if (xft_get_verbose() == 2) {
+            size_t totalmem = (size_t)(rows * stride) * sizeof(T);
+            printf("xft_verbose,Matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", 
+                    rows, cols, stride, totalmem);
+            fflush(stdout);
+        }
     }
 
     Matrix(Matrix &m, int start_row, int rows) : data(m.data.buf + start_row * m.stride) {
         this->rows = rows;
         this->cols = m.cols;
         this->stride = m.stride;
+        if (xft_get_verbose() == 2) {
+            size_t totalmem = (size_t)(rows * stride) * sizeof(T);
+            printf("xft_verbose,Matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", 
+                    rows, cols, stride, totalmem);
+            fflush(stdout);
+        }
     }
 
     Matrix(T *buf, int rows, int cols, int stride) : data(buf) {
         this->rows = rows;
         this->cols = cols;
         this->stride = stride;
+        if (xft_get_verbose() == 2) {
+            size_t totalmem = (size_t)(rows * stride) * sizeof(T);
+            printf("xft_verbose,Matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", 
+                    rows, cols, stride, totalmem);
+            fflush(stdout);
+        }
     }
 
     ~Matrix() { this->Release(); }
