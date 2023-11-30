@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#include "rotary_embedding_chatglm2.h"
+#include "rotary_embedding_chatglm2_3.h"
 
 #include "compile_util.h"
 
@@ -22,10 +22,10 @@ static float *inv_freq;
 static float *emb_cos = nullptr;
 static float *emb_sin = nullptr;
 
-bool ChatGLM2RotaryEmbedding::initialized = false;
+bool ChatGLM2_3RotaryEmbedding::initialized = false;
 
 // dim: equals to head size
-ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
+ChatGLM2_3RotaryEmbedding::ChatGLM2_3RotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
     if (!initialized) {
         initialized = true;
 
@@ -37,14 +37,14 @@ ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(const int dim, const int max_po
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
 
-        glm2CalEmb();
+        glm2_3CalEmb();
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
     }
 };
 
-void ChatGLM2RotaryEmbedding::glm2CalEmb() {
+void ChatGLM2_3RotaryEmbedding::glm2_3CalEmb() {
     emb_cos = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
     emb_sin = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
 
@@ -86,7 +86,7 @@ void ChatGLM2RotaryEmbedding::glm2CalEmb() {
 //     x_out2 = x_out2.flatten(3)
 //     return torch.cat((x_out2, x_pass), dim=-1)
 
-void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
+void ChatGLM2_3RotaryEmbedding::forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
         int hidden_size_per_attention_head, const int *position_ids) {
     int dim = inv_freq_size * 2;
     REQUIRES(dim == hidden_size_per_attention_head, "Incorrect shape, last dimention is not the head size.");

@@ -17,9 +17,9 @@
 #include "mlp_llama.h"
 
 template <typename WeiT, typename NORM_CLS, bool INPUT_AS_RESID>
-class ChatGLM2MLP : public LlamaMLP<WeiT> {
+class ChatGLM2_3MLP : public LlamaMLP<WeiT> {
 public:
-    ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) { }
+    ChatGLM2_3MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) { }
 
     // The inerface is for PyTorch, thus the weights are already transposed
     void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {

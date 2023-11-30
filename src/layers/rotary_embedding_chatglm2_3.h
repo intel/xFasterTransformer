@@ -29,17 +29,17 @@
         float *embd = emb.forward(x, x_shape, pos_ids, pos_shape);
 */
 
-class ChatGLM2RotaryEmbedding {
+class ChatGLM2_3RotaryEmbedding {
 public:
-    ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings = 32768, const float base = 10000.0);
+    ChatGLM2_3RotaryEmbedding(const int dim, const int max_position_embeddings = 32768, const float base = 10000.0);
 
-    ~ChatGLM2RotaryEmbedding() {}
+    ~ChatGLM2_3RotaryEmbedding() {}
 
     void forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
             int hidden_size_per_attention_head, const int *position_ids);
 
 private:
-    void glm2CalEmb();
+    void glm2_3CalEmb();
 
 private:
     static bool initialized;

@@ -16,12 +16,12 @@
 #include <limits>
 
 #include "INIReader.h"
-#include "chatglm2.h"
+#include "chatglm2_3.h"
 
-const char *model_type = "chatglm2";
+const char *model_type = "chatglm2_3";
 template <typename WeiT, typename NormT>
-ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath)
-    : CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>, ChatGLM2MLP<WeiT, NormT, true>>(
+ChatGLM2_3<WeiT, NormT>::ChatGLM2_3(const std::string &modelPath)
+    : CommonDecoder<ChatGLM2_3Attention<WeiT, ChatGLM2_3RotaryEmbedding, NormT, true>, ChatGLM2_3MLP<WeiT, NormT, true>>(
             modelPath, model_type) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
@@ -38,14 +38,14 @@ ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath)
 }
 
 template <typename WeiT, typename NormT>
-ChatGLM2<WeiT, NormT>::~ChatGLM2() {
+ChatGLM2_3<WeiT, NormT>::~ChatGLM2_3() {
     delete embedding;
 
     if (positionIds) { free(positionIds); }
 }
 
 template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::setEmbeddingWeights(const std::string &modelPath) {
+void ChatGLM2_3<WeiT, NormT>::setEmbeddingWeights(const std::string &modelPath) {
     int vocabSize = embedding->getVocabSize();
     int hiddenSize = embedding->getHiddenSize();
 
@@ -59,7 +59,7 @@ void ChatGLM2<WeiT, NormT>::setEmbeddingWeights(const std::string &modelPath) {
 }
 
 template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
+void ChatGLM2_3<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
     int hiddenSize = embedding->getHiddenSize();
 
     float *gamma = (float *)malloc(hiddenSize * sizeof(float));
@@ -87,7 +87,7 @@ void ChatGLM2<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
 //
 //     return attention_mask
 template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
+void ChatGLM2_3<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
     int sizeRequired = ctx->batchSize * seqLen * seqLen;
@@ -128,12 +128,12 @@ void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+void ChatGLM2_3<WeiT, NormT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
 template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::lastLayerNormForward(float *input, float *output, int rows) {
+void ChatGLM2_3<WeiT, NormT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
@@ -148,7 +148,7 @@ void ChatGLM2<WeiT, NormT>::lastLayerNormForward(float *input, float *output, in
 // position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
 // return position_ids
 template <typename WeiT, typename NormT>
-int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
+int *ChatGLM2_3<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
     // Prepare buffer
     int sizeNeeded = (batchSize * seqLen + 63) / 64 * 64; // position_ids + block_position_ids
     if (posBufSize < sizeNeeded) {
@@ -187,7 +187,7 @@ int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, 
     return positionIds;
 }
 
-template class ChatGLM2<float>;
-template class ChatGLM2<float16_t>;
-template class ChatGLM2<bfloat16_t>;
-template class ChatGLM2<int8_t>;
+template class ChatGLM2_3<float>;
+template class ChatGLM2_3<float16_t>;
+template class ChatGLM2_3<bfloat16_t>;
+template class ChatGLM2_3<int8_t>;

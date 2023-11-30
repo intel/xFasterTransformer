@@ -15,19 +15,19 @@
 #pragma once
 
 #include <vector>
-#include "attn_chatglm2.h"
+#include "attn_chatglm2_3.h"
 #include "common_decoder.h"
 #include "layers_norm.h"
-#include "mlp_chatglm2.h"
-#include "rotary_embedding_chatglm2.h"
+#include "mlp_chatglm2_3.h"
+#include "rotary_embedding_chatglm2_3.h"
 #include "token_embedding.h"
 
 template <typename WeiT, typename NormT = RmsNorm>
-class ChatGLM2 : public CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>,
-                         ChatGLM2MLP<WeiT, NormT, true>> {
+class ChatGLM2_3 : public CommonDecoder<ChatGLM2_3Attention<WeiT, ChatGLM2_3RotaryEmbedding, NormT, true>,
+                         ChatGLM2_3MLP<WeiT, NormT, true>> {
 public:
-    ChatGLM2(const std::string &modelPath);
-    ~ChatGLM2();
+    ChatGLM2_3(const std::string &modelPath);
+    ~ChatGLM2_3();
 
     virtual void prepareAttnMask(int *ids, int step);
     virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen);

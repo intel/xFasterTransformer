@@ -18,11 +18,11 @@
 #include "attention.h"
 
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, bool INPUT_AS_RESID>
-class ChatGLM2Attention : public Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID> {
+class ChatGLM2_3Attention : public Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID> {
 public:
-    ChatGLM2Attention(int layerId, DecoderContext *ctx)
+    ChatGLM2_3Attention(int layerId, DecoderContext *ctx)
         : Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID>(layerId, ctx) {}
-    virtual ~ChatGLM2Attention() {}
+    virtual ~ChatGLM2_3Attention() {}
 
 public:
     template <typename KVCacheT>
@@ -61,7 +61,7 @@ public:
         hpj::Matrix<float> qkvGroupMatMul(qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
 #ifdef DEBUG
-        this->dbg.debugPrint("---- GLM2 DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
+        this->dbg.debugPrint("---- GLM2_3 DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         this->dbg.debugPrint("input [%d, %d, %d]:\n", ctx->batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
         this->dbg.dumpMatrix(inputBuffer);
 #endif
