@@ -36,17 +36,24 @@ class BuildCMakeExt(build_ext):
         self.spawn(["make", "-C", build_dir, "-j"])
 
 
+def get_xft_version() -> str:
+    xft_root = Path(__file__).parent
+    version = open(xft_root / "VERSION").read().strip()
+
+    return version
+
+
 setup(
     name="xfastertransformer",
-    version="1.0.0",
+    version=get_xft_version(),
     keywords="LLM",
     description="Boost large language model inference performance on CPU platform.",
     long_description=long_description,
-    long_description_content_type='text/markdown',
+    long_description_content_type="text/markdown",
     license="Apache 2.0",
     url="https://github.com/intel/xFasterTransformer",
     author="xFasterTransformer",
-    author_email='xft.maintainer@intel.com',
+    author_email="xft.maintainer@intel.com",
     python_requires=">=3.8",
     package_dir={"": "src"},
     packages=find_packages(where="src", include=["xfastertransformer"]),
