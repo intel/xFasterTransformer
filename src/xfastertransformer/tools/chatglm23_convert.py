@@ -23,9 +23,9 @@ from transformers import AutoModel
 from .convert import BaseModelConvert
 
 
-class ChatGLM2Convert(BaseModelConvert):
+class ChatGLM23Convert(BaseModelConvert):
     """
-    Convert huggingface ChatGLM model. Use https://huggingface.co/THUDM/chatglm2-6b
+    Convert huggingface ChatGLM model. Use https://huggingface.co/THUDM/chatglm2-6b or https://huggingface.co/THUDM/chatglm3-6b
     """
 
     def __init__(self):
