@@ -115,3 +115,36 @@ void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size,
         }
     }
 }
+
+void ChatGLM2RotaryEmbedding::forward(
+        float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {
+    int dim = inv_freq_size * 2;
+    REQUIRES(dim == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
+    const int batch_size = qk_shape[0];
+    const int seq_len = qk_shape[1];
+    const int head_num = qk_shape[2] +  qk_shape[4];
+    const int half = inv_freq_size;
+
+#pragma omp parallel for
+    for (int head = 0; head < head_num; ++head) {
+        int off = head * dim;
+        for (int bs = 0; bs < batch_size; ++bs) {
+            for (int seq = 0; seq < seq_len; ++seq) {
+                float *p1 = query + off;
+
+                int pos = position_ids[seq];
+                float *pcos = emb_cos + pos * dim;
+                float *psin = emb_sin + pos * dim;
+
+#pragma omp simd
+                for (int i = 0; i < half; i += 2) {
+                    auto t1 = p1[i];
+                    p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
+                    p1[i + 1] = p1[i + 1] * pcos[i] + t1 * psin[i];
+                }
+                off += qStride;
+            }
+        }
+    }
+}
+

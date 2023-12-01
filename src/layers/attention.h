@@ -189,6 +189,7 @@ public:
         auto &resultBuffer1 = imBuffer;
         auto &resultBuffer2 = ctx->tmpBuf;
 
+        float epsilon = ctx->epsilon;
         // init group_qkvBuffer
         int attHeadSize = ctx->attHeadSize;
         int qkvRows = ctx->batchSize * inputSeqLen;
@@ -210,7 +211,7 @@ public:
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
             norm.forward(inputBuffer.Data(), resultBuffer1.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
-                    resultBuffer1.Stride());
+                    resultBuffer1.Stride(), epsilon);
         }
 #ifdef DEBUG
         dbg.debugPrint("layer norm:\n");
@@ -237,8 +238,9 @@ public:
 
         // Apply post operattions on query and key
         TimeLine t3("QKPO");
-        int heads = this->endQHead - this->startQHead;
-        int qk_shape[4] = {ctx->batchSize, ctx->inputSeqLen, heads, ctx->attHeadSize};
+        int qheads = this->endQHead - this->startQHead;
+        int kheads = this->endKVHead - this->startKVHead;
+        int qk_shape[5] = {ctx->batchSize, ctx->inputSeqLen, qheads, ctx->attHeadSize, kheads};
         if (positionIds != nullptr) {
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, positionIds);
         } else if (ctx->maxPosEmbed > 0) {
