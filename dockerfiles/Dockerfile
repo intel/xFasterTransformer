@@ -48,7 +48,8 @@ RUN ./configure --prefix=/usr/bin/python3.8 --enable-optimizations \
     && update-alternatives --install /usr/bin/pip pip /usr/bin/python3.8/bin/pip3 60 \
     && python -m pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir wheel \
-    && rm -rf /tmp/*
+    && rm -rf /tmp/* \
+    && echo "export PATH=/usr/bin/python3.8:\$PATH" >> ~/.bashrc
 
 RUN pip install --no-cache-dir torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir cmake==3.26.1 transformers==4.30.0 sentencepiece==0.1.99 tokenizers==0.13.3 accelerate==0.23.0 \
