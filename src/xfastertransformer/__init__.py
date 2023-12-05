@@ -23,13 +23,13 @@ torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfa
 
 _import_structure = {
     "automodel": ["AutoModel"],
-    "tools": ["LlamaConvert", "ChatGLMConvert", "ChatGLM23Convert", "OPTConvert", "BaichuanConvert"],
+    "tools": ["LlamaConvert", "ChatGLMConvert", "ChatGLM2Convert", "OPTConvert", "BaichuanConvert"],
 }
 
 if TYPE_CHECKING:
     from .tools import LlamaConvert
     from .tools import ChatGLMConvert
-    from .tools import ChatGLM23Convert
+    from .tools import ChatGLM2Convert
     from .tools import OPTConvert
     from .tools import BaichuanConvert
 else:

@@ -1,5 +1,5 @@
 """
-Convert huggingface ChatGLM model. Use https://huggingface.co/THUDM/chatglm2-6b or https://huggingface.co/THUDM/chatglm3-6b
+Convert huggingface ChatGLM model. Use https://huggingface.co/THUDM/chatglm2-6b
 """
 
 import argparse
