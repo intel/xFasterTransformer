@@ -41,8 +41,8 @@ private:
 static_assert(sizeof(uint4x2_t) == 1, "uint4x2_t must be 1 bytes");
 
 inline uint4x2_t::uint4x2_t(uint8_t v1, uint8_t v2) {
-    // 在小端模式下，低位字节存储在内存的低地址端
-    // 将 v1 和 v2 合并到 raw_bits_ 中
+    // In little-endian mode, the low-order byte is stored at
+    // the low address end of memory. Merge v1 and v2.
     this->raw_bits_ = (v1 & 0x0F) | ((v2 & 0x0F) << 4);
 }
 
