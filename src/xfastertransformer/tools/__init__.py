@@ -15,6 +15,6 @@
 
 from .llama_convert import LlamaConvert
 from .chatglm_convert import ChatGLMConvert
-from .chatglm2_convert import ChatGLM2Convert
+from .chatglm23_convert import ChatGLM23Convert
 from .opt_convert import OPTConvert
 from .baichuan_convert import BaichuanConvert
