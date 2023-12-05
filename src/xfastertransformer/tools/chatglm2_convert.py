@@ -25,11 +25,12 @@ from .convert import BaseModelConvert
 
 class ChatGLM2Convert(BaseModelConvert):
     """
-    Convert huggingface ChatGLM model. Use https://huggingface.co/THUDM/chatglm2-6b
+    Convert huggingface ChatGLM2 model. Use https://huggingface.co/THUDM/chatglm2-6b
     """
 
     def __init__(self):
         super().__init__()
+        self.model_type = "chatglm2"
 
     def split_and_convert_process(
         self,
@@ -128,39 +129,39 @@ class ChatGLM2Convert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        config["chatglm2"] = {}
+        config[self.model_type] = {}
         has_post_decoder_layernorm = "model.decoder.final_layer_norm.bias" in layer_names
         try:
-            config["chatglm2"]["model_name"] = (
-                "chatglm2" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            config[self.model_type]["model_name"] = (
+                self.model_type if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
             )
-            num_attention_heads = config["chatglm2"]["head_num"] = str(hf_config["num_attention_heads"])
+            num_attention_heads = config[self.model_type]["head_num"] = str(hf_config["num_attention_heads"])
             n_embd = hf_config["hidden_size"]
-            config["chatglm2"]["size_per_head"] = str(n_embd // hf_config["num_attention_heads"])
-            config["chatglm2"]["inter_size"] = str(hf_config["ffn_hidden_size"])
-            config["chatglm2"]["max_pos_seq_len"] = str(hf_config["seq_length"])
-            config["chatglm2"]["num_layer"] = str(hf_config["num_layers"])
-            config["chatglm2"]["layernorm_eps"] = str(hf_config["layernorm_epsilon"])  # "1e-5"
-            config["chatglm2"]["layernorm_type"] = "pre_layernorm"
-            config["chatglm2"]["activation_type"] = "swiglu"
-            config["chatglm2"]["has_post_decoder_layernorm"] = (
+            config[self.model_type]["size_per_head"] = str(n_embd // hf_config["num_attention_heads"])
+            config[self.model_type]["inter_size"] = str(hf_config["ffn_hidden_size"])
+            config[self.model_type]["max_pos_seq_len"] = str(hf_config["seq_length"])
+            config[self.model_type]["num_layer"] = str(hf_config["num_layers"])
+            config[self.model_type]["layernorm_eps"] = str(hf_config["layernorm_epsilon"])  # "1e-5"
+            config[self.model_type]["layernorm_type"] = "pre_layernorm"
+            config[self.model_type]["activation_type"] = "swiglu"
+            config[self.model_type]["has_post_decoder_layernorm"] = (
                 "1" if str(hf_config["post_layer_norm"]) == "True" else "0"
             )
-            config["chatglm2"]["vocab_size"] = str(hf_config["padded_vocab_size"])
-            config["chatglm2"]["start_id"] = str(hf_config["bos_token_id"])
-            config["chatglm2"]["end_id"] = str(hf_config["eos_token_id"])
-            config["chatglm2"]["weight_data_type"] = dtype
+            config[self.model_type]["vocab_size"] = str(hf_config["padded_vocab_size"])
+            config[self.model_type]["start_id"] = str(hf_config["bos_token_id"])
+            config[self.model_type]["end_id"] = str(hf_config["eos_token_id"])
+            config[self.model_type]["weight_data_type"] = dtype
 
-            kv_channels = config["chatglm2"]["kv_channels"] = str(hf_config["kv_channels"])
-            config["chatglm2"]["rmsnorm"] = "1" if str(hf_config["rmsnorm"]) == "True" else "0"
-            config["chatglm2"]["apply_residual_connection_post_layernorm"] = (
+            kv_channels = config[self.model_type]["kv_channels"] = str(hf_config["kv_channels"])
+            config[self.model_type]["rmsnorm"] = "1" if str(hf_config["rmsnorm"]) == "True" else "0"
+            config[self.model_type]["apply_residual_connection_post_layernorm"] = (
                 "1" if str(hf_config["apply_residual_connection_post_layernorm"]) == "True" else "0"
             )
-            config["chatglm2"]["multi_query_attention"] = (
+            config[self.model_type]["multi_query_attention"] = (
                 "1" if str(hf_config["multi_query_attention"]) == "True" else "0"
             )
-            multi_query_group_num = config["chatglm2"]["kv_head_num"] = str(hf_config["multi_query_group_num"])
-            config["chatglm2"]["pad_id"] = str(hf_config["pad_token_id"])
+            multi_query_group_num = config[self.model_type]["kv_head_num"] = str(hf_config["multi_query_group_num"])
+            config[self.model_type]["pad_id"] = str(hf_config["pad_token_id"])
 
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)

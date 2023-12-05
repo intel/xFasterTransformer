@@ -26,7 +26,7 @@ template <typename WeiT, typename NormT = RmsNorm>
 class ChatGLM2 : public CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>,
                          ChatGLM2MLP<WeiT, NormT, true>> {
 public:
-    ChatGLM2(const std::string &modelPath);
+    ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();
 
     virtual void prepareAttnMask(int *ids, int step);

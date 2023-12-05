@@ -185,7 +185,7 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new BaichuanTokenizer(tokenPath);
     } else if (modeltype == "chatglm") {
         return new ChatGLMTokenizer(tokenPath);
-    } else if (modeltype == "chatglm2") {
+    } else if (modeltype == "chatglm2" or modeltype == "chatglm3") {
         return new ChatGLM2Tokenizer(tokenPath);
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
