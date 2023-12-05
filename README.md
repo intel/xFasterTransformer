@@ -126,7 +126,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
 2. After that, convert the model into xFasterTransformer format.
    - Using model convert module in xfastertransformer. If output directory is not provided, converted model will be placed into `${HF_DATASET_DIR}-xft`.
       ```
-      python -c "import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")"
+      python -c 'import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")'
       ```
       Supported model convert list:
       - LlamaConvert
