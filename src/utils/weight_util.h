@@ -25,7 +25,7 @@
 
 namespace xft {
 
-enum WDataType { FP32 = 0, FP16 = 1, BF16 = 2, INT8 = 3 };
+enum WDataType { FP32 = 0, FP16 = 1, BF16 = 2, INT8 = 3, UINT4x2 = 4};
 
 inline WDataType getWeightType(const std::string &ini_file, const std::string &section_name) {
     WDataType w_type;
@@ -109,6 +109,9 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
         } else if constexpr (std::is_same_v<T, int8_t> && std::is_same_v<WT, float>) {
             printf("Not support float to int8_t\n");
             exit(-1);
+        } else if constexpr (std::is_same_v<T, uint4x2_t> && std::is_same_v<WT, float>) {
+            printf("Not support float to uint4x2_t\n");
+            exit(-1);
         } else if constexpr (std::is_same_v<T, float> && std::is_same_v<WT, float16_t>) {
             float16_t::cvt_float16_to_float(w_ptr, ptr, size);
         } else if constexpr (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float16_t>) {
@@ -120,6 +123,9 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
             free(fp32_ptr);
         } else if constexpr (std::is_same_v<T, int8_t> && std::is_same_v<WT, float16_t>) {
             printf("Not support float16_t to int8_t\n");
+            exit(-1);
+        } else if constexpr (std::is_same_v<T, uint4x2_t> && std::is_same_v<WT, float16_t>) {
+            printf("Not support float16_t to uint4x2_t\n");
             exit(-1);
         } else {
             printf("Not support data loading with unknown type!\n");
@@ -140,8 +146,9 @@ int loadWeight(std::string filename, T *ptr, int size, WDataType w_type, bool re
     switch (w_type) {
         case WDataType::FP32: file_size = loadWeightWithConvert<T, float>(ptr, size, filename, required); break;
         case WDataType::FP16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
-        case WDataType::INT8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
         case WDataType::BF16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
+        case WDataType::INT8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
+        case WDataType::UINT4x2: file_size = loadWeightWithConvert<T, uint4x2_t>(ptr, size, filename, required); break;
         default: printf("Not support WDataType=%d", w_type);
     }
     return file_size;
@@ -149,10 +156,13 @@ int loadWeight(std::string filename, T *ptr, int size, WDataType w_type, bool re
 
 template int loadWeightWithConvert<float, float>(float *, int, const std::string &, bool);
 template int loadWeightWithConvert<float16_t, float>(float16_t *, int, const std::string &, bool);
-template int loadWeightWithConvert<int8_t, float>(int8_t *, int, const std::string &, bool);
 template int loadWeightWithConvert<bfloat16_t, float>(bfloat16_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<int8_t, float>(int8_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<uint4x2_t, float>(uint4x2_t *, int, const std::string &, bool);
+
 template int loadWeightWithConvert<float, float16_t>(float *, int, const std::string &, bool);
 template int loadWeightWithConvert<float16_t, float16_t>(float16_t *, int, const std::string &, bool);
-template int loadWeightWithConvert<int8_t, float16_t>(int8_t *, int, const std::string &, bool);
 template int loadWeightWithConvert<bfloat16_t, float16_t>(bfloat16_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<int8_t, float16_t>(int8_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<uint4x2_t, float16_t>(uint4x2_t *, int, const std::string &, bool);
 } // namespace xft

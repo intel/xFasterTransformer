@@ -131,3 +131,4 @@ template class LlamaLLM<float>;
 template class LlamaLLM<float16_t>;
 template class LlamaLLM<bfloat16_t>;
 template class LlamaLLM<int8_t>;
+template class LlamaLLM<uint4x2_t>;

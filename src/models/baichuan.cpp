@@ -150,3 +150,4 @@ template class Baichuan<float>;
 template class Baichuan<float16_t>;
 template class Baichuan<bfloat16_t>;
 template class Baichuan<int8_t>;
+template class Baichuan<uint4x2_t>;

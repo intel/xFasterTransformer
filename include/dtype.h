@@ -20,7 +20,9 @@ enum class DataType {
     bf16,
     fp16,
     int8,
+    int4,
     bf16_fp16,
     bf16_int8,
+    bf16_int4,
 };
 } // namespace xft
