@@ -21,6 +21,7 @@ dist/
 # 3drparty
 /3rdparty/ig
 /3rdparty/mklml
+/3rdparty/mkl
 /3rdparty/oneCCL
 /3rdparty/oneccl
 /3rdparty/jsoncpp

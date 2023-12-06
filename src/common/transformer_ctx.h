@@ -158,13 +158,14 @@ public:
         int vCols = kCols;
         int qkvCols = qCols + kCols + vCols;
         int qkvStride = (qkvCols % 512 == 0 ? qkvCols + pad : qkvCols); // stride for the concated QKV
+        int mlpFactor = (this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
         int imCols = splitIdx < (intermediateSize % numSplit) ? (intermediateSize / numSplit + 1)
                                                               : (intermediateSize / numSplit);
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output
 
         int normSize = batchSize * inputSeqLen * hiddenStride;
         int qkvSize = batchSize * inputSeqLen * qkvStride;
-        int imOutSize = batchSize * inputSeqLen * imStride;
+        int imOutSize = batchSize * inputSeqLen * imStride * mlpFactor;
 
         int presentSeqLen = preSeqLen + 1;
         int paddedSize = (presentSeqLen + 15) / 16 * 16;

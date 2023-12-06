@@ -24,6 +24,8 @@
 #include "my_types.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
+#include "xdnn.h"
+#include <mkl.h>
 
 class DecoderUtil {
 public:
@@ -500,79 +502,33 @@ public:
         }
     }
 
-    // batchs x seqlen x 3 x head x heads ->  3 x batchs x head x seqlen x heads (2
-    // 0 3 1 4)
-    template <typename T, typename Tt>
-    static void transposeQKV(const T *qkvBuffer, Tt *qkvTransBuffer, int batchSize, int seqLen, int headQNum,
-            int headKVNum, int headSize) {
-        int hiddenQSize = headQNum * headSize;
-        int hiddenKVSize = headKVNum * headSize;
-        int hiddenQKVSize = hiddenQSize + hiddenKVSize * 2;
-
-        int blockSize = hiddenQKVSize * seqLen;
-
-        const T *qBuffer = qkvBuffer;
-        const T *kBuffer = qkvBuffer + hiddenQSize;
-        const T *vBuffer = qkvBuffer + hiddenQSize + hiddenKVSize;
-
-        Tt *qTransBuffer = qkvTransBuffer;
-        Tt *kTransBuffer = qkvTransBuffer + batchSize * hiddenQSize * seqLen;
-        Tt *vTransBuffer = qkvTransBuffer + batchSize * (hiddenQSize + hiddenKVSize) * seqLen;
-
-#pragma omp parallel for collapse(3)
-        for (int i = 0; i < batchSize; i++) {
-            for (int k = 0; k < headQNum; k++) { // assume headQNum >= headKVNum
-                for (int j = 0; j < seqLen; j++) {
-                    const float *qSrcEachBatch = reinterpret_cast<const T *>(qBuffer) + blockSize * i;
-                    const float *kSrcEachBatch = reinterpret_cast<const T *>(kBuffer) + blockSize * i;
-                    const float *vSrcEachBatch = reinterpret_cast<const T *>(vBuffer) + blockSize * i;
-
-                    int dstOffEachHead = k * seqLen * headSize;
-                    int srcOffEachLine = k * headSize;
-
-                    int dstOffEachLine = j * headSize;
-                    int srcOffEachHead = j * hiddenQKVSize;
-
-                    Tt *qDstEachLine = qTransBuffer + i * hiddenQSize * seqLen + dstOffEachHead + dstOffEachLine;
-                    const T *qSrcEachLine = qSrcEachBatch + srcOffEachHead + srcOffEachLine;
-
-                    Tt *kDstEachLine = kTransBuffer + i * hiddenKVSize * seqLen + dstOffEachHead + dstOffEachLine;
-                    const T *kSrcEachLine = kSrcEachBatch + srcOffEachHead + srcOffEachLine;
-
-                    Tt *vDstEachLine = vTransBuffer + i * hiddenKVSize * seqLen + dstOffEachHead + dstOffEachLine;
-                    const T *vSrcEachLine = vSrcEachBatch + srcOffEachHead + srcOffEachLine;
-                    arrayCpy<Tt, T>(qDstEachLine, qSrcEachLine, headSize);
-                    if (k < headKVNum) {
-                        arrayCpy<Tt, T>(kDstEachLine, kSrcEachLine, headSize);
-                        arrayCpy<Tt, T>(vDstEachLine, vSrcEachLine, headSize);
-                    }
-                }
-            }
-        }
+    template <typename T>
+    static void single_thread_cvt2bf16_inplace(T *buf, int m, int n, int stride) {
+        if (std::is_same_v<T, float>)
+            for (int i = 0; i < m; ++i)
+                bfloat16_t::cvt_float_to_bfloat16(buf + i * stride, (bfloat16_t *)buf + i * stride, n);
     }
 
-    // batchs x head x seqlen x heads -> batchs x seqlen x head x heads (0 2 1 3)
-    template <typename T, typename Tt>
-    static void transposeAttnResult(
-            T *Buffer, Tt *TransBuffer, int batchSize, int seqLen, int headNum, int headSize, int dstStride) {
-        int hiddenSize = headNum * headSize;
-        int blockSize = seqLen * hiddenSize; // dst buffer stride in each batch
+    // compute silu on the left half and then add it with the right half
+    static void siluSum(hpj::Matrix<float> &src) {
+        __m512 one = _mm512_set1_ps(1.f);
+        __m512 negOne = _mm512_set1_ps(-1.f);
+        int M = src.Rows();
+        int stride = src.Cols();
+        int N = stride / 2;
 
 #pragma omp parallel for collapse(2)
-        for (int i = 0; i < batchSize; i++) {
-            for (int k = 0; k < seqLen; k++) {
-                int srcOffEachHead = k * headSize;
-                int dstOffEachLine = k * dstStride;
-
-                for (int j = 0; j < headNum; j++) {
-                    int srcOffEachLine = j * seqLen * headSize;
-                    int dstOffEachHead = j * headSize;
-
-                    Tt *qDstEachLine = TransBuffer + dstOffEachHead + dstOffEachLine + i * seqLen * dstStride;
-                    const T *qSrcEachLine = Buffer + srcOffEachLine + srcOffEachHead + i * blockSize;
-
-                    arrayCpy<Tt, T>(qDstEachLine, qSrcEachLine, headSize);
-                }
+        for (int64_t i = 0; i < M; ++i) {
+            for (int64_t j = 0; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                auto left = _mm512_maskz_loadu_ps(mask, src.Data() + i * stride + j);
+                auto right = _mm512_maskz_loadu_ps(mask, src.Data() + i * stride + j + N);
+                auto x0 = BertUtil::vexp(_mm512_mul_ps(left, negOne));
+                auto x1 = _mm512_add_ps(one, x0);
+                auto x2 = _mm512_div_ps(left, x1);
+                auto res = _mm512_mul_ps(right, x2);
+                _mm512_mask_storeu_ps(src.Data() + i * stride + j, mask, res);
             }
         }
     }
@@ -580,18 +536,32 @@ public:
     // C = A * B
     // bTranspose: B need to be transposed or not
     // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
-    static void sgemm(const float *A, const float *B, float *C, int m, int n, int k, bool transa, bool transb) {
-        int lda = (transa ? m : k);
-        int ldb = (transb ? k : n);
-        int ldc = n;
+    template <typename T>
+    static void sgemm(const T *A, const T *B, float *C, int m, int n, int k,
+            int lda, int ldb, int ldc, bool transa, bool transb) {
         float alpha = 1;
         float beta = 0;
-        char ta[] = "N";
-        char tb[] = "N";
-        if (transa) ta[0] = 'T';
-        if (transb) tb[0] = 'T';
 
-        dnnl_sgemm(ta[0], tb[0], m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+        if constexpr (std::is_same_v<T, float>) {
+            char ta[] = "N";
+            char tb[] = "N";
+            if (transa) ta[0] = 'T';
+            if (transb) tb[0] = 'T';
+
+            dnnl_sgemm(ta[0], tb[0], m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+
+        } else if (std::is_same_v<T, bfloat16_t>) {
+            CBLAS_TRANSPOSE ta, tb;
+            ta = transa? CblasTrans : CblasNoTrans;
+            tb = transb? CblasTrans : CblasNoTrans;
+
+            cblas_gemm_bf16bf16f32(
+                CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_BF16 *)(A), lda, 
+                    (const MKL_BF16 *)(B), ldb, beta, C, ldc);
+        } else {
+            printf("Datatype Not supported yet\n");
+            exit(-1);
+        }
     }
 
     // need to do for res.
@@ -653,11 +623,11 @@ public:
         }
     }
 
-    static void updateOutTile(
-            float *output, const float *expABC, float *preSum, float *sum, float *preMax, float *max, int m, int n) {
+    static void updateOutTile(float *output, const float *expABC, float *preSum, float *sum, float *preMax,
+            float *max, int m, int n, int stride) {
         for (int i = 0; i < m; ++i) {
             const float *buf = expABC + i * n;
-            float *outbuf = output + i * n;
+            float *outbuf = output + i * stride;
             __m512 merr = _mm512_set1_ps(preMax[i] - max[i]);
             merr = BertUtil::vexp(merr);
             __m512 vfac = _mm512_set1_ps(preSum[i] / sum[i]);
@@ -678,12 +648,16 @@ public:
     // sum += sum(exp(A[i]))
     // output = output * preSum / sum + (exp(A) / sum) x B
     // preSum = sum
-    static void incrementalTileAttention(const float *A, const float *B, const float *C, const float *attnMask, int m,
-            int n, int k, int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float refac,
-            float *AB, float *expABC, float *output) {
-        sgemm(A, B, AB, m, k, n, false, true);
+    template <typename T>
+    static void incrementalTileAttention(const T *A, const T *B, const T *C, const float *attnMask,
+            int m, int n, int k, int attnMskStride, float *preSum, float *sum, float *preMax, float *max,
+            float refac, float *AB, float *expABC, float *output, int qStride, int kStride, int vStride, int stride) {
+        sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
         softmaxTile(AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
-        sgemm(AB, C, expABC, m, n, k, false, false);
-        updateOutTile(output, expABC, preSum, sum, preMax, max, m, n);
+
+        single_thread_cvt2bf16_inplace(AB, m, k, k);
+        sgemm((T*)AB, C, expABC, m, n, k, k, vStride, n, false, false);
+        updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
     }
+
 };
