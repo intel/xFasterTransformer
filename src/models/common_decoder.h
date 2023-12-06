@@ -139,16 +139,9 @@ public:
 
         // Prepare context
         DecoderContext *ctx = this->getContext();
-        if (step == 0) {
-            ctx->resize(batchSize, this->prefixSharing ? this->prefixSeqLen : seqLen, 0);
-        } else {
-            ctx->resize(batchSize, seqLen, pastSeqLen);
-        }
+        ctx->resize(batchSize, seqLen, pastSeqLen);
 
         if (step == 0) {
-            // Enlarge buffer if needed
-            prepareBuffers(ctx, userSideBS, beamSize, logitsAll);
-
             // Reset initial and accumulated sequence length at the first step
             this->initSeqLen = seqLen;
             this->accSeqLen = 0;
@@ -169,6 +162,9 @@ public:
                 ids = newIDs;
                 ctx->resize(batchSize, inputSeqLen, pastSeqLen);
             }
+
+            // Enlarge buffer if needed
+            prepareBuffers(ctx, userSideBS, beamSize, logitsAll);
         }
 
         // Embedding
