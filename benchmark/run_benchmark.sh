@@ -17,10 +17,10 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # In this benchmark case, precision can be: bf16, bf16_fp16, fp16, bf16_int8, int8 
-precision="fp16"
+precision=${precision:-"fp16"}
 # The model name can be choosen are: llama-2(-7b,-13b,-70b), llama(-7b,-13b,-30b,-65b), chatglm2-6b, chatglm-6b, baichuan2(-7b,13b)
 # which you can refer to ../examples/model_config as well
-model_name="chatglm2-6b"
+model_name=${model_name:-"chatglm2-6b"}
 
 # Example here is using fake model, you can use real model as well
 export XFT_FAKE_MODEL=1
