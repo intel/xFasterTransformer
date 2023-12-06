@@ -64,15 +64,6 @@ def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tup
     inputs = tokenizer(prompts, return_tensors="pt", padding=padding).input_ids
     return inputs
 
-def build_inputs_baichuan(tokenizer, query: List[str], padding, history: List[Tuple[str, str]] = []):
-    inputs = tokenizer(query, return_tensors="pt", padding=padding).input_ids
-    print(inputs, inputs.shape)
-    suffix = torch.tensor([[196]])
-    prefix = torch.tensor([[195]])
-    inputs = torch.cat((prefix.expand((inputs.shape[0], 1)), inputs, suffix.expand(inputs.shape[0], 1)), dim=1)
-    print(inputs, inputs.shape)
-    return inputs
-
 import importlib.util
 
 xft_spec = importlib.util.find_spec("xfastertransformer")
@@ -92,6 +83,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
     with open(args.prompt_path, "r") as json_file:
         prompt_pool = json.load(json_file)
+    
+    if "chatglm" in args.model_name.lower() :
+        model_prompt=prompt_pool["chatglm"]
+    if "chatglm2" in args.model_name.lower() :
+        model_prompt=prompt_pool["chatglm2"]
+    if "llama" in args.model_name.lower() :
+        model_prompt=prompt_pool["llama"]
+    if "baichuan" in args.model_name.lower() :
+        model_prompt=prompt_pool["baichuan"]
+    if "baichuan2" in args.model_name.lower() :
+        model_prompt=prompt_pool["baichuan2"]
+    if "opt" in args.model_name.lower() :
+        model_prompt=prompt_pool["opt"]
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.token_path, use_fast=False, padding_side="left", trust_remote_code=True
@@ -103,8 +107,8 @@ if __name__ == "__main__":
         print("======start=======")
         if args.input_prompt is not None:
             input_prompt = args.input_prompt
-        elif args.token_in in prompt_pool:
-            input_prompt = prompt_pool[args.token_in]
+        elif args.token_in in model_prompt:
+            input_prompt = model_prompt[args.token_in]
             print(input_prompt)
         else:
             raise SystemExit("[ERROR] Plese use --input_prompt if you want custom input.")
@@ -115,8 +119,6 @@ if __name__ == "__main__":
             if args.batch_size > 1:
                 print("[INFO] chat mode only support batchsize=1")
             input_ids = build_inputs_chatglm(tokenizer, input_prompts, args.padding)
-        elif "baichuan" in args.model_name.lower() :
-            input_ids = build_inputs_baichuan(tokenizer, input_prompts, args.padding)
         else :
             input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
         input_token_nums = int(torch.numel(input_ids) / args.batch_size)

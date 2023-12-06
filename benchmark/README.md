@@ -17,18 +17,18 @@ Please refer to [Prepare model](../README.md#prepare-model)
     ```
 
 ## Step 4: Run scripts
-Enter the folder corresponding to the model and run `run_${MODEL}.sh`. Please modify the model and tokenizer path in `${MODEL}.sh` before running.
+Enter the folder corresponding to the model and run `run_benchmark.sh`. Please modify the `model_name` in `run_benchmark.sh` before running.
 ```bash
-# ChatGLM for example.
-cd benchmark/chatglm-6b
-bash run_chatglm-6b.sh
+# Benchmark example.
+cd benchmark
+bash run_benchmark.sh
 ```
 
-- Shell script will automatically check number of numa nodes, default at least 2 nodes and there is 48 physics cores in each node (12core for subnuma).
+- Shell script will automatically check number of numa nodes.
 - By default, you will get the performance of "input token=32, output token=32, Beam_width=1, FP16".
-- If more datatype and scenarios performance needed, please modify the parameters in `${MODEL}.sh`
-- If system configuration needs modification, please change run-chatglm-6b.sh.
-- If you want the custom input, please modify the `prompt_pool.json` file.
+- If more datatype and scenarios performance needed, please modify the parameters in `run_benchmark.sh`
+- If system configuration needs modification, please change run_benchmark.sh.
+- If you want the custom input, please modify the `prompt.json` file.
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
 
