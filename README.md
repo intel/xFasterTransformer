@@ -132,6 +132,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
       - LlamaConvert
       - ChatGLMConvert
       - ChatGLM2Convert
+      - ChatGLM3Convert
       - OPTConvert
       - BaichuanConvert
    - Using the corresponding script in `tools` folder. Each supported model has a corresponding conversion script. You will see many bin files in the output directory.

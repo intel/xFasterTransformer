@@ -13,9 +13,15 @@
 # limitations under the License.
 # ============================================================================
 
-from .llama_convert import LlamaConvert
-from .chatglm_convert import ChatGLMConvert
+
 from .chatglm2_convert import ChatGLM2Convert
-from .chatglm3_convert import ChatGLM3Convert
-from .opt_convert import OPTConvert
-from .baichuan_convert import BaichuanConvert
+
+
+class ChatGLM3Convert(ChatGLM2Convert):
+    """
+    Convert huggingface ChatGLM3 model. Use https://huggingface.co/THUDM/chatglm3-6b
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.model_type = "chatglm3"

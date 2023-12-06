@@ -18,11 +18,10 @@
 #include "INIReader.h"
 #include "chatglm2.h"
 
-const char *model_type = "chatglm2";
 template <typename WeiT, typename NormT>
-ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath)
+ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
     : CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>, ChatGLM2MLP<WeiT, NormT, true>>(
-            modelPath, model_type) {
+            modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
