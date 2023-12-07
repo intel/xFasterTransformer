@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     libssl-dev \
     libffi-dev \
+    libbz2-dev \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 60 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 60 \
     && rm -rf /var/lib/apt/lists/*
