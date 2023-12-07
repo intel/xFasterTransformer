@@ -58,11 +58,11 @@ public:
             }
 
             MMHelper::convertWeight(trans, hiddenSize, colSplit, gateW, convertedGateWeight, this->gateWeightScale,
-                    this->gateWeightZero);
+                    this->gateWeightZero, this->gateWeightSum);
             MMHelper::packWeight(trans, convertedGateWeight, this->gateWeight);
 
-            MMHelper::convertWeight(
-                    trans, hiddenSize, colSplit, upW, convertedUpWeight, this->upWeightScale, this->upWeightZero);
+            MMHelper::convertWeight(trans, hiddenSize, colSplit, upW, convertedUpWeight, this->upWeightScale,
+                    this->upWeightZero, this->upWeightSum);
             MMHelper::packWeight(trans, convertedUpWeight, this->upWeight);
 
             free(gateW);
@@ -86,7 +86,7 @@ public:
                 }
                 hpj::Matrix<WeiT> quantizedCatWeights;
                 MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, quantizedCatWeights,
-                        this->catWeightsScale, this->catWeightsZero);
+                        this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
                 this->catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
                 MMHelper::packWeight(trans, quantizedCatWeights, this->catWeights);
                 free(gateUpW);
@@ -95,10 +95,10 @@ public:
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
             MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, this->downWeight,
-                    this->downWeightScale, this->downWeightZero);
+                    this->downWeightScale, this->downWeightZero, this->gateWeightSum);
         } else {
             MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, convertedDownWeight,
-                    this->downWeightScale, this->downWeightZero);
+                    this->downWeightScale, this->downWeightZero, this->downWeightSum);
             MMHelper::packWeight(trans, convertedDownWeight, this->downWeight);
         }
 #ifdef DEBUG

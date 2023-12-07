@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <immintrin.h>
 #include "bfloat16.h"
 #include "float16.h"
 #include "my_types.h"
@@ -69,7 +70,7 @@ public:
     template <typename WeiT>
     static void convertWeight(bool trans, int rows, int cols, const float *src, int splitOffset, int splitSize,
             bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, bool unused) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, bool unused) {
         // FP32 transpose
         if constexpr (std::is_same_v<WeiT, float>) {
             if (verticalSplit) {
@@ -207,10 +208,12 @@ public:
                     quantizedWeight.Resize(colsPerSplit, rows);
                     scaleWeight.Resize(colsPerSplit);
                     zeroWeight.Resize(colsPerSplit);
+                    sumWeight.Resize(colsPerSplit);
                 } else {
                     quantizedWeight.Resize(rows, colsPerSplit);
                     scaleWeight.Resize(colsPerSplit);
                     zeroWeight.Resize(colsPerSplit);
+                    sumWeight.Resize(colsPerSplit);
                 }
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
                 xdnn_sgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
@@ -220,6 +223,27 @@ public:
                 xdnn_hgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
+#elif defined(AMX_INT8)
+                xdnn_sgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
+                        trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
+                        quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
+                if (trans) {
+#pragma omp parallel for
+                    for (int i = 0; i < colsPerSplit; i++) {
+                        sumWeight.Data()[i] = 0.0f;
+                        for (int j = 0; j < rows; j++) {
+                            sumWeight.Data()[i] += quantizedWeight.Data()[i * quantizedWeight.Stride() + j];
+                        }
+                    }
+                } else {
+#pragma omp parallel for
+                    for (int i = 0; i < colsPerSplit; i++) {
+                        sumWeight.Data()[i] = 0.0f;
+                        for (int j = 0; j < rows; j++) {
+                            sumWeight.Data()[i] += quantizedWeight.Data()[j * quantizedWeight.Stride() + i];
+                        }
+                    }
+                }
 #else
                 printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
                 exit(-1);
@@ -230,10 +254,12 @@ public:
                     quantizedWeight.Resize(cols, rowsPerSplit);
                     scaleWeight.Resize(cols);
                     zeroWeight.Resize(cols);
+                    sumWeight.Resize(cols);
                 } else {
                     quantizedWeight.Resize(rowsPerSplit, cols);
                     scaleWeight.Resize(cols);
                     zeroWeight.Resize(cols);
+                    sumWeight.Resize(cols);
                 }
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
                 xdnn_sgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
@@ -243,6 +269,27 @@ public:
                 xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
+#elif defined(AMX_INT8)
+                xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
+                        trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
+                        quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
+                if (trans) {
+#pragma omp parallel for
+                    for (int i = 0; i < cols; i++) {
+                        sumWeight.Data()[i] = 0.0f;
+                        for (int j = 0; j < rowsPerSplit; j++) {
+                            sumWeight.Data()[i] += quantizedWeight.Data()[i * quantizedWeight.Stride() + j];
+                        }
+                    }
+                } else {
+#pragma omp parallel for
+                    for (int i = 0; i < cols; i++) {
+                        sumWeight.Data()[i] = 0.0f;
+                        for (int j = 0; j < rowsPerSplit; j++) {
+                            sumWeight.Data()[i] += quantizedWeight.Data()[j * quantizedWeight.Stride() + i];
+                        }
+                    }
+                }
 #else
                 printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
                 exit(-1);
@@ -364,7 +411,7 @@ public:
     template <typename WeiT>
     static void convertWeight(bool trans, int rows, int cols, const float *src, int numSplit, int splitIdx,
             bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
         int totalSize = verticalSplit ? cols : rows;
         std::pair<int, int> range = SplitUtil::getTaskRange(totalSize, numSplit, splitIdx);
 
@@ -372,20 +419,21 @@ public:
         int splitOffset = range.first;
 
         convertWeight(trans, rows, cols, src, splitOffset, splitSize, verticalSplit, quantizedWeight, scaleWeight,
-                zeroWeight, true);
+                zeroWeight, sumWeight, true);
     }
 
     template <typename WeiT>
     static void convertWeight(bool trans, int rows, int cols, const float *src, hpj::Matrix<WeiT> &quantizedWeight,
-            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight) {
-        convertWeight(trans, rows, cols, src, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight);
+            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
+        convertWeight(trans, rows, cols, src, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
     }
 
     template <typename WeiT>
     static void convertWeight(DecoderContext *ctx, bool trans, int rows, int cols, const float *src, bool verticalSplit,
-            hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight) {
+            hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight,
+            hpj::Vector<float> &sumWeight) {
         convertWeight(trans, rows, cols, src, ctx->numSplit, ctx->splitIdx, verticalSplit, quantizedWeight, scaleWeight,
-                zeroWeight);
+                zeroWeight, sumWeight);
     }
 
     template <typename WeiT>
@@ -440,10 +488,19 @@ public:
             xdnn_sgemm_f32s8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             xdnn_hgemm_f32s8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
+#elif defined(AMX_INT8)
+            set_amx_data_type(dnnl::memory::format_tag::BA16a64b4a);
+            auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
+            dnnl::memory B_mem({{K, N}, dnnl::memory::data_type::s8, tag}, get_dnnl_engine(), src.Data());
+            dnnl::memory packedB_mem({{K, N}, dnnl::memory::data_type::s8, dnnl::memory::format_tag::BA16a64b4a},
+                    get_dnnl_engine(), weight.Data());
+            dnnl::reorder(B_mem, packedB_mem).execute(get_dnnl_stream(), B_mem, packedB_mem);
+            get_dnnl_stream().wait();
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
 #endif
+
         }
 
         // INT4
@@ -479,7 +536,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute");
@@ -527,6 +584,10 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             TimeLine t("xdnn_hgemm_f32s8f32_compute");
             xdnn_hgemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -568,7 +629,8 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_bias(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc, const float *bias) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc,
+            const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_biasadd");
@@ -623,6 +685,10 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_biasadd");
             xdnn_hgemm_f32s8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_biasadd");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -664,14 +730,13 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_biasadd_relu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
-            const float *bias) {
+            const WeiT *packedB, const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C,
+            int ldc, const float *bias) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_biasadd_relu");
             xdnn_sgemm_compute_biasadd_relu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias);
         }
-
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
@@ -720,6 +785,10 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_biasadd_relu");
             xdnn_hgemm_f32s8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_biasadd_relu");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -761,7 +830,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_silu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_silu");
@@ -811,6 +880,10 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             TimeLine t("xdnn_hgemm_f32s8f32_compute_silu");
             xdnn_hgemm_f32s8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_silu");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -852,8 +925,8 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_resmul(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
-            const float *res, int ldres) {
+            const WeiT *packedB, const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C,
+            int ldc, const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_resmul");
@@ -908,6 +981,10 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_resmul");
             xdnn_hgemm_f32s8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_resmul");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    nullptr, res, ldres, 0.0f, matmul_kinds::Resmul);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -949,8 +1026,8 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_residential(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
-            const float *bias, const float *res, int ldres) {
+            const WeiT *packedB, const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C,
+            int ldc, const float *bias, const float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_residential");
@@ -1005,6 +1082,10 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_residential");
             xdnn_hgemm_f32s8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_residential");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    bias, res, ldres, 0.0f, matmul_kinds::Residential);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1046,8 +1127,8 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     static void compute_resext(bool transA, int M, int N, int K, float alpha, const InT *A, int lda,
-            const WeiT *packedB, const float *scaleB, const float *zeroB, float beta, OutT *C, int ldc,
-            const float *bias, float gamma, float *res, int ldres) {
+            const WeiT *packedB, const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C,
+            int ldc, const float *bias, float gamma, float *res, int ldres) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             TimeLine t("xdnn_sgemm_compute_resext");
@@ -1108,6 +1189,10 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_resext");
             xdnn_hgemm_f32s8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
+#elif defined(AMX_INT8)
+            TimeLine t("onednn_amxint8_f32s8f32_compute_resext");
+            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+                    bias, res, ldres, gamma, matmul_kinds::Resext);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1724,11 +1809,230 @@ private:
         get_dnnl_stream().wait();
     }
 
-private:
+    static void onednn_gemm_s8s8s32(bool transA, int M, int N, int K, float alpha, const int8_t *A, int lda,
+            const int8_t *B, float beta, int32_t *C, int ldc) {
+        TimeLine t("onednn_gemm_s8s8s32");
+        TimeLine t1("onednn_gemm_s8s8s32.create_primitive");
+        using namespace dnnl;
+        using tag = memory::format_tag;
+        using dt = memory::data_type;
+
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+        auto it = get_dnnl_matmul().find(key);
+        if (it != get_dnnl_matmul().end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B) and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims output_dims = {M, N};
+
+            // Create memory descriptors and memory objects for src, weights, bias, and dst.
+            auto input_md = memory::desc(input_dims, dt::s8, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt::s8, get_amx_data_type());
+            memory::desc output_md;
+            output_md = memory::desc(output_dims, dt::s32, tag::ab);
+
+            // Create primitive descriptor and primitive.
+            matmul_pd = new matmul::primitive_desc(get_dnnl_engine(), input_md, weight_md, output_md);
+            matmul_prim = new matmul(*matmul_pd);
+
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            get_dnnl_matmul()[key] = value;
+        }
+
+        auto input_mem = memory(matmul_pd->src_desc(), get_dnnl_engine(), const_cast<int8_t *>(A));
+        auto weight_mem = memory(matmul_pd->weights_desc(), get_dnnl_engine(), const_cast<int8_t *>(B));
+        auto output_mem = memory(matmul_pd->dst_desc(), get_dnnl_engine(), C);
+
+        // Create the primitive args.
+        std::unordered_map<int, memory> matmul_args;
+        matmul_args.insert({DNNL_ARG_SRC, input_mem});
+        matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
+        matmul_args.insert({DNNL_ARG_DST, output_mem});
+        t1.release();
+
+        // Executions.
+        TimeLine t2("onednn_gemm_s8s8s32.execute_primitive");
+        matmul_prim->execute(get_dnnl_stream(), matmul_args);
+        get_dnnl_stream().wait();
+    }
+
+    static void onednn_amxint8_f32s8f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+            const int8_t *B, const float *scaleB, const float *zeroB, const float *sumB, float beta, float *C, int ldc,
+            const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
+        if (transA || (N % 16) != 0 || alpha != 1.0f || beta != 0.0f) {
+            printf("%s:%d: Not implemented.\n", __FILE__, __LINE__);
+            exit(-1);
+        }
+#define ALLOC(size, alignment) aligned_alloc((alignment), (size))
+        int8_t *quantizedA = (int8_t *)ALLOC(M * K * sizeof(int8_t), 64);
+        float *scaleA = (float *)ALLOC(M * sizeof(float), 64);
+        float *zeroA = (float *)ALLOC(M * sizeof(float), 64);
+        float *sumA = (float *)ALLOC(M * sizeof(float), 64);
+        int32_t *C_int32 = (int32_t *)ALLOC(M * N * sizeof(int32_t), 64);
+
+        TimeLine t1("onednn_amxint8_f32s8f32_compute.quantA");
+        quantize_s8(M, K, A, lda, quantizedA, K, scaleA, zeroA, sumA);
+        t1.release();
+
+        onednn_gemm_s8s8s32(transA, M, N, K, alpha, quantizedA, K, B, beta, C_int32, N);
+
+        TimeLine t2("onednn_amxint8_f32s8f32_compute.dequantC");
+        dequant(M, N, C_int32, N, C, ldc, scaleA, zeroA, sumA, scaleB, zeroB, sumB, bias, res, ldres, gamma, kind);
+
+        free(quantizedA);
+        free(scaleA);
+        free(zeroA);
+        free(sumA);
+        free(C_int32);
+    }
+
     static dnnl::memory::format_tag &get_amx_data_type() {
         static dnnl::memory::format_tag amx_weight_tag;
         return amx_weight_tag;
     }
 
     static void set_amx_data_type(dnnl::memory::format_tag tag) { get_amx_data_type() = tag; }
+
+    static void quantize_s8(
+            int M, int N, const float *src, int lda, int8_t *dst, int ldb, float *scale, float *zero, float *sum) {
+#pragma omp parallel for
+        for (int i = 0; i < M; i++) {
+            __m512 vmax = _mm512_loadu_ps(src + i * lda);
+            __m512 vmin = vmax;
+            for (int j = 16; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                __m512 x = _mm512_maskz_loadu_ps(mask, src + i * lda + j);
+                vmax = _mm512_mask_max_ps(vmax, mask, vmax, x);
+                vmin = _mm512_mask_min_ps(vmin, mask, vmin, x);
+            }
+
+            float fmax = _mm512_reduce_max_ps(vmax);
+            float fmin = _mm512_reduce_min_ps(vmin);
+
+            //float fscale = (fmax - fmin) / 255.0f;
+            //float fzero = (127 * fmin + 128 * fmax) / 255.0f;
+            float fzero = (fmin + fmax) / 2.0f;
+            float fscale = std::max(std::abs(fmax - fzero), std::abs(fzero - fmin)) / 127.0f;
+            scale[i] = fscale;
+            zero[i] = fzero;
+
+            __m512 vscale = _mm512_set1_ps(fscale);
+            __m512 vzero = _mm512_set1_ps(fzero);
+
+            __m512i vsum = _mm512_setzero_epi32();
+            for (int j = 0; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                __m512 x = _mm512_maskz_loadu_ps(mask, src + i * lda + j);
+                x = _mm512_maskz_sub_ps(mask, x, vzero);
+                x = _mm512_maskz_div_ps(mask, x, vscale);
+                __m512i ix = _mm512_maskz_cvtps_epi32(mask, x);
+                vsum = _mm512_add_epi32(vsum, ix);
+                __m128i i8x = _mm512_maskz_cvtepi32_epi8(mask, ix);
+                memcpy(dst + i * ldb + j, &i8x, (remain >= 16 ? 16 : remain));
+            }
+            sum[i] = _mm512_reduce_add_epi32(vsum) * fscale + N * fzero;
+        }
+    }
+
+    template <typename DequantOp, typename PostOp>
+    static void dequant_base(int M, int N, const int32_t *C_int32, const int ldc_int32, float *C, const int ldc,
+            const DequantOp &dequant_op, const PostOp &post_op) {
+#pragma omp parallel for
+        for (int i = 0; i < M; i++) {
+            for (int j = 0; j < N; j += 16) {
+                __m512i xi = _mm512_load_epi32(C_int32 + i * ldc_int32 + j);
+                __m512 x = dequant_op(xi, i, j);
+                x = post_op(x, i, j);
+                _mm512_storeu_ps(C + i * ldc + j, x);
+            }
+        }
+    }
+
+    static void dequant(int M, int N, const int32_t *C_int32, const int ldc_int32, float *C, const int ldc,
+            const float *scaleA, const float *zeroA, const float *sumA, const float *scaleB, const float *zeroB,
+            const float *sumB, const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
+        auto dequant_op = [scaleA, zeroA, sumA, scaleB, zeroB, sumB](__m512i &vi, int row, int col) {
+            __m512 v = _mm512_cvtepi32_ps(vi);
+            __m512 vscaleB = _mm512_loadu_ps(scaleB + col);
+            __m512 vzeroB = _mm512_loadu_ps(zeroB + col);
+            __m512 vsumB = _mm512_loadu_ps(sumB + col);
+            __m512 vscaleA = _mm512_set1_ps(scaleA[row]);
+            __m512 vsumA = _mm512_set1_ps(sumA[row]);
+            __m512 vzeroA = _mm512_set1_ps(zeroA[row]);
+            return v * vscaleA * vscaleB + vsumB * vscaleB * vzeroA + vsumA * vzeroB;
+        };
+
+        auto no_post_op = [](__m512 &v, int row, int col) { return v; };
+        auto biasadd = [bias](__m512 &v, int row, int col) {
+            __m512 vbias = _mm512_loadu_ps(bias + col);
+            return _mm512_add_ps(v, vbias);
+        };
+        auto biasadd_relu = [bias](__m512 &v, int row, int col) {
+            __m512 vbias = _mm512_loadu_ps(bias + col);
+            return _mm512_max_ps(_mm512_add_ps(v, vbias), _mm512_setzero_ps());
+        };
+        auto residential = [res, ldres](__m512 &v, int row, int col) {
+            __m512 vres = _mm512_loadu_ps(res + row * ldres + col);
+            return _mm512_add_ps(v, vres);
+        };
+        auto biasadd_res = [bias, res, ldres](__m512 &v, int row, int col) {
+            __m512 vbias = _mm512_loadu_ps(bias + col);
+            __m512 vres = _mm512_loadu_ps(res + row * ldres + col);
+            return _mm512_add_ps(_mm512_add_ps(v, vbias), vres);
+        };
+        auto resext = [res, ldres, gamma](__m512 &v, int row, int col) {
+            __m512 vres = _mm512_loadu_ps(res + row * ldres + col);
+            __m512 vgamma = _mm512_set1_ps(gamma);
+            return _mm512_fmadd_ps(vgamma, vres, v);
+        };
+        auto biasadd_resext = [bias, res, ldres, gamma](__m512 &v, int row, int col) {
+            __m512 vbias = _mm512_loadu_ps(bias + col);
+            __m512 vres = _mm512_loadu_ps(res + row * ldres + col);
+            __m512 vgamma = _mm512_set1_ps(gamma);
+            return _mm512_fmadd_ps(vgamma, vres, _mm512_add_ps(v, vbias));
+        };
+        auto resmul = [res, ldres](__m512 &v, int row, int col) {
+            __m512 vres = _mm512_loadu_ps(res + row * ldres + col);
+            return _mm512_mul_ps(v, vres);
+        };
+        auto silu = [](__m512 &v, int row, int col) {
+            __m512 vone = _mm512_set1_ps(1.0f);
+            __m512 vp = BertUtil::vexp(v);
+            __m512 vrecip = _mm512_rcp14_ps(vp + vone);
+            return vp * vrecip * v;
+        };
+
+        switch (kind) {
+            case matmul_kinds::Basic: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, no_post_op); break;
+            case matmul_kinds::BiasAdd: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd); break;
+            case matmul_kinds::BiasAdd_Relu:
+                dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd_relu);
+                break;
+            case matmul_kinds::Silu: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, silu); break;
+            case matmul_kinds::Resmul: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, resmul); break;
+            case matmul_kinds::Residential:
+                if (bias) {
+                    dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd_res);
+                } else {
+                    dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, residential);
+                }
+                break;
+            case matmul_kinds::Resext:
+                if (bias) {
+                    dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd_resext);
+                } else {
+                    dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, resext);
+                }
+                break;
+        }
+    }
 };

@@ -25,8 +25,7 @@
 template <typename WeiT, bool INPUT_AS_RESID = true>
 class MLP {
 public:
-    MLP(DecoderContext *ctx) {
-    }
+    MLP(DecoderContext *ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
     void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
@@ -43,7 +42,7 @@ public:
         // Vertically split intermediate(FC1) weight
         hpj::Matrix<WeiT> quantizedIntermediateWeight;
         MMHelper::convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, true, quantizedIntermediateWeight,
-                intermediateWeightScale, intermediateWeightZero);
+                intermediateWeightScale, intermediateWeightZero, intermediateWeightSum);
         MMHelper::packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
 
         // Intermediate bias
@@ -55,7 +54,7 @@ public:
         // Horizontally split the output(FC2) weight
         hpj::Matrix<WeiT> quantizedOutputWeight;
         MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, false, quantizedOutputWeight,
-                outputWeightScale, outputWeightZero);
+                outputWeightScale, outputWeightZero, outputWeightSum);
         MMHelper::packWeight(trans, quantizedOutputWeight, outputWeight);
 
         // Output bias
@@ -76,9 +75,7 @@ public:
     }
 
 #ifdef DEBUG
-    void setDebugger(const Debugger &debugger) {
-        this->dbg = debugger;
-    }
+    void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
     // Forward for FFN (Feed Forward Network)
@@ -126,14 +123,15 @@ public:
 
             // denseWithScaledSum is enough, but as the perf of denseWithScaledSum is not verified, so denseWithSum is still here
             if (gamma == 1) {
-                DecoderUtil::denseWithSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputBias,
-                        resultBuffer2, resultBuffer1);
+                DecoderUtil::denseWithSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputWeightSum,
+                        outputBias, resultBuffer2, resultBuffer1);
             } else {
-                DecoderUtil::denseWithScaledSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputBias,
-                        gamma, resultBuffer2, resultBuffer1);
+                DecoderUtil::denseWithScaledSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero,
+                        outputWeightSum, outputBias, gamma, resultBuffer2, resultBuffer1);
             }
         } else {
-            DecoderUtil::dense(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputBias, resultBuffer1);
+            DecoderUtil::dense(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputWeightSum, outputBias,
+                    resultBuffer1);
         }
 
 #ifdef DEBUG
@@ -154,13 +152,14 @@ protected:
     void intermediate_relu(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
         MMHelper::compute_biasadd_relu(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(),
                 input.Stride(), intermediateWeight.Data(), intermediateWeightScale.Data(),
-                intermediateWeightZero.Data(), 0.0f, output.Data(), output.Stride(), intermediateBias.Data());
+                intermediateWeightZero.Data(), intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride(),
+                intermediateBias.Data());
     }
 
     void intermediate_gelu(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
         MMHelper::compute(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(), input.Stride(),
-                intermediateWeight.Data(), intermediateWeightScale.Data(), intermediateWeightZero.Data(), 0.0f,
-                output.Data(), output.Stride());
+                intermediateWeight.Data(), intermediateWeightScale.Data(), intermediateWeightZero.Data(),
+                intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride());
 
         float *pbias = intermediateBias.Data();
         float factor = 0.7978845608; // np.sqrt(2 / np.pi)
@@ -213,11 +212,13 @@ protected:
     hpj::Matrix<WeiT> intermediateWeight;
     hpj::Vector<float> intermediateWeightScale;
     hpj::Vector<float> intermediateWeightZero;
+    hpj::Vector<float> intermediateWeightSum;
     hpj::Vector<float> intermediateBias;
 
     hpj::Matrix<WeiT> outputWeight;
     hpj::Vector<float> outputWeightScale;
     hpj::Vector<float> outputWeightZero;
+    hpj::Vector<float> outputWeightSum;
     hpj::Vector<float> outputBias;
 
     // layerNorm param
