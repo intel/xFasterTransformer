@@ -32,7 +32,7 @@ def boolean_string(string):
     return low_string == "true"
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 DEFAULT_PROMPT = "Once upon a time, there existed a little girl who liked to have adventures."
 

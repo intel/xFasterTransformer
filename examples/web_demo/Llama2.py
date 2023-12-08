@@ -24,7 +24,7 @@ import torch
 from demo_utils import ChatDemo
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/llama-2-7b-chat-hf", help="Path to token file")
@@ -56,7 +56,7 @@ class Llama2Demo(ChatDemo):
         tokens.append(self.tokenizer([f"{B_INST} {query.strip()} {E_INST}"], return_tensors="pt").input_ids)
         input_tokens = torch.cat(tokens, dim=1)
         return input_tokens
-    
+
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
         gr.HTML("""<h1 align="center">Llama2</h1>""")
