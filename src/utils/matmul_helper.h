@@ -223,7 +223,7 @@ public:
                 xdnn_hgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
-#elif defined(AMX_INT8)
+#elif defined(AMX_INT8_W8A8)
                 xdnn_sgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
@@ -269,7 +269,7 @@ public:
                 xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
-#elif defined(AMX_INT8)
+#elif defined(AMX_INT8_W8A8)
                 xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
                         quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
@@ -488,7 +488,7 @@ public:
             xdnn_sgemm_f32s8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             xdnn_hgemm_f32s8f32_packb(trans, N, K, src.Data(), src.Stride(), weight.Data());
-#elif defined(AMX_INT8)
+#elif defined(AMX_INT8_W8A8)
             set_amx_data_type(dnnl::memory::format_tag::BA16a64b4a);
             auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
             dnnl::memory B_mem({{K, N}, dnnl::memory::data_type::s8, tag}, get_dnnl_engine(), src.Data());
@@ -584,9 +584,9 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             TimeLine t("xdnn_hgemm_f32s8f32_compute");
             xdnn_hgemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -685,9 +685,9 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_biasadd");
             xdnn_hgemm_f32s8f32_compute_biasadd(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_biasadd");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_biasadd");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -785,9 +785,9 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_biasadd_relu");
             xdnn_hgemm_f32s8f32_compute_biasadd_relu(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_biasadd_relu");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_biasadd_relu");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -880,9 +880,9 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             TimeLine t("xdnn_hgemm_f32s8f32_compute_silu");
             xdnn_hgemm_f32s8f32_compute_silu(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_silu");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_silu");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -981,9 +981,9 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_resmul");
             xdnn_hgemm_f32s8f32_compute_resmul(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_resmul");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_resmul");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     nullptr, res, ldres, 0.0f, matmul_kinds::Resmul);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -1082,9 +1082,9 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_residential");
             xdnn_hgemm_f32s8f32_compute_residential(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_residential");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_residential");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     bias, res, ldres, 0.0f, matmul_kinds::Residential);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -1189,9 +1189,9 @@ public:
             TimeLine t("xdnn_hgemm_f32s8f32_compute_resext");
             xdnn_hgemm_f32s8f32_compute_resext(
                     transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres);
-#elif defined(AMX_INT8)
-            TimeLine t("onednn_amxint8_f32s8f32_compute_resext");
-            onednn_amxint8_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
+#elif defined(AMX_INT8_W8A8)
+            TimeLine t("onednn_amx_gemm_f32s8f32_compute_resext");
+            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, sumB, beta, C, ldc,
                     bias, res, ldres, gamma, matmul_kinds::Resext);
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
@@ -1809,10 +1809,10 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void onednn_gemm_s8s8s32(bool transA, int M, int N, int K, float alpha, const int8_t *A, int lda,
+    static void onednn_amx_gemm_s8s8s32(bool transA, int M, int N, int K, float alpha, const int8_t *A, int lda,
             const int8_t *B, float beta, int32_t *C, int ldc) {
-        TimeLine t("onednn_gemm_s8s8s32");
-        TimeLine t1("onednn_gemm_s8s8s32.create_primitive");
+        TimeLine t("onednn_amx_gemm_s8s8s32");
+        TimeLine t1("onednn_amx_gemm_s8s8s32.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1863,34 +1863,32 @@ private:
         get_dnnl_stream().wait();
     }
 
-    static void onednn_amxint8_f32s8f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+    static void onednn_amx_gemm_f32s8f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const int8_t *B, const float *scaleB, const float *zeroB, const float *sumB, float beta, float *C, int ldc,
             const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
         if (transA || (N % 16) != 0 || alpha != 1.0f || beta != 0.0f) {
             printf("%s:%d: Not implemented.\n", __FILE__, __LINE__);
             exit(-1);
         }
-#define ALLOC(size, alignment) aligned_alloc((alignment), (size))
-        int8_t *quantizedA = (int8_t *)ALLOC(M * K * sizeof(int8_t), 64);
-        float *scaleA = (float *)ALLOC(M * sizeof(float), 64);
-        float *zeroA = (float *)ALLOC(M * sizeof(float), 64);
-        float *sumA = (float *)ALLOC(M * sizeof(float), 64);
-        int32_t *C_int32 = (int32_t *)ALLOC(M * N * sizeof(int32_t), 64);
+#define ALLOC(DATATYPE, VALUE, SIZE)                  \
+    std::unique_ptr<DATATYPE, decltype(&free)> VALUE( \
+            static_cast<DATATYPE *>(aligned_alloc(64, SIZE * sizeof(DATATYPE))), &free)
+        ALLOC(int8_t, quantizedA, M * K);
+        ALLOC(float, scaleA, M);
+        ALLOC(float, zeroA, M);
+        ALLOC(float, sumA, M);
+        ALLOC(int32_t, C_int32, M * N);
+#undef ALLOC
 
-        TimeLine t1("onednn_amxint8_f32s8f32_compute.quantA");
-        quantize_s8(M, K, A, lda, quantizedA, K, scaleA, zeroA, sumA);
+        TimeLine t1("onednn_amx_gemm_f32s8f32_compute.quantA");
+        quantize_s8(M, K, A, lda, quantizedA.get(), K, scaleA.get(), zeroA.get(), sumA.get());
         t1.release();
 
-        onednn_gemm_s8s8s32(transA, M, N, K, alpha, quantizedA, K, B, beta, C_int32, N);
+        onednn_amx_gemm_s8s8s32(transA, M, N, K, alpha, quantizedA.get(), K, B, beta, C_int32.get(), N);
 
-        TimeLine t2("onednn_amxint8_f32s8f32_compute.dequantC");
-        dequant(M, N, C_int32, N, C, ldc, scaleA, zeroA, sumA, scaleB, zeroB, sumB, bias, res, ldres, gamma, kind);
-
-        free(quantizedA);
-        free(scaleA);
-        free(zeroA);
-        free(sumA);
-        free(C_int32);
+        TimeLine t2("onednn_amx_gemm_f32s8f32_compute.dequantC");
+        dequant(M, N, C_int32.get(), N, C, ldc, scaleA.get(), zeroA.get(), sumA.get(), scaleB, zeroB, sumB, bias, res,
+                ldres, gamma, kind);
     }
 
     static dnnl::memory::format_tag &get_amx_data_type() {
@@ -1900,6 +1898,12 @@ private:
 
     static void set_amx_data_type(dnnl::memory::format_tag tag) { get_amx_data_type() = tag; }
 
+    // Per row quantization of activations
+    // src: weight, dst: int8 qweight
+    // weight = qweight * scale + zero
+    //
+    // Also compute per row sums
+    // sum = sum_of_one_row(qweight * scale + zero)
     static void quantize_s8(
             int M, int N, const float *src, int lda, int8_t *dst, int ldb, float *scale, float *zero, float *sum) {
 #pragma omp parallel for
@@ -1924,16 +1928,17 @@ private:
             scale[i] = fscale;
             zero[i] = fzero;
 
-            __m512 vscale = _mm512_set1_ps(fscale);
-            __m512 vzero = _mm512_set1_ps(fzero);
+            // weight = qweight * scale + zero
+            // qweight = weight * (1/scale) + (-zero/scale)
+            __m512 vscale = _mm512_set1_ps(1.0f / fscale);
+            __m512 vzero = _mm512_set1_ps(-fzero / fscale);
 
             __m512i vsum = _mm512_setzero_epi32();
             for (int j = 0; j < N; j += 16) {
                 int remain = N - j;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
                 __m512 x = _mm512_maskz_loadu_ps(mask, src + i * lda + j);
-                x = _mm512_maskz_sub_ps(mask, x, vzero);
-                x = _mm512_maskz_div_ps(mask, x, vscale);
+                x = _mm512_maskz_fmadd_ps(mask, x, vscale, vzero);
                 __m512i ix = _mm512_maskz_cvtps_epi32(mask, x);
                 vsum = _mm512_add_epi32(vsum, ix);
                 __m128i i8x = _mm512_maskz_cvtepi32_epi8(mask, ix);
@@ -1946,7 +1951,7 @@ private:
     template <typename DequantOp, typename PostOp>
     static void dequant_base(int M, int N, const int32_t *C_int32, const int ldc_int32, float *C, const int ldc,
             const DequantOp &dequant_op, const PostOp &post_op) {
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
         for (int i = 0; i < M; i++) {
             for (int j = 0; j < N; j += 16) {
                 __m512i xi = _mm512_load_epi32(C_int32 + i * ldc_int32 + j);
@@ -1957,6 +1962,15 @@ private:
         }
     }
 
+    // dequant C_int32 to C
+    //
+    // sumA = sum(QWeightA * ScaleA + ZeroA)
+    // sumB = sum(QWeightB)
+    // C_int32 = QWeightA * QWeightB
+    //
+    // C = WeightA * WeightB
+    //   = (QWeightA * ScaleA + ZeroA) * (QWeightB * ScaleB + ZeroB)
+    //   = ScaleA * ScaleB * C_int32 + SumB * ScaleB * ZeroA + ZeroB * SumA
     static void dequant(int M, int N, const int32_t *C_int32, const int ldc_int32, float *C, const int ldc,
             const float *scaleA, const float *zeroA, const float *sumA, const float *scaleB, const float *zeroB,
             const float *sumB, const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
