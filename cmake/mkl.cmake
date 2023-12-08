@@ -21,9 +21,7 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 find_package (Python COMPONENTS Interpreter Development)
-execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl mkl mkl-include
-                RESULT_VARIABLE EXIT_CODE
-                OUTPUT_QUIET)
-execute_process(COMMAND ln -sf ${CMAKE_SOURCE_DIR}/3rdparty/mkl/lib/libmkl_rt.so.2 ${CMAKE_SOURCE_DIR}/3rdparty/mkl/lib/libmkl_rt.so
+execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl
+                        mkl-static==2024.0.0 mkl-include==2024.0.0
                 RESULT_VARIABLE EXIT_CODE
                 OUTPUT_QUIET)

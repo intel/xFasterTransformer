@@ -96,7 +96,11 @@ else()
     link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
 endif()
 
-set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa" "mkl_rt")
+set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa")
+
+# Enable MKL library
+list(APPEND 3RDPART_LIB_LIST "mkl_intel_ilp64" "mkl_gnu_thread" "mkl_core")
+
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)
     message(STATUS "Notice: Building with shared libraries.")
