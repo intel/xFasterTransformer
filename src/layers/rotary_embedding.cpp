@@ -93,13 +93,15 @@ void LlamaRotaryEmbedding::llamaCalEmb() {
 // |          |          |          |          |          |          |          |          |    |
 // |__________|__________|__________|__________|__________|__________|__________|__________|____v__
 void LlamaRotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {
+        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
     int dim = inv_freq_size * 2;
-    REQUIRES(dim == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
+    REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 
-    const int batch_size = qk_shape[0];
-    const int seq_len = qk_shape[1];
-    const int head_num = qk_shape[2];
+    const int batchSize = qkShape[0];
+    const int seqLen = qkShape[1];
+    const int qHeads = qkShape[2];
+    const int kHeads = qkShape[4];
+    const int heads = std::max(qHeads, kHeads);
     const int half = inv_freq_size;
 
     // for (size_t i = 0; i < emb_size; i++) {
@@ -108,33 +110,29 @@ void LlamaRotaryEmbedding::forward(
     //     float sign = ((offset < inv_freq_size) * 1) + ((offset >= inv_freq_size) * -1);
     //     emb[i] += x[(i - i % dim) + offset] * sign * emb_sin[position_ids[i % cached_size / dim]][i % dim];
     // }
-#pragma omp parallel for
-    for (int head = 0; head < head_num; ++head) {
-        int off = head * dim;
-        int row = 0;
-
-        for (int bs = 0; bs < batch_size; ++bs) {
-            for (int seq = 0; seq < seq_len; ++seq) {
-                float *p1 = query + row * qStride + off;
-                float *p2 = key + row * kStride + off;
-
-                int pos = position_ids[seq];
+#pragma omp parallel for collapse(3)
+    for (int head = 0; head < heads; ++head) {
+        for (int bs = 0; bs < batchSize; ++bs) {
+            for (int seq = 0; seq < seqLen; ++seq) {
+                int pos = positionIds[seq];
                 float *pcos = emb_cos + pos * dim;
                 float *psin = emb_sin + pos * dim;
 
+                float *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
+                float *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
 #pragma omp simd
                 for (int i = 0; i < half; ++i) {
-                    auto t1 = p1[i];
-                    auto t2 = p2[i];
-
-                    p1[i] = p1[i] * pcos[i] - p1[i + half] * psin[i];
-                    p2[i] = p2[i] * pcos[i] - p2[i + half] * psin[i];
-
-                    p1[i + half] = p1[i + half] * pcos[i + half] + t1 * psin[i + half];
-                    p2[i + half] = p2[i + half] * pcos[i + half] + t2 * psin[i + half];
+                    if (head < qHeads) {
+                        auto q1 = q[i];
+                        q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
+                        q[i + half] = q[i + half] * pcos[i + half] + q1 * psin[i + half];
+                    }
+                    if (head < kHeads) {
+                        auto k1 = k[i];
+                        k[i] = k[i] * pcos[i] - k[i + half] * psin[i];
+                        k[i + half] = k[i + half] * pcos[i + half] + k1 * psin[i + half];
+                    }
                 }
-
-                row += 1;
             }
         }
     }
