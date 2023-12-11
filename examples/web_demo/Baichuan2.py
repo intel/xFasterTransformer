@@ -28,7 +28,7 @@ user_id_tensor = torch.tensor([[USER_TOKEN_ID]])
 assist_id_tensor = torch.tensor([[ASSISTANT_TOKEN_ID]])
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/Baichuan2-7B-Chat-hf", help="Path to token file")

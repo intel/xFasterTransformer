@@ -23,7 +23,7 @@ import argparse
 from demo_utils import ChatDemo
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
