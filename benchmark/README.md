@@ -23,6 +23,7 @@ Please choose `<model_name>` as follows:
 - llama-2 (-7b,-13b,-70b)
 - llama (-7b,-13b,-30b,-65b)
 - chatglm2-6b
+- chatglm3-6b
 - chatglm-6b
 - baichuan2 (-7b,-13b)
 

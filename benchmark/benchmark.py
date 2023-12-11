@@ -88,6 +88,8 @@ if __name__ == "__main__":
         model_prompt=prompt_pool["chatglm"]
     if "chatglm2" in args.model_name.lower() :
         model_prompt=prompt_pool["chatglm2"]
+    if "chatglm3" in args.model_name.lower() :
+        model_prompt=prompt_pool["chatglm3"]
     if "llama" in args.model_name.lower() :
         model_prompt=prompt_pool["llama"]
     if "baichuan" in args.model_name.lower() :
