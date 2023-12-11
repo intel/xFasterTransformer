@@ -26,6 +26,7 @@
 #include "xfastertransformer.h"
 
 extern const char *vocab_opt[];
+extern const char *vocab_qwen[];
 
 class TokenizerBase {
 public:
@@ -176,6 +177,38 @@ private:
     const char **vocab_list = vocab_opt;
 };
 
+class QwenTokenizer : public TokenizerBase {
+public:
+    QwenTokenizer(std::string &tokenPath) { vocabSize = 151851; }
+
+    std::vector<int> encode(std::string &input) override {
+        return std::vector<int>({12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13});
+    }
+
+    std::string decode(std::vector<int> &ids) override {
+        if (ids.size() == 1) { return decode(ids[0]); }
+        std::string text("");
+        for (int id : ids) {
+            if (id < vocabSize) {
+                text += vocab_list[id];
+            } else {
+                text += "(null) ";
+            }
+        }
+        return text;
+    }
+    std::string decode(int id) override {
+        if (id < vocabSize) {
+            return vocab_list[id];
+        } else {
+            return "(null)";
+        }
+    }
+
+private:
+    const char **vocab_list = vocab_qwen;
+};
+
 TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
     if (modeltype == "gpt") {
         return new OptTokenizer(tokenPath);
@@ -187,6 +220,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new ChatGLMTokenizer(tokenPath);
     } else if (modeltype == "chatglm2" or modeltype == "chatglm3") {
         return new ChatGLM2Tokenizer(tokenPath);
+    } else if (modeltype == "qwen") {
+        return new QwenTokenizer(tokenPath);
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
