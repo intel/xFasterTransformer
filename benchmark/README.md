@@ -37,6 +37,8 @@ Please choose `<dtype>` as follows:
 ```bash
 # Example of llama-2-7b with precision bf16 on single socket.
 cd benchmark
+# setup mpirun env
+source ../3rdparty/oneccl/build/_install/env/setvars.sh
 bash run_benchmark.sh -m llama-2-7b -d bf16 -s 1
 ```
 

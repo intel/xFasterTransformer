@@ -38,7 +38,11 @@ fi
 
 # Example here is using fake model, you can use real model as well
 export XFT_FAKE_MODEL=1
-model_path="${SCRIPT_DIR}"/../examples/model_config/${model}/
+if [[ ${model} == *"chatglm3"* ]]; then
+    model_path="${SCRIPT_DIR}"/../examples/model_config/chatglm2-6b/
+else
+    model_path="${SCRIPT_DIR}"/../examples/model_config/${model}/
+fi
 
 benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_path "${model_path}" \
