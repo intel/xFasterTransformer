@@ -34,12 +34,16 @@ public:
             datatype = xft::DataType::int8;
         } else if (dtype == "int4") {
             datatype = xft::DataType::int4;
+        } else if (dtype == "nf4") {
+            datatype = xft::DataType::nf4;
         } else if (dtype == "bf16_fp16") {
             datatype = xft::DataType::bf16_fp16;
         } else if (dtype == "bf16_int8") {
             datatype = xft::DataType::bf16_int8;
         } else if (dtype == "bf16_int4") {
             datatype = xft::DataType::bf16_int4;
+        } else if (dtype == "bf16_nf4") {
+            datatype = xft::DataType::bf16_nf4;
         } else {
             throw std::invalid_argument("Invalid DataType");
         }

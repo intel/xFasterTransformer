@@ -14,17 +14,16 @@
 // ============================================================================
 #pragma once
 
-namespace xft {
-enum class DataType {
-    fp32,
-    bf16,
-    fp16,
-    int8,
-    int4,
-    nf4,
-    bf16_fp16,
-    bf16_int8,
-    bf16_int4,
-    bf16_nf4,
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
+
+#include "uint4x2.h"
+
+class nf4x2_t : public uint4x2_t {
+public:
+    using uint4x2_t::uint4x2_t;
 };
-} // namespace xft

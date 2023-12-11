@@ -191,3 +191,4 @@ template class ChatGLM2<float16_t>;
 template class ChatGLM2<bfloat16_t>;
 template class ChatGLM2<int8_t>;
 template class ChatGLM2<uint4x2_t>;
+template class ChatGLM2<nf4x2_t>;
