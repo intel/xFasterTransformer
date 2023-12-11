@@ -1,5 +1,6 @@
 """
 Convert huggingface ChatGLM model. Use https://huggingface.co/Qwen
+python ./tools/qwen_convert.py -i /model/qwen-7b-chat-hf/ -o ./qwen-7b-chat-xft
 """
 
 import argparse
@@ -133,7 +134,7 @@ def split_and_convert(args):
 
         hidden_size = hf_config["hidden_size"]
         config["qwen"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
-        config["qwen"]["inter_size"] = str(hf_config["intermediate_size"])
+        config["qwen"]["inter_size"] = str(hf_config["intermediate_size"] // 2)
         config["qwen"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
         config["qwen"]["num_layer"] = str(hf_config["num_hidden_layers"])
         config["qwen"]["rms_norm_eps"] = "1e-6"
