@@ -17,18 +17,36 @@ Please refer to [Prepare model](../README.md#prepare-model)
     ```
 
 ## Step 4: Run scripts
-Enter the folder corresponding to the model and run `run_${MODEL}.sh`. Please modify the model and tokenizer path in `${MODEL}.sh` before running.
+Enter the folder corresponding to the model and run `run_benchmark.sh -m <model_name> -d <dtype> -s <sockets>`.
+
+Please choose `<model_name>` as follows:
+- llama-2 (-7b,-13b,-70b)
+- llama (-7b,-13b,-30b,-65b)
+- chatglm2-6b
+- chatglm3-6b
+- chatglm-6b
+- baichuan2 (-7b,-13b)
+
+Please choose `<dtype>` as follows:
+- bf16
+- bf16_fp16
+- int8
+- bf16_int8
+- fp16
+
 ```bash
-# ChatGLM for example.
-cd benchmark/chatglm-6b
-bash run_chatglm-6b.sh
+# Example of llama-2-7b with precision bf16 on single socket.
+cd benchmark
+# setup mpirun env
+source ../3rdparty/oneccl/build/_install/env/setvars.sh
+bash run_benchmark.sh -m llama-2-7b -d bf16 -s 1
 ```
 
-- Shell script will automatically check number of numa nodes, default at least 2 nodes and there is 48 physics cores in each node (12core for subnuma).
-- By default, you will get the performance of "input token=32, output token=32, Beam_width=1, FP16".
-- If more datatype and scenarios performance needed, please modify the parameters in `${MODEL}.sh`
-- If system configuration needs modification, please change run-chatglm-6b.sh.
-- If you want the custom input, please modify the `prompt_pool.json` file.
+- Shell script will automatically check number of numa nodes.
+- By default, you will get the performance of "input token=32, output token=32, Beam_width=1".
+- If more scenarios performance needed, please modify the parameters in `run_benchmark.sh`
+- If system configuration needs modification, please change run_benchmark.sh.
+- If you want the custom input, please modify the `prompt.json` file.
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
 
