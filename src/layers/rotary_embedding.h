@@ -35,7 +35,7 @@ public:
 
     ~LlamaRotaryEmbedding() {}
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids);
+    void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
 private:
     void llamaCalEmb();
