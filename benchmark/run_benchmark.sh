@@ -16,44 +16,99 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-while getopts m:d:s: opt
-do 
-	case "${opt}" in
-        # The model name can be choosen are: llama-2(-7b,-13b,-70b), llama(-7b,-13b,-30b,-65b), chatglm2-6b, chatglm-6b, baichuan2(-7b,13b)
-		m) model=${OPTARG};;
-        # In this benchmark case, precision can be: bf16, bf16_fp16, fp16, bf16_int8, int8 
-        # which you can refer to ../examples/model_config as well
-		d) dtype=${OPTARG};;
-        # You can choose socket number 1 or 2
-        s) sockets=${OPTARG};;
-	esac
+while [ -n "$1" ]  
+do	
+	case $1 in
+        -m | --model_name)
+		model_name=$2
+		shift 2
+        ;;  
+        -d | --dtype)
+		case $2 in
+            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16")
+            dtype=$2
+            shift 2
+            ;;
+            *)
+            echo "dtype must in bf16, bf16_fp16, bf16_int8, int8 or fp16."
+            exit 1
+            ;;
+        esac
+        ;;
+        -s | --sockets)
+        case $2 in
+            "1" | "2")
+            sockets=$2
+            shift 2
+            ;;
+            *)
+            echo "sockets must in 1 or 2."
+            exit 1
+            ;;
+        esac
+        ;;
+        -bs | --batch_size)
+		batch_size=$2
+		shift 2
+        ;;
+        -in | --input_tokens)
+		input_tokens=$2
+		shift 2
+        ;;
+        -out | --output_tokens)
+		output_tokens=$2
+		shift 2
+        ;;
+        -b | --beam_width)
+		beam_width=$2
+		shift 2
+        ;;
+        -i | --iter)
+		iter=$2
+		shift 2
+        ;;
+        "")
+        shift
+        break
+        ;;
+    esac 
 done
 
-if [ "${model}" == "" ] || [ "${dtype}" == "" ] || [ "${sockets}" == "" ]; then
-    echo "Please give the right parameters."
+if [ "${model_name}" == "" ]; then
+    echo "Please pass a value of model name using -m or --model_name."
     exit 1
-else
-    echo "You are using model ${model}, dtype ${dtype} on ${sockets} sockets system."
 fi
+dtype=${dtype:-bf16}
+sockets=${sockets:-1}
+batch_size=${batch_size:-1}
+input_tokens=${input_tokens:-32}
+output_tokens=${output_tokens:-32}
+beam_width=${beam_width:-1}
+iter=${iter:-10}
+
+echo "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
 # Example here is using fake model, you can use real model as well
 export XFT_FAKE_MODEL=1
-if [[ ${model} == *"chatglm3"* ]]; then
+if [[ ${model_name} == *"chatglm3"* ]]; then
     model_path="${SCRIPT_DIR}"/../examples/model_config/chatglm2-6b/
 else
-    model_path="${SCRIPT_DIR}"/../examples/model_config/${model}/
+    model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
 fi
 
 benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_path "${model_path}" \
     --model_path "${model_path}" \
     --prompt_path "${SCRIPT_DIR}"/prompt.json \
-    --model_name "${model}" \
+    --model_name "${model_name}" \
     --dtype "${dtype}" \
-    --token_in 32 	\
-    --token_out 32 --beam_width 1 --iteration 10"
+    --batch_size "${batch_size}" \
+    --token_in ${input_tokens}	\
+    --token_out ${output_tokens} \
+    --beam_width ${beam_width} \
+    --iteration ${iter}"
 
-if [[ ${model} == *"llama"* ]] || [[ ${model} == *"baichuan-"* ]]; then
+if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
     benchmark_cmd+=" --padding=False"
 fi
 
@@ -66,6 +121,7 @@ if [ "${numa_nodes}" -eq 16 ]; then
     #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
     #0-7 is DRAM memory node, 8-15 is HBM node
     export OMP_NUM_THREADS=$((${cores_per_numa} * 2))
+    echo "OMP_NUM_THREADS: $((${cores_per_numa} * 2))"
     echo "HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 numactl -p 8  -N 0 ${benchmark_cmd}   : \
@@ -82,6 +138,7 @@ if [ "${numa_nodes}" -eq 16 ]; then
 elif [ "${numa_nodes}" -eq 8 ]; then
     #HBM SNC-4 for cache or hbm only mode
     export OMP_NUM_THREADS=${cores_per_numa}
+    echo "OMP_NUM_THREADS: ${cores_per_numa}"
     echo "HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 numactl -m 0 -N 0 ${benchmark_cmd}   : \
@@ -99,6 +156,7 @@ elif [ "${numa_nodes}" -eq 4 ]; then
     #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
     echo "HBM Quad mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} * 2))
+    echo "OMP_NUM_THREADS: $((${cores_per_numa} * 2))"
     run_cmd="mpirun \
     -n 1 numactl -p 2 -N 0 ${benchmark_cmd} "
     if [ "$sockets" == "2" ]; then
@@ -109,6 +167,7 @@ elif [ "${numa_nodes}" -eq 2 ]; then
     #SPR or hbm only or hbm cache Quad-mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
     echo "SPR Quad mode"
     export OMP_NUM_THREADS=${cores_per_numa}
+    echo "OMP_NUM_THREADS: ${cores_per_numa}"
     run_cmd="mpirun \
     -n 1 numactl -N 0  -m 0 ${benchmark_cmd}"
     if [ "$sockets" == "2" ]; then
@@ -121,6 +180,3 @@ fi
 
 echo "Run command line: ${run_cmd}"
 eval ${run_cmd}
-
-# In this benchmark case, token_in only can be "demo","32","64","128","256","512","1024","2016"
-# "32" means the token length is 32, if needs more test, add it into input_token.py
