@@ -194,8 +194,9 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
 }
 
 std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16}, {"bf16", xft::DataType::bf16},
-        {"int8", xft::DataType::int8}, {"int4", xft::DataType::int4}, {"bf16_fp16", xft::DataType::bf16_fp16},
-        {"bf16_int8", xft::DataType::bf16_int8}, {"bf16_int4", xft::DataType::bf16_int4}};
+        {"int8", xft::DataType::int8}, {"int4", xft::DataType::int4}, {"nf4", xft::DataType::nf4},
+        {"bf16_fp16", xft::DataType::bf16_fp16}, {"bf16_int8", xft::DataType::bf16_int8},
+        {"bf16_int4", xft::DataType::bf16_int4}, {"bf16_nf4", xft::DataType::bf16_nf4}};
 
 std::string getModelType(std::string &modelPath) {
     std::string configPath = modelPath + "/config.ini";
@@ -216,7 +217,8 @@ int main(int argc, char **argv) {
     args.add<std::string>("input", 'i', "input prompt, invalid for Opt model.", false,
             "Once upon a time, there existed a little girl who liked to have adventures.");
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16",
-            cmdline::oneof<std::string>("fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"));
+            cmdline::oneof<std::string>(
+                    "fp16", "bf16", "int8", "int4", "nf4", "bf16_fp16", "bf16_int8", "bf16_int4", "bf16_nf4"));
     args.add<int>("input_len", 'l', "input token size", false, -1);
     args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
     args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
