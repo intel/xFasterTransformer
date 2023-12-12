@@ -15,8 +15,6 @@
 cmake_minimum_required(VERSION 3.15.1)
 
 find_package(OpenMP REQUIRED)
-find_package(MPI REQUIRED)
-find_package(oneCCL REQUIRED)
 
 execute_process(COMMAND ${Python_EXECUTABLE} -c "import torch.utils; print(torch.utils.cmake_prefix_path)"
                 OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH
@@ -50,7 +48,7 @@ target_include_directories(xfastertransformer_pt PUBLIC ${PyTorch_INCLUDE_DIR})
 # Link against LibTorch and others
 target_link_libraries(xfastertransformer_pt
                       PRIVATE OpenMP::OpenMP_CXX
-                              MPI::MPI_CXX
+                              ${MPI_LIBS}
                               ccl
                               "${TORCH_LIBS}"
                               xfastertransformer_static

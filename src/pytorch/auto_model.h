@@ -32,15 +32,27 @@ public:
             datatype = xft::DataType::bf16;
         } else if (dtype == "int8") {
             datatype = xft::DataType::int8;
+        } else if (dtype == "int4") {
+            datatype = xft::DataType::int4;
+        } else if (dtype == "nf4") {
+            datatype = xft::DataType::nf4;
         } else if (dtype == "bf16_fp16") {
             datatype = xft::DataType::bf16_fp16;
         } else if (dtype == "bf16_int8") {
             datatype = xft::DataType::bf16_int8;
+        } else if (dtype == "bf16_int4") {
+            datatype = xft::DataType::bf16_int4;
+        } else if (dtype == "bf16_nf4") {
+            datatype = xft::DataType::bf16_nf4;
         } else {
             throw std::invalid_argument("Invalid DataType");
         }
         model = new xft::AutoModel(modelPath, datatype);
     };
+
+    ~TorchAutoModel() {
+        if (model != nullptr) { delete model; }
+    }
 
     int64_t getRank() { return static_cast<int64_t>(model->getRank()); }
 
@@ -117,9 +129,30 @@ public:
         return ret;
     }
 
-    ~TorchAutoModel() {
-        if (model != nullptr) { delete model; }
-    }
+    void setPrefix(torch::optional<torch::Tensor> inputIds) {
+        std::vector<int> prefixIds;
+        if (model->getRank() == 0) {
+            TORCH_CHECK(inputIds.has_value(), "Make sure master's prefix input is not None.")
+            TORCH_CHECK(inputIds.value().dim() <= 2, "Prefix sharing input expected dim <= 2 but tensor has ",
+                    inputIds.value().dim());
+            inputIds.value().squeeze();
+            TORCH_CHECK(inputIds.value().dim() == 2, "Prefix sharing only support 1 prompt but input has ",
+                    inputIds.value().size(0));
+
+            int seqLen = inputIds.value().size(-1);
+
+            prefixIds.resize(seqLen);
+            int64_t *p = inputIds.value().data_ptr<int64_t>();
+            for (int i = 0; i < seqLen; ++i) {
+                prefixIds[i] = static_cast<int>(*p);
+                p += 1;
+            }
+        }
+
+        model->setPrefix(prefixIds);
+    };
+
+    void unsetPrefix() { model->unsetPrefix(); };
 
 private:
     xft::Model *model;

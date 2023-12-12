@@ -14,17 +14,18 @@
 // ============================================================================
 #pragma once
 
-namespace xft {
-enum class DataType {
-    fp32,
-    bf16,
-    fp16,
-    int8,
-    int4,
-    nf4,
-    bf16_fp16,
-    bf16_int8,
-    bf16_int4,
-    bf16_nf4,
+#include "chatglm2.h"
+
+// ChatGLM3 and ChatGLM2 have the same structure, so ChatGLM3 utilizes the implementation of ChatGLM2.
+template <typename WeiT, typename NormT = RmsNorm>
+class ChatGLM3 : public ChatGLM2<WeiT, NormT> {
+public:
+    ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT, NormT>(modelPath, "chatglm3") {}
 };
-} // namespace xft
+
+template class ChatGLM3<float>;
+template class ChatGLM3<float16_t>;
+template class ChatGLM3<bfloat16_t>;
+template class ChatGLM3<int8_t>;
+template class ChatGLM3<uint4x2_t>;
+template class ChatGLM3<nf4x2_t>;

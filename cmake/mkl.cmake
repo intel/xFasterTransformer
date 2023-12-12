@@ -13,9 +13,15 @@
 # limitations under the License.
 # ============================================================================
 
-from .llama_convert import LlamaConvert
-from .chatglm_convert import ChatGLMConvert
-from .chatglm2_convert import ChatGLM2Convert
-from .chatglm3_convert import ChatGLM3Convert
-from .opt_convert import OPTConvert
-from .baichuan_convert import BaichuanConvert
+cmake_minimum_required(VERSION 3.18)
+
+# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+find_package (Python COMPONENTS Interpreter Development)
+execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl
+                        mkl-static==2024.0.0 mkl-include==2024.0.0
+                RESULT_VARIABLE EXIT_CODE
+                OUTPUT_QUIET)

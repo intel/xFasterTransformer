@@ -18,7 +18,8 @@
 
 template <typename WeiT>
 Baichuan<WeiT>::Baichuan(const std::string &modelPath)
-    : CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "baichuan") {
+    : CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(
+            modelPath, "baichuan") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -94,37 +95,42 @@ void Baichuan<WeiT>::prepareAttnMask(int *ids, int step) {
     BaichuanAttention<WeiT> attn(0, ctx);
     int responsibleHeads = attn.getResponsibleHeads();
     // alibi mask slope for each head
-    const float* alibiSlopes = attn.getAlibiSlopes(ctx->attHeadNum);
+    const float *alibiSlopes = attn.getAlibiSlopes(ctx->attHeadNum);
 
     if (step == 0) {
         int sizeRequired = responsibleHeads * seqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
         for (int h = 0; h < responsibleHeads; ++h) {
             float slope = 0;
-            if (ctx->maxPosEmbed <= 0)
-                slope = alibiSlopes[h];
+            if (ctx->maxPosEmbed <= 0) { slope = alibiSlopes[h]; }
             auto pmask = mask + h * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
                 memset(pmask + i * seqLen, 0, (i + 1) * sizeof(float)); // bottom left are 0
-                // attention mask added with alibi mask 
+                // attention mask added with alibi mask
                 for (int j = 0; j < seqLen; ++j) {
-                    pmask[i * seqLen + j] += j * slope; 
+                    pmask[i * seqLen + j] += j * slope;
                 }
                 std::fill_n(pmask + i * seqLen + i + 1, seqLen - i - 1, std::numeric_limits<float>::lowest());
             }
         }
     } else {
-        int sizeRequired = responsibleHeads * this->accSeqLen;
+        int sizeRequired = responsibleHeads * this->accSeqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
-        memset(mask, 0, responsibleHeads * this->accSeqLen * sizeof(float)); // all elements are 0
+        memset(mask, 0, responsibleHeads * this->accSeqLen * seqLen * sizeof(float)); // all elements are 0
         for (int h = 0; h < responsibleHeads; ++h) {
             // alibi mask slope for each head
             float slope = 0;
-            if (ctx->maxPosEmbed <= 0)
-                slope = alibiSlopes[h];
-            auto pmask = mask + h * this->accSeqLen;
-            for (int j = 0; j < this->accSeqLen; ++j) {
-                pmask[j] += j * slope; 
+            if (ctx->maxPosEmbed <= 0) { slope = alibiSlopes[h]; }
+            auto pmask = mask + h * this->accSeqLen * seqLen;
+            int pastLen = this->accSeqLen - seqLen;
+            for (int i = 0; i < seqLen; ++i) {
+                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float)); // bottom left are 0
+                // attention mask added with alibi mask
+                for (int j = 0; j < this->accSeqLen; ++j) {
+                    pmask[i * this->accSeqLen + j] += j * slope;
+                }
+                std::fill_n(pmask + i * this->accSeqLen + pastLen + i + 1, seqLen - i - 1,
+                        std::numeric_limits<float>::lowest());
             }
         }
     }
@@ -144,3 +150,5 @@ template class Baichuan<float>;
 template class Baichuan<float16_t>;
 template class Baichuan<bfloat16_t>;
 template class Baichuan<int8_t>;
+template class Baichuan<uint4x2_t>;
+template class Baichuan<nf4x2_t>;

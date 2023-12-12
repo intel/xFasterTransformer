@@ -20,6 +20,9 @@
 #include "singleton.h"
 #include "timeline.h"
 
+extern bool enableCATMLP;
+extern bool enableCBLASMLP;
+void setMLPOPTConfig();
 // C++ implementation for the python code in modeling_llama.py:
 // residual = hidden_states
 // hidden_states = self.post_attention_layernorm(hidden_states)
@@ -54,22 +57,38 @@ public:
         hpj::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
 
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
-        gateWeight.Resize(hiddenSize, it.second - it.first);
-        upWeight.Resize(hiddenSize, it.second - it.first);
         downWeight.Resize(it.second - it.first, hiddenSize);
 
         MMHelper::convertWeight(
                 ctx, trans, hiddenSize, imSize, gateW, true, quantizedGateWeight, gateWeightScale, gateWeightZero);
-        MMHelper::packWeight(trans, quantizedGateWeight, gateWeight);
-
         MMHelper::convertWeight(
                 ctx, trans, hiddenSize, imSize, upW, true, quantizedUpWeight, upWeightScale, upWeightZero);
-        MMHelper::packWeight(trans, quantizedUpWeight, upWeight);
+        
+        setMLPOPTConfig();
+        if (!enableCATMLP) {
+            gateWeight.Resize(hiddenSize, it.second - it.first);
+            upWeight.Resize(hiddenSize, it.second - it.first);
+            MMHelper::packWeight(trans, quantizedGateWeight, gateWeight);
+            MMHelper::packWeight(trans, quantizedUpWeight, upWeight);
 
+        } else {
+            hpj::Matrix<WeiT> quantizedCatWeights;
+            catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, upWeightScale,
+                    upWeightZero, quantizedCatWeights, catWeightsScale, catWeightsZero);
+            quantizedGateWeight.Release();
+            quantizedUpWeight.Release();
+            catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
+            MMHelper::packWeight(trans, quantizedCatWeights, catWeights);
+        }
         // Horizontally split the down weight
-        MMHelper::convertWeight(
-                ctx, trans, imSize, hiddenSize, downW, false, quantizedDownWeight, downWeightScale, downWeightZero);
-        MMHelper::packWeight(trans, quantizedDownWeight, downWeight);
+        if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+            MMHelper::convertWeight(
+                    ctx, trans, imSize, hiddenSize, downW, false, downWeight, downWeightScale, downWeightZero);
+        } else {
+            MMHelper::convertWeight(
+                    ctx, trans, imSize, hiddenSize, downW, false, quantizedDownWeight, downWeightScale, downWeightZero);
+            MMHelper::packWeight(trans, quantizedDownWeight, downWeight);
+        }
 
 #ifdef DEBUG
         dbg.debugPrint("quantizedGateWeight:\n");
@@ -103,36 +122,47 @@ public:
         hpj::Matrix<float> inBuffer(input, M, hiddenSize, iStride);
         hpj::Matrix<float> outBuffer(output, M, hiddenSize, oStride);
         auto &normBuffer = ctx->normBuf;
-        auto &imBuffer = ctx->imOut;
 
-        if (doLnBefore == true) {
-            DecoderUtil::rmsNorm(inBuffer, normBuffer, normWeight, 1e-6);
-        }
+        if (doLnBefore == true) { DecoderUtil::rmsNorm(inBuffer, normBuffer, normWeight, 1e-6); }
 
 #ifdef DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
         dbg.dumpMatrix(normBuffer);
 #endif
 
-        gateProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
+        if (!enableCATMLP) {
+            auto &imBuffer = ctx->imOut;
+            gateProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
-        dbg.debugPrint("gateWeight:\n");
-        dbg.dumpMatrix(gateWeight);
-        dbg.debugPrint("gate output:\n");
-        dbg.dumpMatrix(imBuffer);
+            dbg.debugPrint("gateWeight:\n");
+            dbg.dumpMatrix(gateWeight);
+            dbg.debugPrint("gate output:\n");
+            dbg.dumpMatrix(imBuffer);
 #endif
 
-        upProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
+            upProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
-        dbg.debugPrint("upWeight:\n");
-        dbg.dumpMatrix(upWeight);
-        dbg.debugPrint("up output:\n");
-        dbg.dumpMatrix(imBuffer);
+            dbg.debugPrint("upWeight:\n");
+            dbg.dumpMatrix(upWeight);
+            dbg.debugPrint("up output:\n");
+            dbg.dumpMatrix(imBuffer);
 #endif
+            downProj(imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
 
-        downProj(imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+        } else {
+            hpj::Matrix<float> imBuffer(ctx->imOut.Data(), normBuffer.Rows(), catWeights.Cols(), catWeights.Cols());
+            catGateUpProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
+
+#ifdef DEBUG
+            dbg.debugPrint("catWeights:\n");
+            dbg.dumpMatrix(catWeights);
+            dbg.debugPrint("gateUp output:\n");
+            dbg.dumpMatrix(imBuffer);
+#endif
+            downProj(imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+        }
 
 #ifdef DEBUG
         dbg.debugPrint("downWeight:\n");
@@ -191,7 +221,7 @@ private:
         assert(input.Cols() == downWeight.Rows());
         assert(downWeight.Cols() == output.Cols());
 
-        int M = input.Rows(), N = output.Cols(), K = input.Cols();
+        int M = input.Rows(), N = output.Cols(), K = downWeight.Rows();
         int lda = input.Stride(), ldc = output.Stride(), ldr = residential.Stride();
 
         const float *A = input.Data();
@@ -202,10 +232,85 @@ private:
         const float *R = residential.Data();
 
         if (isMaster) {
-            MMHelper::compute_residential(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc, NULL, R, ldr);
+            if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+                compute_proj_bf16(A, B, C, M, N, K, lda, ldc, ldc, R, ldr);
+            } else {
+                MMHelper::compute_residential(
+                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc, NULL, R, ldr);
+            }
         } else {
-            MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+            if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+                compute_proj_bf16(A, B, C, M, N, K, lda, ldc, ldc, nullptr, 0);
+            } else {
+                MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+            }
         }
+    }
+
+    void compute_proj_bf16(const float *A, const WeiT *B, float *C, int M, int N, int K, int lda, int ldb, int ldc,
+            const float *R, int ldr) {
+        int alpha = 1.0;
+        int beta = 0.0;
+        if (R != nullptr) {
+#pragma omp parallel for
+            for (int i = 0; i < M; ++i) {
+                memcpy(C + i * ldc, R + i * ldr, N * sizeof(float));
+            }
+            beta = 1.0;
+        }
+        int ldaH = lda * 2;
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)A + i * ldaH, K);
+        }
+        cblas_gemm_bf16bf16f32(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, alpha, (const MKL_BF16 *)(A), ldaH,
+                (const MKL_BF16 *)(B), ldb, beta, C, ldc);
+    }
+
+    void catGateUpProj(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
+        TimeLine t("catGateUpProj");
+
+        assert(input.Rows() == output.Rows());
+        assert(input.Cols() == catWeights.Rows());
+        assert(catWeights.Cols() == output.Cols());
+
+        int M = input.Rows(), N = output.Cols(), K = input.Cols();
+        int lda = input.Stride(), ldc = output.Stride();
+
+        const float *A = input.Data();
+        const WeiT *B = catWeights.Data();
+        const float *scaleB = catWeightsScale.Data();
+        const float *zeroB = catWeightsZero.Data();
+        float *C = output.Data();
+
+        MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+        // compute silu on the left half and then add it with the right half
+        DecoderUtil::siluSum(output);
+    }
+
+    void catGateUpWeights(hpj::Matrix<WeiT> &gateWeight, hpj::Matrix<WeiT> &upWeight,
+            hpj::Vector<float> &gateWeightScale, hpj::Vector<float> &gateWeightZero, hpj::Vector<float> &upWeightScale,
+            hpj::Vector<float> &upWeightZero, hpj::Matrix<WeiT> &catWeights, hpj::Vector<float> &catWeightsScale,
+            hpj::Vector<float> &catWeightsZero) {
+        catWeights.Resize(gateWeight.Rows(), gateWeight.Cols() + upWeight.Cols());
+        catWeightsScale.Resize(gateWeightScale.Size() + upWeightScale.Size());
+        catWeightsZero.Resize(gateWeightZero.Size() + upWeightZero.Size());
+
+        int M = catWeights.Rows();
+        int Stride = catWeights.Cols();
+        int N = gateWeight.Cols();
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i) {
+            memcpy(catWeights.Data() + i * Stride, gateWeight.Data() + i * N, N * sizeof(WeiT));
+            memcpy(catWeights.Data() + i * Stride + N, upWeight.Data() + i * N, N * sizeof(WeiT));
+        }
+
+        M = gateWeightScale.Size();
+        N = upWeightScale.Size();
+        memcpy(catWeightsScale.Data(), gateWeightScale.Data(), M * sizeof(float));
+        memcpy(catWeightsScale.Data() + M, upWeightScale.Data(), N * sizeof(float));
+        memcpy(catWeightsZero.Data(), gateWeightZero.Data(), M * sizeof(float));
+        memcpy(catWeightsZero.Data() + M, upWeightZero.Data(), N * sizeof(float));
     }
 
 protected:
@@ -215,6 +320,9 @@ protected:
     hpj::Matrix<WeiT> upWeight;
     hpj::Vector<float> upWeightScale; // For int8_t weight
     hpj::Vector<float> upWeightZero; // For int8_t weight
+    hpj::Matrix<WeiT> catWeights;
+    hpj::Vector<float> catWeightsScale; // For int8_t weight
+    hpj::Vector<float> catWeightsZero; // For int8_t weight
     hpj::Matrix<WeiT> downWeight;
     hpj::Vector<float> downWeightScale; // For int8_t weight
     hpj::Vector<float> downWeightZero; // For int8_t weight

@@ -228,7 +228,15 @@ int *ChatGLM<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int step
     return positionIds;
 }
 
+template <typename WeiT>
+void ChatGLM<WeiT>::setPrefix(int *ids, int seqLen) {
+    printf("[ERROR] ChatGLM doesn't support prefix sharing.\n");
+    exit(-1);
+}
+
 template class ChatGLM<float>;
 template class ChatGLM<float16_t>;
 template class ChatGLM<bfloat16_t>;
 template class ChatGLM<int8_t>;
+template class ChatGLM<uint4x2_t>;
+template class ChatGLM<nf4x2_t>;

@@ -23,5 +23,7 @@ TORCH_LIBRARY(xfastertransformer, m) {
             .def("config", &TorchAutoModel::config)
             .def("is_done", &TorchAutoModel::isDone)
             .def("generate", &TorchAutoModel::generate)
-            .def("finalize", &TorchAutoModel::finalize);
+            .def("finalize", &TorchAutoModel::finalize)
+            .def("set_prefix", &TorchAutoModel::setPrefix)
+            .def("unset_prefix", &TorchAutoModel::unsetPrefix);
 }

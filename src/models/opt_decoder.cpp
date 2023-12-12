@@ -92,6 +92,18 @@ void OptDecoder<WeiT>::prepareAttnMask(int *ids, int step) {
                 std::fill_n(pmask + i * seqLen + i + 1, seqLen - i - 1, std::numeric_limits<float>::lowest());
             }
         }
+    } else if (seqLen > 1) {
+        int sizeRequired = ctx->batchSize * this->accSeqLen * seqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        for (int b = 0; b < ctx->batchSize; ++b) {
+            auto pmask = mask + b * this->accSeqLen * seqLen;
+            int pastLen = this->accSeqLen - seqLen;
+            for (int i = 0; i < seqLen; ++i) {
+                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float));
+                std::fill_n(pmask + i * this->accSeqLen + pastLen + i + 1, seqLen - i - 1,
+                        std::numeric_limits<float>::lowest());
+            }
+        }
     } else {
         int sizeRequired = ctx->batchSize * this->accSeqLen;
         float *mask = this->getAttnMask(sizeRequired);
@@ -101,11 +113,13 @@ void OptDecoder<WeiT>::prepareAttnMask(int *ids, int step) {
 
 template <typename WeiT>
 void OptDecoder<WeiT>::embeddingForward(int *ids, float *buf, int batchSize, int seqLen) {
+    int pastSeqLen = this->accSeqLen;
+    if (pastSeqLen == 0 && this->prefixSharing) { pastSeqLen += this->prefixSeqLen; }
     // Prepare position data for positional embedding
     int positions[batchSize * seqLen];
     for (int b = 0; b < batchSize; ++b) {
         for (int i = 0; i < seqLen; ++i) {
-            positions[b * seqLen + i] = i + this->accSeqLen;
+            positions[b * seqLen + i] = i + pastSeqLen;
         }
     }
 
@@ -122,3 +136,5 @@ template class OptDecoder<float>;
 template class OptDecoder<float16_t>;
 template class OptDecoder<bfloat16_t>;
 template class OptDecoder<int8_t>;
+template class OptDecoder<uint4x2_t>;
+template class OptDecoder<nf4x2_t>;

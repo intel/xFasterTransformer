@@ -24,7 +24,7 @@
 namespace xft {
 class Model {
 public:
-    Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {}
+    Model();
     ~Model();
 
     void input(std::vector<int32_t> &inputIds_, int batchSize_);
@@ -54,6 +54,10 @@ public:
     std::vector<int32_t> finalize() { return searcher->finalize(); }
 
     void exitSlaves();
+
+    void setPrefix(std::vector<int32_t> &prefixIDs);
+
+    void unsetPrefix();
 
 private:
     AbstractDecoder *decoder;

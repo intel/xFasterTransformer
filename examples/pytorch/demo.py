@@ -32,7 +32,7 @@ def boolean_string(string):
     return low_string == "true"
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
@@ -57,12 +57,14 @@ def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str
     inputs = tokenizer(prompt, return_tensors="pt", padding=padding).input_ids
     return inputs
 
+
 def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
     inputs = tokenizer(query, return_tensors="pt", padding=padding).input_ids
     suffix = torch.tensor([[196]])
     prefix = torch.tensor([[195]])
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
+
 
 import importlib.util
 

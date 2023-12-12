@@ -13,58 +13,54 @@
 # limitations under the License.
 # ============================================================================
 import os
-import re
 
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
-import time
+import torch
 from demo_utils import ChatDemo
+
+USER_TOKEN_ID = 195
+ASSISTANT_TOKEN_ID = 196
+user_id_tensor = torch.tensor([[USER_TOKEN_ID]])
+assist_id_tensor = torch.tensor([[ASSISTANT_TOKEN_ID]])
 
 
 DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm2-6b-hf", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm2-6b-cpu", help="Path to model file")
+parser.add_argument("--token_path", type=str, default="/data/Baichuan2-7B-Chat-hf", help="Path to token file")
+parser.add_argument("--model_path", type=str, default="/data/Baichuan2-7B-Chat-cpu", help="Path to model file")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 
 
-class ChatGLM2Demo(ChatDemo):
-    # Replace English punctuation with Chinese punctuation in the Chinese sentences.
-    def process_response(self, response):
-        response = response.strip()
-        puncts = {",": "，", "!": "！", ":": "：", ";": "；", "\?": "？"}
-        for eng, chn in puncts.items():
-            response = re.sub(r"([\u4e00-\u9fff])%s" % eng, r"\1%s" % chn, response)
-            response = re.sub(r"%s([\u4e00-\u9fff])" % eng, r"%s\1" % chn, response)
-        return response
-
-    # Refer to https://github.com/THUDM/ChatGLM-6B/blob/main/web_demo.py
+class ChatGLMDemo(ChatDemo):
+    # Refer to https://github.com/baichuan-inc/Baichuan2/blob/main/web_demo.py
     def create_chat_input_token(self, query, history):
+        input_tokens = self.tokenizer(query, return_tensors="pt").input_ids
+        input_tokens = torch.cat((user_id_tensor, input_tokens, assist_id_tensor), dim=1)
         if history is None:
             history = []
-        if not history:
-            prompt = "[Round 0]\n问：{}\n答：".format(query)
-        else:
+        if history:
             history = history[-2:] if len(history) > 2 else history
-            prompt = ""
             for i, (old_query, response) in enumerate(history):
-                prompt += "[Round {}]\n问：{}\n答：{}\n".format(i, old_query, response)
-            prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
+                query_ids = self.tokenizer(old_query, return_tensors="pt").input_ids
+                response_ids = self.tokenizer(response, return_tensors="pt").input_ids
+                input_tokens = torch.cat(
+                    (user_id_tensor, query_ids, assist_id_tensor, response_ids, input_tokens), dim=1
+                )
 
-        input_tokens = self.tokenizer([prompt], return_tensors="pt").input_ids
         return input_tokens
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
-        gr.HTML("""<h1 align="center">ChatGLM2</h1>""")
+        gr.HTML("""<h1 align="center">Baichuan2</h1>""")
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    demo = ChatGLM2Demo(args.token_path, args.model_path, dtype=args.dtype)
+    demo = ChatGLMDemo(args.token_path, args.model_path, dtype=args.dtype)
 
     demo.launch(False)

@@ -27,12 +27,12 @@ from demo_utils import ChatDemo
 DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm2-6b-hf", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm2-6b-cpu", help="Path to model file")
+parser.add_argument("--token_path", type=str, default="/data/chatglm3-6b-hf", help="Path to token file")
+parser.add_argument("--model_path", type=str, default="/data/chatglm3-6b-xft", help="Path to model file")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 
 
-class ChatGLM2Demo(ChatDemo):
+class ChatGLM3Demo(ChatDemo):
     # Replace English punctuation with Chinese punctuation in the Chinese sentences.
     def process_response(self, response):
         response = response.strip()
@@ -60,11 +60,11 @@ class ChatGLM2Demo(ChatDemo):
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
-        gr.HTML("""<h1 align="center">ChatGLM2</h1>""")
+        gr.HTML("""<h1 align="center">ChatGLM3</h1>""")
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    demo = ChatGLM2Demo(args.token_path, args.model_path, dtype=args.dtype)
+    demo = ChatGLM3Demo(args.token_path, args.model_path, dtype=args.dtype)
 
     demo.launch(False)

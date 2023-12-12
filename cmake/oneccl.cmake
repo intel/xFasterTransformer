@@ -25,13 +25,13 @@ project(dependency NONE)
 include(ExternalProject)
 
 # cmake-format: off
-ExternalProject_Add(xdnn_lib
-  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/xdnn_v1.4.0.tar.gz
-  URL_HASH          MD5=2f2f29364b94568824f1752c24380acb
-  TIMEOUT           60
-  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/xdnn
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND     ""
+ExternalProject_Add(oneccl
+  GIT_REPOSITORY    https://github.com/oneapi-src/oneCCL.git
+  GIT_TAG           2021.10
+  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/oneccl
+  BINARY_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/oneccl
+  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "build" && ${CMAKE_COMMAND} -E chdir "build" ${CMAKE_COMMAND} -DBUILD_EXAMPLES=OFF -DBUILD_FT=OFF -DBUILD_REG_TESTS=OFF -DENABLE_MPI_TESTS=OFF ..
+  BUILD_COMMAND     ${CMAKE_COMMAND} -E chdir "build" make -j install
   INSTALL_COMMAND   ""
   TEST_COMMAND      ""
 )

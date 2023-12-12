@@ -22,9 +22,6 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpfullversion
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
 message(STATUS "Notice: GCC version: ${GCC_VERSION}")
 
-find_package(MPI REQUIRED)
-find_package(oneCCL REQUIRED)
-
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -58,12 +55,16 @@ endif()
 include("cmake/mklml.cmake")
 include("cmake/onednn.cmake")
 include("cmake/xdnn.cmake")
+include("cmake/mkl.cmake")
 include(GNUInstallDirs)
+
+set(DEPEND_LIST "onednn" "xdnn_lib")
 
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/include)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/mkl/include)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/src/kernels)
 include_directories(${CMAKE_SOURCE_DIR}/src/layers)
@@ -75,9 +76,30 @@ include_directories(${CMAKE_SOURCE_DIR}/src/common)
 link_directories(${CMAKE_SOURCE_DIR}/src/kernels)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/onednn/build/src)
 link_directories(${CMAKE_SOURCE_DIR}/3rdparty/xdnn)
+link_directories(${CMAKE_SOURCE_DIR}/3rdparty/mkl/lib)
 
-set(3RDPART_LIB_LIST "MPI::MPI_CXX" "ccl" "dnnl" "numa")
-set(DEPEND_LIST "onednn" "xdnn_lib")
+find_package(oneCCL REQUIRED)
+
+if(MPI_FOUND AND oneCCL_FOUND)
+    set(MPI_LIBS MPI::MPI_CXX)
+
+    message(STATUS "oneCCL & MPI found. Using found oneCCL instead of building from source.")
+else()
+    message(STATUS "oneCCL or MPI not found. Build oneCCL from source.")
+
+    include("cmake/oneccl.cmake")
+    list(APPEND DEPEND_LIST "oneccl")
+    set(MPI_LIBS "mpicxx" "mpi" "rt" "dl")
+
+    include_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/include)
+    link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib)
+    link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
+endif()
+
+set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa")
+
+# Enable MKL library
+list(APPEND 3RDPART_LIB_LIST "mkl_intel_ilp64" "mkl_gnu_thread" "mkl_core")
 
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)
@@ -94,6 +116,11 @@ add_definitions(-DAVX512_FP16_WEIGHT_ONLY_FP16=true)
 add_definitions(-DAVX512_BF16_WEIGHT_ONLY_BF16=true)
 # add_definitions(-DAVX512_FP32_WEIGHT_ONLY_INT8=true)
 add_definitions(-DAVX512_FP16_WEIGHT_ONLY_INT8=true)
+# add_definitions(-DAVX512_FP32_WEIGHT_ONLY_INT4=true)
+add_definitions(-DAVX512_FP16_WEIGHT_ONLY_INT4=true)
+add_definitions(-DAVX512_FP32_WEIGHT_ONLY_NF4=true)
+# add_definitions(-DAVX512_FP16_WEIGHT_ONLY_NF4=true)
+
 # add_definitions(-DDEBUG=true)
 # add_definitions(-DSTEP_BY_STEP_ATTN=true)
 # add_definitions(-DTIMELINE=true)

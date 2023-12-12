@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright (c) 2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,21 +13,15 @@
 # limitations under the License.
 # ============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "FP16 Performance "
+from .chatglm2_convert import ChatGLM2Convert
 
-export XFT_FAKE_MODEL=1
 
-python "${SCRIPT_DIR}"/../benchmark.py \
-    --token_path "${SCRIPT_DIR}"/../../examples/model_config/chatglm-6b/ \
-    --model_path "${SCRIPT_DIR}"/../../examples/model_config/chatglm-6b/ \
-    --prompt_path "${SCRIPT_DIR}"/prompt_pool.json \
-    --model_name "ChatGLM-6B" \
-    --dtype fp16 \
-    --token_in 32 	\
-    --token_out 32 --beam_width 1 --iteration 100 
+class ChatGLM3Convert(ChatGLM2Convert):
+    """
+    Convert huggingface ChatGLM3 model. Use https://huggingface.co/THUDM/chatglm3-6b
+    """
 
-# In this benchmark case, token_in only can be "demo","32","64","128","256","512","1024","2016"
-# "32" means the token length is 32, if needs more test, add it into input_token.py
-
+    def __init__(self):
+        super().__init__()
+        self.model_type = "chatglm3"

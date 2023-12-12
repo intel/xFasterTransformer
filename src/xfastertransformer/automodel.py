@@ -18,7 +18,7 @@ from typing import Union, Literal
 
 class AutoModel:
     def __init__(self, path, dtype: str = "fp16"):
-        if dtype in ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]:
+        if dtype in ["fp16", "bf16", "int8", "int4", "nf4", "bf16_fp16", "bf16_int8", "bf16_int4", "bf16_nf4"]:
             self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
         else:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
@@ -70,6 +70,15 @@ class AutoModel:
 
     def forward(self):
         return self.model.generate()
+
+    def prefix_sharing(self, input_ids=None, truncate_tail=0):
+        if input_ids is not None and truncate_tail > 0:
+            input_ids = input_ids[:, :-truncate_tail]
+
+        self.model.set_prefix(input_ids)
+
+    def disable_prefix_sharing(self):
+        self.model.unset_prefix()
 
     @torch.no_grad()
     def generate(

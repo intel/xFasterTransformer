@@ -17,6 +17,14 @@
 
 #include <unordered_map>
 
+bool enableCATMLP;
+bool enableCBLASMLP;
+
+void setMLPOPTConfig() {
+    enableCATMLP = (getenv("ENABLE_CAT_MLP") ? atoi(getenv("ENABLE_CAT_MLP")) : 1);
+    enableCBLASMLP = (getenv("ENABLE_CBLAS_MLP") ? atoi(getenv("ENABLE_CBLAS_MLP")) : 0);
+}
+
 namespace xft {
 
 void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediateSize, void *output, int outputStride,
