@@ -35,6 +35,8 @@ Please choose `-d` or `--dtype` as follows:
 - fp16
 - bf16_int4
 - int4
+- bf16_nf4
+- nf4
 
 Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)

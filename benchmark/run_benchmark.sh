@@ -25,12 +25,12 @@ do
         ;;  
         -d | --dtype)
 		case $2 in
-            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4")
+            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4" | "bf16_nf4" | "nf4")
             dtype=$2
             shift 2
             ;;
             *)
-            echo "dtype must in bf16, bf16_fp16, bf16_int8, int8, fp16, bf16_int4."
+            echo "dtype must in bf16, bf16_fp16, bf16_int8, int8, fp16, bf16_int4, bf16_nf4, nf4."
             exit 1
             ;;
         esac
@@ -179,4 +179,4 @@ else
 fi
 
 echo "Run command line: ${run_cmd}"
-eval ${run_cmd}
+eval "${run_cmd}"
