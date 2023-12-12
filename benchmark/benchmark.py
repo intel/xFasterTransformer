@@ -71,7 +71,7 @@ xft_spec = importlib.util.find_spec("xfastertransformer")
 if xft_spec is None:
     import sys
 
-    sys.path.append("../../src")
+    sys.path.append("../src")
     print("[INFO] xfastertransformer is not installed in pip, using source code.")
 else:
     print("[INFO] xfastertransformer is installed, using pip installed package.")
