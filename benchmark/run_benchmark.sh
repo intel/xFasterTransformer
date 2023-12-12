@@ -25,7 +25,7 @@ do
         ;;  
         -d | --dtype)
 		case $2 in
-            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4")
+            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4")
             dtype=$2
             shift 2
             ;;

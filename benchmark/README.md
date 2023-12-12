@@ -33,6 +33,8 @@ Please choose `-d` or `--dtype` as follows:
 - int8
 - bf16_int8
 - fp16
+- bf16_int4
+- int4
 
 Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)
