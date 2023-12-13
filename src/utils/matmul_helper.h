@@ -1870,6 +1870,23 @@ private:
             printf("%s:%d: Not implemented.\n", __FILE__, __LINE__);
             exit(-1);
         }
+
+        // split M dimension if M*N is too big
+        const int max_MN = 4 * 1024 * 1024;
+        int numSplit = M * N / max_MN + 1;
+        for (int i = 0; i < numSplit; i++) {
+            std::pair<int, int> range = SplitUtil::getTaskRange(M, numSplit, i);
+            int MB = range.second - range.first;
+            int offset = range.first;
+            onednn_amx_gemm_f32s8f32_compute_base(transA, MB, N, K, alpha, A + lda * offset, lda, B, scaleB, zeroB,
+                    sumB, beta, C + ldc * offset, ldc, bias, res + ldres * offset, ldres, gamma, kind);
+        }
+    }
+
+    static void onednn_amx_gemm_f32s8f32_compute_base(bool transA, int M, int N, int K, float alpha, const float *A,
+            int lda, const int8_t *B, const float *scaleB, const float *zeroB, const float *sumB, float beta, float *C,
+            int ldc, const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
+
 #define ALLOC(DATATYPE, VALUE, SIZE)                  \
     std::unique_ptr<DATATYPE, decltype(&free)> VALUE( \
             static_cast<DATATYPE *>(aligned_alloc(64, SIZE * sizeof(DATATYPE))), &free)
