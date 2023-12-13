@@ -34,7 +34,7 @@ def boolean_string(string):
     return low_string == "true"
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8", "bf16_int4", "int4", "bf16_nf4", "nf4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
@@ -71,7 +71,7 @@ xft_spec = importlib.util.find_spec("xfastertransformer")
 if xft_spec is None:
     import sys
 
-    sys.path.append("../../src")
+    sys.path.append("../src")
     print("[INFO] xfastertransformer is not installed in pip, using source code.")
 else:
     print("[INFO] xfastertransformer is installed, using pip installed package.")
