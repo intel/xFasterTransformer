@@ -34,6 +34,8 @@ public:
             datatype = xft::DataType::int8;
         } else if (dtype == "int4") {
             datatype = xft::DataType::int4;
+        } else if (dtype == "w8a8") {
+            datatype = xft::DataType::w8a8;
         } else if (dtype == "nf4") {
             datatype = xft::DataType::nf4;
         } else if (dtype == "bf16_fp16") {

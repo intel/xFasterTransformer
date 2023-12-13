@@ -27,5 +27,6 @@ template class ChatGLM3<float>;
 template class ChatGLM3<float16_t>;
 template class ChatGLM3<bfloat16_t>;
 template class ChatGLM3<int8_t>;
+template class ChatGLM3<w8a8_t>;
 template class ChatGLM3<uint4x2_t>;
 template class ChatGLM3<nf4x2_t>;

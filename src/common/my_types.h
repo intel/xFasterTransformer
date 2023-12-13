@@ -22,6 +22,13 @@
 typedef int8_t s8;
 typedef uint8_t u8;
 
+typedef struct {
+    int8_t s8;
+    operator int8_t() {
+        return s8;
+    }
+} w8a8_t;
+
 #define unlikely(x) __builtin_expect((x), 0)
 
 extern "C" {

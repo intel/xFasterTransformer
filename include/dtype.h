@@ -20,6 +20,7 @@ enum class DataType {
     bf16,
     fp16,
     int8,
+    w8a8,
     int4,
     nf4,
     bf16_fp16,

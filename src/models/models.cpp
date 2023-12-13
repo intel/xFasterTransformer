@@ -194,6 +194,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new OptDecoder<float16_t>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new OptDecoder<bfloat16_t>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new OptDecoder<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new OptDecoder<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new OptDecoder<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new OptDecoder<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
@@ -215,6 +216,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new LlamaLLM<float16_t>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new LlamaLLM<bfloat16_t>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new LlamaLLM<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new LlamaLLM<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new LlamaLLM<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new LlamaLLM<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
@@ -234,6 +236,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new Baichuan<float16_t>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new Baichuan<bfloat16_t>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new Baichuan<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new Baichuan<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new Baichuan<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new Baichuan<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
@@ -253,6 +256,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new ChatGLM<float16_t>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new ChatGLM<bfloat16_t>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new ChatGLM<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new ChatGLM<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
@@ -272,6 +276,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new ChatGLM2<float16_t, RmsNorm>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new ChatGLM2<bfloat16_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new ChatGLM2<int8_t, RmsNorm>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new ChatGLM2<w8a8_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM2<uint4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM2<nf4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::bf16_fp16:
@@ -291,6 +296,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::fp16: setDecoder(new ChatGLM3<float16_t, RmsNorm>(modelPath)); break;
             case xft::DataType::bf16: setDecoder(new ChatGLM3<bfloat16_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int8: setDecoder(new ChatGLM3<int8_t, RmsNorm>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new ChatGLM3<w8a8_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM3<uint4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM3<nf4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::bf16_fp16:
