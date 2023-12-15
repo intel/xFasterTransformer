@@ -24,7 +24,7 @@
 namespace xft {
 class Model {
 public:
-    Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {}
+    Model();
     ~Model();
 
     void input(std::vector<int32_t> &inputIds_, int batchSize_);
