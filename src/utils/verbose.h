@@ -34,8 +34,8 @@ public:
 
 class Printer {
 public:
-    static void gemm(const char *api_func, int M, int K, int N, double ms) {
-        printf("xft_verbose,exec,cpu,api,%s,m%dk%dn%d,%g\n", api_func, M, K, N, ms);
+    static void gemm(const char *api_func, int M, int N, int K, double ms) {
+        printf("xft_verbose,exec,cpu,api,%s,m%dn%dk%d,%.6lf\n", api_func, M, N, K, ms);
         fflush(stdout);
     }
     static void matrix(int rows, int cols, int stride, size_t totalmem) {
@@ -70,7 +70,7 @@ public:
         TimeLine t(api_func);                              \
         FunTimer timer;                                    \
         compute_func;                                      \
-        Printer::gemm(api_func, M, K, N, timer.elapsed()); \
+        Printer::gemm(api_func, M, N, K, timer.elapsed()); \
     } else {                                               \
         TimeLine t(api_func);                              \
         compute_func;                                      \
