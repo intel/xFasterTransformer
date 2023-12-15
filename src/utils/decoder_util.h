@@ -16,6 +16,7 @@
 #include <immintrin.h>
 #include <string>
 
+#include <mkl.h>
 #include "bert_util.h"
 #include "bfloat16.h"
 #include "compile_util.h"
@@ -25,21 +26,21 @@
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "xdnn.h"
-#include <mkl.h>
 
 class DecoderUtil {
 public:
     // Dense without bias
     template <typename WeiT>
     static void dense(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Matrix<float> &result) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Matrix<float> &result) {
         MMHelper::compute(false, x.Rows(), weight.Cols(), x.Cols(), 1.0f, x.Data(), x.Stride(), weight.Data(),
-                scaleWeight.Data(), zeroWeight.Data(), 0.0f, result.Data(), result.Stride());
+                scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, result.Data(), result.Stride());
     }
 
     template <typename WeiT>
     static void dense(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &bias, hpj::Matrix<float> &result) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias,
+            hpj::Matrix<float> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "dense error: x.Cols (%d) != weight.Rows (%d)", x.Cols(), weight.Rows());
         REQUIRES(x.Rows() == result.Rows(), "dense error: x.Rows (%d) != result.Rows (%d)", x.Rows(), result.Rows());
         REQUIRES(weight.Cols() == result.Cols(), "dense error: weight.Cols (%d) != result.Cols (%d)", weight.Cols(),
@@ -47,19 +48,20 @@ public:
 
         // Bias is empty
         if (bias.Size() == 0) {
-            dense(x, weight, scaleWeight, zeroWeight, result);
+            dense(x, weight, scaleWeight, zeroWeight, sumWeight, result);
             return;
         }
 
         MMHelper::compute_bias(false, x.Rows(), weight.Cols(), x.Cols(), 1.0f, x.Data(), x.Stride(), weight.Data(),
-                scaleWeight.Data(), zeroWeight.Data(), 0.0f, result.Data(), result.Stride(), bias.Data());
+                scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, result.Data(), result.Stride(),
+                bias.Data());
     }
 
     // result = x * weight + bias + input
     template <typename WeiT>
     static void denseWithSum(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &bias, hpj::Matrix<float> &input,
-            hpj::Matrix<float> &result) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias,
+            hpj::Matrix<float> &input, hpj::Matrix<float> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "denseWithSum error: x.Cols (%d) != weight.Rows (%d)", x.Cols(),
                 weight.Rows());
         REQUIRES(x.Rows() == result.Rows(), "denseWithSum error: x.Rows (%d) != result.Rows (%d)", x.Rows(),
@@ -76,16 +78,16 @@ public:
         if (bias.Size() == 0) { pbias = nullptr; }
 
         MMHelper::compute_residential(false, x.Rows(), weight.Cols(), x.Cols(), 1.0f, x.Data(), x.Stride(),
-                weight.Data(), scaleWeight.Data(), zeroWeight.Data(), 0.0f, result.Data(), result.Stride(), pbias,
-                input.Data(), input.Stride());
+                weight.Data(), scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, result.Data(),
+                result.Stride(), pbias, input.Data(), input.Stride());
     }
 
     // result = x * weight + bias + gamma * input
     // TODO: some path is commented
     template <typename WeiT>
     static void denseWithScaledSum(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &bias, float gamma, hpj::Matrix<float> &input,
-            hpj::Matrix<float> &result) {
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias, float gamma,
+            hpj::Matrix<float> &input, hpj::Matrix<float> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "Error: x.Cols() != weight.Rows()");
         REQUIRES(x.Rows() == result.Rows(), "Error: x.Rows() != result.Rows()");
         REQUIRES(weight.Cols() == result.Cols(), "Error: weight.Cols() != result.Cols()");
@@ -97,8 +99,8 @@ public:
         if (bias.Size() == 0) { pbias = nullptr; }
 
         MMHelper::compute_resext(false, x.Rows(), weight.Cols(), x.Cols(), 1.0f, x.Data(), x.Stride(), weight.Data(),
-                scaleWeight.Data(), zeroWeight.Data(), 0.0f, result.Data(), result.Stride(), pbias, gamma, input.Data(),
-                input.Stride());
+                scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, result.Data(), result.Stride(), pbias,
+                gamma, input.Data(), input.Stride());
     }
 
 #if __AVX512F__
@@ -537,8 +539,8 @@ public:
     // bTranspose: B need to be transposed or not
     // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
     template <typename T>
-    static void sgemm(const T *A, const T *B, float *C, int m, int n, int k,
-            int lda, int ldb, int ldc, bool transa, bool transb) {
+    static void sgemm(const T *A, const T *B, float *C, int m, int n, int k, int lda, int ldb, int ldc, bool transa,
+            bool transb) {
         float alpha = 1;
         float beta = 0;
 
@@ -552,11 +554,10 @@ public:
 
         } else if (std::is_same_v<T, bfloat16_t>) {
             CBLAS_TRANSPOSE ta, tb;
-            ta = transa? CblasTrans : CblasNoTrans;
-            tb = transb? CblasTrans : CblasNoTrans;
+            ta = transa ? CblasTrans : CblasNoTrans;
+            tb = transb ? CblasTrans : CblasNoTrans;
 
-            cblas_gemm_bf16bf16f32(
-                CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_BF16 *)(A), lda, 
+            cblas_gemm_bf16bf16f32(CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_BF16 *)(A), lda,
                     (const MKL_BF16 *)(B), ldb, beta, C, ldc);
         } else {
             printf("Datatype Not supported yet\n");
@@ -623,8 +624,8 @@ public:
         }
     }
 
-    static void updateOutTile(float *output, const float *expABC, float *preSum, float *sum, float *preMax,
-            float *max, int m, int n, int stride) {
+    static void updateOutTile(float *output, const float *expABC, float *preSum, float *sum, float *preMax, float *max,
+            int m, int n, int stride) {
         for (int i = 0; i < m; ++i) {
             const float *buf = expABC + i * n;
             float *outbuf = output + i * stride;
@@ -649,15 +650,14 @@ public:
     // output = output * preSum / sum + (exp(A) / sum) x B
     // preSum = sum
     template <typename T>
-    static void incrementalTileAttention(const T *A, const T *B, const T *C, const float *attnMask,
-            int m, int n, int k, int attnMskStride, float *preSum, float *sum, float *preMax, float *max,
-            float refac, float *AB, float *expABC, float *output, int qStride, int kStride, int vStride, int stride) {
+    static void incrementalTileAttention(const T *A, const T *B, const T *C, const float *attnMask, int m, int n, int k,
+            int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float refac, float *AB,
+            float *expABC, float *output, int qStride, int kStride, int vStride, int stride) {
         sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
         softmaxTile(AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
 
         single_thread_cvt2bf16_inplace(AB, m, k, k);
-        sgemm((T*)AB, C, expABC, m, n, k, k, vStride, n, false, false);
+        sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
     }
-
 };

@@ -59,22 +59,22 @@ public:
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
         downWeight.Resize(it.second - it.first, hiddenSize);
 
+        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, gateW, true, quantizedGateWeight, gateWeightScale,
+                gateWeightZero, gateWeightSum);
         MMHelper::convertWeight(
-                ctx, trans, hiddenSize, imSize, gateW, true, quantizedGateWeight, gateWeightScale, gateWeightZero);
-        MMHelper::convertWeight(
-                ctx, trans, hiddenSize, imSize, upW, true, quantizedUpWeight, upWeightScale, upWeightZero);
-        
+                ctx, trans, hiddenSize, imSize, upW, true, quantizedUpWeight, upWeightScale, upWeightZero, upWeightSum);
+
         setMLPOPTConfig();
         if (!enableCATMLP) {
             gateWeight.Resize(hiddenSize, it.second - it.first);
             upWeight.Resize(hiddenSize, it.second - it.first);
             MMHelper::packWeight(trans, quantizedGateWeight, gateWeight);
             MMHelper::packWeight(trans, quantizedUpWeight, upWeight);
-
         } else {
             hpj::Matrix<WeiT> quantizedCatWeights;
-            catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, upWeightScale,
-                    upWeightZero, quantizedCatWeights, catWeightsScale, catWeightsZero);
+            catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, gateWeightSum,
+                    upWeightScale, upWeightZero, upWeightSum, quantizedCatWeights, catWeightsScale, catWeightsZero,
+                    catWeightsSum);
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
@@ -82,11 +82,11 @@ public:
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
-            MMHelper::convertWeight(
-                    ctx, trans, imSize, hiddenSize, downW, false, downWeight, downWeightScale, downWeightZero);
+            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, false, downWeight, downWeightScale,
+                    downWeightZero, downWeightSum);
         } else {
-            MMHelper::convertWeight(
-                    ctx, trans, imSize, hiddenSize, downW, false, quantizedDownWeight, downWeightScale, downWeightZero);
+            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, false, quantizedDownWeight, downWeightScale,
+                    downWeightZero, downWeightSum);
             MMHelper::packWeight(trans, quantizedDownWeight, downWeight);
         }
 
@@ -189,9 +189,10 @@ private:
         const WeiT *B = gateWeight.Data();
         const float *scaleB = gateWeightScale.Data();
         const float *zeroB = gateWeightZero.Data();
+        const float *sumB = gateWeightSum.Data();
         float *C = output.Data();
 
-        MMHelper::compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+        MMHelper::compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
     }
 
     void upProj(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
@@ -208,9 +209,10 @@ private:
         const WeiT *B = upWeight.Data();
         const float *scaleB = upWeightScale.Data();
         const float *zeroB = upWeightZero.Data();
+        const float *sumB = upWeightSum.Data();
         float *C = output.Data();
 
-        MMHelper::compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc, C, ldc);
+        MMHelper::compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc);
     }
 
     void downProj(
@@ -228,6 +230,7 @@ private:
         const WeiT *B = downWeight.Data();
         const float *scaleB = downWeightScale.Data();
         const float *zeroB = downWeightZero.Data();
+        const float *sumB = downWeightSum.Data();
         float *C = output.Data();
         const float *R = residential.Data();
 
@@ -236,13 +239,13 @@ private:
                 compute_proj_bf16(A, B, C, M, N, K, lda, ldc, ldc, R, ldr);
             } else {
                 MMHelper::compute_residential(
-                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc, NULL, R, ldr);
+                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
             }
         } else {
             if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
                 compute_proj_bf16(A, B, C, M, N, K, lda, ldc, ldc, nullptr, 0);
             } else {
-                MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+                MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
             }
         }
     }
@@ -281,20 +284,23 @@ private:
         const WeiT *B = catWeights.Data();
         const float *scaleB = catWeightsScale.Data();
         const float *zeroB = catWeightsZero.Data();
+        const float *sumB = catWeightsSum.Data();
         float *C = output.Data();
 
-        MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, 0.0f, C, ldc);
+        MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
         // compute silu on the left half and then add it with the right half
         DecoderUtil::siluSum(output);
     }
 
     void catGateUpWeights(hpj::Matrix<WeiT> &gateWeight, hpj::Matrix<WeiT> &upWeight,
-            hpj::Vector<float> &gateWeightScale, hpj::Vector<float> &gateWeightZero, hpj::Vector<float> &upWeightScale,
-            hpj::Vector<float> &upWeightZero, hpj::Matrix<WeiT> &catWeights, hpj::Vector<float> &catWeightsScale,
-            hpj::Vector<float> &catWeightsZero) {
+            hpj::Vector<float> &gateWeightScale, hpj::Vector<float> &gateWeightZero, hpj::Vector<float> &gateWeightSum,
+            hpj::Vector<float> &upWeightScale, hpj::Vector<float> &upWeightZero, hpj::Vector<float> &upWeightSum,
+            hpj::Matrix<WeiT> &catWeights, hpj::Vector<float> &catWeightsScale, hpj::Vector<float> &catWeightsZero,
+            hpj::Vector<float> &catWeightsSum) {
         catWeights.Resize(gateWeight.Rows(), gateWeight.Cols() + upWeight.Cols());
         catWeightsScale.Resize(gateWeightScale.Size() + upWeightScale.Size());
         catWeightsZero.Resize(gateWeightZero.Size() + upWeightZero.Size());
+        catWeightsSum.Resize(gateWeightSum.Size() + upWeightSum.Size());
 
         int M = catWeights.Rows();
         int Stride = catWeights.Cols();
@@ -311,21 +317,27 @@ private:
         memcpy(catWeightsScale.Data() + M, upWeightScale.Data(), N * sizeof(float));
         memcpy(catWeightsZero.Data(), gateWeightZero.Data(), M * sizeof(float));
         memcpy(catWeightsZero.Data() + M, upWeightZero.Data(), N * sizeof(float));
+        memcpy(catWeightsSum.Data(), gateWeightSum.Data(), M * sizeof(float));
+        memcpy(catWeightsSum.Data() + M, upWeightSum.Data(), N * sizeof(float));
     }
 
 protected:
     hpj::Matrix<WeiT> gateWeight;
     hpj::Vector<float> gateWeightScale; // For int8_t weight
     hpj::Vector<float> gateWeightZero; // For int8_t weight
+    hpj::Vector<float> gateWeightSum; // For int8_t weight
     hpj::Matrix<WeiT> upWeight;
     hpj::Vector<float> upWeightScale; // For int8_t weight
     hpj::Vector<float> upWeightZero; // For int8_t weight
+    hpj::Vector<float> upWeightSum; // For int8_t weight
     hpj::Matrix<WeiT> catWeights;
     hpj::Vector<float> catWeightsScale; // For int8_t weight
     hpj::Vector<float> catWeightsZero; // For int8_t weight
+    hpj::Vector<float> catWeightsSum; // For int8_t weight
     hpj::Matrix<WeiT> downWeight;
     hpj::Vector<float> downWeightScale; // For int8_t weight
     hpj::Vector<float> downWeightZero; // For int8_t weight
+    hpj::Vector<float> downWeightSum; // For int8_t weight
 
     // LlamaRMSNorm param
     hpj::Vector<float> normWeight;

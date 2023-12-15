@@ -136,5 +136,6 @@ template class OptDecoder<float>;
 template class OptDecoder<float16_t>;
 template class OptDecoder<bfloat16_t>;
 template class OptDecoder<int8_t>;
+template class OptDecoder<w8a8_t>;
 template class OptDecoder<uint4x2_t>;
 template class OptDecoder<nf4x2_t>;

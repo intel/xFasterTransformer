@@ -92,8 +92,8 @@ public:
         }
 
         hpj::Matrix<WeiT> convertedqkvWeight;
-        MMHelper::convertWeight(
-                trans, hiddenSize, responsibleCols, concatBuf, convertedqkvWeight, qkvWeightScale, qkvWeightZero);
+        MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, convertedqkvWeight, qkvWeightScale,
+                qkvWeightZero, qkvWeightSum);
         MMHelper::packWeight(trans, convertedqkvWeight, qkvWeight);
 
         free(concatBuf);
@@ -121,7 +121,8 @@ public:
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
         hpj::Matrix<WeiT> convertedWeight;
         MMHelper::convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, this->startQHead * headSize,
-                qResponsibleCols, false, convertedWeight, attnOutputWeightScale, attnOutputWeightZero, true);
+                qResponsibleCols, false, convertedWeight, attnOutputWeightScale, attnOutputWeightZero,
+                attnOutputWeightSum, true);
         MMHelper::packWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG
@@ -222,7 +223,8 @@ public:
 
         // Query, Key, Value computed together
         TimeLine t2("QKV.linear");
-        DecoderUtil::dense(resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvBias, qkvGroupMatMul);
+        DecoderUtil::dense(
+                resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
         t2.release();
 
         hpj::Matrix<float> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
@@ -300,14 +302,14 @@ public:
             // So here still use denseWithSum
             if (gamma == 1) {
                 DecoderUtil::denseWithSum(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
-                        attnOutputBias, inputBuffer, resultBuffer2);
+                        attnOutputWeightSum, attnOutputBias, inputBuffer, resultBuffer2);
             } else {
                 DecoderUtil::denseWithScaledSum(attnSplit, attnOutputWeight, attnOutputWeightScale,
-                        attnOutputWeightZero, attnOutputBias, gamma, inputBuffer, resultBuffer2);
+                        attnOutputWeightZero, attnOutputWeightSum, attnOutputBias, gamma, inputBuffer, resultBuffer2);
             }
         } else {
-            DecoderUtil::dense(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero, attnOutputBias,
-                    resultBuffer2);
+            DecoderUtil::dense(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
+                    attnOutputWeightSum, attnOutputBias, resultBuffer2);
         }
         t5.release();
 
@@ -910,14 +912,16 @@ protected:
 
     // query, key, value weighs
     hpj::Matrix<WeiT> qkvWeight;
-    hpj::Vector<float> qkvWeightScale; // if weighs is int8
-    hpj::Vector<float> qkvWeightZero; // if weighs is int8
+    hpj::Vector<float> qkvWeightScale; // if weight is int8
+    hpj::Vector<float> qkvWeightZero; // if weight is int8
+    hpj::Vector<float> qkvWeightSum; // if weight is int8
     // query, key, value bias
     hpj::Vector<float> qkvBias;
 
     hpj::Matrix<WeiT> attnOutputWeight;
-    hpj::Vector<float> attnOutputWeightScale; // if weighs is int8
-    hpj::Vector<float> attnOutputWeightZero; // if weighs is int8
+    hpj::Vector<float> attnOutputWeightScale; // if weight is int8
+    hpj::Vector<float> attnOutputWeightZero; // if weight is int8
+    hpj::Vector<float> attnOutputWeightSum; // if weight is int8
     hpj::Vector<float> attnOutputBias;
 
     // Query/Key post op

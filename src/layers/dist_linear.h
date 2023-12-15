@@ -63,7 +63,7 @@ public:
         zeroWeight.Resize(N);
 
         hpj::Matrix<WeiT> quantizedWeight;
-        MMHelper::convertWeight(true, K, N, w + splitOffset * K, quantizedWeight, scaleWeight, zeroWeight);
+        MMHelper::convertWeight(true, K, N, w + splitOffset * K, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
         MMHelper::packWeight(true, quantizedWeight, weight);
 
         // Copy Bias
@@ -78,11 +78,11 @@ public:
         TimeLine t("DistLinear.forward");
         if (bias) {
             MMHelper::compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), 0.0f, output, splitSize, bias);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias);
 
         } else {
             MMHelper::compute(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), 0.0f, output, splitSize);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize);
         }
     }
 
@@ -106,7 +106,8 @@ private:
     int splitOffset;
 
     hpj::Matrix<WeiT> weight;
-    hpj::Vector<float> scaleWeight; // if weighs is int8
-    hpj::Vector<float> zeroWeight; // if weighs is int8
+    hpj::Vector<float> scaleWeight; // if weight is int8
+    hpj::Vector<float> zeroWeight; // if weight is int8
+    hpj::Vector<float> sumWeight; // if weight is int8
     float *bias;
 };
