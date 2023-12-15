@@ -201,8 +201,8 @@ public:
             }
         }
 
-        // FP32 -> INT8
-        else if constexpr (std::is_same_v<WeiT, int8_t>) {
+        // FP32 -> INT8/W8A8
+        else if constexpr (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>) {
             if (verticalSplit) {
                 int colsPerSplit = splitSize;
                 if (trans) {
@@ -219,61 +219,17 @@ public:
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
                 xdnn_sgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
-                        quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
+                        (int8_t *)quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(),
+                        zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
                 xdnn_hgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
                         trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
-                        quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
+                        (int8_t *)quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(),
+                        zeroWeight.Data());
 #else
                 printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
                 exit(-1);
 #endif
-            } else {
-                int rowsPerSplit = splitSize;
-                if (trans) {
-                    quantizedWeight.Resize(cols, rowsPerSplit);
-                    scaleWeight.Resize(cols);
-                    zeroWeight.Resize(cols);
-                    sumWeight.Resize(cols);
-                } else {
-                    quantizedWeight.Resize(rowsPerSplit, cols);
-                    scaleWeight.Resize(cols);
-                    zeroWeight.Resize(cols);
-                    sumWeight.Resize(cols);
-                }
-#ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-                xdnn_sgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
-                        trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
-                        quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
-#elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-                xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
-                        trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
-                        quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
-#else
-                printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
-                exit(-1);
-#endif
-            }
-        }
-
-        // FP32 -> W8A8
-        else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            if (verticalSplit) {
-                int colsPerSplit = splitSize;
-                if (trans) {
-                    quantizedWeight.Resize(colsPerSplit, rows);
-                    scaleWeight.Resize(colsPerSplit);
-                    zeroWeight.Resize(colsPerSplit);
-                    sumWeight.Resize(colsPerSplit);
-                } else {
-                    quantizedWeight.Resize(rows, colsPerSplit);
-                    scaleWeight.Resize(colsPerSplit);
-                    zeroWeight.Resize(colsPerSplit);
-                    sumWeight.Resize(colsPerSplit);
-                }
-                xdnn_sgemm_f32s8f32_quantize(trans, colsPerSplit, rows,
-                        trans ? (src + rows * splitOffset) : (src + splitOffset), trans ? rows : cols, 0.9999f,
-                        (int8_t*)quantizedWeight.Data(), trans ? rows : colsPerSplit, scaleWeight.Data(), zeroWeight.Data());
                 if (trans) {
 #pragma omp parallel for
                     for (int i = 0; i < colsPerSplit; i++) {
@@ -304,9 +260,20 @@ public:
                     zeroWeight.Resize(cols);
                     sumWeight.Resize(cols);
                 }
+#ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+                xdnn_sgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
+                        trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
+                        (int8_t *)quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(),
+                        zeroWeight.Data());
+#elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
                 xdnn_hgemm_f32s8f32_quantize(trans, cols, rowsPerSplit,
                         trans ? (src + splitOffset) : (src + splitOffset * cols), trans ? rows : cols, 0.9999f,
-                        (int8_t*)quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(), zeroWeight.Data());
+                        (int8_t *)quantizedWeight.Data(), trans ? rowsPerSplit : cols, scaleWeight.Data(),
+                        zeroWeight.Data());
+#else
+                printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
+                exit(-1);
+#endif
                 if (trans) {
 #pragma omp parallel for
                     for (int i = 0; i < cols; i++) {
@@ -494,7 +461,6 @@ public:
 
         // BF16
         else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
-            set_amx_data_type(dnnl::memory::format_tag::BA16a64b2a);
             int amx_rows = (int)((K + 15) / 16) * 16;
             int amx_cols = (int)((N + 63) / 64) * 64;
             weight.Resize(amx_rows, amx_cols);
@@ -527,10 +493,9 @@ public:
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             weight.Resize(K, N);
-            set_amx_data_type(dnnl::memory::format_tag::BA16a64b4a);
             auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
             dnnl::memory B_mem({{K, N}, dnnl::memory::data_type::s8, tag}, get_dnnl_engine(), src.Data());
-            dnnl::memory packedB_mem({{K, N}, dnnl::memory::data_type::s8, dnnl::memory::format_tag::BA16a64b4a},
+            dnnl::memory packedB_mem({{K, N}, dnnl::memory::data_type::s8, get_amx_s8s8s32_weight_data_type()},
                     get_dnnl_engine(), weight.Data());
             dnnl::reorder(B_mem, packedB_mem).execute(get_dnnl_stream(), B_mem, packedB_mem);
             get_dnnl_stream().wait();
@@ -629,9 +594,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic));
         }
 
         // INT4
@@ -733,9 +698,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_biasadd");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_biasadd",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd));
         }
 
         // INT4
@@ -836,9 +801,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_biasadd_relu");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_biasadd_relu",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu));
         }
 
         // INT4
@@ -939,9 +904,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_silu");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_silu",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu));
         }
 
         // INT4
@@ -1043,9 +1008,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_resmul");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    nullptr, res, ldres, 0.0f, matmul_kinds::Resmul);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_resmul",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, nullptr, res, ldres, 0.0f, matmul_kinds::Resmul));
         }
 
         // INT4
@@ -1148,9 +1113,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_residential");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    bias, res, ldres, 0.0f, matmul_kinds::Residential);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_residential",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, bias, res, ldres, 0.0f, matmul_kinds::Residential));
         }
 
         // INT4
@@ -1259,9 +1224,9 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            TimeLine t("onednn_amx_gemm_f32s8f32_compute_resext");
-            onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t*)packedB, scaleB, zeroB, sumB, beta, C, ldc,
-                    bias, res, ldres, gamma, matmul_kinds::Resext);
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_resext",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, bias, res, ldres, gamma, matmul_kinds::Resext));
         }
 
         // INT4
@@ -1330,6 +1295,12 @@ private:
         return key;
     }
 
+    static dnnl::memory::format_tag get_amx_f32bf16f32_weight_data_type() {
+        return dnnl::memory::format_tag::BA16a64b2a;
+    }
+
+    static dnnl::memory::format_tag get_amx_s8s8s32_weight_data_type() { return dnnl::memory::format_tag::BA16a64b4a; }
+
     template <typename Tin, typename Tout>
     static void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const Tin *A,
             int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc) {
@@ -1354,7 +1325,7 @@ private:
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
                 output_md = memory::desc(output_dims, dt::f32, tag::ab);
@@ -1433,7 +1404,7 @@ private:
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
@@ -1515,7 +1486,7 @@ private:
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
@@ -1605,7 +1576,7 @@ private:
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
                 output_md = memory::desc(output_dims, dt::f32, tag::ab);
@@ -1692,7 +1663,7 @@ private:
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             auto scale_md = memory::desc(scale_dims, dt::f32, tag::ab);
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
@@ -1795,7 +1766,7 @@ private:
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::bf16, get_amx_f32bf16f32_weight_data_type());
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
             auto shift_md = memory::desc(shift_dims, dt::f32, tag::ab);
             memory::desc output_md;
@@ -1897,7 +1868,7 @@ private:
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::s8, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::s8, get_amx_data_type());
+            auto weight_md = memory::desc(weight_dims, dt::s8, get_amx_s8s8s32_weight_data_type());
             memory::desc output_md;
             output_md = memory::desc(output_dims, dt::s32, tag::ab);
 
@@ -1972,13 +1943,6 @@ private:
         dequant(M, N, C_int32.get(), N, C, ldc, scaleA.get(), zeroA.get(), sumA.get(), scaleB, zeroB, sumB, bias, res,
                 ldres, gamma, kind);
     }
-
-    static dnnl::memory::format_tag &get_amx_data_type() {
-        static dnnl::memory::format_tag amx_weight_tag;
-        return amx_weight_tag;
-    }
-
-    static void set_amx_data_type(dnnl::memory::format_tag tag) { get_amx_data_type() = tag; }
 
     // Per row quantization of activations
     // src: weight, dst: int8 qweight
