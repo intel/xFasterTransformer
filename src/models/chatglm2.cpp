@@ -93,16 +93,17 @@ void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
 
     if (step == 0) {
         float *mask = this->getAttnMask(sizeRequired);
-        int startId = this->getStartId();
+        // int startId = this->getStartId();
 
         for (int b = 0; b < ctx->batchSize; ++b) {
-            int contextLen = -1;
-            auto it = std::find(ids + b * seqLen, ids + (b + 1) * seqLen, startId);
-            if (it != ids + (b + 1) * seqLen) { contextLen = std::distance(ids + b * seqLen, it); }
+            // int contextLen = -1;
+            // auto it = std::find(ids + b * seqLen, ids + (b + 1) * seqLen, startId);
+            // if (it != ids + (b + 1) * seqLen) { contextLen = std::distance(ids + b * seqLen, it); }
 
             auto pmask = mask + b * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
-                int zeroLen = contextLen > (i + 1) ? contextLen : (i + 1);
+                // int zeroLen = contextLen > (i + 1) ? contextLen : (i + 1);
+                int zeroLen = i + 1;
                 memset(pmask + i * seqLen, 0, zeroLen * sizeof(float)); // bottom left or 0:contextLen are 0
                 std::fill_n(pmask + i * seqLen + zeroLen, seqLen - zeroLen, std::numeric_limits<float>::lowest());
             }
