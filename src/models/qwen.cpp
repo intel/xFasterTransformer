@@ -131,4 +131,6 @@ template class Qwen<float>;
 template class Qwen<float16_t>;
 template class Qwen<bfloat16_t>;
 template class Qwen<int8_t>;
+template class Qwen<w8a8_t>;
 template class Qwen<uint4x2_t>;
+template class Qwen<nf4x2_t>;
