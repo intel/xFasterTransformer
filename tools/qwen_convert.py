@@ -1,5 +1,5 @@
 """
-Convert huggingface ChatGLM model. Use https://huggingface.co/Qwen
+Convert Qwen model. Use https://huggingface.co/Qwen or https://modelscope.cn/models
 python ./tools/qwen_convert.py -i /model/qwen-7b-chat-hf/ -o ./qwen-7b-chat-xft -d fp32
 """
 
