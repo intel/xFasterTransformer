@@ -81,11 +81,6 @@ class CausalDecoderLM(HFLM):
 
         self.tokenizer = AutoTokenizer.from_pretrained(pretrained, use_fast=False, padding_side='left', trust_remote_code=trust_remote_code)
 
-        if hasattr(self.tokenizer, "eos_token") and self.tokenizer.eos_token is not None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        if hasattr(self.tokenizer, "eos_token_id") and self.tokenizer.eos_token_id is not None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
         self.truncation = truncation
 
         self.vocab_size = self.tokenizer.vocab_size
