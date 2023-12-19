@@ -51,9 +51,8 @@ private:
         helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
-        void (*helperMpiFinalize)() = (void (*)())dlsym(commHelperHanlde, "mpiFinalize");
 
-        atexit(helperMpiFinalize);
+        atexit(Messenger::mpi_finalize);
 
         int sameHostnames = (*helperInit)(&rank, &size);
 
@@ -69,7 +68,7 @@ private:
 
     ~Messenger() {
         if (helperFreePCOMM != nullptr) { (*helperFreePCOMM)(); }
-        if (commHelperHanlde != nullptr) { dlclose(commHelperHanlde); }
+        // if (commHelperHanlde != nullptr) { dlclose(commHelperHanlde); }
 #ifdef USE_SHM
         delete pshm;
 #endif
@@ -137,6 +136,15 @@ public:
 private:
     Messenger(const Messenger &messenger) = delete;
     Messenger &operator=(const Messenger &messenger) = delete;
+
+    static void mpi_finalize() {
+        void *handle = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        if (handle != nullptr) {
+            void (*helperMpiFinalize)() = (void (*)())dlsym(handle, "mpiFinalize");
+            (*helperMpiFinalize)();
+            dlclose(handle);
+        }
+    }
 
     // Check if indeed need to communicate
     bool check() {
