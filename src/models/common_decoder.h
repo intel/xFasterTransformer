@@ -171,6 +171,14 @@ public:
         this->embeddingForward(ids, this->embBuf->Data(), batchSize, inputSeqLen);
         this->accSeqLen += seqLen;
 
+#ifdef DEBUG
+        dbg.debugPrint("---- embedding.forward ----\n");
+        dbg.debugPrint("ids:\n");
+        dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(), this->embBuf->Stride());
+        dbg.dumpMatrix(*this->embBuf);
+#endif
+
         // Prepare attention mask
         this->prepareAttnMask(ids, step + this->prefixSharing);
 
