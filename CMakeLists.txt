@@ -96,7 +96,7 @@ else()
     link_directories(${CMAKE_SOURCE_DIR}/3rdparty/oneccl/build/_install/lib/prov)
 endif()
 
-set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa")
+set(3RDPART_LIB_LIST "rt" "dl" "dnnl" "numa")
 
 # Enable MKL library
 list(APPEND 3RDPART_LIB_LIST "mkl_intel_ilp64" "mkl_gnu_thread" "mkl_core")
