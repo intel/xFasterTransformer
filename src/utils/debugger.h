@@ -23,6 +23,8 @@
 #include <string>
 
 #include "my_types.h"
+#include "uint4x2.h"
+#include "normal_float4x2.h"
 
 class Debugger {
 public:
@@ -94,6 +96,23 @@ public:
     }
 
     template <typename T>
+    void outputStream(std::ostringstream &oss, T val, bool isFinished = false) {
+        if (isFinished == false) {
+            if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
+                oss << float(val.get_v1()) << ", " << float(val.get_v2()) << ", ";
+            } else {
+                oss << float(val) << ", ";
+            }
+        } else {
+            if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
+                oss << float(val.get_v1()) << ", " << float(val.get_v2()) << std::endl;
+            } else {
+                oss << float(val) << std::endl;
+            }
+        }
+    }
+
+    template <typename T>
     void dumpMatrix(hpj::Matrix<T> &m, bool print_all = false) {
         std::ostringstream oss;
         int rows = m.Rows();
@@ -103,48 +122,48 @@ public:
         if (print_all == true) {
             for (int i = 0; i < rows; ++i) {
                 for (int j = 0; j < cols - 1; ++j) {
-                    oss << float(m(i, j)) << ", ";
+                    outputStream(oss, m(i, j));
                 }
-                oss << float(m(i, cols - 1)) << std::endl;
+                outputStream(oss, m(i, cols - 1), true);
             }
         } else {
             if (rows <= 12) {
                 for (int i = 0; i < rows; ++i) {
                     if (cols <= 12) {
                         for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     } else {
                         for (int j = 0; j < 6; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
 
                         oss << "..., ";
 
                         for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     }
-                    oss << float(m(i, cols - 1)) << std::endl;
+                    outputStream(oss, m(i, cols - 1), true);
                 }
             } else {
                 for (int i = 0; i < 6; ++i) {
                     if (cols <= 12) {
                         for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     } else {
                         for (int j = 0; j < 6; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
 
                         oss << "..., ";
 
                         for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     }
-                    oss << float(m(i, cols - 1)) << std::endl;
+                    outputStream(oss, m(i, cols - 1), true);
                 }
 
                 oss << "..." << std::endl;
@@ -152,20 +171,20 @@ public:
                 for (int i = rows - 6; i < rows; ++i) {
                     if (cols < 10) {
                         for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     } else {
                         for (int j = 0; j < 6; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
 
                         oss << "..., ";
 
                         for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(m(i, j)) << ", ";
+                            outputStream(oss, m(i, j));
                         }
                     }
-                    oss << float(m(i, cols - 1)) << std::endl;
+                    outputStream(oss, m(i, cols - 1), true);
                 }
             }
         }

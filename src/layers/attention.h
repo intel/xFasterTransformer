@@ -236,6 +236,8 @@ public:
         dbg.dumpMatrix(query);
         dbg.debugPrint("K:\n");
         dbg.dumpMatrix(key);
+        dbg.debugPrint("V:\n");
+        dbg.dumpMatrix(value);
 #endif
 
         // Apply post operattions on query and key
