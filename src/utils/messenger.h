@@ -39,37 +39,37 @@ private:
             return;
         }
 
-        comm_helper_hanlde = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
-        if (comm_helper_hanlde == nullptr) {
+        commHelperHanlde = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        if (commHelperHanlde == nullptr) {
             printf("Failed to load xft_comm_helper library from path error code: %s\n", dlerror());
             exit(-1);
         }
 
-        helper_init = (int (*)(int *, int *))dlsym(comm_helper_hanlde, "init");
-        helper_freePCOMM = (void (*)())dlsym(comm_helper_hanlde, "freePCOMM");
-        helper_allreduce = (void (*)(float *, float *, size_t))dlsym(comm_helper_hanlde, "allreduce");
-        helper_broadcast = (void (*)(int *, size_t))dlsym(comm_helper_hanlde, "broadcast");
-        helper_allgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
-                comm_helper_hanlde, "allgatherv");
-        void (*helper_mpi_finalize)() = (void (*)())dlsym(comm_helper_hanlde, "mpiFinalize");
+        helperInit = (int (*)(int *, int *))dlsym(commHelperHanlde, "init");
+        helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
+        helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
+        helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
+        helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
+                commHelperHanlde, "allgatherv");
+        void (*helperMpiFinalize)() = (void (*)())dlsym(commHelperHanlde, "mpiFinalize");
 
-        atexit(helper_mpi_finalize);
+        atexit(helperMpiFinalize);
 
-        int same_hostnames = (*helper_init)(&rank, &size);
+        int sameHostnames = (*helperInit)(&rank, &size);
 
 #ifdef USE_SHM
-        if (same_hostnames && !std::getenv("XFT_ONECCL")) {
-            local_ranks_flag = true;
-            pshm = new ShmReduction(rank, size, [this](int *pid_fd, size_t count) { this->broadcast(pid_fd, count); });
+        if (sameHostnames && !std::getenv("XFT_ONECCL")) {
+            localRanksFlag = true;
+            pshm = new ShmReduction(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
         } else {
-            local_ranks_flag = false;
+            localRanksFlag = false;
         }
 #endif
     }
 
     ~Messenger() {
-        if (helper_freePCOMM != nullptr) { (*helper_freePCOMM)(); }
-        if (comm_helper_hanlde != nullptr) { dlclose(comm_helper_hanlde); }
+        if (helperFreePCOMM != nullptr) { (*helperFreePCOMM)(); }
+        if (commHelperHanlde != nullptr) { dlclose(commHelperHanlde); }
 #ifdef USE_SHM
         delete pshm;
 #endif
@@ -93,13 +93,13 @@ public:
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (count * sizeof(float) > pshm->getSHMSize() || !local_ranks_flag) {
-            (*helper_allreduce)(sendBuf, recvBuf, count);
+        if (count * sizeof(float) > pshm->getSHMSize() || !localRanksFlag) {
+            (*helperAllreduce)(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
         }
 #else
-        (*helper_allreduce)(sendBuf, recvBuf, count);
+        (*helperAllreduce)(sendBuf, recvBuf, count);
 #endif
     }
 
@@ -108,7 +108,7 @@ public:
     void broadcast(T *buf, size_t count) {
         if (check()) {
             // assume always broadcast from master (rank 0)
-            (*helper_broadcast)(buf, count);
+            (*helperBroadcast)(buf, count);
         }
     }
 
@@ -124,7 +124,7 @@ public:
     // Only float is used now
     void allgatherv(
             const float *send_buf, size_t count, float *recv_buf, const std::vector<long unsigned int> &recv_counts) {
-        if (check()) { (*helper_allgatherv)(send_buf, count, recv_buf, recv_counts); }
+        if (check()) { (*helperAllgatherv)(send_buf, count, recv_buf, recv_counts); }
     }
 
     bool withMpirun() {
@@ -140,7 +140,7 @@ private:
 
     // Check if indeed need to communicate
     bool check() {
-        if (unlikely(size > 1 && !comm_helper_hanlde)) {
+        if (unlikely(size > 1 && !commHelperHanlde)) {
             printf("Unable to call into ccl as of unsuccessful initialization.\n");
             exit(-1);
         }
@@ -150,15 +150,15 @@ private:
 private:
     int size;
     int rank;
-    bool local_ranks_flag;
+    bool localRanksFlag;
 
 #ifdef USE_SHM
     ShmReduction *pshm;
 #endif
-    void *comm_helper_hanlde;
-    int (*helper_init)(int *, int *);
-    void (*helper_freePCOMM)();
-    void (*helper_allreduce)(float *, float *, size_t);
-    void (*helper_broadcast)(int *, size_t);
-    void (*helper_allgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
+    void *commHelperHanlde;
+    int (*helperInit)(int *, int *);
+    void (*helperFreePCOMM)();
+    void (*helperAllreduce)(float *, float *, size_t);
+    void (*helperBroadcast)(int *, size_t);
+    void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
 };

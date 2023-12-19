@@ -26,15 +26,15 @@ extern "C" int init(int *rank, int *size) {
     MPI_Comm_rank(MPI_COMM_WORLD, rank);
 
     ccl::shared_ptr_class<ccl::kvs> kvs;
-    ccl::kvs::address_type main_addr;
+    ccl::kvs::address_type mainAddr;
 
     if (*rank == 0) {
         kvs = ccl::create_main_kvs();
-        main_addr = kvs->get_address();
-        MPI_Bcast((void *)main_addr.data(), main_addr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+        mainAddr = kvs->get_address();
+        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
     } else {
-        MPI_Bcast((void *)main_addr.data(), main_addr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
-        kvs = ccl::create_kvs(main_addr);
+        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+        kvs = ccl::create_kvs(mainAddr);
     }
 
     pcomm = new ccl::communicator(ccl::create_communicator(*size, *rank, kvs));
@@ -43,31 +43,31 @@ extern "C" int init(int *rank, int *size) {
     *size = pcomm->size();
 
 #ifdef USE_SHM
-    char my_hostname[MPI_MAX_PROCESSOR_NAME];
+    char myHostname[MPI_MAX_PROCESSOR_NAME];
     char all_hostnames[MPI_MAX_PROCESSOR_NAME * MPI_MAX_PROCESSOR_NAME];
-    int hostname_len;
+    int hostnameLen;
 
     // Check ranks are on the same physical machine
-    MPI_Get_processor_name(my_hostname, &hostname_len);
-    MPI_Allgather(my_hostname, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, all_hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
+    MPI_Get_processor_name(myHostname, &hostnameLen);
+    MPI_Allgather(myHostname, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, all_hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
             MPI_COMM_WORLD);
 
-    int same_hostnames = 1;
+    int sameHostnames = 1;
     for (int i = 1; i < *size; i++) {
-        if (strcmp(my_hostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
-            same_hostnames = 0;
+        if (strcmp(myHostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
+            sameHostnames = 0;
             break;
         }
     }
-    return same_hostnames;
+    return sameHostnames;
 #endif
     return 0;
 }
 
 extern "C" void mpiFinalize() {
-    int is_finalized = 0;
-    MPI_Finalized(&is_finalized);
-    if (!is_finalized) { MPI_Finalize(); }
+    int isFinalized = 0;
+    MPI_Finalized(&isFinalized);
+    if (!isFinalized) { MPI_Finalize(); }
 }
 
 extern "C" void freePCOMM() {
@@ -83,6 +83,6 @@ extern "C" void broadcast(int *buf, size_t count) {
 }
 
 extern "C" void allgatherv(
-        const float *send_buf, size_t count, float *recv_buf, const std::vector<long unsigned int> &recv_counts) {
-    ccl::allgatherv(send_buf, count, recv_buf, recv_counts, *pcomm).wait();
+        const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
+    ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
 }
