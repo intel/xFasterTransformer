@@ -99,7 +99,7 @@ endif()
 set(3RDPART_LIB_LIST ${MPI_LIBS} "ccl" "dnnl" "numa")
 
 # Enable MKL library
-list(APPEND 3RDPART_LIB_LIST "mkl_intel_ilp64" "mkl_gnu_thread" "mkl_core")
+list(APPEND 3RDPART_LIB_LIST "mkl_intel_ilp64" "mkl_gnu_thread" "mkl_core" "mkl_gnu_thread")
 
 option(BUILD_WITH_SHARED_LIBS "Build with shared libraries" OFF)
 if(BUILD_WITH_SHARED_LIBS)

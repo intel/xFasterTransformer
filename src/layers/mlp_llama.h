@@ -305,6 +305,11 @@ private:
         int M = catWeights.Rows();
         int Stride = catWeights.Cols();
         int N = gateWeight.Cols();
+        if (std::is_same_v<WeiT, uint4x2_t> || std::is_same_v<WeiT, nf4x2_t>) {
+            // two values are packed into one byte
+            Stride /= 2;
+            N /= 2;
+        }
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
             memcpy(catWeights.Data() + i * Stride, gateWeight.Data() + i * N, N * sizeof(WeiT));
@@ -317,6 +322,8 @@ private:
         memcpy(catWeightsScale.Data() + M, upWeightScale.Data(), N * sizeof(float));
         memcpy(catWeightsZero.Data(), gateWeightZero.Data(), M * sizeof(float));
         memcpy(catWeightsZero.Data() + M, upWeightZero.Data(), N * sizeof(float));
+        M = gateWeightSum.Size();
+        N = upWeightSum.Size();
         memcpy(catWeightsSum.Data(), gateWeightSum.Data(), M * sizeof(float));
         memcpy(catWeightsSum.Data() + M, upWeightSum.Data(), N * sizeof(float));
     }
