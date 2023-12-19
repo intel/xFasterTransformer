@@ -24,6 +24,7 @@
 
 #include "my_types.h"
 #include "uint4x2.h"
+#include "normal_float4x2.h"
 
 class Debugger {
 public:
@@ -97,13 +98,13 @@ public:
     template <typename T>
     void outputStream(std::ostringstream &oss, T val, bool isFinished = false) {
         if (isFinished == false) {
-            if constexpr (std::is_same_v<T, uint4x2_t>) {
+            if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
                 oss << float(val.get_v1()) << ", " << float(val.get_v2()) << ", ";
             } else {
                 oss << float(val) << ", ";
             }
         } else {
-            if constexpr (std::is_same_v<T, uint4x2_t>) {
+            if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
                 oss << float(val.get_v1()) << ", " << float(val.get_v2()) << std::endl;
             } else {
                 oss << float(val) << std::endl;
