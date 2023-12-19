@@ -45,14 +45,15 @@ private:
             exit(-1);
         }
 
-        helper_init = (int (*)(int *, int *))dlsym(comm_helper_hanlde, "_Z4initPiS_");
-        helper_freePCOMM = (void (*)())dlsym(comm_helper_hanlde, "_Z9freePCOMMv");
-        helper_allreduce = (void (*)(float *, float *, size_t))dlsym(comm_helper_hanlde, "_Z9allreducePfS_m");
-        helper_broadcast = (void (*)(int *, size_t))dlsym(comm_helper_hanlde, "_Z9broadcastPim");
+        helper_init = (int (*)(int *, int *))dlsym(comm_helper_hanlde, "init");
+        helper_freePCOMM = (void (*)())dlsym(comm_helper_hanlde, "freePCOMM");
+        helper_allreduce = (void (*)(float *, float *, size_t))dlsym(comm_helper_hanlde, "allreduce");
+        helper_broadcast = (void (*)(int *, size_t))dlsym(comm_helper_hanlde, "broadcast");
         helper_allgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
-                comm_helper_hanlde, "_Z10allgathervPKfmPfRKSt6vectorImSaImEE");
+                comm_helper_hanlde, "allgatherv");
+        void (*helper_mpi_finalize)() = (void (*)())dlsym(comm_helper_hanlde, "mpiFinalize");
 
-        atexit(Messenger::mpi_finalize);
+        atexit(helper_mpi_finalize);
 
         int same_hostnames = (*helper_init)(&rank, &size);
 
@@ -136,18 +137,6 @@ public:
 private:
     Messenger(const Messenger &messenger) = delete;
     Messenger &operator=(const Messenger &messenger) = delete;
-
-    static void mpi_finalize() {
-        void *handle = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
-        if (handle != nullptr) {
-            void (*helper_mpiFinalized)(int *) = (void (*)(int *))dlsym(handle, "_Z12mpiFinalizedPi");
-            void (*helper_mpiFinalize)() = (void (*)())dlsym(handle, "_Z11mpiFinalizev");
-            int is_finalized = 0;
-            (*helper_mpiFinalized)(&is_finalized);
-
-            if (!is_finalized) { (*helper_mpiFinalize)(); }
-        }
-    }
 
     // Check if indeed need to communicate
     bool check() {

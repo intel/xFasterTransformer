@@ -18,7 +18,7 @@
 
 ccl::communicator *pcomm;
 
-int init(int *rank, int *size) {
+extern "C" int init(int *rank, int *size) {
     ccl::init();
 
     MPI_Init(NULL, NULL);
@@ -64,27 +64,25 @@ int init(int *rank, int *size) {
     return 0;
 }
 
-void mpiFinalized(int *is_finalized) {
-    MPI_Finalized(is_finalized);
+extern "C" void mpiFinalize() {
+    int is_finalized = 0;
+    MPI_Finalized(&is_finalized);
+    if (!is_finalized) { MPI_Finalize(); }
 }
 
-void mpiFinalize() {
-    MPI_Finalize();
-}
-
-void freePCOMM() {
+extern "C" void freePCOMM() {
     delete pcomm;
 }
 
-void allreduce(float *sendBuf, float *recvBuf, size_t count) {
+extern "C" void allreduce(float *sendBuf, float *recvBuf, size_t count) {
     ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
 }
 
-void broadcast(int *buf, size_t count) {
+extern "C" void broadcast(int *buf, size_t count) {
     ccl::broadcast(buf, count, 0, *pcomm).wait(); // assume always broadcast from master (rank 0)
 }
 
-void allgatherv(
+extern "C" void allgatherv(
         const float *send_buf, size_t count, float *recv_buf, const std::vector<long unsigned int> &recv_counts) {
     ccl::allgatherv(send_buf, count, recv_buf, recv_counts, *pcomm).wait();
 }
