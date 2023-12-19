@@ -1,6 +1,6 @@
 """
 Convert huggingface ChatGLM model. Use https://huggingface.co/Qwen
-python ./tools/qwen_convert.py -i /model/qwen-7b-chat-hf/ -o ./qwen-7b-chat-xft
+python ./tools/qwen_convert.py -i /model/qwen-7b-chat-hf/ -o ./qwen-7b-chat-xft -d fp32
 """
 
 import argparse
@@ -199,7 +199,13 @@ def split_and_convert(args):
     pool = multiprocessing.Pool(args.processes)
     for name, param in model_named_parameters.items():
         if name == "transformer.wte.weight":
-            param.detach().cpu().numpy().astype(np_weight_data_type).tofile(os.path.join(saved_dir, "model.wte.bin"))
+            if len(param.shape) == 2:
+                if param.shape[0] == hidden_size:
+                    param.detach().cpu().numpy().astype(np_weight_data_type).transpose().tofile(os.path.join(saved_dir, "model.wte.bin"))
+                else:
+                    param.detach().cpu().numpy().astype(np_weight_data_type).tofile(os.path.join(saved_dir, "model.wte.bin"))
+            else:
+                print("[ERROR] embedding table shape dims is not 2.")
         elif name == "transformer.ln_f.weight":
             param.detach().cpu().numpy().astype(np_weight_data_type).tofile(
                 os.path.join(saved_dir, "model.final_layernorm.weight.bin")
