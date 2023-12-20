@@ -39,6 +39,9 @@ Please choose `-d` or `--dtype` as follows:
 - nf4
 - bf16_w8a8
 - w8a8
+- w8a8_int8
+- w8a8_int4
+- w8a8_nf4
 
 Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)
