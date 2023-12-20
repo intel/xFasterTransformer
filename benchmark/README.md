@@ -37,6 +37,8 @@ Please choose `-d` or `--dtype` as follows:
 - int4
 - bf16_nf4
 - nf4
+- bf16_w8a8
+- w8a8
 
 Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)
