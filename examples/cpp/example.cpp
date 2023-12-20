@@ -181,13 +181,19 @@ class QwenTokenizer : public TokenizerBase {
 public:
     QwenTokenizer(std::string &tokenPath) { vocabSize = 151851; }
 
+    // TODO: Need to achieve actual encode function
     std::vector<int> encode(std::string &input) override {
-        return std::vector<int>({12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13});
+        // only for Test
+        return std::vector<int>(
+                {12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13});
     }
 
     std::string decode(std::vector<int> &ids) override {
         if (ids.size() == 1) { return decode(ids[0]); }
+
         std::string text("");
+        text.reserve(ids.size());
+
         for (int id : ids) {
             if (id < vocabSize) {
                 text += vocab_list[id];
@@ -195,6 +201,7 @@ public:
                 text += "(null) ";
             }
         }
+
         return text;
     }
     std::string decode(int id) override {

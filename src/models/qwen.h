@@ -20,6 +20,7 @@
 #include "rotary_embedding.h"
 #include "token_embedding.h"
 
+// TODO: Need to check FP16 KV Cache
 template <typename WeiT>
 class Qwen : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
 public:
