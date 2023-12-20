@@ -16,6 +16,7 @@
 #include <mpi.h>
 
 #include <cstdlib>
+#include <dlfcn.h>
 #include <iostream>
 
 #include "compile_util.h"
@@ -30,7 +31,6 @@ private:
         // or program is not with MPI.
         if (std::getenv("SINGLE_INSTANCE") != nullptr || !withMpirun()) {
             std::cout << "[INFO] SINGLE_INSTANCE MODE." << std::endl;
-            this->pcomm = nullptr;
 #ifdef USE_SHM
             this->pshm = nullptr;
 #endif
@@ -39,57 +39,36 @@ private:
             return;
         }
 
-        ccl::init();
+        commHelperHanlde = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        if (commHelperHanlde == nullptr) {
+            printf("Failed to load xft_comm_helper library from path error code: %s\n", dlerror());
+            exit(-1);
+        }
 
-        MPI_Init(NULL, NULL);
-        MPI_Comm_size(MPI_COMM_WORLD, &size);
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        helperInit = (int (*)(int *, int *))dlsym(commHelperHanlde, "init");
+        helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
+        helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
+        helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
+        helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
+                commHelperHanlde, "allgatherv");
 
         atexit(Messenger::mpi_finalize);
 
-        if (rank == 0) {
-            kvs = ccl::create_main_kvs();
-            main_addr = kvs->get_address();
-            MPI_Bcast((void *)main_addr.data(), main_addr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
-        } else {
-            MPI_Bcast((void *)main_addr.data(), main_addr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
-            kvs = ccl::create_kvs(main_addr);
-        }
-
-        pcomm = new ccl::communicator(ccl::create_communicator(size, rank, kvs));
-
-        rank = pcomm->rank();
-        size = pcomm->size();
+        int sameHostnames = (*helperInit)(&rank, &size);
 
 #ifdef USE_SHM
-        char my_hostname[MPI_MAX_PROCESSOR_NAME];
-        char all_hostnames[MPI_MAX_PROCESSOR_NAME * MPI_MAX_PROCESSOR_NAME];
-        int hostname_len;
-
-        // Check ranks are on the same physical machine
-        MPI_Get_processor_name(my_hostname, &hostname_len);
-        MPI_Allgather(my_hostname, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, all_hostnames, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
-                MPI_COMM_WORLD);
-
-        int same_hostnames = 1;
-        for (int i = 1; i < size; i++) {
-            if (strcmp(my_hostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
-                same_hostnames = 0;
-                break;
-            }
-        }
-
-        if (same_hostnames && !std::getenv("XFT_ONECCL")) {
-            local_ranks_flag = true;
-            pshm = new ShmReduction(rank, size, [this](int *pid_fd, size_t count) { this->broadcast(pid_fd, count); });
+        if (sameHostnames && !std::getenv("XFT_ONECCL")) {
+            localRanksFlag = true;
+            pshm = new ShmReduction(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
         } else {
-            local_ranks_flag = false;
+            localRanksFlag = false;
         }
 #endif
     }
 
     ~Messenger() {
-        delete pcomm;
+        if (helperFreePCOMM != nullptr) { (*helperFreePCOMM)(); }
+        // if (commHelperHanlde != nullptr) { dlclose(commHelperHanlde); }
 #ifdef USE_SHM
         delete pshm;
 #endif
@@ -108,40 +87,43 @@ public:
     int getSize() { return size; }
 
     // From some example code of oneCCL, inplace reducing is supported
-    template <typename T>
-    void reduceAdd(T *sendBuf, T *recvBuf, size_t count) {
+    // Only float is used now
+    void reduceAdd(float *sendBuf, float *recvBuf, size_t count) {
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (count * sizeof(T) > pshm->getSHMSize() || !local_ranks_flag) {
-            ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
+        if (count * sizeof(float) > pshm->getSHMSize() || !localRanksFlag) {
+            (*helperAllreduce)(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
         }
 #else
-        ccl::allreduce(sendBuf, recvBuf, count, ccl::reduction::sum, *pcomm).wait();
+        (*helperAllreduce)(sendBuf, recvBuf, count);
 #endif
     }
 
+    // Only int is used now
     template <typename T>
     void broadcast(T *buf, size_t count) {
         if (check()) {
-            ccl::broadcast(buf, count, 0, *pcomm).wait(); // assume always broadcast from master (rank 0)
+            // assume always broadcast from master (rank 0)
+            (*helperBroadcast)(buf, count);
         }
     }
 
-    template <typename T>
-    void alltoall(const T *send_buf, T *recv_buf, size_t count) {
-        if (check()) { ccl::alltoall(send_buf, recv_buf, count, *pcomm).wait(); }
-    }
+    // template <typename T>
+    // void alltoall(const T *send_buf, T *recv_buf, size_t count) {
+    //     if (check()) { ccl::alltoall(send_buf, recv_buf, count, *pcomm).wait(); }
+    // }
 
-    void barrier() {
-        if (check()) { ccl::barrier(*pcomm); }
-    }
+    // void barrier() {
+    //     if (check()) { ccl::barrier(*pcomm); }
+    // }
 
-    template <typename T>
-    void allgatherv(const T *send_buf, size_t count, T *recv_buf, const std::vector<long unsigned int> &recv_counts) {
-        if (check()) { ccl::allgatherv(send_buf, count, recv_buf, recv_counts, *pcomm).wait(); }
+    // Only float is used now
+    void allgatherv(
+            const float *send_buf, size_t count, float *recv_buf, const std::vector<long unsigned int> &recv_counts) {
+        if (check()) { (*helperAllgatherv)(send_buf, count, recv_buf, recv_counts); }
     }
 
     bool withMpirun() {
@@ -156,15 +138,17 @@ private:
     Messenger &operator=(const Messenger &messenger) = delete;
 
     static void mpi_finalize() {
-        int is_finalized = 0;
-        MPI_Finalized(&is_finalized);
-
-        if (!is_finalized) { MPI_Finalize(); }
+        void *handle = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        if (handle != nullptr) {
+            void (*helperMpiFinalize)() = (void (*)())dlsym(handle, "mpiFinalize");
+            (*helperMpiFinalize)();
+            dlclose(handle);
+        }
     }
 
     // Check if indeed need to communicate
     bool check() {
-        if (unlikely(size > 1 && !pcomm)) {
+        if (unlikely(size > 1 && !commHelperHanlde)) {
             printf("Unable to call into ccl as of unsuccessful initialization.\n");
             exit(-1);
         }
@@ -174,14 +158,15 @@ private:
 private:
     int size;
     int rank;
-    bool local_ranks_flag;
-
-    ccl::shared_ptr_class<ccl::kvs> kvs;
-    ccl::kvs::address_type main_addr;
-
-    ccl::communicator *pcomm;
+    bool localRanksFlag;
 
 #ifdef USE_SHM
     ShmReduction *pshm;
 #endif
+    void *commHelperHanlde;
+    int (*helperInit)(int *, int *);
+    void (*helperFreePCOMM)();
+    void (*helperAllreduce)(float *, float *, size_t);
+    void (*helperBroadcast)(int *, size_t);
+    void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
 };

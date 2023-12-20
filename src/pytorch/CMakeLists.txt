@@ -48,8 +48,15 @@ target_include_directories(xfastertransformer_pt PUBLIC ${PyTorch_INCLUDE_DIR})
 # Link against LibTorch and others
 target_link_libraries(xfastertransformer_pt
                       PRIVATE OpenMP::OpenMP_CXX
-                              ${MPI_LIBS}
-                              ccl
                               "${TORCH_LIBS}"
                               xfastertransformer_static
                               stdc++fs)
+
+set(COMM_HELPER_SO_FILE "${PROJECT_BINARY_DIR}/libxft_comm_helper.so")
+
+add_custom_command(TARGET xfastertransformer_pt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    ${COMM_HELPER_SO_FILE}
+    ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
+    COMMENT "Copying libxft_comm_helper.so to src/xfastertransformer directory"
+)

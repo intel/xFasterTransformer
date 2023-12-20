@@ -19,6 +19,7 @@ from types import ModuleType
 from typing import Any
 from typing import TYPE_CHECKING
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
 
 _import_structure = {

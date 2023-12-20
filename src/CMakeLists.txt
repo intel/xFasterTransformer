@@ -20,6 +20,8 @@ add_subdirectory(layers)
 add_subdirectory(models)
 add_subdirectory(searchers)
 
+add_subdirectory(comm_helper)
+
 add_library(xfastertransformer_static STATIC)
 
 set(SRC_LIB_LIST "utils" "layers" "kernels" "models" "searchers")
