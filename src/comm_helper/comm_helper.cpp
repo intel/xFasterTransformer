@@ -16,7 +16,7 @@
 #include <mpi.h>
 #include "oneapi/ccl.hpp"
 
-ccl::communicator *pcomm;
+static ccl::communicator *pcomm;
 
 extern "C" int init(int *rank, int *size) {
     ccl::init();

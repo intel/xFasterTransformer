@@ -17,4 +17,4 @@ cmake_minimum_required(VERSION 3.15.1)
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} COMM_HELPER_SRCS)
 add_library(xft_comm_helper SHARED ${COMM_HELPER_SRCS})
 
-target_link_libraries(xft_comm_helper  ${MPI_LIBS} ccl)
+target_link_libraries(xft_comm_helper ${MPI_LIBS} ccl)
