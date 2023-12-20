@@ -73,7 +73,7 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new HybridModel<LlamaLLM, bfloat16_t, nf4x2_t>(modelPath);
         } else if (dtype == "bf16_w8a8") {
             pdecoder = new HybridModel<LlamaLLM, bfloat16_t, w8a8_t>(modelPath);
-        }else {
+        } else {
             throw std::invalid_argument("Invalid DataType");
         }
     } else if (modelType == "baichuan") {
