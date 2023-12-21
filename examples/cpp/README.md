@@ -28,7 +28,7 @@ More parameter options settings:
 -   `-n`, `--num_beams`     number of beam size, default 1.
 -   `-b`, `--batch_size`    batch size, default 1. If greater than 1, input prompt will be duplicated this times. 
 -   `--output_len`    max tokens can generate excluded input, default 100.
--   `--loop`          number of loop, default 10.
+-   `--loop`          number of loop, default 1.
 -   `--no_stream`     disable streaming output.
 -   `--do_sample`     use sampling.
 -   `--prefix_len`    shared prefix tokens num.

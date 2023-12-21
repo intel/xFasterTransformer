@@ -4,7 +4,9 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo.
 Support models list:
 - ChatGLM
 - ChatGLM2
+- ChatGLM3
 - Llama2-chat
+- Baichuan2
 
 ## Step 1: Prepare xFasterTransformer  
 Please refer to [Installation](../../README.md#installation). This example supports use source code which means you don't need install xFasterTransformer into pip and just build xFasterTransformer library, and it will search library in src directory.
@@ -35,3 +37,9 @@ OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
   -n 1 numactl -N 0 -m 0 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: \
   -n 1 numactl -N 1 -m 1 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: 
 ```
+
+Parameter options settings:
+- `-h`, `--help`            show help message and exit.
+- `-t`, `--token_path`      Path to tokenizer directory.
+- `-m`, `--model_path`      Path to model directory.
+- `-d`, `--dtype`           Data type, default using `fp16`, supports `{fp16, bf16, int8, w8a8, int4, nf4, bf16_fp16, bf16_int8, bf16_w8a8,bf16_int4, bf16_nf4, w8a8_int8, w8a8_int4, w8a8_nf4}`.

@@ -31,6 +31,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
   - [Web Demo](#web-demo)
   - [Benchmark](#benchmark)
   - [Support](#support)
+  - [Q\&A](#qa)
 
 ## Models overview
 Large Language Models (LLMs) develops very fast and are more widely used in many AI scenarios. xFasterTransformer is an optimized solution for LLM inference using the mainstream and popular LLM models on Xeon. xFasterTransformer fully leverages the hardware capabilities of Xeon platforms to achieve the high performance and high scalability of LLM inference both on single socket and multiple sockets/multiple nodes.
@@ -89,7 +90,7 @@ docker pull intel/xfastertransformer:latest
 ### Built from source
 #### Prepare Environment
 ##### Manually
-- [PyTorch](https://pytorch.org/get-started/locally/) v2.0+ (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
+- [PyTorch](https://pytorch.org/get-started/locally/) v2.0 (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
@@ -225,13 +226,13 @@ Use MPI to run in the multi-ranks mode, please install oneCCL firstly.
     ```
     source ./3rdparty/oneccl/build/_install/env/setvars.sh
     ```
-  - Use provided scripts to build it from source code. 
+  - ***[Recommended]*** Use provided scripts to build it from source code. 
     ```bash
     cd 3rdparty
     sh prepare_oneccl.sh
     source ./oneccl/build/_install/env/setvars.sh
     ```
-  - Install oneCCL through installing [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html). And source the enviroment by:
+  - Install oneCCL through installing [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html).***(Notice:It is recommended to use versions 2023.x and below.)*** And source the enviroment by:
     ```
     source /opt/intel/oneapi/setvars.sh
     ```
@@ -295,7 +296,7 @@ LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
 Benchmark scripts are provided to get the model inference performance quickly.
 - [Prepare the model](#prepare-model).
 - Install the dependencies, including oneCCL and python dependencies.
-- Enter the `benchmark` folder and run `run_benchmark.sh`. Please refer 
+- Enter the `benchmark` folder and run `run_benchmark.sh`. Please refer to [Benchmark README](benchmark/README.md) for more information.
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
 
@@ -303,3 +304,23 @@ Benchmark scripts are provided to get the model inference performance quickly.
 
 - xFasterTransformer email: xft.maintainer@intel.com
 - xFasterTransformer [wechat](https://github.com/intel/xFasterTransformer/wiki)
+
+## Q&A
+
+- ***Q***: Can xFasterTransformer run on a Intel® Core™ CPU?  
+***A***: No. xFasterTransformer requires support for the AMX and AVX512 instruction sets, which are not available on Intel® Core™ CPUs.
+
+- ***Q***: Can xFasterTransformer run on the Windows system?  
+***A***: There is no native support for Windows, and all compatibility tests are only conducted on Linux, so Linux is recommended.
+
+- ***Q***: Why does the program freeze or exit with errors when running in multi-rank mode after installing the latest version of oneCCL through oneAPI?  
+***A***: Please try downgrading oneAPI to version 2023.x or below, or use the provided script to install oneCCL from source code.
+
+- ***Q***: Why does running the program using two CPU sockets result in much lower performance compared to running on a single CPU socket?  
+***A***: Running in this way causes the program to engage in many unnecessary cross-socket communications, significantly impacting performance. If there is a need for cross-socket deployment, consider running in a multi-rank mode with one rank on each socket.
+
+- ***Q***:The performance is normal when running in a single rank, but why is the performance very slow and the CPU utilization very low when using MPI to run multiple ranks?   
+***A***:This is because the program launched through MPI reads `OMP_NUM_THREADS=1`, which cannot correctly retrieve the appropriate value from the environment. It is necessary to manually set the value of `OMP_NUM_THREADS` based on the actual situation.
+
+- ***Q***: Why do I still encounter errors when converting already supported models?  
+***A***: Try downgrading `transformer` to an appropriate version, such as the version specified in the `requirements.txt`. This is because different versions of Transformer may change the names of certain variables.
