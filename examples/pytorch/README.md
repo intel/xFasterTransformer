@@ -21,16 +21,16 @@ Please refer to [Prepare model](../README.md#prepare-model)
 # `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
 LD_PRELOAD=libiomp5.so python demo.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}
 
-# run multi-instance like
+# run multi-rank like
 OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
   -n 1 numactl -N 0 -m 0 python demo.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH} : \
   -n 1 numactl -N 1 -m 1 python demo.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}
 ```
 More parameter options settings:
 - `-h`, `--help`            show help message and exit.
-- `--token_path`            Path to tokenizer directory.
-- `--model_path`            Path to model directory.
-- `--dtype`                 Data type, default using `fp16`, supports `{fp16,bf16,int8,bf16_fp16,bf16_int8}`.
+- `-t`, `--token_path`      Path to tokenizer directory.
+- `-m`, `--model_path`      Path to model directory.
+- `-d`, `--dtype`           Data type, default using `fp16`, supports `{fp16, bf16, int8, w8a8, int4, nf4, bf16_fp16, bf16_int8, bf16_w8a8,bf16_int4, bf16_nf4, w8a8_int8, w8a8_int4, w8a8_nf4}`.
 - `--streaming`             Streaming output, Default to True.
 - `--num_beams`             Num of beams, default to 1 which is greedy search.
 - `--output_len`            max tokens can generate excluded input.
