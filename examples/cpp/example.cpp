@@ -266,7 +266,7 @@ int main(int argc, char **argv) {
     args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
     args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
-    args.add<int>("loop", '\0', "number of loop.", false, 10);
+    args.add<int>("loop", '\0', "number of loop.", false, 1);
     args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
     args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
     args.add<float>("topP", '\0', "retain minimal tokens above topP threshold.", false, 1.0);
