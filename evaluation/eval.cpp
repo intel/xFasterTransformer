@@ -59,12 +59,20 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new LlamaLLM<uint4x2_t>(modelPath);
         } else if (dtype == "bf16") {
             pdecoder = new LlamaLLM<bfloat16_t>(modelPath);
+        } else if (dtype == "nf4") {
+            pdecoder = new LlamaLLM<nf4x2_t>(modelPath);
+        } else if (dtype == "w8a8") {
+            pdecoder = new LlamaLLM<w8a8_t>(modelPath);
         } else if (dtype == "bf16_fp16") {
             pdecoder = new HybridModel<LlamaLLM, bfloat16_t, float16_t>(modelPath);
         } else if (dtype == "bf16_int8") {
             pdecoder = new HybridModel<LlamaLLM, bfloat16_t, int8_t>(modelPath);
         } else if (dtype == "bf16_int4") {
             pdecoder = new HybridModel<LlamaLLM, bfloat16_t, uint4x2_t>(modelPath);
+        } else if (dtype == "bf16_nf4") {
+            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, nf4x2_t>(modelPath);
+        } else if (dtype == "bf16_w8a8") {
+            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, w8a8_t>(modelPath);
         } else {
             throw std::invalid_argument("Invalid DataType");
         }
@@ -77,12 +85,20 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new Baichuan<uint4x2_t>(modelPath);
         } else if (dtype == "bf16") {
             pdecoder = new Baichuan<bfloat16_t>(modelPath);
+        } else if (dtype == "nf4") {
+            pdecoder = new Baichuan<nf4x2_t>(modelPath);
+        } else if (dtype == "w8a8") {
+            pdecoder = new Baichuan<w8a8_t>(modelPath);
         } else if (dtype == "bf16_fp16") {
             pdecoder = new HybridModel<Baichuan, bfloat16_t, float16_t>(modelPath);
         } else if (dtype == "bf16_int8") {
             pdecoder = new HybridModel<Baichuan, bfloat16_t, int8_t>(modelPath);
         } else if (dtype == "bf16_int4") {
             pdecoder = new HybridModel<Baichuan, bfloat16_t, uint4x2_t>(modelPath);
+        } else if (dtype == "bf16_nf4") {
+            pdecoder = new HybridModel<Baichuan, bfloat16_t, nf4x2_t>(modelPath);
+        } else if (dtype == "bf16_w8a8") {
+            pdecoder = new HybridModel<Baichuan, bfloat16_t, w8a8_t>(modelPath);
         } else {
             throw std::invalid_argument("Invalid DataType");
         }
@@ -95,12 +111,20 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new ChatGLM<uint4x2_t>(modelPath);
         } else if (dtype == "bf16") {
             pdecoder = new ChatGLM<bfloat16_t>(modelPath);
+        } else if (dtype == "nf4") {
+            pdecoder = new ChatGLM<nf4x2_t>(modelPath);
+        } else if (dtype == "w8a8") {
+            pdecoder = new ChatGLM<w8a8_t>(modelPath);
         } else if (dtype == "bf16_fp16") {
             pdecoder = new HybridModel<ChatGLM, bfloat16_t, float16_t>(modelPath);
         } else if (dtype == "bf16_int8") {
             pdecoder = new HybridModel<ChatGLM, bfloat16_t, int8_t>(modelPath);
         } else if (dtype == "bf16_int4") {
             pdecoder = new HybridModel<ChatGLM, bfloat16_t, uint4x2_t>(modelPath);
+        } else if (dtype == "bf16_nf4") {
+            pdecoder = new HybridModel<ChatGLM, bfloat16_t, nf4x2_t>(modelPath);
+        } else if (dtype == "bf16_w8a8") {
+            pdecoder = new HybridModel<ChatGLM, bfloat16_t, w8a8_t>(modelPath);
         } else {
             throw std::invalid_argument("Invalid DataType");
         }
@@ -113,12 +137,20 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new ChatGLM2<uint4x2_t>(modelPath);
         } else if (dtype == "bf16") {
             pdecoder = new ChatGLM2<bfloat16_t>(modelPath);
+        } else if (dtype == "nf4") {
+            pdecoder = new ChatGLM2<nf4x2_t>(modelPath);
+        } else if (dtype == "w8a8") {
+            pdecoder = new ChatGLM2<w8a8_t>(modelPath);
         } else if (dtype == "bf16_fp16") {
             pdecoder = new HybridModel<ChatGLM2, bfloat16_t, float16_t>(modelPath);
         } else if (dtype == "bf16_int8") {
             pdecoder = new HybridModel<ChatGLM2, bfloat16_t, int8_t>(modelPath);
         } else if (dtype == "bf16_int4") {
             pdecoder = new HybridModel<ChatGLM2, bfloat16_t, uint4x2_t>(modelPath);
+        } else if (dtype == "bf16_nf4") {
+            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, nf4x2_t>(modelPath);
+        } else if (dtype == "bf16_w8a8") {
+            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, w8a8_t>(modelPath);
         } else {
             throw std::invalid_argument("Invalid DataType");
         }
@@ -131,12 +163,20 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
             pdecoder = new ChatGLM3<uint4x2_t>(modelPath);
         } else if (dtype == "bf16") {
             pdecoder = new ChatGLM3<bfloat16_t>(modelPath);
+        } else if (dtype == "nf4") {
+            pdecoder = new ChatGLM3<nf4x2_t>(modelPath);
+        } else if (dtype == "w8a8") {
+            pdecoder = new ChatGLM3<w8a8_t>(modelPath);
         } else if (dtype == "bf16_fp16") {
             pdecoder = new HybridModel<ChatGLM3, bfloat16_t, float16_t>(modelPath);
         } else if (dtype == "bf16_int8") {
             pdecoder = new HybridModel<ChatGLM3, bfloat16_t, int8_t>(modelPath);
         } else if (dtype == "bf16_int4") {
             pdecoder = new HybridModel<ChatGLM3, bfloat16_t, uint4x2_t>(modelPath);
+        } else if (dtype == "bf16_nf4") {
+            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, nf4x2_t>(modelPath);
+        } else if (dtype == "bf16_w8a8") {
+            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, w8a8_t>(modelPath);
         } else {
             throw std::invalid_argument("Invalid DataType");
         }

@@ -34,7 +34,7 @@ def boolean_string(string):
     return low_string == "true"
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8", "bf16_int4", "int4", "bf16_nf4", "nf4"]
+DTYPE_LIST = ["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8", "bf16_int4", "int4", "bf16_nf4", "nf4", "w8a8", "bf16_w8a8", "w8a8_int8", "w8a8_int4", "w8a8_nf4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
