@@ -24,7 +24,15 @@ torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfa
 
 _import_structure = {
     "automodel": ["AutoModel"],
-    "tools": ["LlamaConvert", "ChatGLMConvert", "ChatGLM2Convert", "ChatGLM3Convert", "OPTConvert", "BaichuanConvert"],
+    "tools": [
+        "LlamaConvert",
+        "ChatGLMConvert",
+        "ChatGLM2Convert",
+        "ChatGLM3Convert",
+        "OPTConvert",
+        "BaichuanConvert",
+        "QwenConvert",
+    ],
 }
 
 if TYPE_CHECKING:
@@ -34,6 +42,7 @@ if TYPE_CHECKING:
     from .tools import ChatGLM3Convert
     from .tools import OPTConvert
     from .tools import BaichuanConvert
+    from .tools import QwenConvert
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule
     # Source code url https://github.com/optuna/optuna/blob/master/optuna/integration/__init__.py
