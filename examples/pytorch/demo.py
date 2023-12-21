@@ -32,13 +32,27 @@ def boolean_string(string):
     return low_string == "true"
 
 
-DTYPE_LIST = ["fp16", "bf16", "int8", "w8a8", "int4", "nf4", "bf16_fp16", "bf16_int8", "bf16_w8a8",
-              "bf16_int4", "bf16_nf4", "w8a8_int8", "w8a8_int4", "w8a8_nf4"]
+DTYPE_LIST = [
+    "fp16",
+    "bf16",
+    "int8",
+    "w8a8",
+    "int4",
+    "nf4",
+    "bf16_fp16",
+    "bf16_int8",
+    "bf16_w8a8",
+    "bf16_int4",
+    "bf16_nf4",
+    "w8a8_int8",
+    "w8a8_int4",
+    "w8a8_nf4",
+]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm-6b-cpu", help="Path to model file")
-parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
+parser.add_argument("-m", "--model_path", type=str, default="/data/chatglm-6b-cpu", help="Path to model file")
+parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=False)
 parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)

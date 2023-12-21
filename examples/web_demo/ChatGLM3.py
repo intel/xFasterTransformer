@@ -27,9 +27,9 @@ from demo_utils import ChatDemo
 DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm3-6b-hf", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm3-6b-xft", help="Path to model file")
-parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm3-6b-hf", help="Path to token file")
+parser.add_argument("-m", "--model_path", type=str, default="/data/chatglm3-6b-xft", help="Path to model file")
+parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 
 
 class ChatGLM3Demo(ChatDemo):
