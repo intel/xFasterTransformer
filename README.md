@@ -6,7 +6,8 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
 - [xFasterTransformer](#xfastertransformer)
   - [Table of Contents](#table-of-contents)
   - [Models overview](#models-overview)
-    - [Support matrix](#support-matrix)
+    - [Model support matrix](#model-support-matrix)
+    - [DataType support list](#datatype-support-list)
   - [Documents](#documents)
   - [Installation](#installation)
     - [From PyPI](#from-pypi)
@@ -37,17 +38,36 @@ Large Language Models (LLMs) develops very fast and are more widely used in many
 xFasterTransformer provides a series of APIs, both of C++ and Python, for end users to integrate xFasterTransformer into their own solutions or services directly. Many kinds of example codes are also provided to demonstrate the usage. Benchmark codes and scripts are provided for users to show the performance. Web demos for popular LLM models are also provided.
 
 
-### Support matrix
+### Model support matrix
 
-|  Models  | Framework |          | Distribution | DataType |          |          |           |           |
-| :------: | :-------: | :------: | :----------: | :------: | :------: | :------: | :-------: | :-------: |
-|          |  PyTorch  |   C++    |              |   FP16   |   BF16   |   INT8   | BF16+FP16 | BF16+INT8 |
-| ChatGLM  | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
-| ChatGLM2 | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
-|  Llama   | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
-|  Llama2  | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
-| Baichuan | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
-|   Opt    | &#10004;  | &#10004; |   &#10004;   | &#10004; | &#10004; | &#10004; | &#10004;  | &#10004;  |
+|  Models  | Framework |          | Distribution |
+| :------: | :-------: | :------: | :----------: |
+|          |  PyTorch  |   C++    |              |
+| ChatGLM  | &#10004;  | &#10004; |   &#10004;   |
+| ChatGLM2 | &#10004;  | &#10004; |   &#10004;   |
+| ChatGLM3 | &#10004;  | &#10004; |   &#10004;   |
+|  Llama   | &#10004;  | &#10004; |   &#10004;   |
+|  Llama2  | &#10004;  | &#10004; |   &#10004;   |
+| Baichuan | &#10004;  | &#10004; |   &#10004;   |
+|   QWen   | &#10004;  | &#10004; |   &#10004;   |
+|   Opt    | &#10004;  | &#10004; |   &#10004;   |
+
+### DataType support list
+
+- FP16
+- BF16
+- INT8
+- W8A8
+- INT4
+- NF4
+- BF16_FP16
+- BF16_INT8
+- BF16_W8A8
+- BF16_INT4
+- BF16_NF4
+- W8A8_INT8
+- W8A8_int4
+- W8A8_NF4
 
 ## Documents
 xFasterTransformer Documents and [Wiki](https://github.com/intel/xFasterTransformer/wiki) provides the following resources:
@@ -110,36 +130,31 @@ docker run -it \
   cmake ..
   make -j
   ```
-- Using 'python setup.py'
+- Using `python setup.py`
   ```bash
   # Build xFasterTransformer library and C++ example.
   python setup.py build
 
   # Install xFasterTransformer into pip environment.
-  # Run `python setup.py build` before installation.
+  # Notice: Run `python setup.py build` before installation!
   python setup.py install
   ```
 
 ## [Models Preparation](tools/README.md)
 xFasterTransformer supports a different model format from Huggingface, but it's compatible with FasterTransformer's format.
 1. Download the huggingface format model firstly.
-2. After that, convert the model into xFasterTransformer format.
-   - Using model convert module in xfastertransformer. If output directory is not provided, converted model will be placed into `${HF_DATASET_DIR}-xft`.
-      ```
-      python -c 'import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")'
-      ```
-      Supported model convert list:
-      - LlamaConvert
-      - ChatGLMConvert
-      - ChatGLM2Convert
-      - ChatGLM3Convert
-      - OPTConvert
-      - BaichuanConvert
-   - Using the corresponding script in `tools` folder. Each supported model has a corresponding conversion script. You will see many bin files in the output directory.
-    ```bash
-        python ./tools/chatglm_convert.py -i ${HF_DATASET_DIR} -o ${OUTPUT_DIR}
-
+2. After that, convert the model into xFasterTransformer format by using model convert module in xfastertransformer. If output directory is not provided, converted model will be placed into `${HF_DATASET_DIR}-xft`.
     ```
+    python -c 'import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")'
+    ```
+    Supported model convert list:
+    - LlamaConvert
+    - ChatGLMConvert
+    - ChatGLM2Convert
+    - ChatGLM3Convert
+    - OPTConvert
+    - BaichuanConvert
+    - QwenConvert
 
 ## API usage
 For more details, please see API document and [examples](examples/README.md).
@@ -277,18 +292,10 @@ LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
 
 ## [Benchmark](benchmark/README.md)
 
-Benchmark scripts are provided to  get the model inference performance quickly.
+Benchmark scripts are provided to get the model inference performance quickly.
 - [Prepare the model](#prepare-model).
-- Enter the folder corresponding to the model, for example
-  ```bash
-  cd benchmark/chatglm6b/
-  ```
-- Run scripts `run_${MODEL}.sh`.  Please modify the model and tokenizer path in `${MODEL}.sh` before running. 
-  - Shell script will automatically check the number of numa nodes. By default, at least there are 2 nodes and 48 physics cores per node (If the system is in sub-numa status, there are 12 cores for each sub-numa).
-  - By default, you will get the performance of "input token=32, output token=32, Beam_width=1, FP16".
-  - If more datatype and scenarios performance needed, please modify the parameters in `${MODEL}.sh`
-  - If system configuration needs modification, please change run-chatglm-6b.sh.
-  - If you want the custom input, please modify the `prompt_pool.json` file.
+- Install the dependencies, including oneCCL and python dependencies.
+- Enter the `benchmark` folder and run `run_benchmark.sh`. Please refer 
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
 

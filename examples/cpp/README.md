@@ -21,9 +21,9 @@ OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
 More parameter options settings:
 -   `-?`, `-h`, `--help`    Help information
 -   `-m`, `--model`         directory path of xft format model.
--   `-t`, `--token`         path of tokenizer file(name like tokenizer.model), invalid for Opt model.
--   `-i`, `--input`         input prompt, invalid for Opt model. Default use `Once upon a time, there existed a little girl who liked to have adventures.`                                                                           
--   `-d`, `--dtype`         data type, default `fp16`, should be one of `["fp16", "bf16", "int8", "bf16_fp16", "bf16_int8"]`
+-   `-t`, `--token`         path of tokenizer file(name like tokenizer.model), invalid for Opt and Qwen model.
+-   `-i`, `--input`         input prompt, invalid for Opt and Qwen model. Default use `Once upon a time, there existed a little girl who liked to have adventures.`                                                                           
+-   `-d`, `--dtype`         data type, default `fp16`, should be one of `["fp16", "bf16", "int8", "w8a8", "int4", "nf4", "bf16_fp16", "bf16_int8", "bf16_w8a8", "bf16_int4", "bf16_nf4", "w8a8_int8", "w8a8_int4", "w8a8_nf4"]`
 -   `-l`, `--input_len`     input token size. Input token ids will ben expand to this size if it greater than  input prompt's size.
 -   `-n`, `--num_beams`     number of beam size, default 1.
 -   `-b`, `--batch_size`    batch size, default 1. If greater than 1, input prompt will be duplicated this times. 

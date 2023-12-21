@@ -30,7 +30,7 @@ LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
                                     --token_path=${TOKEN_PATH} \
                                     --model_path=${MODEL_PATH}
 
-# run multi-instance like
+# run multi-rank like
 OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
   -n 1 numactl -N 0 -m 0 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: \
   -n 1 numactl -N 1 -m 1 python examples/web_demo/ChatGLM.py --dtype=bf16 --token_path=${TOKEN_PATH} --model_path=${MODEL_PATH}: 
