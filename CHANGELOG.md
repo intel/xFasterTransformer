@@ -1,5 +1,22 @@
 # CHANGELOG
 
+# [Version v1.2.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.2.0)
+v1.2.0 - Qwen models and much more data types supported.
+## Models
+- Introduced Qwen models support and added the convert tool for Qwen models.
+- ChatGLM3 model is verfied and API supported.
+
+## Performance Optimizations
+- Update xDNN to version 1.4.2 to improve performance and support more data types.
+- Accelerate first token's generation with BF16-gemm Multi-Head Attention.
+
+## Functionality
+- Introduce more data types supports, including `W8A8`, `INT4`, and `NF4`. The hybrid data types between these new data types are supported.
+- Add accuracy evaluation script to assess the impact of different precisions on the text generation performance of the model.
+- Introduce `XFT_VERBOSE` macro to help profile model performance of each gemm. Set `1` to enable information ouput and default is `0`.  
+- Decouple oneCCL and MPI dependencies into a communication helper library. oneCCL environment is no longer needed when running in single-rank mode.
+
+
 # [Version 1.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.1.0)
 v1.1.0 - Baichuan models supported.
 
