@@ -1,0 +1,658 @@
+diff --git a/README.md b/README.md
+index 7a742fe..6e44d6a 100644
+--- a/README.md
++++ b/README.md
+@@ -154,3 +154,20 @@ If you find AWQ useful or relevant to your research, please kindly cite our pape
+ 
+ [LLaVA: Large Language and Vision Assistant](https://github.com/haotian-liu/LLaVA)
+ 
++## Changqing
++
++```bash
++$ python -m awq.entry --model_path /data/opt-1.3b-hf/ --w_bit 8 --run_awq --dump_awq awq_cache/opt-1.3b-w8.pt
++Quantization config: {'zero_point': True, 'q_group_size': -1}
++* Building model /data/opt-1.3b-hf/
++ * Split into 60 blocks
++Running AWQ...:   0%|                                                                                                                                                                                                                               | 0/24 [00:00<?, ?it/s]
++[('model.decoder.layers.0.self_attn_layer_norm', ('model.decoder.layers.0.self_attn.q_proj', 'model.decoder.layers.0.self_attn.k_proj', 'model.decoder.layers.0.self_attn.v_proj'), tensor([0.9119, 1.3075, 0.8703,  ..., 1.0233, 1.0013, 0.9770])), ('model.decoder.layers.0.self_attn.v_proj', ('model.decoder.layers.0.self_attn.out_proj',), tensor([1.3301, 1.2490, 1.2283,  ..., 1.1685, 1.2393, 1.2438])), ('model.decoder.layers.0.final_layer_norm', ('model.decoder.layers.0.fc1',), tensor([0.2656, 0.4866, 0.3155,  ..., 0.2604, 0.3211, 0.3796])), ('model.decoder.layers.0.fc1', ('model.decoder.layers.0.fc2',), tensor([0.3859, 0.3912, 0.3935,  ..., 0.3041, 0.4645, 0.4367]))]
++Running AWQ...:   4%|████████▉                                                                                                                                                                                                              | 1/24 [00:25<09:54, 25.84s/it]
++[('model.decoder.layers.0.self_attn_layer_norm', ('model.decoder.layers.0.self_attn.q_proj', 'model.decoder.layers.0.self_attn.k_proj', 'model.decoder.layers.0.self_attn.v_proj'), tensor([0.9119, 1.3075, 0.8703,  ..., 1.0233, 1.0013, 0.9770])), ('model.decoder.layers.0.self_attn.v_proj', ('model.decoder.layers.0.self_attn.out_proj',), tensor([1.3301, 1.2490, 1.2283,  ..., 1.1685, 1.2393, 1.2438])), ('model.decoder.layers.0.final_layer_norm', ('model.decoder.layers.0.fc1',), tensor([0.2656, 0.4866, 0.3155,  ..., 0.2604, 0.3211, 0.3796])), ('model.decoder.layers.0.fc1', ('model.decoder.layers.0.fc2',), tensor([0.3859, 0.3912, 0.3935,  ..., 0.3041, 0.4645, 0.4367])), ('model.decoder.layers.1.self_attn_layer_norm', ('model.decoder.layers.1.self_attn.q_proj', 'model.decoder.layers.1.self_attn.k_proj', 'model.decoder.layers.1.self_attn.v_proj'), tensor([0.9036, 0.6764, 0.6403,  ..., 0.8947, 0.9801, 0.8870])), ('model.decoder.layers.1.self_attn.v_proj', ('model.decoder.layers.1.self_attn.out_proj',), tensor([1.3371, 1.3844, 1.4209,  ..., 1.4862, 1.4690, 1.2799])), ('model.decoder.layers.1.final_layer_norm', ('model.decoder.layers.1.fc1',), tensor([0.7314, 0.5508, 0.7057,  ..., 0.4870, 0.6115, 0.5066])), ('model.decoder.layers.1.fc1', ('model.decoder.layers.1.fc2',), tensor([0.6070, 1.6315, 0.5499,  ..., 1.7474, 0.4939, 1.7453]))]
++Running AWQ...:   8%|█████████████████▉                                                                                                                                                                                                     | 2/24 [00:46<08:26, 23.03s/it]
++[('model.decoder.layers.0.self_attn_layer_norm', ('model.decoder.layers.0.self_attn.q_proj', 'model.decoder.layers.0.self_attn.k_proj', 'model.decoder.layers.0.self_attn.v_proj'), tensor([0.9119, 1.3075, 0.8703,  ..., 1.0233, 1.0013, 0.9770])), ('model.decoder.layers.0.self_attn.v_proj', ('model.decoder.layers.0.self_attn.out_proj',), tensor([1.3301, 1.2490, 1.2283,  ..., 1.1685, 1.2393, 1.2438])), ('model.decoder.layers.0.final_layer_norm', ('model.decoder.layers.0.fc1',), tensor([0.2656, 0.4866, 0.3155,  ..., 0.2604, 0.3211, 0.3796])), ('model.decoder.layers.0.fc1', ('model.decoder.layers.0.fc2',), tensor([0.3859, 0.3912, 0.3935,  ..., 0.3041, 0.4645, 0.4367])), ('model.decoder.layers.1.self_attn_layer_norm', ('model.decoder.layers.1.self_attn.q_proj', 'model.decoder.layers.1.self_attn.k_proj', 'model.decoder.layers.1.self_attn.v_proj'), tensor([0.9036, 0.6764, 0.6403,  ..., 0.8947, 0.9801, 0.8870])), ('model.decoder.layers.1.self_attn.v_proj', ('model.decoder.layers.1.self_attn.out_proj',), tensor([1.3371, 1.3844, 1.4209,  ..., 1.4862, 1.4690, 1.2799])), ('model.decoder.layers.1.final_layer_norm', ('model.decoder.layers.1.fc1',), tensor([0.7314, 0.5508, 0.7057,  ..., 0.4870, 0.6115, 0.5066])), ('model.decoder.layers.1.fc1', ('model.decoder.layers.1.fc2',), tensor([0.6070, 1.6315, 0.5499,  ..., 1.7474, 0.4939, 1.7453])), ('model.decoder.layers.2.self_attn_layer_norm', ('model.decoder.layers.2.self_attn.q_proj', 'model.decoder.layers.2.self_attn.k_proj', 'model.decoder.layers.2.self_attn.v_proj'), tensor([0.8909, 0.8273, 0.6141,  ..., 0.8716, 0.9316, 0.8075])), ('model.decoder.layers.2.self_attn.v_proj', ('model.decoder.layers.2.self_attn.out_proj',), tensor([1.0159, 0.9391, 1.3082,  ..., 0.7308, 1.2391, 1.5200])), ('model.decoder.layers.2.final_layer_norm', ('model.decoder.layers.2.fc1',), tensor([0.5209, 0.4312, 0.6109,  ..., 0.4170, 0.4209, 0.4315])), ('model.decoder.layers.2.fc1', ('model.decoder.layers.2.fc2',), tensor([0.4667, 0.4628, 0.5028,  ..., 0.4864, 0.4994, 0.4969]))]
++Running AWQ...:  12%|██████████████████████████▉                                                                                                                                                                                            | 3/24 [01:07<07:37, 21.77s/it]
++...
++AWQ results saved at awq_cache/opt-1.3b-w8.pt
++```
+diff --git a/awq/entry.py b/awq/entry.py
+index 0cc82f1..8d46115 100644
+--- a/awq/entry.py
++++ b/awq/entry.py
+@@ -49,6 +49,8 @@ parser.add_argument('--dump_awq', type=str, default=None,
+                     help="save the awq search results")
+ parser.add_argument('--load_awq', type=str, default=None,
+                     help="load the awq search results")
++parser.add_argument('--dump_model', type=str, default=None,
++                    help="save the model applied with awq search results")
+ args = parser.parse_args()
+ 
+ max_memory = [v.split(':') for v in (args.max_memory or [])]
+@@ -115,6 +117,7 @@ def build_model_and_enc(model_path):
+         model = AutoModelForCausalLM.from_pretrained(
+             model_path, config=config, trust_remote_code=True, **kwargs)
+ 
++        model = model.to(torch.float32)
+         model.eval()
+ 
+         if args.run_awq:
+@@ -123,7 +126,7 @@ def build_model_and_enc(model_path):
+             awq_results = run_awq(
+                 model, enc,
+                 w_bit=args.w_bit, q_config=q_config,
+-                n_samples=128, seqlen=512,
++                n_samples=128, seqlen=512
+             )
+             if args.dump_awq:
+                 dirpath = os.path.dirname(args.dump_awq)
+@@ -131,6 +134,16 @@ def build_model_and_enc(model_path):
+                 
+                 torch.save(awq_results, args.dump_awq)
+                 print("AWQ results saved at", args.dump_awq)
++
++            if args.dump_model:
++                apply_awq(model, awq_results)
++
++                dirpath = os.path.dirname(args.dump_model)
++                os.makedirs(dirpath, exist_ok=True)
++
++                model.save_pretrained(args.dump_model)
++                enc.save_pretrained(args.dump_model)
++                print("Model applied with AWQ saved at", args.dump_model)
+                 
+             exit(0)
+                 
+@@ -157,7 +170,7 @@ def build_model_and_enc(model_path):
+                     
+                     print(
+                         f"Saving the quantized model at {args.dump_quant}...")
+-                    torch.save(model.cpu().state_dict(), args.dump_quant)
++                    torch.save(model.state_dict(), args.dump_quant)
+                     exit(0)
+             else:
+                 raise NotImplementedError
+@@ -186,6 +199,10 @@ def main():
+         print(f"Found existing AWQ results {args.dump_awq}, exit.")
+         exit()
+ 
++    if args.dump_model and os.path.exists(args.dump_model):
++        print(f"Found existing Model {args.dump_model}, exit.")
++        exit()
++
+     # a hack here to auto set model group
+     model, enc = build_model_and_enc(args.model_path)
+ 
+diff --git a/awq/kernels/csrc/attention/setup.py b/awq/kernels/csrc/attention/setup.py
+index dc479f2..a443952 100644
+--- a/awq/kernels/csrc/attention/setup.py
++++ b/awq/kernels/csrc/attention/setup.py
+@@ -26,7 +26,7 @@ def get_cuda_bare_metal_version(cuda_dir):
+ 
+ def check_cuda_torch_binary_vs_bare_metal(cuda_dir):
+     raw_output, bare_metal_version = get_cuda_bare_metal_version(cuda_dir)
+-    torch_binary_version = parse(torch.version.cuda)
++    torch_binary_version = parse(torch.version)
+ 
+     print("\nCompiling cuda extensions with")
+     print(raw_output + "from " + cuda_dir + "/bin\n")
+@@ -35,7 +35,7 @@ def check_cuda_torch_binary_vs_bare_metal(cuda_dir):
+         raise RuntimeError(
+             "Cuda extensions are being compiled with a version of Cuda that does "
+             "not match the version used to compile Pytorch binaries.  "
+-            "Pytorch binaries were compiled with Cuda {}.\n".format(torch.version.cuda)
++            "Pytorch binaries were compiled with Cuda {}.\n".format(torch.version)
+             + "In some cases, a minor-version mismatch will not cause later errors:  "
+             "https://github.com/NVIDIA/apex/pull/323#discussion_r287021798.  "
+             "You can try commenting out this check (at your own risk)."
+@@ -59,9 +59,9 @@ def append_nvcc_threads(nvcc_extra_args):
+     return nvcc_extra_args
+ 
+ 
+-if not torch.cuda.is_available():
++if not torch.is_available():
+     # https://github.com/NVIDIA/apex/issues/486
+-    # Extension builds after https://github.com/pytorch/pytorch/pull/23408 attempt to query torch.cuda.get_device_capability(),
++    # Extension builds after https://github.com/pytorch/pytorch/pull/23408 attempt to query torch.get_device_capability(),
+     # which will fail if you are compiling in an environment without visible GPUs (e.g. during an nvidia-docker build command).
+     print(
+         "\nWarning: Torch did not find available GPUs on this system.\n",
+diff --git a/awq/quantize/auto_clip.py b/awq/quantize/auto_clip.py
+index 6c7cc60..bb6859e 100644
+--- a/awq/quantize/auto_clip.py
++++ b/awq/quantize/auto_clip.py
+@@ -58,7 +58,7 @@ def auto_clip_layer(w, input_feat, n_bit, q_config,
+     del input_feat
+     del org_out
+     gc.collect()
+-    torch.cuda.empty_cache()
++    # torch.cuda.empty_cache()
+     return best_max_val.squeeze(1)
+ 
+ 
+@@ -75,11 +75,11 @@ def auto_clip_block(module,
+         # due to qk bmm, it is hard to clip precisely
+         if any([_ in name for _ in ["q_", "k_", "query", "key", "Wqkv"]]):
+             continue
+-        named_linears[name].cuda()
++        # named_linears[name].cuda()
+         max_val = auto_clip_layer(
+             named_linears[name].weight, input_feat[name], n_bit=w_bit, q_config=q_config)
+         clip_list.append((name, max_val))
+-        named_linears[name].cpu()
++        # named_linears[name].cpu()
+     return clip_list
+ 
+ 
+@@ -88,10 +88,10 @@ def apply_clip(module, clip_list):
+     from ..utils.module import get_op_by_name
+     for name, max_val in clip_list:
+         layer = get_op_by_name(module, name)
+-        layer.cuda()
++        # layer.cuda()
+         max_val = max_val.to(layer.weight.device)
+         org_shape = layer.weight.shape
+         layer.weight.data = layer.weight.data.reshape(*max_val.shape[:2], -1)
+         layer.weight.data = torch.clamp(layer.weight.data, -max_val, max_val)
+         layer.weight.data = layer.weight.data.reshape(org_shape)
+-        layer.cpu()
++        # layer.cpu()
+diff --git a/awq/quantize/auto_scale.py b/awq/quantize/auto_scale.py
+index 5f3c787..9a2572a 100644
+--- a/awq/quantize/auto_scale.py
++++ b/awq/quantize/auto_scale.py
+@@ -114,7 +114,7 @@ def auto_scale_block(module, module_kwargs,
+         # Clear GPU memory
+         del weight
+         gc.collect()
+-        torch.cuda.empty_cache()
++        # torch.cuda.empty_cache()
+ 
+         x = x.to(next(block.parameters()).device)
+         with torch.no_grad():
+@@ -131,7 +131,7 @@ def auto_scale_block(module, module_kwargs,
+         n_grid = 20
+         history = []
+ 
+-        org_sd = {k: v.cpu() for k, v in block.state_dict().items()}
++        org_sd = {k: v for k, v in block.state_dict().items()}
+         for ratio in range(n_grid):
+             ratio = ratio * 1 / n_grid
+             scales = (x_max.pow(ratio) / w_max.pow(1-ratio)
+@@ -169,7 +169,7 @@ def auto_scale_block(module, module_kwargs,
+             module2inspect = layers[0]
+ 
+         scales = _search_module_scale(module2inspect, layers, inp, kwargs)
+-        scales = scales.detach().cpu()
++        scales = scales.detach()
+         # prev_op_name, [layer_name], scale
+         return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), scales)
+ 
+@@ -347,10 +347,10 @@ def apply_scale(module, scales_list, input_feat_dict=None):
+         prev_op = get_op_by_name(module, prev_op_name)
+         layers = [get_op_by_name(module, name) for name in layer_names]
+ 
+-        prev_op.cuda()
+-        for layer in layers:
+-            layer.cuda()
+-        scales.cuda()
++        # prev_op.cuda()
++        # for layer in layers:
++        #     layer.cuda()
++        # scales.cuda()
+         
+         if isinstance(prev_op, nn.Linear):
+             assert len(layers) == 1
+@@ -371,7 +371,7 @@ def apply_scale(module, scales_list, input_feat_dict=None):
+                 inp = input_feat_dict[layer_name]
+                 inp.div_(scales.view(1, -1).to(inp.device))
+ 
+-        prev_op.cpu()
+-        for layer in layers:
+-            layer.cpu()
+-        scales.cpu()
++        # prev_op.cpu()
++        # for layer in layers:
++        #     layer.cpu()
++        # scales.cpu()
+diff --git a/awq/quantize/pre_quant.py b/awq/quantize/pre_quant.py
+index 5af81a5..ac03547 100644
+--- a/awq/quantize/pre_quant.py
++++ b/awq/quantize/pre_quant.py
+@@ -73,8 +73,8 @@ def run_awq(
+     inps = []
+     layer_kwargs = {}
+ 
+-    layers[0] = layers[0].cuda()
+-    move_embed(model, "cuda")
++    # layers[0] = layers[0].cuda()
++    # move_embed(model, "cuda")
+     
+     # get input and kwargs to layer 0
+     # with_kwargs is only supported in PyTorch 2.0
+@@ -99,11 +99,11 @@ def run_awq(
+     layers[0] = layers[0].module  # restore
+     inps = inps[0]
+ 
+-    layers[0] = layers[0].cpu()
+-    move_embed(model, "cpu")
++    # layers[0] = layers[0].cpu()
++    # move_embed(model, "cpu")
+     
+     gc.collect()
+-    torch.cuda.empty_cache()
++    # torch.cuda.empty_cache()
+ 
+     awq_results = {
+         "scale": [],
+@@ -113,13 +113,13 @@ def run_awq(
+     # solve layer by layer
+     for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ..."):
+         layer = layers[i]
+-        layer = layer.cuda()
++        # layer = layer.cuda()
+         named_linears = get_named_linears(layer)
+ 
+         # firstly, get input features of all linear layers
+         def cache_input_hook(m, x, y, name, feat_dict):
+             x = x[0]
+-            x = x.detach().cpu()
++            x = x.detach()
+             feat_dict[name].append(x)
+ 
+         input_feat = defaultdict(list)
+@@ -137,7 +137,7 @@ def run_awq(
+         input_feat = {k: torch.cat(v, dim=0) for k, v in input_feat.items()}
+ 
+         # Clear GPU memory
+-        torch.cuda.empty_cache()
++        # torch.cuda.empty_cache()
+ 
+         if auto_scale:  # if it applies, we should also modify the input_feat with scales
+             scales_list = auto_scale_block(
+@@ -149,9 +149,10 @@ def run_awq(
+             apply_scale(layers[i], scales_list, input_feat_dict=input_feat)
+             # append prefix to make names global
+             awq_results["scale"] += append_str_prefix(scales_list, get_op_name(model, layer) + ".")
++            print('>>> awq_results["scale"]:', awq_results["scale"])
+ 
+         # Clear GPU memory
+-        torch.cuda.empty_cache()
++        # torch.cuda.empty_cache()
+         
+         if mse_range:
+             clip_list = auto_clip_block(layer,
+@@ -160,12 +161,14 @@ def run_awq(
+             apply_clip(layer, clip_list)
+             # append prefix to make names global
+             awq_results["clip"] += append_str_prefix(clip_list, get_op_name(model, layer) + ".")
++            print('>>> awq_results["clip"]: ', awq_results["clip"])
++            print('>>> awq_results["clip"][0][1].shape: ', awq_results["clip"][0][1].shape)
+ 
+-        layer = layer.cpu()
++        # layer = layer.cpu()
+         # Haotian: check activation replacement
+         del input_feat
+         gc.collect()
+-        torch.cuda.empty_cache()
++        # torch.cuda.empty_cache()
+         
+     return awq_results
+ 
+diff --git a/awq/quantize/qmodule.py b/awq/quantize/qmodule.py
+index 94ca4b5..08fa907 100644
+--- a/awq/quantize/qmodule.py
++++ b/awq/quantize/qmodule.py
+@@ -1,7 +1,7 @@
+ import math
+ import torch
+ import torch.nn as nn
+-import awq_inference_engine  # with CUDA kernels
++# import awq_inference_engine  # with CUDA kernels
+ 
+ 
+ def make_divisible(c, divisor):
+@@ -37,8 +37,8 @@ class WQLinear(nn.Module):
+     def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
+         super().__init__()
+         
+-        if w_bit not in [4]:
+-            raise NotImplementedError("Only 4-bit are supported for now.")
++        if w_bit not in [4, 8]:
++            raise NotImplementedError("Only 4-bit and 8-bit are supported for now.")
+         
+         self.in_features = in_features
+         self.out_features = out_features
+@@ -51,8 +51,8 @@ class WQLinear(nn.Module):
+         pack_num = (32 // self.w_bit)
+         # TODO (Haotian): a function for buffer shape calculation
+         self.register_buffer('qweight', torch.zeros((out_features, in_features // pack_num), dtype=torch.int32, device=dev))
+-        self.register_buffer('qzeros', torch.zeros((out_features, calculate_zeros_width(in_features, self.group_size)), dtype=torch.int32, device=dev))
+-        self.register_buffer('scales', torch.zeros((out_features, calculate_zeros_width(in_features, self.group_size) * pack_num), dtype=torch.float16, device=dev))
++        self.register_buffer('qzeros', torch.zeros((out_features, calculate_zeros_width(in_features, self.group_size, pack_num)), dtype=torch.int32, device=dev))
++        self.register_buffer('scales', torch.zeros((out_features, calculate_zeros_width(in_features, self.group_size, pack_num) * pack_num), dtype=torch.float16, device=dev))
+         if bias:
+             self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16, device=dev))
+         else:
+@@ -70,7 +70,7 @@ class WQLinear(nn.Module):
+ 
+         pack_num = 32 // awq_linear.w_bit
+         qscales = torch.zeros(
+-            (scales.shape[0], calculate_zeros_width(linear.in_features, group_size) * pack_num),
++            (scales.shape[0], calculate_zeros_width(linear.in_features, group_size, pack_num) * pack_num),
+             dtype=torch.float16,
+             device=scales.device
+         )
+@@ -92,8 +92,10 @@ class WQLinear(nn.Module):
+             if awq_linear.w_bit == 4:
+                 # order_map = [0, 2, 4, 6, 1, 3, 5, 7]
+                 order_map = [0, 1, 2, 3, 4, 5, 6, 7]
++            elif awq_linear.w_bit == 8:
++                order_map = [0, 1, 2, 3]
+             else:
+-                raise NotImplementedError("Only 4-bit are supported for now.")
++                raise NotImplementedError("Only 4-bit and 8-bit are supported for now.")
+             for i in range(pack_num):
+                 qweight_col = intweight[:, col * pack_num + order_map[i]]
+                 qweight[:, col] |= qweight_col << (i * awq_linear.w_bit)
+@@ -101,7 +103,7 @@ class WQLinear(nn.Module):
+ 
+         zeros = zeros.to(dtype=torch.int32)
+         qzeros = torch.zeros(
+-            (zeros.shape[0], calculate_zeros_width(linear.in_features, group_size)),
++            (zeros.shape[0], calculate_zeros_width(linear.in_features, group_size, pack_num)),
+             dtype=torch.int32,
+             device=zeros.device,
+         )
+@@ -110,8 +112,10 @@ class WQLinear(nn.Module):
+             if awq_linear.w_bit == 4:
+                 # order_map = [0, 2, 4, 6, 1, 3, 5, 7]
+                 order_map = [0, 1, 2, 3, 4, 5, 6, 7]
++            elif awq_linear.w_bit == 8:
++                order_map = [0, 1, 2, 3]
+             else:
+-                raise NotImplementedError("Only 4-bit are supported for now.")
++                raise NotImplementedError("Only 4-bit and 8-bit are supported for now.")
+             for i in range(pack_num):
+                 if col * pack_num + order_map[i] >= zeros.shape[1]:
+                     continue
+@@ -124,10 +128,11 @@ class WQLinear(nn.Module):
+     def forward(self, x):
+         out_shape = x.shape[:-1] + (self.out_features, )
+         inputs = x.reshape(-1, x.shape[-1])
+-        if inputs.shape[0] > 8:
+-            out = awq_inference_engine.gemm_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)
+-        else:
+-            out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
++        # if inputs.shape[0] > 8:
++        #     out = awq_inference_engine.gemm_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)
++        # else:
++        #     out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
++        raise NotImplementedError("Need to replace cuda kernel with torch cpu kernel.")
+         out = out + self.bias if self.bias is not None else out
+         #print(out)
+         #assert 0
+diff --git a/awq/quantize/quantizer.py b/awq/quantize/quantizer.py
+index 0437fc0..4dd2861 100644
+--- a/awq/quantize/quantizer.py
++++ b/awq/quantize/quantizer.py
+@@ -54,6 +54,8 @@ def pseudo_quantize_tensor(w, n_bit=8,
+     if q_group_size > 0:
+         assert org_w_shape[-1] % q_group_size == 0
+         w = w.reshape(-1, q_group_size)
++    else:
++        w = w.reshape(-1, w.shape[-1])
+     assert w.dim() == 2
+     if zero_point:
+         max_val = w.amax(dim=1, keepdim=True)
+@@ -98,9 +100,9 @@ def pseudo_quantize_model_weight(
+     for i in tqdm(range(len(layers)), desc="pseudo weight quantization..."):
+         named_linears = get_named_linears(layers[i])
+         for n, m in named_linears.items():
+-            m.cuda()
++            # m.cuda()
+             m.weight.data = pseudo_quantize_tensor(m.weight.data, n_bit=w_bit, **q_config)
+-            m.cpu()
++            # m.cpu()
+ 
+ 
+ @torch.no_grad()
+@@ -125,17 +127,17 @@ def real_quantize_model_weight(
+                 q_linear.to(next(layer.parameters()).device)
+                 set_op_by_name(layer, name, q_linear)
+             else:
+-                module.cuda()
++                # module.cuda()
+                 module.weight.data, scales, zeros = pseudo_quantize_tensor(module.weight.data, n_bit=w_bit, get_scale_zp=True, **q_config)
+                 # scales = scales.t().contiguous()
+                 # zeros = zeros.t().contiguous()
+                 q_linear = WQLinear.from_linear(
+                     module, w_bit, q_config['q_group_size'], False, scales, zeros)
+-                module.cpu()
++                # module.cpu()
+                 q_linear.to(next(layer.parameters()).device)
+                 set_op_by_name(layer, name, q_linear)
+-                torch.cuda.empty_cache()
++                # torch.cuda.empty_cache()
+                 gc.collect()
+                 
+-    torch.cuda.empty_cache()
++    # torch.cuda.empty_cache()
+     gc.collect()
+diff --git a/awq/utils/calib_data.py b/awq/utils/calib_data.py
+index 02a75c4..1f5fd74 100644
+--- a/awq/utils/calib_data.py
++++ b/awq/utils/calib_data.py
+@@ -1,10 +1,12 @@
+ import torch
+ from datasets import load_dataset
+ 
++import os
++os.environ['CURL_CA_BUNDLE'] = ''
+ 
+ def get_calib_dataset(data="pileval", tokenizer=None, n_samples=512, block_size=512):
+     if data == "pileval":
+-        dataset = load_dataset("mit-han-lab/pile-val-backup", split="validation")
++        dataset = load_dataset("./mit-han-lab/pile-val-backup", split="validation")
+     else:
+         raise NotImplementedError
+     dataset = dataset.shuffle(seed=42)
+diff --git a/awq/utils/lm_eval_adaptor.py b/awq/utils/lm_eval_adaptor.py
+index a0170bf..03dae2e 100644
+--- a/awq/utils/lm_eval_adaptor.py
++++ b/awq/utils/lm_eval_adaptor.py
+@@ -65,7 +65,8 @@ class LMEvalAdaptor(BaseLM):
+ 
+     @property
+     def device(self):
+-        return "cuda"
++        #return "cuda"
++        return "cpu"
+ 
+     def tok_encode(self, string: str):
+         return self.tokenizer.encode(string, add_special_tokens=False)
+diff --git a/tinychat/benchmark.py b/tinychat/benchmark.py
+index 53d56c2..317622e 100644
+--- a/tinychat/benchmark.py
++++ b/tinychat/benchmark.py
+@@ -99,7 +99,7 @@ def main():
+     print("Benchmarking...")
+     with torch.inference_mode():
+         for i in range(gen_length):
+-            torch.cuda.synchronize()
++            # torch.cuda.synchronize()
+             t_st = time.time()
+ 
+             if i == 0:
+@@ -109,7 +109,7 @@ def main():
+             out = model(inputs, start_pos=start_pos)
+             start_pos += out.shape[1]
+ 
+-            torch.cuda.synchronize()
++            # torch.cuda.synchronize()
+             t_ed = time.time()
+             time_lis.append(t_ed - t_st)
+             token = out[:, -1].max(1)[1].unsqueeze(1)
+diff --git a/tinychat/models/falcon.py b/tinychat/models/falcon.py
+index e005c38..8364ca7 100644
+--- a/tinychat/models/falcon.py
++++ b/tinychat/models/falcon.py
+@@ -105,7 +105,7 @@ class FalconAttentionFused(nn.Module):
+                     self.head_dim,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+         # 8: pack 8 fp16 in FT, if fp32 then use 4
+@@ -119,7 +119,7 @@ class FalconAttentionFused(nn.Module):
+                     8,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+ 
+diff --git a/tinychat/models/llama.py b/tinychat/models/llama.py
+index 19f7d5f..c4ce680 100644
+--- a/tinychat/models/llama.py
++++ b/tinychat/models/llama.py
+@@ -118,7 +118,7 @@ class LlamaAttentionFused(nn.Module):
+                     self.head_dim,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+         # 8: pack 8 fp16 in FT, if fp32 then use 4
+@@ -133,7 +133,7 @@ class LlamaAttentionFused(nn.Module):
+                     8,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+ 
+diff --git a/tinychat/models/mpt.py b/tinychat/models/mpt.py
+index 7e27b15..5610b81 100644
+--- a/tinychat/models/mpt.py
++++ b/tinychat/models/mpt.py
+@@ -123,7 +123,7 @@ class MPTAttentionFused(nn.Module):
+                     self.head_dim,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+         # 8: pack 8 fp16 in FT, if fp32 then use 4
+@@ -137,7 +137,7 @@ class MPTAttentionFused(nn.Module):
+                     8,
+                 )
+             )
+-            .cuda()
++            # .cuda()
+             .half()
+         )  # added to half
+ 
+diff --git a/tinychat/modules/fused_attn.py b/tinychat/modules/fused_attn.py
+index 61ca8ce..ceadc8c 100644
+--- a/tinychat/modules/fused_attn.py
++++ b/tinychat/modules/fused_attn.py
+@@ -305,7 +305,7 @@ def make_quant_attn(model, dev):
+     """
+     Replace all LlamaAttention modules with QuantLlamaAttention modules, fusing the q, k, v projections.
+     """
+-    model = model.cpu()
++    # model = model.cpu()
+     for name, m in model.named_modules():
+         if not m.__class__.__name__ in ["LlamaAttention", "LlamaAttentionFused"]:
+             continue
+@@ -366,5 +366,5 @@ def make_quant_attn(model, dev):
+         # print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
+         setattr(parent, child_name, attn)
+         gc.collect()
+-        torch.cuda.empty_cache()
++        # torch.cuda.empty_cache()
+     model = model.to(dev)
+diff --git a/tinychat/modules/fused_mlp.py b/tinychat/modules/fused_mlp.py
+index 87e993e..4ab0528 100644
+--- a/tinychat/modules/fused_mlp.py
++++ b/tinychat/modules/fused_mlp.py
+@@ -2,7 +2,7 @@ import numpy as np
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from torch.cuda.amp import custom_bwd, custom_fwd
++# from torch.cuda.amp import custom_bwd, custom_fwd
+ from transformers.models.llama.modeling_llama import LlamaMLP
+ 
+ import awq_inference_engine
+diff --git a/tinychat/stream_generators/falcon_stream_gen.py b/tinychat/stream_generators/falcon_stream_gen.py
+index 15e66a9..891aa71 100644
+--- a/tinychat/stream_generators/falcon_stream_gen.py
++++ b/tinychat/stream_generators/falcon_stream_gen.py
+@@ -143,4 +143,4 @@ def FalconStreamGenerator(
+ 
+     # clean
+     gc.collect()
+-    torch.cuda.empty_cache()
++    # torch.cuda.empty_cache()
+diff --git a/tinychat/stream_generators/stream_gen.py b/tinychat/stream_generators/stream_gen.py
+index 424ef10..5c45700 100644
+--- a/tinychat/stream_generators/stream_gen.py
++++ b/tinychat/stream_generators/stream_gen.py
+@@ -62,7 +62,7 @@ def StreamGenerator(
+     max_new_tokens = gen_params.n_predict
+     start_pos = 0
+     for i in range(max_new_tokens):
+-        torch.cuda.synchronize()
++        # torch.cuda.synchronize()
+         t_st = time.time()
+ 
+         if i == 0:
+@@ -91,7 +91,7 @@ def StreamGenerator(
+             out = model(inputs, start_pos=start_pos)
+             start_pos += out.shape[1]
+             logits = out
+-        torch.cuda.synchronize()
++        # torch.cuda.synchronize()
+         t_ed = time.time()
+ 
+         # Processing the logits
+@@ -185,6 +185,6 @@ def StreamGenerator(
+ 
+     del past_key_values, out
+     gc.collect()
+-    torch.cuda.empty_cache()
++    # torch.cuda.empty_cache()
+ 
+     # return context_tokens, context_time, total_tokens, generation_time_list
+diff --git a/tinychat/utils/tune.py b/tinychat/utils/tune.py
+index 2ca231c..cf27a17 100644
+--- a/tinychat/utils/tune.py
++++ b/tinychat/utils/tune.py
+@@ -19,10 +19,10 @@ def _time_module(module, inputs, measure_iters=1000):
+     for i in range(measure_iters):
+         module(inputs)
+     for i in range(measure_iters):
+-        torch.cuda.synchronize()
++        # torch.cuda.synchronize()
+         st = time.time()
+         module(inputs)
+-        torch.cuda.synchronize()
++        # torch.cuda.synchronize()
+         ed = time.time()
+         time_lis.append((ed - st))
+     return np.median(time_lis)
