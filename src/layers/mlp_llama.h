@@ -220,7 +220,10 @@ private:
         TimeLine t("DownProj");
 
         assert(input.Rows() == output.Rows());
-        assert(input.Cols() == downWeight.Rows());
+        if (!enableCATMLP)
+            assert(input.Cols() == downWeight.Rows());
+        else
+            assert(input.Cols() == 2 * downWeight.Rows());
         assert(downWeight.Cols() == output.Cols());
 
         int M = input.Rows(), N = output.Cols(), K = downWeight.Rows();
