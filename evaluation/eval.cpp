@@ -219,7 +219,7 @@ torch::Tensor EvalAutoDecoder::forward(torch::Tensor &inputIds) {
         int rCount[worldSize];
         std::vector<long unsigned int> recvCount(worldSize, 1);
 
-        messenger.allgatherv(&sampleSize, 1, rCount, recvCount);
+        messenger.allgatherv((float*)(&sampleSize), 1, (float*)rCount, recvCount);
 
         for (int i = 0; i < worldSize; ++i) {
             recvCount[i] = batchSize * seqLen * rCount[i];
