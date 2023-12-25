@@ -184,10 +184,10 @@ private:
 
 class TimeLine {
 public:
-    TimeLine(const std::string &tag_name) {}
+    TimeLine(const std::string &tag_name) {(void) tag_name;}
     ~TimeLine() {}
     void release() {}
-    void dump_file(const std::string &file_name) {}
+    void dump_file(const std::string &file_name) {(void) file_name;}
 };
 
 #endif
