@@ -28,6 +28,7 @@
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "searcher.h"
+#include "timeline.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -187,6 +188,7 @@ void Model::unsetPrefix() {
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
+    TimeLine::init();
 
     if (reader.ParseError() < 0) {
         printf("Could not load model config.ini.\n");

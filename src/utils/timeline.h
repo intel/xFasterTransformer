@@ -17,33 +17,27 @@
 #include <string>
 
 #ifdef TIMELINE
-
 #include <fcntl.h>
 #include <unistd.h>
 #include <json/json.h>
 
+#include <cstdlib>
 #include <chrono>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 
 class TimeLine {
 public:
-    explicit TimeLine(const std::string &tag_name) {
+    explicit TimeLine(const std::string &tag_name): during_time(0) {
         // std::lock_guard<std::mutex> lock(get_lock()); // Prevent start times from coinciding
-        this->tag_name = tag_name;
-        this->pid = getpid();
-        this->tid = pthread_self();
-        this->trace_event["ph"] = "X";
-        this->trace_event["cat"] = "cat";
-        this->trace_event["name"] = tag_name.c_str();
-        this->trace_event["pid"] = pid;
-        this->trace_event["tid"] = tid;
-        this->during_time = -1;
-        this->start = std::chrono::high_resolution_clock::now();
-        this->end = this->start;
+        if (having_whitelist && tag_whitelist.find(tag_name) == tag_whitelist.end())
+            return;
+
+        startTimeLineEvent(tag_name);
     }
 
     ~TimeLine() {
@@ -52,10 +46,10 @@ public:
 
     void release() {
         this->end = std::chrono::high_resolution_clock::now();
-        this->start_timestap = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
+        this->start_timestamp = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
         this->during_time = std::chrono::duration<float, std::micro>(end - start).count();
 
-        this->trace_event["ts"] = this->start_timestap;
+        this->trace_event["ts"] = this->start_timestamp;
         this->trace_event["dur"] = this->during_time;
 
         // std::lock_guard<std::mutex> lock(get_lock());
@@ -63,7 +57,7 @@ public:
     }
 
     void dump_file(const std::string &file_name) {
-        release();
+        if (during_time < 0) release();
 
         std::string time_file_name = extract_name(file_name);
         std::string timeStamp = get_time_stamp();
@@ -100,8 +94,13 @@ public:
                 ofile.close();
             }
         }
+        empty_pool();
 
         release_lock(lock_file);
+    }
+
+    static void init(){
+        init_tag_whitelist();
     }
 
 private:
@@ -114,6 +113,10 @@ private:
         static std::vector<Json::Value> pool;
         pool.reserve(40*2000*20); // 40 layers * 2000 time * 20 promotes
         return pool;
+    }
+
+    static void empty_pool() {
+        get_pool().clear();
     }
 
     std::string get_time_stamp() {
@@ -171,13 +174,43 @@ private:
         close(lockFileDescriptor);
     }
 
+    inline void startTimeLineEvent(const std::string &name){
+        tag_name = name;
+        pid = getpid();
+        pid = pthread_self();
+        trace_event["ph"] = "X";
+        trace_event["cat"] = "cat";
+        trace_event["name"] = tag_name.c_str();
+        trace_event["pid"] = pid;
+        trace_event["tid"] = tid;
+        during_time = -1;
+        start = std::chrono::high_resolution_clock::now();
+        end = start;
+    };
+
+    static void init_tag_whitelist() {
+        char *value = getenv("XFT_TIMELINE_WHITELIST");
+        if (value) {
+            std::string env(value);
+            size_t start = 0, end;
+            while ((end = env.find(',', start)) != std::string::npos) {
+                tag_whitelist.insert(std::string(env.substr(start, end - start)));
+                start = end + 1;
+            }
+            tag_whitelist.insert(std::string(env.substr((start))));
+            having_whitelist = true;
+        }
+    }
+
     std::string tag_name;
     int64_t pid;
     int64_t tid;
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
-    int64_t start_timestap, during_time;
+    int64_t start_timestamp, during_time;
     Json::Value trace_event;
+    static inline std::unordered_set<std::string> tag_whitelist{};
+    static inline bool having_whitelist= false; // any tag list provided by env XFT_TIMELINE_WHITELIST?
 };
 
 #else
@@ -188,6 +221,7 @@ public:
     ~TimeLine() {}
     void release() {}
     void dump_file(const std::string &file_name) {(void) file_name;}
+    static void init();
 };
 
 #endif
