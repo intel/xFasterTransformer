@@ -28,21 +28,21 @@ public:
     MLP(DecoderContext *ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
 
-        const float *_imWeight = params[0];
-        const float *_imBias = params[1];
-        const float *_outputWeight = params[2];
-        const float *_outputBias = params[3];
-        const float *_gamma2 = params[4];
-        const float *_beta2 = params[5];
+        const float *_imWeight = (const float *)params[0];
+        const float *_imBias = (const float *)params[1];
+        const float *_outputWeight = (const float *)params[2];
+        const float *_outputBias = (const float *)params[3];
+        const float *_gamma2 = (const float *)params[4];
+        const float *_beta2 = (const float *)params[5];
 
         // Vertically split intermediate(FC1) weight
         hpj::Matrix<WeiT> quantizedIntermediateWeight;
-        MMHelper::convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, true, quantizedIntermediateWeight,
-                intermediateWeightScale, intermediateWeightZero, intermediateWeightSum);
+        MMHelper::convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, nullptr, nullptr, true,
+                quantizedIntermediateWeight, intermediateWeightScale, intermediateWeightZero, intermediateWeightSum);
         MMHelper::packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
 
         // Intermediate bias
@@ -53,8 +53,8 @@ public:
 
         // Horizontally split the output(FC2) weight
         hpj::Matrix<WeiT> quantizedOutputWeight;
-        MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, false, quantizedOutputWeight,
-                outputWeightScale, outputWeightZero, outputWeightSum);
+        MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, nullptr, nullptr, false,
+                quantizedOutputWeight, outputWeightScale, outputWeightZero, outputWeightSum);
         MMHelper::packWeight(trans, quantizedOutputWeight, outputWeight);
 
         // Output bias

@@ -36,7 +36,8 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         static std::unordered_map<std::string, LlamaMLP<bfloat16_t> *> llama_mlp_hub;
 
         static DecoderContext *ctx;
-        if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
+        if (ctx == nullptr
+                || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
             delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
             ctx = new DecoderContext(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 1);
@@ -51,8 +52,8 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         auto it_created = llama_mlp_hub.find(llama_mlp_key);
         if (it_created == llama_mlp_hub.end()) {
             // LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
-            std::vector<float *> params {(float *)gateWeight, (float *)nullptr, (float *)upWeight, (float *)nullptr,
-                    (float *)nullptr, (float *)nullptr, (float *)downWeight};
+            std::vector<void *> params {(void *)gateWeight, (void *)nullptr, (void *)upWeight, (void *)nullptr,
+                    (void *)nullptr, (void *)nullptr, (void *)downWeight};
 
             llama_mlp = new LlamaMLP<bfloat16_t>;
             llama_mlp->setWeights(ctx, params, false);

@@ -55,35 +55,69 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
-        const float *queryWeight = params[0];
-        const float *queryBias = params[1];
-        const float *keyWeight = params[2];
-        const float *keyBias = params[3];
-        const float *valueWeight = params[4];
-        const float *valueBias = params[5];
-        const float *attnOutWeight = params[6];
-        const float *attnOutBias = params[7];
-        const float *gamma1 = params[8];
-        const float *beta1 = params[9];
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
+        // float32 weights
+        if (type == 0) {
+            const float *queryWeight = (const float *)params[0];
+            const float *queryBias = (const float *)params[1];
+            const float *keyWeight = (const float *)params[2];
+            const float *keyBias = (const float *)params[3];
+            const float *valueWeight = (const float *)params[4];
+            const float *valueBias = (const float *)params[5];
+            const float *attnOutWeight = (const float *)params[6];
+            const float *attnOutBias = (const float *)params[7];
+            const float *gamma1 = (const float *)params[8];
+            const float *beta1 = (const float *)params[9];
 
-        attn.setWeights(ctx, queryWeight, queryBias, keyWeight, keyBias, valueWeight, valueBias, attnOutWeight,
-                attnOutBias, gamma1, beta1, trans);
+            attn.setWeights(ctx, queryWeight, nullptr, nullptr, queryBias, keyWeight, nullptr, nullptr, keyBias,
+                    valueWeight, nullptr, nullptr, valueBias, attnOutWeight, nullptr, nullptr, attnOutBias, gamma1,
+                    beta1, trans);
 
-        std::vector<float *> mlpParams(params.begin() + 10, params.end());
-        mlp.setWeights(ctx, mlpParams, trans);
+            std::vector<void *> mlpParams(params.begin() + 10, params.end());
+            mlp.setWeights(ctx, mlpParams, trans, 0);
+        }
+        // int8 weights
+        else if (type == 1) {
+            const int8_t *queryWeight = (const int8_t *)params[0];
+            const float *queryScale = (const float *)params[1];
+            const float *queryZero = (const float *)params[2];
+            const float *queryBias = (const float *)params[3];
+            const int8_t *keyWeight = (const int8_t *)params[4];
+            const float *keyScale = (const float *)params[5];
+            const float *keyZero = (const float *)params[6];
+            const float *keyBias = (const float *)params[7];
+            const int8_t *valueWeight = (const int8_t *)params[8];
+            const float *valueScale = (const float *)params[9];
+            const float *valueZero = (const float *)params[10];
+            const float *valueBias = (const float *)params[11];
+            const int8_t *attnOutWeight = (const int8_t *)params[12];
+            const float *attnOutScale = (const float *)params[13];
+            const float *attnOutZero = (const float *)params[14];
+            const float *attnOutBias = (const float *)params[15];
+            const float *gamma1 = (const float *)params[16];
+            const float *beta1 = (const float *)params[17];
+
+            attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
+                    valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero,
+                    attnOutBias, gamma1, beta1, trans);
+
+            std::vector<void *> mlpParams(params.begin() + 18, params.end());
+            mlp.setWeights(ctx, mlpParams, trans, 1);
+        }
     }
 
     template <typename KVCacheT>
-    void forwardAttention(DecoderContext *ctx, float *input, float *output, const float *attnMask, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen, bool useSelfAttn, bool doLnBefore,
-            bool returnAttn, bool returnKVs, bool forPT = true, int *positionIds = nullptr) {
+    void forwardAttention(DecoderContext *ctx, float *input, float *output, const float *attnMask,
+            KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
+            bool useSelfAttn, bool doLnBefore, bool returnAttn, bool returnKVs, bool forPT = true,
+            int *positionIds = nullptr) {
         TimeLine t("Decoder.forwardAttention");
         attn.forward(ctx, input, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen, useSelfAttn,
                 doLnBefore, returnAttn, returnKVs, forPT, positionIds);
     }
 
-    void forwardFFN(DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore = true) {
+    void forwardFFN(
+            DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore = true) {
         TimeLine t("Decoder.forwardFFN");
         mlp.forward(ctx, input, output, iStride, oStride, doLnBefore);
     }

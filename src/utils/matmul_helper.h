@@ -70,9 +70,10 @@ public:
     //
 
     template <typename SrcT, typename WeiT>
-    static void convertWeight(bool trans, int rows, int cols, const SrcT *weight, int splitOffset, int splitSize,
-            bool verticalSplit, hpj::Matrix<WeiT> &convertedWeight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, bool unused) {
+    static void convertWeight(bool trans, int rows, int cols, const SrcT *weight, const float *scales,
+            const float *zeros, int splitOffset, int splitSize, bool verticalSplit, hpj::Matrix<WeiT> &convertedWeight,
+            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight,
+            bool unused) {
         // transform trans cases to no trans cases
         if (trans) {
             std::swap(rows, cols);
@@ -94,7 +95,7 @@ public:
 
         convertedWeight.Resize(rowSize, colSize);
 
-	// FP32 -> FP32
+        // FP32 -> FP32
         if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, float>) {
 #pragma omp parallel for
             for (int i = 0; i < rowSize; i++) {
@@ -102,40 +103,42 @@ public:
                 const SrcT *src = weight + (rowOffset + i) * cols + colOffset;
                 memcpy(dst, src, colSize * sizeof(WeiT));
             }
-	}
+        }
 
-	// FP32 -> FP16
-	else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, float16_t>) {
+        // FP32 -> FP16
+        else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, float16_t>) {
 #pragma omp parallel for
             for (int i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
                 const SrcT *src = weight + (rowOffset + i) * cols + colOffset;
                 float16_t::cvt_float_to_float16(src, dst, colSize);
             }
-	}
+        }
 
-
-	// FP32 -> BF16
-	else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, bfloat16_t>) {
+        // FP32 -> BF16
+        else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, bfloat16_t>) {
 #pragma omp parallel for
             for (int i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
                 const SrcT *src = weight + (rowOffset + i) * cols + colOffset;
                 bfloat16_t::cvt_float_to_bfloat16(src, dst, colSize);
             }
-	}
+        }
 
-	// FP32 -> INT8/W8A8
-	else if constexpr (std::is_same_v<SrcT, float> && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
+        // FP32 -> INT8/W8A8
+        else if constexpr (std::is_same_v<SrcT, float>
+                && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
             scaleWeight.Resize(trans ? rowSize : colSize);
             zeroWeight.Resize(trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
-            xdnn_sgemm_f32s8f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (int8_t*)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_sgemm_f32s8f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (int8_t *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
-            xdnn_hgemm_f32s8f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (int8_t*)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_hgemm_f32s8f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (int8_t *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -144,56 +147,66 @@ public:
         }
 
         // FP32 -> UINT4
-	else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, uint4x2_t>) {
+        else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, uint4x2_t>) {
             scaleWeight.Resize(trans ? rowSize : colSize);
             zeroWeight.Resize(trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT4
-            xdnn_sgemm_f32u4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (XDNN_UINT4x2 *)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_sgemm_f32u4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (XDNN_UINT4x2 *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
-            xdnn_hgemm_f32u4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (XDNN_UINT4x2 *)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_hgemm_f32u4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (XDNN_UINT4x2 *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
 #endif
-	}
+        }
 
         // FP32 -> NF4
-	else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, nf4x2_t>) {
+        else if constexpr (std::is_same_v<SrcT, float> && std::is_same_v<WeiT, nf4x2_t>) {
             scaleWeight.Resize(trans ? rowSize : colSize);
             zeroWeight.Resize(trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_NF4
-            xdnn_sgemm_f32nf4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (XDNN_NF4x2 *)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_sgemm_f32nf4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (XDNN_NF4x2 *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_NF4)
-            xdnn_sgemm_f32nf4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols, 0.9999f, (XDNN_NF4x2 *)convertedWeight.Data(),
-                    convertedWeight.Stride(), scaleWeight.Data(), zeroWeight.Data());
+            xdnn_sgemm_f32nf4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
+                    0.9999f, (XDNN_NF4x2 *)convertedWeight.Data(), convertedWeight.Stride(), scaleWeight.Data(),
+                    zeroWeight.Data());
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_NF4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
 #endif
         }
 
-	// INT8 -> INT8/W8A8
-	else if constexpr (std::is_same_v<SrcT, int8_t> && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
+        // INT8 -> INT8/W8A8
+        else if constexpr (std::is_same_v<SrcT, int8_t>
+                && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
+            int size = trans ? rowSize : colSize;
+            int offset = trans ? rowOffset : colOffset;
+            scaleWeight.Resize(size);
+            zeroWeight.Resize(size);
+            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
 #pragma omp parallel for
             for (int i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
                 const SrcT *src = weight + (rowOffset + i) * cols + colOffset;
                 memcpy(dst, src, colSize * sizeof(WeiT));
             }
-	}
+        }
 
-
-       	else {
-            printf("%s:%d: Does not support convert from %s to %s.\n", __FILE__, __LINE__, "asdf", "asf");
+        else {
+            printf("%s:%d: Do not support this kind of weights datatype convertion.\n", __FILE__, __LINE__);
             exit(-1);
         }
 
-	// Compute per column Sums for W8A8
+        // Compute per column Sums for W8A8
         if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             sumWeight.Resize(trans ? rowSize : colSize);
 #pragma omp parallel for
@@ -203,35 +216,37 @@ public:
                     sumWeight.Data()[i] += convertedWeight.Data()[j * convertedWeight.Stride() + i];
                 }
             }
-	}
+        }
     }
 
-    template <typename WeiT>
-    static void convertWeight(bool trans, int rows, int cols, const float *src, int numSplit, int splitIdx,
-            bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
+    template <typename SrcT, typename WeiT>
+    static void convertWeight(bool trans, int rows, int cols, const SrcT *weight, const float *scales,
+            const float *zeros, int numSplit, int splitIdx, bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight,
+            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
         int totalSize = verticalSplit ? cols : rows;
         std::pair<int, int> range = SplitUtil::getTaskRange(totalSize, numSplit, splitIdx);
 
         int splitSize = range.second - range.first;
         int splitOffset = range.first;
 
-        convertWeight(trans, rows, cols, src, splitOffset, splitSize, verticalSplit, quantizedWeight, scaleWeight,
-                zeroWeight, sumWeight, true);
+        convertWeight(trans, rows, cols, weight, scales, zeros, splitOffset, splitSize, verticalSplit, quantizedWeight,
+                scaleWeight, zeroWeight, sumWeight, true);
     }
 
-    template <typename WeiT>
-    static void convertWeight(bool trans, int rows, int cols, const float *src, hpj::Matrix<WeiT> &quantizedWeight,
+    template <typename SrcT, typename WeiT>
+    static void convertWeight(bool trans, int rows, int cols, const SrcT *weight, const float *scales,
+            const float *zeros, hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight,
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
+        convertWeight(trans, rows, cols, weight, scales, zeros, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight,
+                sumWeight);
+    }
+
+    template <typename SrcT, typename WeiT>
+    static void convertWeight(DecoderContext *ctx, bool trans, int rows, int cols, const SrcT *weight,
+            const float *scales, const float *zeros, bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight,
             hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
-        convertWeight(trans, rows, cols, src, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
-    }
-
-    template <typename WeiT>
-    static void convertWeight(DecoderContext *ctx, bool trans, int rows, int cols, const float *src, bool verticalSplit,
-            hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight,
-            hpj::Vector<float> &sumWeight) {
-        convertWeight(trans, rows, cols, src, ctx->numSplit, ctx->splitIdx, verticalSplit, quantizedWeight, scaleWeight,
-                zeroWeight, sumWeight);
+        convertWeight(trans, rows, cols, weight, scales, zeros, ctx->numSplit, ctx->splitIdx, verticalSplit,
+                quantizedWeight, scaleWeight, zeroWeight, sumWeight);
     }
 
     template <typename WeiT>

@@ -22,13 +22,13 @@ public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
 
-        const float *gate_upW = params[0];
-        const float *downW = params[2];
-        const float *normW = params[4];
+        const float *gate_upW = (const float *)params[0];
+        const float *downW = (const float *)params[2];
+        const float *normW = (const float *)params[4];
 
         REQUIRES(ctx->actType == DecoderContext::SWIGLU, "unsupported activation.");
 
@@ -57,12 +57,12 @@ public:
                 }
             }
 
-            MMHelper::convertWeight(trans, hiddenSize, colSplit, gateW, convertedGateWeight, this->gateWeightScale,
-                    this->gateWeightZero, this->gateWeightSum);
+            MMHelper::convertWeight(trans, hiddenSize, colSplit, gateW, nullptr, nullptr, convertedGateWeight,
+                    this->gateWeightScale, this->gateWeightZero, this->gateWeightSum);
             MMHelper::packWeight(trans, convertedGateWeight, this->gateWeight);
 
-            MMHelper::convertWeight(trans, hiddenSize, colSplit, upW, convertedUpWeight, this->upWeightScale,
-                    this->upWeightZero, this->upWeightSum);
+            MMHelper::convertWeight(trans, hiddenSize, colSplit, upW, nullptr, nullptr, convertedUpWeight,
+                    this->upWeightScale, this->upWeightZero, this->upWeightSum);
             MMHelper::packWeight(trans, convertedUpWeight, this->upWeight);
 
             free(gateW);
@@ -85,8 +85,8 @@ public:
                     weightPTR += intermediateSize;
                 }
                 hpj::Matrix<WeiT> quantizedCatWeights;
-                MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, quantizedCatWeights,
-                        this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
+                MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, nullptr, nullptr,
+                        quantizedCatWeights, this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
                 this->catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
                 MMHelper::packWeight(trans, quantizedCatWeights, this->catWeights);
                 free(gateUpW);
@@ -94,11 +94,11 @@ public:
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
-            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, this->downWeight,
-                    this->downWeightScale, this->downWeightZero, this->gateWeightSum);
+            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    this->downWeight, this->downWeightScale, this->downWeightZero, this->gateWeightSum);
         } else {
-            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, convertedDownWeight,
-                    this->downWeightScale, this->downWeightZero, this->downWeightSum);
+            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
             MMHelper::packWeight(trans, convertedDownWeight, this->downWeight);
         }
 #ifdef DEBUG
