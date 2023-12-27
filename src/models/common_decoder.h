@@ -72,6 +72,12 @@ public:
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
+        const std::string ropeType = reader.Get(modelType, "rope_scaling_type", "");
+        const float ropeFactor = reader.GetFloat(modelType, "rope_scaling_factor", 1.0);
+        const int ropeOrgMaxPosEmbed
+                = reader.GetInteger(modelType, "rope_scaling_original_max_position_embeddings", 2048);
+        const float ropeTheta = reader.GetFloat(modelType, "rope_theta", 10000.0);
+        RopeParams *ropeParamsPtr = new RopeParams(ropeTheta, ropeType, ropeFactor, ropeOrgMaxPosEmbed);
 
         std::string act = reader.Get(modelType, "activation_type");
         std::transform(act.begin(), act.end(), act.begin(), ::tolower);
@@ -94,7 +100,7 @@ public:
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed);
+                vocabSize, embeddingSize, maxPositions, maxPosEmbed, ropeParamsPtr);
 
         // Decoder
         for (int i = 0; i < layers; ++i) {
@@ -175,7 +181,8 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(), this->embBuf->Stride());
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(),
+                this->embBuf->Stride());
         dbg.dumpMatrix(*this->embBuf);
 #endif
 
@@ -439,7 +446,7 @@ protected:
 
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed) {
+            int maxPositions, int maxPosEmbed, RopeParams *ropeParamsPtr) {
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
 
@@ -454,7 +461,7 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, splitIdx, splits));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, splitIdx, splits, ropeParamsPtr));
         }
 
         return this->context.get();

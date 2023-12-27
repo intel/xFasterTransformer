@@ -17,16 +17,17 @@ import configparser
 import multiprocessing
 import numpy as np
 import os
+import sys
 import torch
 
-from transformers import LlamaForCausalLM
+from transformers import AutoModelForCausalLM
 
 from .convert import BaseModelConvert
 
 
-class LlamaConvert(BaseModelConvert):
+class YaRNLlamaConvert(BaseModelConvert):
     """
-    Convert huggingface Llama model. Support both Llama & Llama2.
+    Convert huggingface YaRN-Llama model. Support both YaRNLlama(SecLLM).
     """
 
     def __init__(self):
@@ -81,6 +82,23 @@ class LlamaConvert(BaseModelConvert):
                 val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
                 save_val(val, key, i * factor + j)
 
+        elif "attention.query_key_value.bias" in key:
+            hidden_dim = val.shape[0]
+            head_size = int(hidden_dim / (int(num_attention_heads) + int(num_key_value_heads) * 2))
+            qcol = int(num_attention_heads) * head_size
+            kcol = int(num_key_value_heads) * head_size
+            vcol = int(num_key_value_heads) * head_size
+            qkv = np.split(val, [qcol, qcol + kcol])
+            q = qkv[0]
+            k = qkv[1]
+            v = qkv[2]
+            q_split_vals = np.split(q, factor, axis=-1)
+            k_split_vals = np.split(k, factor, axis=-1)
+            v_split_vals = np.split(v, factor, axis=-1)
+            for j in range(factor):
+                val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
+                save_val(val, key, i * factor + j)
+
         elif "attention.dense.weight" in key:
             split_vals = np.split(val, factor, axis=0)
             for j in range(factor):
@@ -90,54 +108,62 @@ class LlamaConvert(BaseModelConvert):
             print("[ERROR] cannot find key '{}'".format(key))
 
     def split_and_convert(self, input_dir, output_dir, dtype, processes):
+        sys.path.append(input_dir)
         # create directory if not exist
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
         # load the model
-        model = LlamaForCausalLM.from_pretrained(
-            input_dir,
-            load_in_8bit=False,
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-        )
+        model = AutoModelForCausalLM.from_pretrained(input_dir, device_map="auto", trust_remote_code=True)
 
         hf_config = vars(model.config)
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        config["llama"] = {}
+        config["yarn_llama"] = {}
         has_post_decoder_layernorm = True
         try:
-            config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
-            num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
-            num_key_value_heads = config["llama"]["kv_head_num"] = str(
+            config["yarn_llama"]["model_name"] = "yarn_llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config["yarn_llama"]["head_num"] = str(hf_config["num_attention_heads"])
+            num_key_value_heads = config["yarn_llama"]["kv_head_num"] = str(
                 hf_config.get("num_key_value_heads", num_attention_heads)
             )
 
             hidden_size = hf_config["hidden_size"]
-            config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
-            config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
-            config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
-            config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
-            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
-            config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = "silu"
-            config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
-            config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
-            config["llama"]["start_id"] = str(hf_config["bos_token_id"])
-            config["llama"]["end_id"] = str(hf_config["eos_token_id"])
-            config["llama"]["weight_data_type"] = dtype
+            config["yarn_llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config["yarn_llama"]["inter_size"] = str(hf_config["intermediate_size"])
+            config["yarn_llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config["yarn_llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
+
+            rope_scaling_config = hf_config.get("rope_scaling", {})
+            config["yarn_llama"]["rope_scaling_type"] = str(rope_scaling_config.get("type", ""))
+            config["yarn_llama"]["rope_scaling_factor"] = str(rope_scaling_config.get("factor", 1))
+            config["yarn_llama"]["rope_scaling_original_max_position_embeddings"] = str(
+                rope_scaling_config.get("original_max_position_embeddings", 2048)
+            )
+            config["yarn_llama"]["rope_scaling_finetuned"] = str(rope_scaling_config.get("finetuned", "false"))
+            config["yarn_llama"]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
+
+            config["yarn_llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
+            config["yarn_llama"]["layernorm_type"] = "pre_layernorm"
+            config["yarn_llama"]["activation_type"] = "silu"
+            config["yarn_llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config["yarn_llama"]["vocab_size"] = str(hf_config["vocab_size"])
+            config["yarn_llama"]["start_id"] = str(hf_config["bos_token_id"])
+            config["yarn_llama"]["end_id"] = str(hf_config["eos_token_id"])
+            config["yarn_llama"]["weight_data_type"] = dtype
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
             print("Fail to save the config in config.ini.", str(e))
+            exit(1)
 
         hf_model_name_pattern = [
             "input_layernorm.weight",
             "attention.query_key_value.weight",
+            "attention.query_key_value.bias",
             "self_attn.o_proj.weight",
+            "self_attn.o_proj.bias",
             "post_attention_layernorm.weight",
             "mlp.gate_proj.weight",
             "mlp.up_proj.weight",
@@ -147,7 +173,9 @@ class LlamaConvert(BaseModelConvert):
         ft_model_name_pattern = [
             "input_layernorm.weight",
             "attention.query_key_value.weight",
+            "attention.query_key_value.bias",
             "attention.dense.weight",
+            "attention.dense.bias",
             "post_attention_layernorm.weight",
             "mlp.gate_proj.weight",
             "mlp.up_proj.weight",
@@ -168,8 +196,15 @@ class LlamaConvert(BaseModelConvert):
                 model_named_parameters[
                     name.replace("self_attn.q_proj.weight", "attention.query_key_value.weight")
                 ] = qkv
+            elif "self_attn.q_proj.bias" in name:
+                k_name = name.replace("q_proj", "k_proj")
+                v_name = name.replace("q_proj", "v_proj")
+                qkv_b = torch.cat((param, state_dict[k_name], state_dict[v_name]), dim=0)
+                model_named_parameters[name.replace("self_attn.q_proj.bias", "attention.query_key_value.bias")] = qkv_b
             # for merged weights, skip
             elif "self_attn.k_proj.weight" in name or "self_attn.v_proj.weight" in name:
+                continue
+            elif "self_attn.k_proj.bias" in name or "self_attn.v_proj.bias" in name:
                 continue
             elif "embed" in name:
                 model_named_parameters[name] = param

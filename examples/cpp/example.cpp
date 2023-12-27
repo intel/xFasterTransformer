@@ -144,6 +144,48 @@ public:
     }
 };
 
+class YaRNLlamaTokenizer : public TokenizerBase {
+public:
+    YaRNLlamaTokenizer(std::string &tokenPath) { vocabSize = 106963; }
+
+    // TODO: Need to achieve actual encode function
+    std::vector<int> encode(std::string &input) override {
+        // only for Test
+        return std::vector<int>(
+                {7454, 2402, 257, 640, 11, 612, 11196, 257, 1310, 2576, 508, 8288, 284, 423, 17545, 13});
+    }
+
+    std::string decode(std::vector<int> &ids) override {
+        if (ids.size() == 1) { return decode(ids[0]); }
+
+        std::string text("");
+        text.reserve(ids.size());
+
+        for (int id : ids) {
+            if (id < vocabSize) {
+                if (vocab_list == nullptr)
+                    text += "[" + std::to_string(id) + "] ";
+                else
+                    text += vocab_list[id];
+            } else {
+                text += "(null) ";
+            }
+        }
+
+        return text;
+    }
+    std::string decode(int id) override {
+        if (id < vocabSize) {
+            return vocab_list[id];
+        } else {
+            return "(null)";
+        }
+    }
+
+private:
+    const char **vocab_list = nullptr;
+};
+
 class OptTokenizer : public TokenizerBase {
 public:
     OptTokenizer(std::string &tokenPath) { vocabSize = 50265; }
@@ -221,6 +263,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new OptTokenizer(tokenPath);
     } else if (modeltype == "llama") {
         return new LlamaTokenizer(tokenPath);
+    } else if (modeltype == "yarn_llama") {
+        return new YaRNLlamaTokenizer(tokenPath);
     } else if (modeltype == "baichuan") {
         return new BaichuanTokenizer(tokenPath);
     } else if (modeltype == "chatglm") {
@@ -311,7 +355,7 @@ int main(int argc, char **argv) {
 
     xft::AutoModel model(modelPath, dtype);
     bool isMaster = (model.getRank() == 0);
-    int  secondIdCount = 0;
+    int secondIdCount = 0;
 
     // Need longer prompt
     if (inputSize > 0 && inputSize > input.size()) {
@@ -406,9 +450,9 @@ int main(int argc, char **argv) {
             secondIdCount++;
             if (isMaster && streamingOutput) { tokenizer->printResult(nextIds, batchSize, numBeams); }
         }
-        if (isMaster && secondIdCount > 0){
+        if (isMaster && secondIdCount > 0) {
             auto avgDuration = timerSecond.getTime() / float(secondIdCount);
-            std::cout << std::endl << "[INFO] Second token time: " << avgDuration  << " ms" << std::endl;
+            std::cout << std::endl << "[INFO] Second token time: " << avgDuration << " ms" << std::endl;
         }
         auto result = model.finalize();
 
