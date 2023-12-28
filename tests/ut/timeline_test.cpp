@@ -96,7 +96,6 @@ std::set<std::string> GetJsonFiles(std::string folderPath, std::string prefix) {
 
 class TimeLineFixture: public testing::Test {
 public:
-    void SetUp() override {}
     std::set<std::shared_ptr<CTimelineEvents>> runAndGetEvents(std::string output) {
         std::set<std::shared_ptr<CTimelineEvents>> evtGroups;
         {
@@ -106,7 +105,7 @@ public:
             TimeLine t2("Stage2");
         }
         {
-            TimeLine t3("1St Token");
+            TimeLine t3("1st Token");
         }
         {
             TimeLine t4("Next Token");
@@ -115,21 +114,23 @@ public:
             TimeLine t5("Next Token");
         }
         {
+            TimeLine t3("1st Token");
+        }
+        {
+            TimeLine t6("Next Token");
+        }
+        {
             TimeLine t6("Next Token");
         }
         TimeLine t("dump_file");
-#ifdef TIMELINE
         auto jsonFiles = GetJsonFiles("./", "timeline");
-#endif
         t.dump_file(output);
-#ifdef TIMELINE
         auto jsonFilesAfterTest = GetJsonFiles("./", "timeline");
         for (auto f: jsonFilesAfterTest){
             if (jsonFiles.find(f) == jsonFiles.end()) {
                 evtGroups.insert(std::make_shared<CTimelineEvents>(f));
             }
         }
-#endif
         return evtGroups;
     }
 };
@@ -138,48 +139,42 @@ TEST_F(TimeLineFixture, timelineevent) {
     unsetenv("XFT_TIMELINE_WHITELIST");
     TimeLine::init();
     auto evtGroups = runAndGetEvents("timeline_t1.json");
-#ifdef TIMELINE
     ASSERT_EQ(evtGroups.size(), 1);
     auto evts = *evtGroups.begin();
     ASSERT_TRUE(evts->Validate());
     ASSERT_TRUE(evts->HavingTag("Stage1"));
     ASSERT_TRUE(evts->HavingTag("Stage2"));
-    ASSERT_TRUE(evts->HavingTag("1St Token"));
+    ASSERT_TRUE(evts->HavingTag("1st Token"));
     ASSERT_TRUE(evts->HavingTag("Next Token"));
     ASSERT_TRUE(evts->HavingTag("dump_file"));
-#endif
 }
 
 TEST_F(TimeLineFixture, whitelistOne) {
     setenv("XFT_TIMELINE_WHITELIST", "Stage2", 1);
     TimeLine::init();
     auto evtGroups = runAndGetEvents("timeline_t2.json");
-#ifdef TIMELINE
     ASSERT_EQ(evtGroups.size(), 1);
     auto evts = *evtGroups.begin();
     ASSERT_TRUE(evts->Validate());
     ASSERT_FALSE(evts->HavingTag("Stage1"));
     ASSERT_TRUE(evts->HavingTag("Stage2"));
-    ASSERT_FALSE(evts->HavingTag("1St Token"));
+    ASSERT_FALSE(evts->HavingTag("1st Token"));
     ASSERT_FALSE(evts->HavingTag("Next Token"));
     ASSERT_FALSE(evts->HavingTag("dump_file"));
-#endif
 }
 
 TEST_F(TimeLineFixture, whitelistTwo) {
-    setenv("XFT_TIMELINE_WHITELIST", "Stage2,Next Token", 1);
+    setenv("XFT_TIMELINE_WHITELIST", "1st Token,Next Token", 1);
     TimeLine::init();
     auto evtGroups = runAndGetEvents("timeline_t3.json");
-#ifdef TIMELINE
     ASSERT_EQ(evtGroups.size(), 1);
     auto evts = *evtGroups.begin();
     ASSERT_TRUE(evts->Validate());
     ASSERT_FALSE(evts->HavingTag("Stage1"));
-    ASSERT_TRUE(evts->HavingTag("Stage2"));
-    ASSERT_FALSE(evts->HavingTag("1St Token"));
+    ASSERT_FALSE(evts->HavingTag("Stage2"));
+    ASSERT_TRUE(evts->HavingTag("1st Token"));
     ASSERT_TRUE(evts->HavingTag("Next Token"));
     ASSERT_FALSE(evts->HavingTag("dump_file"));
-#endif
 }
 
 int main(int argc, char **argv) {

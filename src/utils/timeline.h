@@ -28,7 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <unordered_set>
+#include <unordered_map>
 
 class TimeLine {
 public:
@@ -36,15 +36,16 @@ public:
         // std::lock_guard<std::mutex> lock(get_lock()); // Prevent start times from coinciding
         if (having_whitelist && tag_whitelist.find(tag_name) == tag_whitelist.end())
             return;
-
         startTimeLineEvent(tag_name);
     }
 
     ~TimeLine() {
-        if (during_time < 0) release();
+        release();
     }
 
     void release() {
+        if (during_time >= 0)
+            return;
         this->end = std::chrono::high_resolution_clock::now();
         this->start_timestamp = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
         this->during_time = std::chrono::duration<float, std::micro>(end - start).count();
@@ -57,7 +58,7 @@ public:
     }
 
     void dump_file(const std::string &file_name) {
-        if (during_time < 0) release();
+        release();
 
         std::string time_file_name = extract_name(file_name);
         std::string timeStamp = get_time_stamp();
@@ -187,17 +188,39 @@ private:
         end = start;
     };
 
+    static void strip(std::string &word){
+        std::string whitespace("\n\t ");
+        std::size_t found = word.find_last_not_of(whitespace);
+        if (found!=std::string::npos) {
+            word.erase(found+1);
+            found = word.find_first_not_of(whitespace);
+            if (found!=std::string::npos)
+                word.erase(0, found);
+        }
+        else
+            word.clear();
+    }
+
     static void init_tag_whitelist() {
         char *value = getenv("XFT_TIMELINE_WHITELIST");
+        tag_whitelist.clear();
         if (value) {
             std::string env(value);
             size_t start = 0, end;
             while ((end = env.find(',', start)) != std::string::npos) {
-                tag_whitelist.insert(std::string(env.substr(start, end - start)));
+                auto event = std::string(env.substr(start, end - start));
+                strip(event);
+                if(!event.empty())
+                    tag_whitelist[event] = 1;
                 start = end + 1;
             }
-            tag_whitelist.insert(std::string(env.substr((start))));
-            having_whitelist = true;
+            auto event = std::string(env.substr((start)));
+            strip(event);
+
+            if(!event.empty())
+                tag_whitelist[event] = 1;
+            if (!tag_whitelist.empty())
+                having_whitelist = true;
         }
     }
 
@@ -209,7 +232,7 @@ private:
     int64_t start_timestamp, during_time;
     Json::Value trace_event;
     static inline std::vector<Json::Value> pool{};
-    static inline std::unordered_set<std::string> tag_whitelist{};
+    static inline std::unordered_map<std::string, int32_t> tag_whitelist{};
     static inline bool having_whitelist= false; // any tag list provided by env XFT_TIMELINE_WHITELIST?
 };
 
@@ -221,7 +244,7 @@ public:
     ~TimeLine() {}
     void release() {}
     void dump_file(const std::string &file_name) {(void) file_name;}
-    static void init();
+    static void init(){};
 };
 
 #endif
