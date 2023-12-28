@@ -101,6 +101,7 @@ public:
 
     static void init(){
         init_tag_whitelist();
+        pool.reserve(40*2000*20); // 40 layers * 2000 time * 20 promotes
     }
 
 private:
@@ -110,13 +111,11 @@ private:
     }
 
     static std::vector<Json::Value> &get_pool() {
-        static std::vector<Json::Value> pool;
-        pool.reserve(40*2000*20); // 40 layers * 2000 time * 20 promotes
         return pool;
     }
 
     static void empty_pool() {
-        get_pool().clear();
+        pool.clear();
     }
 
     std::string get_time_stamp() {
@@ -209,6 +208,7 @@ private:
     std::chrono::high_resolution_clock::time_point end;
     int64_t start_timestamp, during_time;
     Json::Value trace_event;
+    static inline std::vector<Json::Value> pool{};
     static inline std::unordered_set<std::string> tag_whitelist{};
     static inline bool having_whitelist= false; // any tag list provided by env XFT_TIMELINE_WHITELIST?
 };
