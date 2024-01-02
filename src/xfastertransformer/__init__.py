@@ -18,8 +18,9 @@ import sys
 from types import ModuleType
 from typing import Any
 from typing import TYPE_CHECKING
+from ctypes import *
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+cdll.LoadLibrary(os.path.dirname(os.path.abspath(__file__)) + "/libxft_comm_helper.so")
 torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
 
 _import_structure = {
