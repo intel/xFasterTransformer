@@ -270,6 +270,7 @@ int main(int argc, char **argv) {
     args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
     args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
     args.add<float>("topP", '\0', "retain minimal tokens above topP threshold.", false, 1.0);
+    args.add<float>("repetPen", '\0', "repetition penalty.", false, 1.0);
     args.add("no_stream", '\0', "disable streaming output");
     args.add("do_sample", '\0', "use sampling");
     args.parse_check(argc, argv);
@@ -300,6 +301,7 @@ int main(int argc, char **argv) {
     int topK = args.get<int>("topK");
     float temperature = args.get<float>("temperature");
     float topP = args.get<float>("topP");
+    float repetitionPenalty = args.get<float>("repetPen");
 
     std::string modeltype = getModelType(modelPath);
 
@@ -350,6 +352,7 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] temperature is " << temperature << std::endl;
         std::cout << "[INFO] topK is " << topK << std::endl;
         std::cout << "[INFO] topP is " << topP << std::endl;
+        std::cout << "[INFO] repetitionPenalty is " << repetitionPenalty << std::endl;
         std::cout << "[INFO] batch_size is " << batchSize << std::endl;
         std::cout << "[INFO] loop is " << loop << std::endl;
         if (prefixLen > 0) {
@@ -372,7 +375,7 @@ int main(int argc, char **argv) {
         model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
-                /*topK*/ topK, /*topP*/ topP);
+                /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
         model.input(input, batchSize);
 
         std::vector<int> firstIds;
