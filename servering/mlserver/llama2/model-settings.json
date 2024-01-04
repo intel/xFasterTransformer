@@ -1,0 +1,4 @@
+{
+    "name": "xft-llama-2-model",
+    "implementation": "llama2.XFTLlama2Model"
+}
