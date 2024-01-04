@@ -67,11 +67,14 @@ do
 		iter=$2
 		shift 2
         ;;
-        "")
-        shift
-        break
+        *)
+        echo "Error: unknow option -> $1"
+        echo "Usage: $0 -m|--model_name <model_name> [-d|--dtype dtype] [-s|--sockets sockets] "
+        echo "       [-bs|--batch_size batch_size] [-in|--input_tokens input_tokens] [-out|--output_tokens output_tokens] "
+        echo "       [-b|--bean_width beam_width] [-i|--iter iter]"
+        exit 1
         ;;
-    esac 
+    esac
 done
 
 if [ "${model_name}" == "" ]; then
