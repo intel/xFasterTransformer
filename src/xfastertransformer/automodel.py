@@ -18,8 +18,22 @@ from typing import Union, Literal
 
 class AutoModel:
     def __init__(self, path, dtype: str = "fp16"):
-        if dtype in ["fp16", "bf16", "int8", "w8a8", "int4", "nf4", "bf16_fp16", "bf16_int8", "bf16_w8a8",
-                     "bf16_int4", "bf16_nf4", "w8a8_int8", "w8a8_int4", "w8a8_nf4"]:
+        if dtype in [
+            "fp16",
+            "bf16",
+            "int8",
+            "w8a8",
+            "int4",
+            "nf4",
+            "bf16_fp16",
+            "bf16_int8",
+            "bf16_w8a8",
+            "bf16_int4",
+            "bf16_nf4",
+            "w8a8_int8",
+            "w8a8_int4",
+            "w8a8_nf4",
+        ]:
             self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
         else:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
@@ -51,6 +65,7 @@ class AutoModel:
         temperature=1.0,
         top_k=50,
         top_p=1.0,
+        repetition_penalty=1.0,
     ):
         self.model.config(
             max_length,
@@ -64,6 +79,7 @@ class AutoModel:
             temperature,
             top_k,
             top_p,
+            repetition_penalty,
         )
 
     def input(self, input_ids=None):
@@ -96,6 +112,7 @@ class AutoModel:
         temperature=1.0,
         top_k=50,
         top_p=1.0,
+        repetition_penalty=1.0,
         streamer=None,
     ):
         #  streamer: Optional["BaseStreamer"] = None):
@@ -121,6 +138,7 @@ class AutoModel:
             temperature,
             top_k,
             top_p,
+            repetition_penalty,
         )
         self.input(input_ids)
 

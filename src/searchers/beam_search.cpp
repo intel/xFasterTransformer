@@ -278,6 +278,10 @@ BeamSearch::BeamSearch(AbstractDecoder &dec, const SearcherConfig &config)
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
     kVal = 2 * numBeams;
+    if (config.repetitionPenalty != 1.0) {
+        printf("[Warning] BeamSearch doesn't support repetition penalty now and repetition penalty is %f.\n",
+                config.repetitionPenalty);
+    }
 }
 
 // The first setp to get next tokens accoring to the prompt IDs

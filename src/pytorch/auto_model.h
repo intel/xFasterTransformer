@@ -92,7 +92,8 @@ public:
             torch::optional<int64_t> numReturnSequencesOpt, torch::optional<double> lenPenaltyOpt,
             torch::optional<bool> earlyStoppingOpt, torch::optional<int64_t> eosTokenIdOpt,
             torch::optional<int64_t> padTokenIdOpt, torch::optional<bool> doSampleOpt,
-            torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt, torch::optional<double> topPOpt) {
+            torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt, torch::optional<double> topPOpt,
+            torch::optional<double> repetitionPenaltyOpt) {
         TORCH_CHECK(maxLength.has_value(), "Make sure master's maxLen is not None.")
         int maxLen = static_cast<int>(maxLength.value());
         int numBeams = numBeamsOpt.has_value() ? (int)numBeamsOpt.value() : 1;
@@ -105,9 +106,11 @@ public:
         float temperature = temperaturOpt.has_value() ? static_cast<float>(temperaturOpt.value()) : 1.0;
         int topK = topKOpt.has_value() ? (int)topKOpt.value() : 50;
         float topP = topPOpt.has_value() ? static_cast<float>(topPOpt.value()) : 1.0;
+        float repetitionPenalty
+                = repetitionPenaltyOpt.has_value() ? static_cast<float>(repetitionPenaltyOpt.value()) : 1.0;
 
         model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId,
-                doSample, temperature, topK, topP);
+                doSample, temperature, topK, topP, repetitionPenalty);
     }
 
     torch::Tensor generate() {

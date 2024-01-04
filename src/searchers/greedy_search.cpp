@@ -13,11 +13,16 @@
 // limitations under the License.
 // ============================================================================
 #include "greedy_search.h"
+#include "search_utils.h"
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
-    : decoder(dec), maxLen(config.maxLen), step(0) {
+    : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
+    if (repetitionPenalty <= 0) {
+        printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", repetitionPenalty);
+        exit(-1);
+    }
 }
 
 // Get next tokens accoring to the prompt IDs
@@ -89,6 +94,25 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
     int sampleOffset = std::get<1>(result);
     int sampleSize = std::get<2>(result);
 
+    Messenger &messenger = decoder.getMessenger();
+    auto msgerSize = messenger.getSize();
+
+    // Repetition penalty logits processor
+    if (this->repetitionPenalty != 1.0) {
+        TimeLine t("GreedySearch.repetitionPenalty");
+        // step has already been incremented by 1
+        if (this->step == 1) {
+            this->cachedRepetVec.clear();
+            this->cachedRepetVec.resize(batchSize, std::vector<int>());
+
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->output,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        } else {
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->nextTokens,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        }
+    }
+
     // Max ID and value for each sample
     int maxIds[batchSize];
     float maxVals[batchSize];
@@ -159,23 +183,22 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
     }
 
     // Reduce to get the max index (any better method??)
-    Messenger &messenger = decoder.getMessenger();
-    if (messenger.getSize() > 1) {
+    if (msgerSize > 1) {
         float sendBuf[2 * batchSize];
-        float recvBuf[2 * batchSize * messenger.getSize()];
+        float recvBuf[2 * batchSize * msgerSize];
 
         for (int i = 0; i < batchSize; ++i) {
             sendBuf[2 * i] = (float)(maxIds[i] + sampleOffset);
             sendBuf[2 * i + 1] = maxVals[i];
         }
 
-        std::vector<long unsigned int> recvCount(messenger.getSize(), static_cast<long unsigned int>(2 * batchSize));
+        std::vector<long unsigned int> recvCount(msgerSize, static_cast<long unsigned int>(2 * batchSize));
         messenger.allgatherv(sendBuf, 2 * batchSize, recvBuf, recvCount);
 
         for (int i = 0; i < batchSize; ++i) {
             int maxId = (int)(recvBuf[2 * i] + 0.5f);
             float maxVal = recvBuf[2 * i + 1];
-            for (int j = 1; j < messenger.getSize(); ++j) {
+            for (int j = 1; j < msgerSize; ++j) {
                 if (recvBuf[2 * j * batchSize + 2 * i + 1] > maxVal) {
                     maxVal = recvBuf[2 * j * batchSize + 2 * i + 1];
                     maxId = (int)(recvBuf[2 * j * batchSize + 2 * i] + 0.5f);
