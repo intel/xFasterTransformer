@@ -71,6 +71,16 @@ class XFTLlama2Model(MLModel):
         response = self._tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         return response
 
+    async def async_generator(self):
+        # 当所有batch都推理结束的时候，is_done()返回True
+        # 多batch情况下，如果有sample提前结束，会填充pad_token_id
+        while not self._model.is_done():
+            # forward()每次调用生成一次token, 返回[batch_size, 1]
+            next_token_id = self.model.forward()
+            next_token_id = next_token_id.view(-1).tolist()[0]
+
+            yield f"data: {self._tokenizer.decode(next_token_id, skip_special_tokens=True)}\n\n"
+
     async def predict_stream(self, questions: List[str]) -> List[str]:
         input_token_ids = self.create_chat_input_token(questions)
 
@@ -79,13 +89,5 @@ class XFTLlama2Model(MLModel):
         # input()输入input_prompt的ids, torch.tensor, batch_size的形状信息从tensor.shape读取。目前多batch推理默认padding。
         self._model.input(input_token_ids)
 
-        response_ids = input_token_ids
-
-        # 当所有batch都推理结束的时候，is_done()返回True
-        # 多batch情况下，如果有sample提前结束，会填充pad_token_id
-        while not self._model.is_done():
-            # forward()每次调用生成一次token, 返回[batch_size, 1]
-            next_token_id = self.model.forward()
-            response_ids = torch.cat((response_ids, next_token_id), dim=1)
-
-            yield self._tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+        async for ele in self.async_generator():
+            yield ele
