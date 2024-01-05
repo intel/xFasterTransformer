@@ -18,10 +18,6 @@ from transformers import AutoTokenizer
 import torch
 from typing import List
 
-# import sys
-
-# sys.path.append("../../../src")
-
 import xfastertransformer
 
 DTYPE_LIST = [
@@ -59,17 +55,37 @@ class XFTLlama2Model(MLModel):
         )
         self._model = xfastertransformer.AutoModel.from_pretrained(MODEL_PATH, dtype=DTYPE)
 
+        # Llama doesn't have padding ID.
+        self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
         return True
 
     def create_chat_input_token(self, query):
-        tokens = []
-        tokens.append(self._tokenizer([f"{B_INST} {query.strip()} {E_INST}"], return_tensors="pt").input_ids)
-        input_tokens = torch.cat(tokens, dim=1)
-        return input_tokens
+        # 构造llama2-chat输入
+        query = [f"{B_INST} {q.strip()} {E_INST}" for q in query]
+        return self._tokenizer(query, return_tensors="pt", padding=True).input_ids
 
     @decode_args
     async def predict(self, questions: List[str]) -> List[str]:
-        input_token_ids = self.create_chat_input_token(questions[0])
+        input_token_ids = self.create_chat_input_token(questions)
         generated_ids = self._model.generate(input_token_ids, max_length=input_token_ids.shape[-1] + OUTPUT_LENGTH)
         response = self._tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
         return response
+
+    async def predict_stream(self, questions: List[str]) -> List[str]:
+        input_token_ids = self.create_chat_input_token(questions)
+
+        # config()函数配置generation 配置，max_length,do_sample等等
+        self._model.config(input_token_ids.shape[-1] + OUTPUT_LENGTH)
+        # input()输入input_prompt的ids, torch.tensor, batch_size的形状信息从tensor.shape读取。目前多batch推理默认padding。
+        self._model.input(input_token_ids)
+
+        response_ids = input_token_ids
+
+        # 当所有batch都推理结束的时候，is_done()返回True
+        # 多batch情况下，如果有sample提前结束，会填充pad_token_id
+        while not self._model.is_done():
+            # forward()每次调用生成一次token, 返回[batch_size, 1]
+            next_token_id = self.model.forward()
+            response_ids = torch.cat((response_ids, next_token_id), dim=1)
+
+            yield self._tokenizer.batch_decode(response_ids, skip_special_tokens=True)
