@@ -51,7 +51,7 @@ void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffs
     } else {
         if (multiRank) {
             for (int b = 0; b < batchSize; b++) {
-                if (inputIds[b] < sampleOffset + sampleSize) {
+                if (inputIds[b] >= sampleOffset && inputIds[b] < sampleOffset + sampleSize) {
                     insertAndSort(cachedVec[b], inputIds[b] - sampleOffset);
                 }
             }
