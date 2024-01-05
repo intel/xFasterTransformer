@@ -339,8 +339,8 @@ std::vector<int> BeamSearch::getNextToken() {
 std::vector<int32_t> BeamSearch::finalize() {
     auto sequenceOutputs
             = beamScorer.finalize(inputIds, beamNextScores, beamNextTokens, beamNextIndices, padTokenId, eosTokenId);
-    TimeLine t("dump_file");
-    t.dump_file("timeline.json");
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return sequenceOutputs;
 }
 

@@ -28,6 +28,7 @@
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "searcher.h"
+#include "timeline.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -49,6 +50,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
     Env::setVerbose();
+    TimeLine::init();
 }
 
 Model::~Model() {

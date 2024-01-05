@@ -81,8 +81,8 @@ bool GreedySearch::isDone() {
 }
 
 std::vector<int32_t> GreedySearch::finalize() {
-    TimeLine t("dump_file");
-    t.dump_file("timeline.json");
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return output;
 }
 
