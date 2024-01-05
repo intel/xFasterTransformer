@@ -231,7 +231,7 @@ public:
     TimeLine(const std::string &tagName) { (void)tagName; }
     ~TimeLine() {}
     void release() {}
-    void dump_file(const std::string &file_name) { (void)file_name; }
+    void dumpFile(const std::string &file_name) { (void)file_name; }
     static void init() {};
 };
 
