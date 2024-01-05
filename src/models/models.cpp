@@ -50,6 +50,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
     Env::setVerbose();
+    TimeLine::init();
 }
 
 Model::~Model() {
@@ -188,7 +189,6 @@ void Model::unsetPrefix() {
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
-    TimeLine::init();
 
     if (reader.ParseError() < 0) {
         printf("Could not load model config.ini.\n");

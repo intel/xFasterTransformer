@@ -13,8 +13,8 @@
 // limitations under the License.
 // ============================================================================
 #include <filesystem>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 #include <json/json.h>
 
@@ -40,7 +40,7 @@ struct CEvent {
 class CTimelineEvents {
 public:
     CTimelineEvents() : len_(0) {};
-    CTimelineEvents(const std::string &jsonfile):len_(0) {
+    CTimelineEvents(const std::string &jsonfile) : len_(0) {
         CTimelineEvents();
         FromJsonFile(jsonfile);
     }
@@ -88,48 +88,29 @@ std::set<std::string> GetJsonFiles(std::string folderPath, std::string prefix) {
     std::set<std::string> files;
     for (const auto &entry : std::filesystem::directory_iterator(folderPath)) {
         const auto &file = entry.path().filename().string();
-        if (entry.path().filename().extension() == ".json" && file.find(prefix) == 0)
-            files.insert(file);
+        if (entry.path().filename().extension() == ".json" && file.find(prefix) == 0) files.insert(file);
     }
     return files;
 }
 
-class TimeLineFixture: public testing::Test {
+class TimeLineFixture : public testing::Test {
 public:
     std::set<std::shared_ptr<CTimelineEvents>> runAndGetEvents(std::string output) {
         std::set<std::shared_ptr<CTimelineEvents>> evtGroups;
-        {
-            TimeLine t1("Stage1");
-        }
-        {
-            TimeLine t2("Stage2");
-        }
-        {
-            TimeLine t3("1st Token");
-        }
-        {
-            TimeLine t4("Next Token");
-        }
-        {
-            TimeLine t5("Next Token");
-        }
-        {
-            TimeLine t3("1st Token");
-        }
-        {
-            TimeLine t6("Next Token");
-        }
-        {
-            TimeLine t6("Next Token");
-        }
-        TimeLine t("dump_file");
+        { TimeLine t1("Stage1"); }
+        { TimeLine t2("Stage2"); }
+        { TimeLine t3("1st Token"); }
+        { TimeLine t4("Next Token"); }
+        { TimeLine t5("Next Token"); }
+        { TimeLine t3("1st Token"); }
+        { TimeLine t6("Next Token"); }
+        { TimeLine t6("Next Token"); }
+        TimeLine t("dumpFile");
         auto jsonFiles = GetJsonFiles("./", "timeline");
-        t.dump_file(output);
+        t.dumpFile(output);
         auto jsonFilesAfterTest = GetJsonFiles("./", "timeline");
-        for (auto f: jsonFilesAfterTest){
-            if (jsonFiles.find(f) == jsonFiles.end()) {
-                evtGroups.insert(std::make_shared<CTimelineEvents>(f));
-            }
+        for (auto f : jsonFilesAfterTest) {
+            if (jsonFiles.find(f) == jsonFiles.end()) { evtGroups.insert(std::make_shared<CTimelineEvents>(f)); }
         }
         return evtGroups;
     }
@@ -146,7 +127,7 @@ TEST_F(TimeLineFixture, timelineevent) {
     ASSERT_TRUE(evts->HavingTag("Stage2"));
     ASSERT_TRUE(evts->HavingTag("1st Token"));
     ASSERT_TRUE(evts->HavingTag("Next Token"));
-    ASSERT_TRUE(evts->HavingTag("dump_file"));
+    ASSERT_TRUE(evts->HavingTag("dumpFile"));
 }
 
 TEST_F(TimeLineFixture, whitelistOne) {
@@ -160,7 +141,7 @@ TEST_F(TimeLineFixture, whitelistOne) {
     ASSERT_TRUE(evts->HavingTag("Stage2"));
     ASSERT_FALSE(evts->HavingTag("1st Token"));
     ASSERT_FALSE(evts->HavingTag("Next Token"));
-    ASSERT_FALSE(evts->HavingTag("dump_file"));
+    ASSERT_FALSE(evts->HavingTag("dumpFile"));
 }
 
 TEST_F(TimeLineFixture, whitelistTwo) {
@@ -174,7 +155,7 @@ TEST_F(TimeLineFixture, whitelistTwo) {
     ASSERT_FALSE(evts->HavingTag("Stage2"));
     ASSERT_TRUE(evts->HavingTag("1st Token"));
     ASSERT_TRUE(evts->HavingTag("Next Token"));
-    ASSERT_FALSE(evts->HavingTag("dump_file"));
+    ASSERT_FALSE(evts->HavingTag("dumpFile"));
 }
 
 int main(int argc, char **argv) {
