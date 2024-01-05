@@ -42,12 +42,12 @@ public:
 
     void release() {
         if (duringTime >= 0) return;
-        this->end = std::chrono::high_resolution_clock::now();
-        this->startTimestamp = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
-        this->duringTime = std::chrono::duration<float, std::micro>(end - start).count();
+        end = std::chrono::high_resolution_clock::now();
+        startTimestamp = std::chrono::duration_cast<std::chrono::microseconds>(start.time_since_epoch()).count();
+        duringTime = std::chrono::duration<float, std::micro>(end - start).count();
 
-        this->traceEvent["ts"] = this->startTimestamp;
-        this->traceEvent["dur"] = this->duringTime;
+        traceEvent["ts"] = startTimestamp;
+        traceEvent["dur"] = duringTime;
 
         // std::lock_guard<std::mutex> lock(get_lock());
         TimeLine::getPool().push_back(traceEvent);
