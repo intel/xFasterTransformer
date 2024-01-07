@@ -3,5 +3,5 @@ cmake==3.26.1
 sentencepiece==0.1.99
 tokenizers==0.13.3
 torch==2.0.1+cpu
-transformers==4.30.0
+transformers==4.36.0
 accelerate==0.23.0
