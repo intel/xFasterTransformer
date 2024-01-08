@@ -22,7 +22,7 @@
 #include "common_decoder.h"
 #include "dist_linear.h"
 #include "float16.h"
-#include "layers_norm.h"
+#include "layer_norm.h"
 #include "messenger.h"
 #include "mlp_standard.h"
 #include "opt_embedding.h"

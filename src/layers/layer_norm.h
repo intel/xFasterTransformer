@@ -14,14 +14,25 @@
 // ============================================================================
 #pragma once
 
-#include "dtype.h"
-
 namespace xft {
 
-void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
-        int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
+// Layer normalization: only support the norm along last dimension
+class LayerNorm {
+public:
+    LayerNorm();
+    ~LayerNorm();
 
-void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols,
-        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+    void setWeight(const float *gamma, const float *beta, int cols);
+
+    // input and output are in shape of (rows, normSize)
+    // TODO: column-wise parallel
+    void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
+
+private:
+    int normSize;
+
+    // the weights contains gamma and beta concated together
+    float *weights;
+};
 
 } // namespace xft

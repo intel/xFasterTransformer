@@ -98,7 +98,7 @@ inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst,
     const __m512i ones = _mm512_set1_epi32(0x1);
     const __m512i vec_bias = _mm512_set1_epi32(0x7fff);
 
-#if (__GNUC__ > 12) || ((__GNUC__ == 12) && (__GNUC_MINOR__ >= 3))
+#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
     auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) { return (__m256i)_mm512_cvtneps_pbh(input_vector); };
 #else
     auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) {

@@ -14,14 +14,29 @@
 // ============================================================================
 #pragma once
 
-#include "dtype.h"
+#include "bfloat16.h"
 
 namespace xft {
 
-void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
-        int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
+// RMS normalization: only support the norm along last dimension
+class RmsNorm {
+public:
+    RmsNorm();
+    ~RmsNorm();
 
-void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols,
-        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+    void setWeight(const float *w, const float *, int cols);
+
+    // Input and output are in shape of (rows, normSize)
+    void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+
+    // Input = float, output = bfloat16_t
+    void forward(const float *input, bfloat16_t *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+
+private:
+    int normSize;
+
+    // the scale weight
+    float *weight;
+};
 
 } // namespace xft
