@@ -30,17 +30,17 @@
 class DecoderUtil {
 public:
     // Dense without bias
-    template <typename WeiT>
-    static void dense(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Matrix<float> &result) {
+    template <typename InT, typename WeiT, typename OutT>
+    static void dense(hpj::Matrix<InT> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
+            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Matrix<OutT> &result) {
         MMHelper::compute(false, x.Rows(), weight.Cols(), x.Cols(), 1.0f, x.Data(), x.Stride(), weight.Data(),
                 scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, result.Data(), result.Stride());
     }
 
-    template <typename WeiT>
-    static void dense(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
+    template <typename InT, typename WeiT, typename OutT>
+    static void dense(hpj::Matrix<InT> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
             hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias,
-            hpj::Matrix<float> &result) {
+            hpj::Matrix<OutT> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "dense error: x.Cols (%d) != weight.Rows (%d)", x.Cols(), weight.Rows());
         REQUIRES(x.Rows() == result.Rows(), "dense error: x.Rows (%d) != result.Rows (%d)", x.Rows(), result.Rows());
         REQUIRES(weight.Cols() == result.Cols(), "dense error: weight.Cols (%d) != result.Cols (%d)", weight.Cols(),

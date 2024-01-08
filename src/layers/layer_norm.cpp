@@ -18,7 +18,7 @@
 #include <cstring>
 
 #include "layernorm_kernels.h"
-#include "layers_norm.h"
+#include "layer_norm.h"
 #include "timeline.h"
 
 namespace xft {

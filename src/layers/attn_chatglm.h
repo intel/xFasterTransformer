@@ -18,9 +18,10 @@
 #include "attention.h"
 
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS>
-class ChatGlmAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, false> {
+class ChatGlmAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, float, float, float, false> {
 public:
-    ChatGlmAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS, false>(layerId, ctx) {
+    ChatGlmAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS, float, float, float, false>(layerId, ctx) {
         residScale = std::sqrt(2 * ctx->layers);
         scalingCoeff = 1.0f / (std::sqrt(ctx->attHeadSize) * (layerId + 1));
     }
