@@ -1,0 +1,6 @@
+{
+    "name": "xft-llama-2-model",
+    "implementation": "llama2.XFTLlama2Model",
+    "max_batch_size":1,
+    "max_batch_time":0
+}
