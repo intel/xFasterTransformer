@@ -63,7 +63,8 @@ public:
         zeroWeight.Resize(N);
 
         hpj::Matrix<WeiT> quantizedWeight;
-        MMHelper::convertWeight(true, K, N, w + splitOffset * K, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
+        MMHelper::convertWeight(
+                true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
         MMHelper::packWeight(true, quantizedWeight, weight);
 
         // Copy Bias
