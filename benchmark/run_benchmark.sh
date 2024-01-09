@@ -125,13 +125,14 @@ fi
 sockets_num=`lscpu | grep "Socket(s)" | awk -F ':' '{print $2}'`
 cores_per_socket=`lscpu | grep "Core(s) per socket" | awk -F ':' '{print $2}'`
 numa_nodes=`lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}'`
-cores_per_numa=$(( $sockets_num * $cores_per_socket / $numa_nodes ))
+# Multiply by 2 to avoid an float result in HBM flat mode that the NUMA count twice and it will be divided later.
+cores_per_numa=$(( $sockets_num * $cores_per_socket * 2 / $numa_nodes ))
 
 if [ "${numa_nodes}" -eq 16 ]; then
     #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
     #0-7 is DRAM memory node, 8-15 is HBM node
-    export OMP_NUM_THREADS=$((${cores_per_numa} * 2))
-    echo "OMP_NUM_THREADS: $((${cores_per_numa} * 2))"
+    export OMP_NUM_THREADS=${cores_per_numa}
+    echo "OMP_NUM_THREADS: ${cores_per_numa}"
     echo "HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 $(WEIGHT_LOCATION 0  8) numactl -p 8  -N 0 ${benchmark_cmd} : \
@@ -147,8 +148,8 @@ if [ "${numa_nodes}" -eq 16 ]; then
     fi
 elif [ "${numa_nodes}" -eq 8 ]; then
     #HBM SNC-4 for cache or hbm only mode
-    export OMP_NUM_THREADS=${cores_per_numa}
-    echo "OMP_NUM_THREADS: ${cores_per_numa}"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     echo "HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 $(WEIGHT_LOCATION 0 0) numactl -m 0 -N 0 ${benchmark_cmd} : \
@@ -165,8 +166,8 @@ elif [ "${numa_nodes}" -eq 8 ]; then
 elif [ "${numa_nodes}" -eq 4 ]; then
     #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
     echo "HBM Quad mode"
-    export OMP_NUM_THREADS=$((${cores_per_numa} * 2))
-    echo "OMP_NUM_THREADS: $((${cores_per_numa} * 2))"
+    export OMP_NUM_THREADS=${cores_per_numa}
+    echo "OMP_NUM_THREADS: ${cores_per_numa}"
     run_cmd="mpirun \
     -n 1 $(WEIGHT_LOCATION 0 2) numactl -p 2 -N 0 ${benchmark_cmd} "
     if [ "$sockets" == "2" ]; then
@@ -176,8 +177,8 @@ elif [ "${numa_nodes}" -eq 4 ]; then
 elif [ "${numa_nodes}" -eq 2 ]; then
     #SPR or hbm only or hbm cache Quad-mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
     echo "SPR Quad mode"
-    export OMP_NUM_THREADS=${cores_per_numa}
-    echo "OMP_NUM_THREADS: ${cores_per_numa}"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd="mpirun \
     -n 1 $(WEIGHT_LOCATION 0 0) numactl -N 0 -m 0 ${benchmark_cmd}"
     if [ "$sockets" == "2" ]; then
