@@ -31,6 +31,7 @@
 
 #include "attention.h"
 #include "debugger.h"
+#include "dtype.h"
 #include "kvcache_tensor.h"
 #include "timeline.h"
 
@@ -55,9 +56,9 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
-        // float32 weights
-        if (type == 0) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
+            xft::DataType dt = xft::DataType::fp32) {
+        if (dt == xft::DataType::fp32) {
             const float *queryWeight = (const float *)params[0];
             const float *queryBias = (const float *)params[1];
             const float *keyWeight = (const float *)params[2];
@@ -74,10 +75,8 @@ public:
                     beta1, trans);
 
             std::vector<void *> mlpParams(params.begin() + 10, params.end());
-            mlp.setWeights(ctx, mlpParams, trans, 0);
-        }
-        // int8 weights
-        else if (type == 1) {
+            mlp.setWeights(ctx, mlpParams, trans, dt);
+        } else if (dt == xft::DataType::int8) {
             const int8_t *queryWeight = (const int8_t *)params[0];
             const float *queryScale = (const float *)params[1];
             const float *queryZero = (const float *)params[2];
@@ -102,7 +101,7 @@ public:
                     attnOutBias, gamma1, beta1, trans);
 
             std::vector<void *> mlpParams(params.begin() + 18, params.end());
-            mlp.setWeights(ctx, mlpParams, trans, 1);
+            mlp.setWeights(ctx, mlpParams, trans, dt);
         }
     }
 

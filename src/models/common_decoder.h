@@ -86,9 +86,16 @@ public:
         this->prefixSharing = false;
 
         // Quantization config
-        const bool quant_decoder_weights = reader.GetBoolean(modelType, "quant_decoder_weights", false);
-        const int quant_wbits = reader.GetInteger(modelType, "quant_wbits", 8);
-        const int quant_groupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
+        const bool quantDecoderWeights = reader.GetBoolean(modelType, "quant_decoder_weights", false);
+        const int quantWbits = reader.GetInteger(modelType, "quant_wbits", 8);
+        const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
+
+        DataType dt = DataType::fp32;
+        if (quantDecoderWeights) {
+            REQUIRES(quantWbits == 8, "Only int8 quantization is supported.");
+            REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
+            dt = DataType::int8;
+        }
 
         // Buffer related (not initialized)
         this->inputTokens = nullptr;
@@ -104,7 +111,7 @@ public:
         // Decoder
         for (int i = 0; i < layers; ++i) {
             auto pdec = new DECODER(ctx, i);
-            this->setDecoderWeights(pdec, modelPath, i, quant_decoder_weights);
+            this->setDecoderWeights(pdec, modelPath, i, dt);
             this->decoders.push_back(pdec);
         }
 
@@ -470,7 +477,7 @@ protected:
         return this->context.get();
     }
 
-    void setDecoderWeights(DECODER *pdecoder, const std::string &modelPath, int layerIdx, bool quant) {
+    void setDecoderWeights(DECODER *pdecoder, const std::string &modelPath, int layerIdx, DataType dt) {
         const int hiddenSize = getContext()->hiddenSize;
         const int imSize = getContext()->intermediateSize;
         const int kvHeadNum = getContext()->kvHeadNum;
@@ -515,7 +522,7 @@ protected:
         float *fc3Scales = nullptr;
         float *fc3Zeros = nullptr;
 
-        if (quant) {
+        if (dt == DataType::int8) {
             // INT8 quant, wbits = 8, qweight dtype: int8
             qkvQWeight = (int8_t *)ALLOC(hiddenSize * qkvSize * sizeof(int8_t), 64);
             qkvZeros = (float *)ALLOC(qkvSize * sizeof(float), 64);
@@ -533,7 +540,6 @@ protected:
             fc2Zeros = (float *)ALLOC(imSize * sizeof(float), 64);
             fc2Scales = (float *)ALLOC(imSize * sizeof(float), 64);
 
-            // printf("hiddenSize=%d, qkvSize=%d\n", hiddenSize, qkvSize);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx)
                             + ".attention.query_key_value.qweight.0.bin",
                     qkvQWeight, hiddenSize * qkvSize, WDataType::INT8);
@@ -596,13 +602,12 @@ protected:
                         fc3Scales, hiddenSize, WDataType::FP32);
             }
 
-        } else {
+        } else if (dt == DataType::fp32) {
             qkvWeight = (float *)ALLOC(hiddenSize * qkvSize * sizeof(float), 64);
             attnOutWeight = (float *)ALLOC(hiddenSize * hiddenSize * sizeof(float), 64);
             fc1Weight = (float *)ALLOC(hiddenSize * imSize * mlpFactor * sizeof(float), 64);
             fc2Weight = (float *)ALLOC(hiddenSize * imSize * sizeof(float), 64);
 
-            // printf("hiddenSize=%d, qkvSize=%d\n", hiddenSize, qkvSize);
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.weight.0.bin",
                     qkvWeight, hiddenSize * qkvSize, getDataType());
@@ -667,19 +672,19 @@ protected:
         // Need the tranposed weights in our interface
         // ordering, trans, rows, cols, alpha, a, lda, b, ldb
 
-        if (quant) {
+        if (dt == DataType::int8) {
             std::vector<void *> params = {qkvQWeight, qkvScales, qkvZeros, qkvBias, qkvQWeight + qSize,
                     qkvScales + qSize, qkvZeros + qSize, qkvBias + qSize, qkvQWeight + qSize + kvSize,
                     qkvScales + qSize + kvSize, qkvZeros + qSize + kvSize, qkvBias + qSize + kvSize, attnOutQWeight,
                     attnOutScales, attnOutZeros, attnOutBias, ln1Gamma, ln1Beta, fc1QWeight, fc1Scales, fc1Zeros,
                     fc1Bias, fc2QWeight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma, ln2Beta, fc3QWeight, fc3Scales,
                     fc3Zeros};
-            pdecoder->setWeights(getContext(), params, false, 1);
-        } else {
+            pdecoder->setWeights(getContext(), params, false, dt);
+        } else if (dt == DataType::fp32) {
             std::vector<void *> params = {qkvWeight, qkvBias, qkvWeight + qSize, qkvBias + qSize,
                     qkvWeight + qSize + kvSize, qkvBias + qSize + kvSize, attnOutWeight, attnOutBias, ln1Gamma, ln1Beta,
                     fc1Weight, fc1Bias, fc2Weight, fc2Bias, ln2Gamma, ln2Beta, fc3Weight};
-            pdecoder->setWeights(getContext(), params, false);
+            pdecoder->setWeights(getContext(), params, false, dt);
         }
         FREE(qkvWeight);
         FREE(attnOutWeight);

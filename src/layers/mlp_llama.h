@@ -16,6 +16,7 @@
 #include "bert_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "dtype.h"
 #include "matmul_helper.h"
 #include "singleton.h"
 #include "timeline.h"
@@ -41,18 +42,16 @@ public:
     LlamaMLP(DecoderContext *ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
-        // set float32 weights
-        if (type == 0) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
+            xft::DataType dt = xft::DataType::fp32) {
+        if (dt == xft::DataType::fp32) {
             // Refer to CommonDecoder for parameters order
             const float *gateW = (const float *)params[0];
             const float *upW = (const float *)params[2];
             const float *normW = (const float *)params[4];
             const float *downW = (const float *)params[6];
             setWeights(ctx, gateW, nullptr, nullptr, upW, nullptr, nullptr, normW, downW, nullptr, nullptr, trans);
-        }
-        // set int8 weights
-        else if (type == 1) {
+        } else if (dt == xft::DataType::int8) {
             // Refer to CommonDecoder for parameters order
             const int8_t *gateW = (const int8_t *)params[0];
             const float *gateS = (const float *)params[1];

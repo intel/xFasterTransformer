@@ -16,6 +16,7 @@
 #include "bert_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "dtype.h"
 #include "matmul_helper.h"
 #include "split_util.h"
 
@@ -28,7 +29,8 @@ public:
     MLP(DecoderContext *ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
+            xft::DataType dt = xft::DataType::fp32) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
 

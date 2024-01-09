@@ -14,6 +14,7 @@
 // ============================================================================
 #pragma once
 #include <cmath>
+#include "dtype.h"
 #include "mlp_llama.h"
 
 template <typename WeiT, typename NORM_CLS, bool INPUT_AS_RESID>
@@ -22,7 +23,8 @@ public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true, int type = 0) {
+    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
+            xft::DataType dt = xft::DataType::fp32) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
 
