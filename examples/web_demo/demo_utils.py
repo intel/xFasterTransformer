@@ -18,6 +18,9 @@ import time
 import gradio as gr
 import importlib.util
 from transformers import AutoTokenizer
+import sys
+
+sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 
 xft_spec = importlib.util.find_spec("xfastertransformer")
 

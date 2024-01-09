@@ -42,6 +42,7 @@ private:
     // Predicted token IDs
     std::vector<int> nextTokens;
     std::vector<int> output;
+    std::vector<std::vector<int>> cachedRepetVec;
     std::vector<bool> doneBatch;
 
     int batchSize;
@@ -54,4 +55,5 @@ private:
     int topK;
     float topP;
     float temperatureInv;
+    float repetitionPenalty;
 };

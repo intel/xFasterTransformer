@@ -28,6 +28,7 @@
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "searcher.h"
+#include "timeline.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -49,6 +50,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
     Env::setVerbose();
+    TimeLine::init();
 }
 
 Model::~Model() {
@@ -83,7 +85,8 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
-        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_) {
+        int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_,
+        float repetitionPenalty_) {
     isNewInput = true;
     if (decoder->getRank() == 0) {
         configuration.maxLen = maxLen_;
@@ -97,6 +100,7 @@ void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float len
         configuration.temperature = temperature_;
         configuration.topK = topK_;
         configuration.topP = topP_;
+        configuration.repetitionPenalty = repetitionPenalty_;
     }
     Messenger &messenger = decoder->getMessenger();
     messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,14 +14,8 @@
 // ============================================================================
 #pragma once
 
-#include "dtype.h"
+// Insert an element into a sorted vector while maintaining the order
+void insertAndSort(std::vector<int> &targetVector, int num);
 
-namespace xft {
-
-void invokeLayerNorm(DataType dt, void *output, const void *input, const void *gamma, const void *beta, int rows,
-        int cols, int iStride = -1, int oStride = -1, float epsilon = 1e-5);
-
-void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols,
-        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
-
-} // namespace xft
+void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffset, int sampleSize,
+        std::vector<int> &inputIds, int batchSize, std::vector<std::vector<int>> &cachedVec, int step, bool multiRank);

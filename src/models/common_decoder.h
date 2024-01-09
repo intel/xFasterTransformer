@@ -210,22 +210,20 @@ public:
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
 
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
+            // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
+            auto &attnOut = this->getContext()->tmpBuf;
+            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
+                    attnOut.Data(), attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     inputSeqLen, // inputSeqLen,
                     pastSeqLen, // pastSeqLen
                     step == 0, // useSelfAttn,
                     true, // doLnBefore,
-                    false, // returnAttn,
-                    false, // returnKVs
-                    false, // forPT
                     positionIds);
 
             // Expand the KV cache as it only has values for beam 0
             if (step == 0 && beamSize > 1) { this->kvCacheMgr->expandCache(i, userSideBS, beamSize, seqLen); }
-
-            auto &attnOut = this->getContext()->tmpBuf;
 
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
@@ -360,19 +358,17 @@ public:
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getPrefixKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
 
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
+            // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
+            auto &attnOut = this->getContext()->tmpBuf;
+            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
+                    attnOut.Data(), attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     seqLen, // inputSeqLen,
                     0, // pastSeqLen
                     true, // useSelfAttn,
                     true, // doLnBefore,
-                    false, // returnAttn,
-                    false, // returnKVs
-                    false, // forPT
                     positionIds);
-
-            auto &attnOut = this->getContext()->tmpBuf;
 
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention

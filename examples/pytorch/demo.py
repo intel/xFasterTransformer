@@ -62,6 +62,7 @@ parser.add_argument("--do_sample", help="Enable sampling search, Default to Fals
 parser.add_argument("--temperature", help="value used to modulate next token probabilities.", type=float, default=1.0)
 parser.add_argument("--top_p", help="retain minimal tokens above topP threshold.", type=float, default=1.0)
 parser.add_argument("--top_k", help="num of highest probability tokens to keep for generation", type=int, default=50)
+parser.add_argument("--rep_penalty", help="param for repetition penalty. 1.0 means no penalty", type=float, default=1.0)
 
 
 def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
@@ -134,6 +135,7 @@ if __name__ == "__main__":
                 temperature=args.temperature,
                 top_k=args.top_k,
                 top_p=args.top_p,
+                repetition_penalty=args.rep_penalty,
             )
             end_time = time.perf_counter()
 

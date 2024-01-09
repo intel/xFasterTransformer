@@ -17,6 +17,7 @@
 
 #include "aligned_type.h"
 #include "bfloat16.h"
+#include "copy_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
 #include "float16.h"
@@ -27,12 +28,18 @@
 #include "transformer_ctx.h"
 #include "transformer_util.h"
 
-// WeiT: weight data type
-// QKPO_CLS: class for post operation of query/key, it is generally the rotary embedding
-// NORM_CLS: class for layernorm or other norms
-// INPUT_AS_RESID: input as residential or not, most models use input as residential,
-//                 but there are exceptions like ChatGLM use values after layernorm as residential
-template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, bool INPUT_AS_RESID = true>
+/**
+ * WeiT: weight data type
+ * InT: input data type
+ * ImT: intermediate data type
+ * OutT: output data type
+ * QKPO_CLS: class for post operation of query/key, it is generally the rotary embedding
+ * NORM_CLS: class for layernorm or other norms
+ * INPUT_AS_RESID: input as residential or not, most models use input as residential,
+ *                 but there are exceptions like ChatGLM use values after layernorm as residential
+*/
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = float, typename ImT = float,
+        typename OutT = float, bool INPUT_AS_RESID = true>
 class Attention {
 public:
     Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
@@ -178,52 +185,40 @@ public:
      * Forward computing for the whole encoder/decoder layer
      * Inputs:
      * - input: (bs * seq_len) x hidden_size (input buffer)
-     * - imBuf: (bs * seq_len) x hidden_size (intermediate buffer, output is in ctx->tmpBuf)
+     * - imBuf: (bs * seq_len) x hidden_size (intermediate buffer)
+     * - output: (bs * seq_len) x hidden_size (output buffer)
      * - attnMask: (bs, 1, tgt_len, src_len) (tgt_len is the length of query, src_len is the length of key)
      * - presentKeys, presentValues: past key/values concats current key/values
      * - pastSeqLen: the sequence length in pastKeys and pastValues
      * - useSelfAttn: use self attention or not, self attention is used to gen first token
      * - doLnBefore: Do layer norm before or not. If true, will do layer norm as the first step
-     * - returnAttn: return attention values or not (this option is not used any more)
-     * - returnKVs: return present key/values or not (this option is not used any more)
-     * - forPT: is it for PyTorch or not (this option is not used any more), now cached keys/values are always controlled by us
-     * Internal Buffers:
+     *               currently only support doLnBefore=true
      *  _________                _________                _________                _________                _________                
-     * |         |------------->|         |------------->|         |------------->|         |------------->|         |
-     * ```````````  layerNorm   ```````````  QKV Linear  ```````````     MHA      ```````````  out Linear  ```````````
-     *    input                resultBuffer1              qkvMatMul               resultBuffer1            resultBuffer2
+     * |_________|------------->|_________|------------->|_________|------------->|_________|------------->|_________|
+     *              layerNorm                QKV Linear                  MHA                   out Linear             
+     *    input                   imBuffer                qkvMatMul                 imBuffer                  output
     */
     template <typename KVCacheT>
-    void forward(DecoderContext *ctx, float *input, float *imBuf, const float *attnMask,
+    void forward(DecoderContext *ctx, InT *input, ImT *imBuf, OutT *output, const float *attnMask,
             KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
-            bool useSelfAttn, bool doLnBefore, bool returnAttn, bool returnKVs, bool forPT = true,
-            int *positionIds = nullptr) {
-        if (forPT) {
-            printf("For better perf, need to manage cached key/vaues by ourself, PyTorch extension is not supported "
-                   "any more.\n");
-            exit(-1);
-        }
-
-        hpj::Matrix<float> inputBuffer(input, ctx->batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
-        hpj::Matrix<float> imBuffer(imBuf, ctx->batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
+            bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
 
         auto hiddenSize = ctx->hiddenSize;
-        auto &qkvMatMul = ctx->qkvMatMul;
-        auto &resultBuffer1 = imBuffer;
-        auto &resultBuffer2 = ctx->tmpBuf;
+        hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        hpj::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        hpj::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
 
         float epsilon = ctx->epsilon;
-        // init group_qkvBuffer
-        int attHeadSize = ctx->attHeadSize;
+        int headSize = ctx->attHeadSize;
         int qkvRows = ctx->batchSize * inputSeqLen;
-        // group attention
-        int qCols = (this->endQHead - this->startQHead) * attHeadSize;
-        int kvCols = (this->endKVHead - this->startKVHead) * attHeadSize;
+        int qCols = (this->endQHead - this->startQHead) * headSize;
+        int kvCols = (this->endKVHead - this->startKVHead) * headSize;
         int qkCols = qCols + kvCols;
         int qkvCols = qkCols + kvCols;
 
         int qkvStride = qkvCols;
-        hpj::Matrix<float> qkvGroupMatMul(qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
+        auto &qkvMatMul = ctx->qkvMatMul;
+        hpj::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
 #ifdef DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
@@ -233,25 +228,24 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm.forward(inputBuffer.Data(), resultBuffer1.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
-                    resultBuffer1.Stride(), epsilon);
+            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+                    imBuffer.Stride(), epsilon);
         }
 #ifdef DEBUG
         dbg.debugPrint("layer norm:\n");
-        dbg.dumpMatrix(resultBuffer1);
+        dbg.dumpMatrix(imBuffer);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
         dbg.dumpMatrix(this->qkvWeight);
 #endif
 
         // Query, Key, Value computed together
         TimeLine t2("QKV.linear");
-        DecoderUtil::dense(
-                resultBuffer1, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
+        DecoderUtil::dense(imBuffer, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
         t2.release();
 
-        hpj::Matrix<float> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
-        hpj::Matrix<float> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
-        hpj::Matrix<float> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
+        hpj::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
+        hpj::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
+        hpj::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
 #ifdef DEBUG
         dbg.debugPrint("Q:\n");
@@ -262,22 +256,22 @@ public:
         dbg.dumpMatrix(value);
 #endif
 
-        // Apply post operattions on query and key
+        // Apply post operations on query and key
         TimeLine t3("QKPO");
         int qheads = this->endQHead - this->startQHead;
         int kheads = this->endKVHead - this->startKVHead;
-        int qk_shape[5] = {ctx->batchSize, ctx->inputSeqLen, qheads, ctx->attHeadSize, kheads};
+        int qkShape[5] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads};
         if (positionIds != nullptr) {
-            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, positionIds);
+            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds);
         } else if (ctx->maxPosEmbed > 0) {
             // Use the default position ids
-            std::vector<int> position_ids(ctx->inputSeqLen);
+            std::vector<int> posIds(ctx->inputSeqLen);
             if (inputSeqLen == 1) {
-                position_ids[0] = pastSeqLen;
+                posIds[0] = pastSeqLen;
             } else {
-                std::iota(position_ids.begin(), position_ids.end(), pastSeqLen);
+                std::iota(posIds.begin(), posIds.end(), pastSeqLen);
             }
-            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qk_shape, position_ids.data());
+            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
         }
         t3.release();
 
@@ -294,22 +288,21 @@ public:
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
         TimeLine t4("MHA");
-        if constexpr (!INPUT_AS_RESID) {
-            auto presult = resultBuffer1.Data();
-            int rows = resultBuffer1.Rows(), cols = resultBuffer1.Cols(), stride = resultBuffer1.Stride();
-            resultBuffer1.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
-            inputBuffer.Assign(presult, rows, cols, stride);
+        if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
+            auto tmp = imBuffer.Data();
+            int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
+            imBuffer.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
+            inputBuffer.Assign(tmp, rows, cols, stride);
         }
         // TODO: support large inputSeqLen when pastSeqLen > 0
         if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
-            flashAttention(
-                    ctx, qkvGroupMatMul, resultBuffer2, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
+            flashAttention(ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
         else
-            fusedAttention(ctx, query, key, value, resultBuffer1, presentKey, presentValue, attnMask, pastSeqLen);
+            fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
         t4.release();
 
         // For multiple nodes inference, not the whole result buffer
-        hpj::Matrix<float> attnSplit(resultBuffer1.Data(), resultBuffer1.Rows(), qCols, resultBuffer1.Stride());
+        hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, imBuffer.Stride());
 
 #ifdef DEBUG
         dbg.debugPrint("attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
@@ -326,38 +319,38 @@ public:
             // So here still use denseWithSum
             if (gamma == 1) {
                 DecoderUtil::denseWithSum(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
-                        attnOutputWeightSum, attnOutputBias, inputBuffer, resultBuffer2);
+                        attnOutputWeightSum, attnOutputBias, inputBuffer, outBuffer);
             } else {
                 DecoderUtil::denseWithScaledSum(attnSplit, attnOutputWeight, attnOutputWeightScale,
-                        attnOutputWeightZero, attnOutputWeightSum, attnOutputBias, gamma, inputBuffer, resultBuffer2);
+                        attnOutputWeightZero, attnOutputWeightSum, attnOutputBias, gamma, inputBuffer, outBuffer);
             }
         } else {
             DecoderUtil::dense(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
-                    attnOutputWeightSum, attnOutputBias, resultBuffer2);
+                    attnOutputWeightSum, attnOutputBias, outBuffer);
         }
         t5.release();
 
 #ifdef DEBUG
         dbg.debugPrint("attention output/projection:\n");
-        dbg.dumpMatrix(resultBuffer2);
+        dbg.dumpMatrix(outBuffer);
 #endif
 
         if (!doLnBefore) {
             TimeLine t6("result.layer_norm");
-            norm.forward(resultBuffer2.Data(), resultBuffer2.Data(), resultBuffer2.Rows(), resultBuffer2.Stride(),
-                    resultBuffer2.Stride());
+            norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef DEBUG
-            dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", resultBuffer2.Rows(), resultBuffer2.Cols(),
-                    resultBuffer2.Stride());
-            dbg.dumpMatrix(resultBuffer2);
+            dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
+                    outBuffer.Stride());
+            dbg.dumpMatrix(outBuffer);
 #endif
         }
     }
 
 protected:
+    // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
-    void fusedAttention(DecoderContext *ctx, hpj::Matrix<float> &query, hpj::Matrix<float> &key,
-            hpj::Matrix<float> &value, hpj::Matrix<float> &result, KVCacheTensor<KVCacheT> &presentKey,
+    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
+            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
             KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
@@ -419,13 +412,8 @@ protected:
                         auto srcV = value.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
                         auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
 
-                        if constexpr (std::is_same_v<KVCacheT, float>) {
-                            memcpy(dstK, srcK, ctx->attHeadSize * sizeof(float));
-                            memcpy(dstV, srcV, ctx->attHeadSize * sizeof(float));
-                        } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                            float16_t::cvt_float_to_float16(srcK, dstK, ctx->attHeadSize);
-                            float16_t::cvt_float_to_float16(srcV, dstV, ctx->attHeadSize);
-                        }
+                        xft::copy(dstK, srcK, ctx->attHeadSize);
+                        xft::copy(dstV, srcV, ctx->attHeadSize);
                     }
                 }
             }
@@ -451,11 +439,7 @@ protected:
                         for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
                             auto src = key.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
                             auto dst = presentKey.getSequence(pastSeqLen + seq, b, i);
-                            if constexpr (std::is_same_v<KVCacheT, float>) {
-                                memcpy(dst, src, ctx->attHeadSize * sizeof(float));
-                            } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                                float16_t::cvt_float_to_float16(src, dst, ctx->attHeadSize);
-                            }
+                            xft::copy(dst, src, ctx->attHeadSize);
                         }
                     }
 
@@ -536,11 +520,7 @@ protected:
                         for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
                             auto src = value.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
                             auto dst = presentValue.getSequence(pastSeqLen + seq, b, i);
-                            if constexpr (std::is_same_v<KVCacheT, float>) {
-                                memcpy(dst, src, ctx->attHeadSize * sizeof(float));
-                            } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                                float16_t::cvt_float_to_float16(src, dst, ctx->attHeadSize);
-                            }
+                            xft::copy(dst, src, ctx->attHeadSize);
                         }
                     }
 
@@ -576,8 +556,8 @@ protected:
 
     // When #heads is very few, need to shard each head to use more resources
     template <typename KVCacheT>
-    void crossAttnShardHead(DecoderContext *ctx, hpj::Matrix<float> &query, hpj::Matrix<float> &key,
-            hpj::Matrix<float> &value, hpj::Matrix<float> &result, KVCacheTensor<KVCacheT> &presentKey,
+    void crossAttnShardHead(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
+            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
             KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
         const int responsibleHeads = this->endQHead - this->startQHead;
         const int batchSize = ctx->batchSize;

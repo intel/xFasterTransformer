@@ -270,6 +270,7 @@ int main(int argc, char **argv) {
     args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
     args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
     args.add<float>("topP", '\0', "retain minimal tokens above topP threshold.", false, 1.0);
+    args.add<float>("repetPen", '\0', "repetition penalty.", false, 1.0);
     args.add("no_stream", '\0', "disable streaming output");
     args.add("do_sample", '\0', "use sampling");
     args.parse_check(argc, argv);
@@ -300,6 +301,7 @@ int main(int argc, char **argv) {
     int topK = args.get<int>("topK");
     float temperature = args.get<float>("temperature");
     float topP = args.get<float>("topP");
+    float repetitionPenalty = args.get<float>("repetPen");
 
     std::string modeltype = getModelType(modelPath);
 
@@ -309,6 +311,7 @@ int main(int argc, char **argv) {
 
     xft::AutoModel model(modelPath, dtype);
     bool isMaster = (model.getRank() == 0);
+    int  secondIdCount = 0;
 
     // Need longer prompt
     if (inputSize > 0 && inputSize > input.size()) {
@@ -350,6 +353,7 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] temperature is " << temperature << std::endl;
         std::cout << "[INFO] topK is " << topK << std::endl;
         std::cout << "[INFO] topP is " << topP << std::endl;
+        std::cout << "[INFO] repetitionPenalty is " << repetitionPenalty << std::endl;
         std::cout << "[INFO] batch_size is " << batchSize << std::endl;
         std::cout << "[INFO] loop is " << loop << std::endl;
         if (prefixLen > 0) {
@@ -369,40 +373,47 @@ int main(int argc, char **argv) {
     if (prefixLen > 0) { model.setPrefix(perfixSeq); }
 
     for (int i = 0; i < loop; ++i) {
+        secondIdCount = 0;
         model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
-                /*topK*/ topK, /*topP*/ topP);
+                /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
         model.input(input, batchSize);
 
         std::vector<int> firstIds;
-        std::vector<int> seconedIds;
+        std::vector<int> secondIds;
 
         if (!model.isDone()) {
             Timer t(isMaster, "[INFO] First token");
             firstIds = model.generate();
         }
 
+        Timer timerSecond;
         if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] Second token");
-            seconedIds = model.generate();
+            secondIds = model.generate();
+            secondIdCount++;
         }
 
         if (isMaster && streamingOutput) {
             if (!firstIds.empty()) {
                 tokenizer->printResult(firstIds, batchSize, numBeams);
-                if (!seconedIds.empty()) { tokenizer->printResult(seconedIds, batchSize, numBeams); }
+                if (!secondIds.empty()) { tokenizer->printResult(secondIds, batchSize, numBeams); }
             }
         }
 
         while (!model.isDone()) {
             auto nextIds = model.generate();
+            secondIdCount++;
             if (isMaster && streamingOutput) { tokenizer->printResult(nextIds, batchSize, numBeams); }
+        }
+        if (isMaster && secondIdCount > 0){
+            auto avgDuration = timerSecond.getTime() / float(secondIdCount);
+            std::cout << std::endl << "[INFO] Second token time: " << avgDuration  << " ms" << std::endl;
         }
         auto result = model.finalize();
 
         if (isMaster) {
-            std::cout << "\n[INFO] Finalzie output is: " << std::endl;
+            std::cout << "\n[INFO] Final output is: " << std::endl;
             std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
             for (auto str : sent) {
                 std::cout << "==============================================" << std::endl;

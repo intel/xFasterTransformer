@@ -28,12 +28,26 @@
 #include <new>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 #include "attention.h"
 #include "debugger.h"
 #include "dtype.h"
 #include "kvcache_tensor.h"
 #include "timeline.h"
+#include "type_selector.h"
+
+// To get weight data type in attention class
+template <typename T>
+struct AttnParameters;
+template <template <typename...> class ATTN_CLS, typename WeiT, typename QKPO_CLS, typename NORM_CLS>
+struct AttnParameters<ATTN_CLS<WeiT, QKPO_CLS, NORM_CLS>> {
+    using Tim = float;
+};
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT, typename ImT, typename OutT>
+struct AttnParameters<Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+    using Tim = ImT;
+};
 
 template <typename ATTN_CLS, typename MLP_CLS>
 class Decoder {
@@ -105,14 +119,17 @@ public:
         }
     }
 
-    template <typename KVCacheT>
-    void forwardAttention(DecoderContext *ctx, float *input, float *output, const float *attnMask,
+    template <typename InT, typename ImT, typename OutT, typename KVCacheT>
+    void forwardAttention(DecoderContext *ctx, InT *input, ImT *imBuf, OutT *output, const float *attnMask,
             KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
-            bool useSelfAttn, bool doLnBefore, bool returnAttn, bool returnKVs, bool forPT = true,
-            int *positionIds = nullptr) {
+            bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
         TimeLine t("Decoder.forwardAttention");
-        attn.forward(ctx, input, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen, useSelfAttn,
-                doLnBefore, returnAttn, returnKVs, forPT, positionIds);
+
+        using Ttarget = typename AttnParameters<ATTN_CLS>::Tim;
+        static_assert(sizeof(ImT) >= sizeof(Ttarget), "Intermediate buffer is NOT big enough!");
+
+        attn.forward(ctx, input, (Ttarget *)imBuf, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen,
+                useSelfAttn, doLnBefore, positionIds);
     }
 
     void forwardFFN(
