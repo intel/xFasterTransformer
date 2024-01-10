@@ -16,6 +16,7 @@ import configparser
 import multiprocessing
 import numpy as np
 import os
+from torch import nn
 
 from transformers import AutoModelForCausalLM
 
@@ -147,7 +148,7 @@ class BaichuanConvert(BaseModelConvert):
             if "embed" in name:
                 model_named_parameters[name] = param
             elif "lm_head" in name:
-                model_named_parameters[name] = param
+                model_named_parameters[name] = nn.functional.normalize(param)
             else:
                 model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
 

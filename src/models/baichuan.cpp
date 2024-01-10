@@ -89,48 +89,93 @@ void Baichuan<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //    return alibi_mask
 
 template <typename WeiT>
-void Baichuan<WeiT>::prepareAttnMask(int *ids, int step) {
+void Baichuan<WeiT>::prepareAttnMaskBase(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
-    BaichuanAttention<WeiT> attn(0, ctx);
-    int responsibleHeads = attn.getResponsibleHeads();
+
+    if (step == 0) {
+        int sizeRequired = ctx->batchSize * seqLen * seqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        for (int b = 0; b < ctx->batchSize; ++b) {
+            auto pmask = mask + b * seqLen * seqLen;
+            for (int i = 0; i < seqLen; ++i) {
+                memset(pmask + i * seqLen, 0, (i + 1) * sizeof(float)); // bottom left are 0
+                std::fill_n(pmask + i * seqLen + i + 1, seqLen - i - 1, std::numeric_limits<float>::lowest());
+            }
+        }
+    } else if (seqLen > 1) {
+        int sizeRequired = ctx->batchSize * this->accSeqLen * seqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        for (int b = 0; b < ctx->batchSize; ++b) {
+            auto pmask = mask + b * this->accSeqLen * seqLen;
+            int pastLen = this->accSeqLen - seqLen;
+            for (int i = 0; i < seqLen; ++i) {
+                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float));
+                std::fill_n(pmask + i * this->accSeqLen + pastLen + i + 1, seqLen - i - 1,
+                        std::numeric_limits<float>::lowest());
+            }
+        }
+    } else {
+        int sizeRequired = ctx->batchSize * this->accSeqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        memset(mask, 0, ctx->batchSize * this->accSeqLen * sizeof(float)); // all elements are 0
+    }
+}
+
+template <typename WeiT>
+void Baichuan<WeiT>::prepareAttnMask(int *ids, int step) {
+    DecoderContext *ctx = this->getContext();
+    if (ctx->maxPosEmbed > 0) {
+        // Base Mask for CausalLM
+        prepareAttnMaskBase(ids, step);
+        return;
+    }
+
+    // Alibi Mask
+    int seqLen = ctx->inputSeqLen;
+
+    int responsibleHeads = BaichuanAttention<WeiT>::getResponsibleHeads();
     // alibi mask slope for each head
-    const float *alibiSlopes = attn.getAlibiSlopes(ctx->attHeadNum);
+    const float *slopes = BaichuanAttention<WeiT>::getAlibiSlopes();
 
     if (step == 0) {
         int sizeRequired = responsibleHeads * seqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
         for (int h = 0; h < responsibleHeads; ++h) {
-            float slope = 0;
-            if (ctx->maxPosEmbed <= 0) { slope = alibiSlopes[h]; }
             auto pmask = mask + h * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
                 memset(pmask + i * seqLen, 0, (i + 1) * sizeof(float)); // bottom left are 0
                 // attention mask added with alibi mask
-                for (int j = 0; j < seqLen; ++j) {
-                    pmask[i * seqLen + j] += j * slope;
+                for (int j = 0; j < i + 1; ++j) {
+                    pmask[i * seqLen + j] += j * slopes[h];
                 }
                 std::fill_n(pmask + i * seqLen + i + 1, seqLen - i - 1, std::numeric_limits<float>::lowest());
             }
         }
-    } else {
+    } else if (seqLen > 1) {
         int sizeRequired = responsibleHeads * this->accSeqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
-        memset(mask, 0, responsibleHeads * this->accSeqLen * seqLen * sizeof(float)); // all elements are 0
         for (int h = 0; h < responsibleHeads; ++h) {
-            // alibi mask slope for each head
-            float slope = 0;
-            if (ctx->maxPosEmbed <= 0) { slope = alibiSlopes[h]; }
             auto pmask = mask + h * this->accSeqLen * seqLen;
             int pastLen = this->accSeqLen - seqLen;
             for (int i = 0; i < seqLen; ++i) {
-                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float)); // bottom left are 0
+                memset(pmask + i * this->accSeqLen, 0, (pastLen + i + 1) * sizeof(float));
                 // attention mask added with alibi mask
-                for (int j = 0; j < this->accSeqLen; ++j) {
-                    pmask[i * this->accSeqLen + j] += j * slope;
+                for (int j = 0; j < pastLen + i + 1; ++j) {
+                    pmask[i * this->accSeqLen + j] += j * slopes[h];
                 }
                 std::fill_n(pmask + i * this->accSeqLen + pastLen + i + 1, seqLen - i - 1,
                         std::numeric_limits<float>::lowest());
+            }
+        }
+    } else {
+        int sizeRequired = responsibleHeads * this->accSeqLen;
+        float *mask = this->getAttnMask(sizeRequired);
+        for (int h = 0; h < responsibleHeads; ++h) {
+            auto pmask = mask + h * this->accSeqLen;
+            // attention mask added with alibi mask
+            for (int j = 0; j < this->accSeqLen; ++j) {
+                pmask[j] = j * slopes[h];
             }
         }
     }
