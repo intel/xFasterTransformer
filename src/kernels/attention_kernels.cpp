@@ -239,8 +239,8 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             ldb = kvHeadNum * headSize;
             ldc = qHeadNum * headSize;
             baseB = (bfloat16_t *)vcache + i * headSize;
-
-            small_sgemm_f32bf16bf16_b(false, m, n, k, C, lda, (XDNN_BF16 *)baseB, ldb, (XDNN_BF16 *)output, ldc,
+            auto baseC = output + b * ldc + i * headSize;
+            small_sgemm_f32bf16bf16_b(false, m, n, k, C, lda, (XDNN_BF16 *)baseB, ldb, (XDNN_BF16 *)baseC, ldc,
                     blkIndices, cacheBlkStride, cacheBlkSize);
 
 #ifdef DEBUG
