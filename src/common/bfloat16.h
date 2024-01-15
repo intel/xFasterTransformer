@@ -81,6 +81,30 @@ public:
     static void cvt_bfloat16_to_float(const bfloat16_t *src, float *dst, int size);
     static void float_add_bfloat16(const float *src1, const bfloat16_t *src2, float *dst, int size);
 
+    static inline __m512 cvt_bf16_to_fp32(const __m256i src) {
+        __m512i y = _mm512_cvtepu16_epi32(src);
+        return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
+    }
+
+    static inline __m256i cvt_fp32_to_bf16(const __m512 src) {
+#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
+        return (__m256i)_mm512_cvtneps_pbh(src);
+#else
+        const __m512i nan = _mm512_set1_epi32(0xffff);
+        const __m512i ones = _mm512_set1_epi32(0x1);
+        const __m512i vec_bias = _mm512_set1_epi32(0x7fff);
+
+        __m512i value = _mm512_castps_si512(src);
+        auto mask = _mm512_cmp_ps_mask(src, src, _CMP_ORD_Q);
+        auto result = _mm512_and_si512(_mm512_srli_epi32(value, 16), ones);
+        result = _mm512_add_epi32(result, vec_bias);
+        result = _mm512_add_epi32(result, value);
+        result = _mm512_srli_epi32(result, 16);
+        result = _mm512_mask_blend_epi32(mask, nan, result);
+        return _mm512_cvtusepi32_epi16(result);
+#endif
+    }
+
 private:
     constexpr uint16_t convert_bits_of_normal_or_zero(const uint32_t bits) {
         return uint32_t {bits + uint32_t {0x7FFFU + (uint32_t {bits >> 16} & 1U)}} >> 16;
