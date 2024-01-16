@@ -198,7 +198,7 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             // Q * K
             int m = 1;
             int k = headSize;
-            int n = contextSizes[b];
+            int n = contextSizes[b] + 1;
             int lda = qStride;
             int ldb = kvHeadNum * headSize;
             int ldc = n;
