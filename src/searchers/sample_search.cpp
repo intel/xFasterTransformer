@@ -13,9 +13,14 @@
 // limitations under the License.
 // ============================================================================
 #include "sample_search.h"
+#include "search_utils.h"
 
 SampleSearch::SampleSearch(AbstractDecoder &dec, const SearcherConfig &config)
-    : decoder(dec), maxLen(config.maxLen), topK(config.topK), topP(config.topP) {
+    : decoder(dec)
+    , maxLen(config.maxLen)
+    , topK(config.topK)
+    , topP(config.topP)
+    , repetitionPenalty(config.repetitionPenalty) {
     vocabSize = decoder.getContext()->vocabSize;
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
@@ -25,6 +30,11 @@ SampleSearch::SampleSearch(AbstractDecoder &dec, const SearcherConfig &config)
     }
     temperatureInv = 1 / config.temperature;
     if (topK < 2) { topK = 2; }
+
+    if (repetitionPenalty <= 0) {
+        printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", repetitionPenalty);
+        exit(-1);
+    }
 }
 
 // Get next tokens accoring to the prompt IDs
@@ -84,8 +94,8 @@ bool SampleSearch::isDone() {
 }
 
 std::vector<int32_t> SampleSearch::finalize() {
-    TimeLine t("dump_file");
-    t.dump_file("timeline.json");
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return output;
 }
 
@@ -97,6 +107,22 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
 
     Messenger &messenger = decoder.getMessenger();
     auto msgerSize = messenger.getSize();
+
+    // Repetition penalty logits processor
+    if (this->repetitionPenalty != 1.0) {
+        TimeLine t("GreedySearch.repetitionPenalty");
+        // step has already been incremented by 1
+        if (this->step == 1) {
+            this->cachedRepetVec.clear();
+            this->cachedRepetVec.resize(batchSize, std::vector<int>());
+
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->output,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        } else {
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->nextTokens,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        }
+    }
 
     // 1. Get top K candidates for each sample, inculde topK ids and vals
     int topKIds[batchSize * topK];

@@ -17,11 +17,13 @@
 
 #include "attention.h"
 
-template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, bool INPUT_AS_RESID>
-class ChatGLM2Attention : public Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID> {
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS>
+class RopeScalingAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, float, float, float> {
 public:
-    ChatGLM2Attention(int layerId, DecoderContext *ctx)
-        : Attention<WeiT, QKPO_CLS, NORM_CLS, INPUT_AS_RESID>(layerId, ctx) {}
-    virtual ~ChatGLM2Attention() {}
+    RopeScalingAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS, float, float, float>(layerId, ctx) {
+        this->qkpo = QKPO_CLS(ctx->attHeadSize, ctx->maxPosEmbed, ctx->ropeParamsPtr);
+    }
 
+    virtual ~RopeScalingAttention() {}
 };

@@ -492,11 +492,18 @@ public:
 
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
-            weight.Resize(K, N);
             auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
             dnnl::memory B_mem({{K, N}, dnnl::memory::data_type::s8, tag}, get_dnnl_engine(), src.Data());
-            dnnl::memory packedB_mem({{K, N}, dnnl::memory::data_type::s8, get_amx_s8s8s32_weight_data_type()},
-                    get_dnnl_engine(), weight.Data());
+            dnnl::memory::desc desc({K, N}, dnnl::memory::data_type::s8, get_amx_s8s8s32_weight_data_type());
+
+            // When converting to oneDNN blocked memory format, padded dims can be larger than [K, N]
+            // Resize down Matrix does not change underlying buffer.
+            // TODO: Add reserve like function in Matrix, as current 2 times Resize has potential risks.
+            auto dims = desc.get_padded_dims();
+            weight.Resize(dims[0], dims[1]);
+            weight.Resize(K, N);
+
+            dnnl::memory packedB_mem(desc, get_dnnl_engine(), weight.Data());
             dnnl::reorder(B_mem, packedB_mem).execute(get_dnnl_stream(), B_mem, packedB_mem);
             get_dnnl_stream().wait();
         }

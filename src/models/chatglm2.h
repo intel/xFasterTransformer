@@ -15,15 +15,15 @@
 #pragma once
 
 #include <vector>
-#include "attn_chatglm2.h"
+#include "attention.h"
 #include "common_decoder.h"
-#include "layers_norm.h"
 #include "mlp_chatglm2.h"
+#include "rms_norm.h"
 #include "rotary_embedding_chatglm2.h"
 #include "token_embedding.h"
 
 template <typename WeiT, typename NormT = RmsNorm>
-class ChatGLM2 : public CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>,
+class ChatGLM2 : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, float, float, float, true>,
                          ChatGLM2MLP<WeiT, NormT, true>> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");

@@ -18,8 +18,9 @@ import sys
 from types import ModuleType
 from typing import Any
 from typing import TYPE_CHECKING
+from ctypes import *
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+cdll.LoadLibrary(os.path.dirname(os.path.abspath(__file__)) + "/libxft_comm_helper.so")
 torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
 
 _import_structure = {
@@ -32,6 +33,7 @@ _import_structure = {
         "OPTConvert",
         "BaichuanConvert",
         "QwenConvert",
+        "YaRNLlamaConvert",
     ],
 }
 
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
     from .tools import OPTConvert
     from .tools import BaichuanConvert
     from .tools import QwenConvert
+    from .tools import YaRNLlamaConvert
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule
     # Source code url https://github.com/optuna/optuna/blob/master/optuna/integration/__init__.py

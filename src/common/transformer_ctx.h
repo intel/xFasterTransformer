@@ -21,6 +21,29 @@
 
 #include "my_types.h"
 
+struct RopeParams {
+    float base;
+    std::string type;
+    float scale;
+    int orgMaxPosEmbed;
+    float extraPolFactor;
+    float attnFactor;
+    float betaFast;
+    float betaSlow;
+
+public:
+    RopeParams(float theta = 10000.0, std::string vtype = "", float vscale = 1.0, int vorgMaxPosEmbed = 2048,
+            float vextraPolFactor = 1, float vattnFactor = 1, float vbetaFast = 32, float vbetaSlow = 1)
+        : base(theta)
+        , type(vtype)
+        , scale(vscale)
+        , orgMaxPosEmbed(vorgMaxPosEmbed)
+        , extraPolFactor(vextraPolFactor)
+        , attnFactor(vattnFactor)
+        , betaFast(vbetaFast)
+        , betaSlow(vbetaSlow) {}
+};
+
 struct DecoderContext {
     // # of mini-batch
     int batchSize;
@@ -51,6 +74,9 @@ struct DecoderContext {
     // norm epsilon
     float epsilon;
 
+    // rope scaling parameters
+    RopeParams *ropeParamsPtr;
+
     // Which split this context is for
     const int splitIdx;
     // # of splits (the same as NUMA node number in the system)
@@ -77,7 +103,7 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _splitIdx,
-            int _splits, int numThreads = 0)
+            int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -87,6 +113,7 @@ public:
         , embeddingSize(_embeddingSize)
         , maxPositions(_maxPositions)
         , maxPosEmbed(_maxPosEmbed)
+        , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)
         , numSplit(_splits)
         , epsilon(epsilon) {

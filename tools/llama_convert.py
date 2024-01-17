@@ -1,5 +1,5 @@
 """
-Convert huggingface ChatGLM model. Use https://huggingface.co/meta-llama
+Convert huggingface Llama/Llama2 model. Use https://huggingface.co/meta-llama
 """
 
 import argparse
@@ -125,7 +125,7 @@ def split_and_convert(args):
         config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
         config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
         config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
-        config["llama"]["rms_norm_eps"] = "1e-6"
+        config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
         config["llama"]["layernorm_type"] = "pre_layernorm"
         config["llama"]["activation_type"] = "silu"
         config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
@@ -137,6 +137,7 @@ def split_and_convert(args):
             config.write(configfile)
     except Exception as e:
         print("Fail to save the config in config.ini.", str(e))
+        exit(1)
 
     np_weight_data_type = get_weight_data_type(args.weight_data_type)
 
