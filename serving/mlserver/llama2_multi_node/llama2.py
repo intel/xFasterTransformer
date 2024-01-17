@@ -17,30 +17,87 @@ from mlserver.codecs import decode_args
 from transformers import AutoTokenizer
 import torch
 from typing import List
-import requests
+import time
 
-PORT=8096
+
+import grpc
+import xft_pb2
+import xft_pb2_grpc
+from grpc_health.v1 import health_pb2
+from grpc_health.v1 import health_pb2_grpc
+
+
+TOKEN_PATH = "/data/llama-2-7b-chat-hf"
 
 B_INST, E_INST = "[INST]", "[/INST]"
 B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
 EOS_ID = 2
 
+XFT_IP = "localhost"
+XFT_PORT = "50051"
+
+
+def health_check_call(stub: health_pb2_grpc.HealthStub):
+    start_time = time.time()
+    request = health_pb2.HealthCheckRequest(service="xft.Runner")
+    while True:
+        try:
+            resp = stub.Check(request)
+            if resp.status == health_pb2.HealthCheckResponse.SERVING:
+                return True
+        except grpc._channel._InactiveRpcError as e:
+            pass
+
+        elapsed_time = time.time() - start_time
+        if elapsed_time >= 60:
+            print("Health check timed out.")
+            return False
+
+        time.sleep(1)
+
 
 class XFTLlama2Model(MLModel):
     async def load(self) -> bool:
-        return True
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            TOKEN_PATH, use_fast=False, padding_side="left", trust_remote_code=True
+        )
+
+        # Llama doesn't have padding ID.
+        self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
+
+        self.channel = grpc.insecure_channel(f"{XFT_IP}:{XFT_PORT}")
+        self.stub = xft_pb2_grpc.XFTServerStub(self.channel)
+        health_stub = health_pb2_grpc.HealthStub(self.channel)
+        return health_check_call(health_stub)
 
     def create_chat_input_token(self, query):
         # 构造llama2-chat输入
         query = [f"{B_INST} {q.strip()} {E_INST}" for q in query]
-        return query
+        return self._tokenizer(query, return_tensors="pt", padding=True).input_ids
 
     @decode_args
     async def predict(self, questions: List[str]) -> List[str]:
-        query = self.create_chat_input_token(questions)
-        print(query)
-        data = {"query": query}
-        response = requests.post(f"http://127.0.0.1:8096/xft/predict/", json=data)
-        print(response.json())
-        return response.json()["response"]
+        input_token_ids = self.create_chat_input_token(questions)
+        response = self.stub.predict(
+            xft_pb2.QueryIds(
+                Ids=input_token_ids.view(-1).tolist(),
+                batch_size=input_token_ids.shape[0],
+                seq_len=input_token_ids.shape[-1],
+            )
+        )
+        response_ids = torch.Tensor(response.Ids).view(response.batch_size, response.seq_len)
+        response = self._tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+        return response
 
+    async def predict_stream(self, questions: List[str]) -> List[str]:
+        input_token_ids = self.create_chat_input_token(questions)
+
+        for response in self.stub.predict_stream(
+            xft_pb2.QueryIds(
+                Ids=input_token_ids.view(-1).tolist(),
+                batch_size=input_token_ids.shape[0],
+                seq_len=input_token_ids.shape[-1],
+            )
+        ):
+            next_token_id = response.Ids[0]
+            yield f"data: {self._tokenizer.decode(next_token_id, skip_special_tokens=True)}\n\n"

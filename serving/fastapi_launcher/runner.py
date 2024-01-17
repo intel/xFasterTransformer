@@ -49,7 +49,7 @@ parser.add_argument("--temperature", help="value used to modulate next token pro
 parser.add_argument("--top_p", help="retain minimal tokens above topP threshold.", type=float, default=1.0)
 parser.add_argument("--top_k", help="num of highest probability tokens to keep for generation", type=int, default=50)
 parser.add_argument("--rep_penalty", help="param for repetition penalty. 1.0 means no penalty", type=float, default=1.0)
-parser.add_argument("--port", help="serve port, default 18996.", type=int, default=8096)
+parser.add_argument("--port", help="serve port, default 8096.", type=int, default=8096)
 
 args = parser.parse_args()
 
