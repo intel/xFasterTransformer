@@ -226,13 +226,13 @@ if __name__ == "__main__":
                 max_length=input_ids.shape[-1] + args.output_len,
                 streamer=streamer,
                 num_beams=args.num_beams,
+                eos_token_id=eos_token_id if 'eos_token_id' in globals() else -1,
+                pad_token_id=pad_token_id if 'pad_token_id' in globals() else -1,
                 do_sample=args.do_sample,
                 temperature=args.temperature,
                 top_k=args.top_k,
                 top_p=args.top_p,
                 repetition_penalty=args.rep_penalty,
-                eos_token_id=eos_token_id if eos_token_id else -1,
-                pad_token_id=pad_token_id if pad_token_id else -1,
             )
             end_time = time.perf_counter()
 
