@@ -156,6 +156,9 @@ class ChatDemo:
     def process_response(self, response):
         return response
 
+    def config(self):
+        return {}
+
     def post_process_generation(self, next_token_id, token_list, chatbot, query, history, perf_info):
         token_list.extend(next_token_id)
         response = self.tokenizer.decode(token_list, skip_special_tokens=True)
@@ -170,7 +173,7 @@ class ChatDemo:
 
     def predict(self, query, chatbot, batch_size, max_length, history):
         chatbot.append((self.parse_text(query), ""))
-        self.model.config(max_length)
+        self.model.config(max_length, **self.config())
 
         input_tokens = self.create_chat_input_token(query, history)
         if batch_size > 1:
