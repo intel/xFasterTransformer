@@ -213,6 +213,8 @@ if __name__ == "__main__":
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
             elif "qwen" in args.model_path.lower() and "chat" in args.model_path.lower():
                 input_ids = build_inputs_qwen(tokenizer, input_prompt, args.padding)
+                eos_token_id = 151643
+                pad_token_id = 151643
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
@@ -227,8 +229,9 @@ if __name__ == "__main__":
                 temperature=args.temperature,
                 top_k=args.top_k,
                 top_p=args.top_p,
-                eos_token_id=151643,
-                pad_token_id=151643,
+                repetition_penalty=args.rep_penalty,
+                eos_token_id=eos_token_id if eos_token_id else -1,
+                pad_token_id=pad_token_id if pad_token_id else -1,
             )
             end_time = time.perf_counter()
 
