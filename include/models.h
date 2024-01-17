@@ -59,6 +59,8 @@ public:
 
     void unsetPrefix();
 
+    bool setStopWords(std::vector<std::vector<int>> &stopWordsList);
+
 private:
     AbstractDecoder *decoder;
     AbstractSearcher *searcher;

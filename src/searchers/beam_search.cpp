@@ -348,6 +348,11 @@ bool BeamSearch::isDone() {
     return step != 0 && (beamScorer.isDone() || curLen >= maxLen);
 }
 
+bool BeamSearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    printf("[Warning] BeamSearch is not supporting stop words yet.\n");
+    return false;
+}
+
 void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {
     TimeLine t("BeamSearch.searchTopK");
     float *outBuf = std::get<0>(result);
