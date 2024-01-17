@@ -80,7 +80,7 @@ def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[st
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
 
-def build_inputs_qwen(tokenizer, query: str, history: List[Tuple[str, str]] = [],
+def build_inputs_qwen(tokenizer, query: str, padding, history: List[Tuple[str, str]] = [],
                            system: str = "You are a helpful assistant.",
                            max_window_size: int = 6144, chat_format: str = "chatml",
 ):
@@ -146,7 +146,7 @@ def build_inputs_qwen(tokenizer, query: str, history: List[Tuple[str, str]] = []
     else:
         raise NotImplementedError(f"Unknown chat format {chat_format!r}")
 
-    return raw_text, torch.tensor([context_tokens])
+    return torch.tensor([context_tokens])
 
 
 import importlib.util
@@ -211,7 +211,7 @@ if __name__ == "__main__":
             elif "baichuan" in args.model_path.lower():
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
             elif "qwen" in args.model_path.lower() and "chat" in args.model_path.lower():
-                raw_text, input_ids = build_inputs_qwen(tokenizer, input_prompt)
+                input_ids = build_inputs_qwen(tokenizer, input_prompt, args.padding)
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
