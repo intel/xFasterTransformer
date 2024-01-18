@@ -72,6 +72,7 @@ void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffs
 
 void stopWordsCheck(std::vector<int> &nextTokenIds, std::vector<std::vector<int>> &stopWordsList,
         std::vector<std::vector<int>> &stopWordsIndex, std::vector<int> &doneBatch) {
+    //TODO: Enable OMP for large batch sizes or long word lists.
     for (int batchId = 0; batchId < nextTokenIds.size(); batchId++) {
         if (doneBatch[batchId] == 0) {
             for (int i = 0; i < stopWordsList.size(); i++) {
