@@ -23,6 +23,8 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
         printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", repetitionPenalty);
         exit(-1);
     }
+    stopWordsList = {};
+    stopWordsIndex = {};
 }
 
 // Get next tokens accoring to the prompt IDs
@@ -31,8 +33,11 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
     this->step = 0;
     this->batchSize = batchSize;
     this->curLen = seqLen;
-    this->doneBatch.resize(batchSize);
-    std::fill(doneBatch.begin(), doneBatch.end(), false);
+    this->doneBatch = std::vector<int>(batchSize, 0);
+
+    if (!this->stopWordsList.empty()) {
+        stopWordsIndex = std::vector<std::vector<int>>(stopWordsList.size(), std::vector<int>(batchSize, 0));
+    }
 
     this->output.resize(batchSize * seqLen);
     std::copy(ids, ids + batchSize * seqLen, output.begin());
@@ -73,8 +78,8 @@ bool GreedySearch::isDone() {
     } else if (curLen >= maxLen) {
         return true;
     } else {
-        for (bool flag : doneBatch) {
-            if (!flag) { return false; }
+        for (auto flag : doneBatch) {
+            if (flag <= 0) { return false; }
         }
     }
     return true;
@@ -84,6 +89,20 @@ std::vector<int32_t> GreedySearch::finalize() {
     TimeLine t("dumpFile");
     t.dumpFile("timeline.json");
     return output;
+}
+
+bool GreedySearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    this->stopWordsList = stopWordsList;
+    for (auto it = this->stopWordsList.rbegin(); it != this->stopWordsList.rend(); ++it) {
+        if ((*it).size() == 1 && (*it)[0] == this->eosTokenId) {
+            this->stopWordsList.erase(std::next(it).base());
+            continue;
+        }
+        for (auto x : *it) {
+            if (x <= 0) { this->stopWordsList.erase(std::next(it).base()); }
+        }
+    }
+    return !this->stopWordsList.empty();
 }
 
 std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
@@ -210,13 +229,23 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
 
     if (eosTokenId != -1) {
         for (int batchId = 0; batchId < batchSize; ++batchId) {
-            if (!doneBatch[batchId]) {
-                if (maxIds[batchId] == eosTokenId) { doneBatch[batchId] = true; }
-            } else {
+            if (doneBatch[batchId] == 0) {
+                if (maxIds[batchId] == eosTokenId) { doneBatch[batchId] = 1; }
+            } else if (doneBatch[batchId] > 0) {
                 // Padding finished seq with padTokenId;
                 maxIds[batchId] = padTokenId;
+            } else if (doneBatch[batchId] < 0) {
+                // Set to eosTokenId as really done;
+                maxIds[batchId] = eosTokenId;
+                doneBatch[batchId] = 1;
             }
         }
     }
-    return std::vector<int>(maxIds, maxIds + batchSize);
+
+    auto nextTokenIds_ = std::vector<int>(maxIds, maxIds + batchSize);
+    if (!this->stopWordsList.empty() && !this->stopWordsIndex.empty()) {
+        stopWordsCheck(nextTokenIds_, this->stopWordsList, this->stopWordsIndex, this->doneBatch);
+    }
+
+    return nextTokenIds_;
 }

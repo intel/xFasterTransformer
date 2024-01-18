@@ -189,6 +189,14 @@ void Model::unsetPrefix() {
     decoder->unsetPrefix();
 }
 
+bool Model::setStopWords(std::vector<std::vector<int>> &stopWordsList) {
+    if (searcher == nullptr) {
+        printf("[Warning] Fails to set stop words. Please config model first.");
+        return false;
+    }
+    return searcher->setStopWords(stopWordsList);
+}
+
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);

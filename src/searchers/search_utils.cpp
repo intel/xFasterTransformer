@@ -69,3 +69,27 @@ void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffs
         }
     }
 }
+
+void stopWordsCheck(std::vector<int> &nextTokenIds, std::vector<std::vector<int>> &stopWordsList,
+        std::vector<std::vector<int>> &stopWordsIndex, std::vector<int> &doneBatch) {
+    //TODO: Enable OMP for large batch sizes or long word lists.
+    for (int batchId = 0; batchId < nextTokenIds.size(); batchId++) {
+        if (doneBatch[batchId] == 0) {
+            for (int i = 0; i < stopWordsList.size(); i++) {
+                auto &stopWords = stopWordsList[i];
+                auto &wordsIndex = stopWordsIndex[i];
+                auto stopWordsLen = stopWords.size();
+                if (wordsIndex[batchId] < stopWordsLen) {
+                    if (stopWords[wordsIndex[batchId]] == nextTokenIds[batchId]) {
+                        wordsIndex[batchId]++;
+                        if (wordsIndex[batchId] == stopWordsLen) { doneBatch[batchId] = -1; }
+                    } else {
+                        wordsIndex[batchId] = 0;
+                    }
+                } else {
+                    doneBatch[batchId] = -1;
+                }
+            }
+        }
+    }
+}
