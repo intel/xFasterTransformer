@@ -34,29 +34,30 @@ parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16
 
 class ChatGLM3Demo(ChatDemo):
     # Replace English punctuation with Chinese punctuation in the Chinese sentences.
-    def process_response(self, response):
-        response = response.strip()
-        puncts = {",": "，", "!": "！", ":": "：", ";": "；", "\?": "？"}
-        for eng, chn in puncts.items():
-            response = re.sub(r"([\u4e00-\u9fff])%s" % eng, r"\1%s" % chn, response)
-            response = re.sub(r"%s([\u4e00-\u9fff])" % eng, r"%s\1" % chn, response)
-        return response
+    def process_response(self, output):
+        content = ""
+        for response in output.split("<|assistant|>"):
+            if "\n" in response:
+                metadata, content = response.split("\n", maxsplit=1)
+            else:
+                metadata, content = "", response
+            if not metadata.strip():
+                content = content.strip()
+                content = content.replace("[[训练时间]]", "2023年")
+        return content
 
-    # Refer to https://github.com/THUDM/ChatGLM-6B/blob/main/web_demo.py
     def create_chat_input_token(self, query, history):
         if history is None:
             history = []
-        if not history:
-            prompt = "[Round 0]\n问：{}\n答：".format(query)
-        else:
-            history = history[-2:] if len(history) > 2 else history
-            prompt = ""
-            for i, (old_query, response) in enumerate(history):
-                prompt += "[Round {}]\n问：{}\n答：{}\n".format(i, old_query, response)
-            prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
+        input_ids = []
+        for old_query, response in history:
+            input_ids.extend(self.tokenizer.build_single_message("user", "", old_query))
+            input_ids.extend(self.tokenizer.build_single_message("assistant", "", response))
+        input_ids.extend(self.tokenizer.build_single_message("user", "", query))
+        input_ids.extend([self.tokenizer.get_command("<|assistant|>")])
+        inputs = self.tokenizer.batch_encode_plus([input_ids], return_tensors="pt", is_split_into_words=True).input_ids
+        return inputs
 
-        input_tokens = self.tokenizer([prompt], return_tensors="pt").input_ids
-        return input_tokens
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
