@@ -25,5 +25,6 @@ TORCH_LIBRARY(xfastertransformer, m) {
             .def("generate", &TorchAutoModel::generate)
             .def("finalize", &TorchAutoModel::finalize)
             .def("set_prefix", &TorchAutoModel::setPrefix)
-            .def("unset_prefix", &TorchAutoModel::unsetPrefix);
+            .def("unset_prefix", &TorchAutoModel::unsetPrefix)
+            .def("set_stop_words_ids", &TorchAutoModel::setStopWords);
 }

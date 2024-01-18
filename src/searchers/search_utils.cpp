@@ -81,6 +81,7 @@ void stopWordsCheck(std::vector<int> &nextTokenIds, std::vector<std::vector<int>
                 if (wordsIndex[batchId] < stopWordsLen) {
                     if (stopWords[wordsIndex[batchId]] == nextTokenIds[batchId]) {
                         wordsIndex[batchId]++;
+                        if (wordsIndex[batchId] == stopWordsLen) { doneBatch[batchId] = -1; }
                     } else {
                         wordsIndex[batchId] = 0;
                     }
