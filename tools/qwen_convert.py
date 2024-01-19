@@ -118,7 +118,6 @@ def split_and_convert(args):
     # load the model
     gen_config = GenerationConfig.from_pretrained(args.in_file, trust_remote_code=True, resume_download=True)
     model = AutoModelForCausalLM.from_pretrained(args.in_file, device_map="auto", trust_remote_code=True)
-
     hf_config = vars(model.config)
 
     layer_names = [name for name, param in model.named_parameters()]

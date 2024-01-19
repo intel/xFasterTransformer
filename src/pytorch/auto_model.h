@@ -167,6 +167,23 @@ public:
 
     void unsetPrefix() { model->unsetPrefix(); };
 
+    void setStopWords(std::vector<std::vector<int64_t>> stopWordsList) {
+        std::vector<std::vector<int>> stopWordsList_int32;
+        stopWordsList_int32.reserve(stopWordsList.size());
+
+        for (const auto &inner_vector : stopWordsList) {
+            std::vector<int> converted_vector;
+            converted_vector.reserve(inner_vector.size());
+
+            std::transform(inner_vector.begin(), inner_vector.end(), std::back_inserter(converted_vector),
+                    [](int64_t value) { return static_cast<int>(value); });
+
+            stopWordsList_int32.emplace_back(converted_vector);
+        }
+
+        model->setStopWords(stopWordsList_int32);
+    }
+
 private:
     xft::Model *model;
     std::vector<int> tokenIds;

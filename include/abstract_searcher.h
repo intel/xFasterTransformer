@@ -29,6 +29,8 @@ public:
     virtual bool isDone() = 0;
 
     virtual std::vector<int32_t> finalize() = 0;
+
+    virtual bool setStopWords(std::vector<std::vector<int>> stopWordsList) = 0;
 };
 
 struct SearcherConfig {
