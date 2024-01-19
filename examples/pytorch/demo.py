@@ -150,6 +150,15 @@ def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
 
     return torch.tensor([context_tokens])
 
+def get_stop_words_ids_qwen(chat_format, tokenizer):
+    if chat_format == "raw":
+        stop_words_ids = [tokenizer.encode("Human:"), [tokenizer.eod_id]]
+    elif chat_format == "chatml":
+        stop_words_ids = [[tokenizer.im_end_id], [tokenizer.im_start_id]]
+    else:
+        raise NotImplementedError(f"Unknown chat format {chat_format!r}")
+    return stop_words_ids
+
 
 import importlib.util
 
@@ -176,6 +185,7 @@ if __name__ == "__main__":
 
     model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
     streamer = None
+    stop_words_ids = None
     if model.rank == 0 and args.streaming and args.num_beams == 1:
         streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=False)
 
@@ -193,8 +203,7 @@ if __name__ == "__main__":
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
             elif "qwen" in args.model_path.lower() and "chat" in args.model_path.lower():
                 input_ids = build_inputs_qwen(tokenizer, input_prompt, args.padding)
-                eos_token_id = 151643
-                pad_token_id = 151643
+                stop_words_ids = get_stop_words_ids_qwen("chatml", tokenizer)
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
@@ -205,8 +214,7 @@ if __name__ == "__main__":
                 max_length=input_ids.shape[-1] + args.output_len,
                 streamer=streamer,
                 num_beams=args.num_beams,
-                eos_token_id=eos_token_id if 'eos_token_id' in globals() else -1,
-                pad_token_id=pad_token_id if 'pad_token_id' in globals() else -1,
+                stop_words_ids=stop_words_ids,
                 do_sample=args.do_sample,
                 temperature=args.temperature,
                 top_k=args.top_k,
