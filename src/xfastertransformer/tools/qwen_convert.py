@@ -163,6 +163,7 @@ class QwenConvert(BaseModelConvert):
             config["qwen"]["activation_type"] = "silu"
             config["qwen"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
             config["qwen"]["vocab_size"] = str(hf_config["vocab_size"])
+            config["qwen"]["seq_length"] = str(hf_config["seq_length"])
             config["qwen"]["start_id"] = str(hf_config["bos_token_id"])
             config["qwen"]["end_id"] = str(hf_config["eos_token_id"])
             config["qwen"]["weight_data_type"] = dtype
