@@ -240,7 +240,8 @@ public:
         int kheads = this->endKVHead - this->startKVHead;
         int qkShape[5] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads};
         if (positionIds != nullptr) {
-            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds);
+            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds, ctx->inputSeqLen,
+                    ctx->maxSeqLength);
         } else if (ctx->maxPosEmbed > 0) {
             // Use the default position ids
             std::vector<int> posIds(ctx->inputSeqLen);
@@ -249,7 +250,8 @@ public:
             } else {
                 std::iota(posIds.begin(), posIds.end(), pastSeqLen);
             }
-            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
+            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data(),
+                    ctx->inputSeqLen, ctx->maxSeqLength);
         }
         t3.release();
 
@@ -327,9 +329,9 @@ public:
 protected:
     // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
-    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
-            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+            const float *attnMask, int pastSeqLen) {
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
         int batchSize = ctx->batchSize;

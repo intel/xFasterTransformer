@@ -16,53 +16,73 @@
 
 #include "compile_util.h"
 
-static int max_seq_len_cached = -1;
-static int inv_freq_size = -1;
-static float *inv_freq;
-static float *emb_cos = nullptr;
-static float *emb_sin = nullptr;
+// unordered_map<base, tuple<emb_cos, emb_sin>>
+static std::unordered_map<float, std::tuple<float *, float *>> embCosSin;
+static float *cur_emb_cos = nullptr;
+static float *cur_emb_sin = nullptr;
 
 bool LlamaRotaryEmbedding::initialized = false;
+bool LlamaRotaryEmbedding::reinitialized = false;
+int LlamaRotaryEmbedding::max_seq_len_cached = -1;
+int LlamaRotaryEmbedding::inv_freq_size = -1;
 
 // dim: equals to head size
 LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
     if (!initialized) {
-        initialized = true;
-
-        max_seq_len_cached = max_position_embeddings;
-        inv_freq_size = (dim + 1) / 2;
-        inv_freq = (float *)malloc(inv_freq_size * sizeof(float));
-        for (size_t i = 0; i < inv_freq_size; i++) {
+        this->dim = dim;
+        this->base = base;
+        this->max_seq_len_cached = max_position_embeddings;
+        this->inv_freq_size = (dim + 1) / 2;
+        float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+        for (size_t i = 0; i < this->inv_freq_size; i++) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
 
-        llamaCalEmb();
-    } else if (dim != inv_freq_size * 2) {
-        printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
+        llamaCalEmb(inv_freq, base, embCosSin);
+        free(inv_freq);
+        initialized = true;
+    } else if (dim != this->inv_freq_size * 2) {
+        printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, this->inv_freq_size);
         exit(-1);
     }
 };
 
-void LlamaRotaryEmbedding::llamaCalEmb() {
-    emb_cos = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
-    emb_sin = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
+LlamaRotaryEmbedding::~LlamaRotaryEmbedding() {}
+
+float LlamaRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max_seq_length) {
+    if (max_seq_length <= 0) { return (float)1.0; }
+
+    float context_value = log((float)true_seq_len / (float)max_seq_length) / log(2.0) + 1;
+    float ntk_alpha = pow((float)2.0, ceil(context_value)) - 1;
+    ntk_alpha = std::max(ntk_alpha, (float)1.0);
+    float new_base = this->base * pow(ntk_alpha, (float)this->dim / (this->dim - 2));
+    return new_base;
+}
+
+void LlamaRotaryEmbedding::llamaCalEmb(
+        float *inv_freq, float base, std::unordered_map<float, std::tuple<float *, float *>> &embCosSin) {
+    float *emb_cos = (float *)aligned_alloc(64, this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
+    float *emb_sin = (float *)aligned_alloc(64, this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
+
+    embCosSin[base] = std::make_tuple(emb_cos, emb_sin);
 
 #pragma omp parallel for
-    for (size_t i = 0; i < max_seq_len_cached; i++) {
-        float *pcos = emb_cos + i * inv_freq_size * 2;
-        float *psin = emb_sin + i * inv_freq_size * 2;
+    for (size_t i = 0; i < this->max_seq_len_cached; i++) {
+        float *pcos = emb_cos + i * this->inv_freq_size * 2;
+        float *psin = emb_sin + i * this->inv_freq_size * 2;
 
-        for (size_t j = 0; j < inv_freq_size; j++) {
+        for (size_t j = 0; j < this->inv_freq_size; j++) {
             float tmp = i * inv_freq[j];
             float cos_tmp = std::cos(tmp);
             float sin_tmp = std::sin(tmp);
 
             pcos[j] = cos_tmp;
-            pcos[j + inv_freq_size] = cos_tmp;
+            pcos[j + this->inv_freq_size] = cos_tmp;
             psin[j] = sin_tmp;
-            psin[j + inv_freq_size] = sin_tmp;
+            psin[j + this->inv_freq_size] = sin_tmp;
         }
     }
+
 }
 
 // def rotate_half(x):
@@ -92,9 +112,9 @@ void LlamaRotaryEmbedding::llamaCalEmb() {
 // |          |          |          |          |          |          |          |          |    |
 // |          |          |          |          |          |          |          |          |    |
 // |__________|__________|__________|__________|__________|__________|__________|__________|____v__
-void LlamaRotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    int dim = inv_freq_size * 2;
+void LlamaRotaryEmbedding::forward(float *query, float *key, int qStride, int kStride, const int *qkShape,
+        const int *positionIds, const int true_seq_len, const int max_seq_length) {
+    int dim = this->inv_freq_size * 2;
     REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 
     const int batchSize = qkShape[0];
@@ -102,12 +122,30 @@ void LlamaRotaryEmbedding::forward(
     const int qHeads = qkShape[2];
     const int kHeads = qkShape[4];
     const int heads = std::max(qHeads, kHeads);
-    const int half = inv_freq_size;
+    const int half = this->inv_freq_size;
+
+    if (!reinitialized) {
+        float new_base = getNewBaseValue(true_seq_len, max_seq_length);
+        auto it = embCosSin.find(new_base);
+        if (it == embCosSin.end()) {
+            float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+            for (size_t i = 0; i < this->inv_freq_size; i++) {
+                inv_freq[i] = 1.0 / pow(new_base, float(i * 2) / dim);
+            }
+            llamaCalEmb(inv_freq, new_base, embCosSin);
+            free(inv_freq);
+        }
+
+        auto &value = embCosSin[new_base];
+        cur_emb_cos = std::get<0>(value);
+        cur_emb_sin = std::get<1>(value);
+        reinitialized = true;
+    }
 
     // for (size_t i = 0; i < emb_size; i++) {
     //     emb[i] = x[i] * emb_cos[position_ids[i % cached_size / dim]][i % dim];
-    //     int offset = (i % dim + inv_freq_size) % dim;
-    //     float sign = ((offset < inv_freq_size) * 1) + ((offset >= inv_freq_size) * -1);
+    //     int offset = (i % dim + this->inv_freq_size) % dim;
+    //     float sign = ((offset < this->inv_freq_size) * 1) + ((offset >= this->inv_freq_size) * -1);
     //     emb[i] += x[(i - i % dim) + offset] * sign * emb_sin[position_ids[i % cached_size / dim]][i % dim];
     // }
 #pragma omp parallel for collapse(3)
@@ -115,8 +153,8 @@ void LlamaRotaryEmbedding::forward(
         for (int bs = 0; bs < batchSize; ++bs) {
             for (int seq = 0; seq < seqLen; ++seq) {
                 int pos = positionIds[seq];
-                float *pcos = emb_cos + pos * dim;
-                float *psin = emb_sin + pos * dim;
+                float *pcos = cur_emb_cos + pos * dim;
+                float *psin = cur_emb_sin + pos * dim;
 
                 float *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
                 float *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
@@ -138,9 +176,9 @@ void LlamaRotaryEmbedding::forward(
     }
 }
 
-void LlamaRotaryEmbedding::forward(
-        bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    int dim = inv_freq_size * 2;
+void LlamaRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape,
+        const int *positionIds, const int true_seq_len, const int max_seq_length) {
+    int dim = this->inv_freq_size * 2;
     REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 
     const int batchSize = qkShape[0];
@@ -148,15 +186,33 @@ void LlamaRotaryEmbedding::forward(
     const int qHeads = qkShape[2];
     const int kHeads = qkShape[4];
     const int heads = std::max(qHeads, kHeads);
-    const int half = inv_freq_size;
+    const int half = this->inv_freq_size;
+
+    if (!reinitialized) {
+        float new_base = getNewBaseValue(true_seq_len, max_seq_length);
+        auto it = embCosSin.find(new_base);
+        if (it == embCosSin.end()) {
+            float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+            for (size_t i = 0; i < this->inv_freq_size; i++) {
+                inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
+            }
+            llamaCalEmb(inv_freq, new_base, embCosSin);
+            free(inv_freq);
+        }
+
+        auto &value = embCosSin[new_base];
+        cur_emb_cos = std::get<0>(value);
+        cur_emb_sin = std::get<1>(value);
+        reinitialized = true;
+    }
 
 #pragma omp parallel for collapse(3)
     for (int head = 0; head < heads; ++head) {
         for (int bs = 0; bs < batchSize; ++bs) {
             for (int seq = 0; seq < seqLen; ++seq) {
                 int pos = positionIds[seq];
-                float *pcos = emb_cos + pos * dim;
-                float *psin = emb_sin + pos * dim;
+                float *pcos = cur_emb_cos + pos * dim;
+                float *psin = cur_emb_sin + pos * dim;
 
                 bfloat16_t *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
                 bfloat16_t *k = key + bs * seqLen * kStride + seq * kStride + head * dim;

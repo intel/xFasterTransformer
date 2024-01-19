@@ -38,7 +38,8 @@ public:
 
     ~LlamaYaRNScaledRotaryEmbedding() {}
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+    void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds,
+            const int true_seq_len = -1, const int max_seq_length = -1);
 
 private:
     void yarnFindRange(int &low, int &high, int betaFast, int betaSlow, int dim, float base, int orgMaxPosEmbed);

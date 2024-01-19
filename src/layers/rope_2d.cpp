@@ -105,8 +105,8 @@ void RotaryEmbedding2D::prepareEmbedding() {
 // |          |          |          |          |          |          |          |          |    |
 // |          |          |          |          |          |          |          |          |    |
 // |__________|__________|__________|__________|__________|__________|__________|__________|  __v__
-void RotaryEmbedding2D::forward(
-        float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *positions) {
+void RotaryEmbedding2D::forward(float *query, float *key, int qStride, int kStride, const int *qk_shape,
+        const int *positions, const int true_seq_len, const int max_seq_length) {
     int dim = inv_freq_size * 2;
     REQUIRES(dim * 2 == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
 

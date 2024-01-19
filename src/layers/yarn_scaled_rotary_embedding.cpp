@@ -136,8 +136,8 @@ void LlamaYaRNScaledRotaryEmbedding::yarnLlamaCalEmb(float scale, float attnFact
 // |          |          |          |          |          |          |          |          |    |
 // |          |          |          |          |          |          |          |          |    |
 // |__________|__________|__________|__________|__________|__________|__________|__________|____v__
-void LlamaYaRNScaledRotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+void LlamaYaRNScaledRotaryEmbedding::forward(float *query, float *key, int qStride, int kStride, const int *qkShape,
+        const int *positionIds, const int true_seq_len, const int max_seq_length) {
     int dim = invFreqSize * 2;
     REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 

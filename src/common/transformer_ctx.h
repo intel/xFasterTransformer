@@ -57,6 +57,7 @@ struct DecoderContext {
     int embeddingSize;
     int maxPositions;
     int maxPosEmbed;
+    int maxSeqLength; // From Qwen seq_length
     int layers;
 
     // For BERT-base, hidden_size=768
@@ -102,8 +103,8 @@ private:
 
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
-            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _splitIdx,
-            int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
+            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
+            int _splitIdx, int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -112,6 +113,7 @@ public:
         , vocabSize(_vocabSize)
         , embeddingSize(_embeddingSize)
         , maxPositions(_maxPositions)
+        , maxSeqLength(_maxSeqLength)
         , maxPosEmbed(_maxPosEmbed)
         , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)

@@ -25,7 +25,8 @@ public:
 
     ~RotaryEmbedding2D() {}
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *positions);
+    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *positions,
+            const int true_seq_len = -1, const int max_seq_length = -1);
 
 private:
     void prepareEmbedding();

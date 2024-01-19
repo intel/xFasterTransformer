@@ -36,9 +36,12 @@ public:
     ~ChatGLM2RotaryEmbedding() {}
 
     void forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
-            int hidden_size_per_attention_head, const int *position_ids);
+            int hidden_size_per_attention_head, const int *position_ids, const int true_seq_len = -1,
+            const int max_seq_length = -1);
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids);
+    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids,
+            const int true_seq_len = -1, const int max_seq_length = -1);
+
 private:
     void glm2CalEmb();
 

@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <unordered_map>
+#include <algorithm>
 
 #include "bfloat16.h"
 
@@ -35,16 +37,23 @@ class LlamaRotaryEmbedding {
 public:
     LlamaRotaryEmbedding(const int dim, const int max_position_embeddings = 2048, const float base = 10000);
 
-    ~LlamaRotaryEmbedding() {}
+    ~LlamaRotaryEmbedding();
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+    void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds,
+            const int true_seq_len = -1, const int max_seq_length = -1);
 
-    void forward(
-            bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+    void forward(bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape,
+            const int *positionIds, const int true_seq_len = -1, const int max_seq_length = -1);
 
 private:
-    void llamaCalEmb();
+    float getNewBaseValue(const int true_seq_len, const int max_seq_length = -1);
+    void llamaCalEmb(float *inv_freq, float base, std::unordered_map<float, std::tuple<float *, float *>> &embCosSin);
 
 private:
     static bool initialized;
+    static bool reinitialized;
+    static int inv_freq_size;
+    static int max_seq_len_cached;
+    int dim = 0;
+    float base = 10000.0;
 };

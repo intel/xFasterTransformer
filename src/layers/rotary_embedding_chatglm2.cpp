@@ -87,7 +87,7 @@ void ChatGLM2RotaryEmbedding::glm2CalEmb() {
 //     return torch.cat((x_out2, x_pass), dim=-1)
 
 void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
-        int hidden_size_per_attention_head, const int *position_ids) {
+        int hidden_size_per_attention_head, const int *position_ids, const int true_seq_len, const int max_seq_length) {
     int dim = inv_freq_size * 2;
     REQUIRES(dim == hidden_size_per_attention_head, "Incorrect shape, last dimention is not the head size.");
 
@@ -116,13 +116,13 @@ void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size,
     }
 }
 
-void ChatGLM2RotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {
+void ChatGLM2RotaryEmbedding::forward(float *query, float *key, int qStride, int kStride, const int *qk_shape,
+        const int *position_ids, const int true_seq_len, const int max_seq_length) {
     int dim = inv_freq_size * 2;
     REQUIRES(dim == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
     const int batch_size = qk_shape[0];
     const int seq_len = qk_shape[1];
-    const int head_num = qk_shape[2] +  qk_shape[4];
+    const int head_num = qk_shape[2] + qk_shape[4];
     const int half = inv_freq_size;
 
 #pragma omp parallel for
@@ -147,4 +147,3 @@ void ChatGLM2RotaryEmbedding::forward(
         }
     }
 }
-
