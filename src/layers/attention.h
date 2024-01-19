@@ -327,9 +327,9 @@ public:
 protected:
     // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
-    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
-            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+            const float *attnMask, int pastSeqLen) {
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
         int batchSize = ctx->batchSize;
@@ -707,9 +707,9 @@ protected:
         AttnT *k, *v;
         if constexpr (std::is_same_v<AttnT, bfloat16_t>) {
 #pragma omp parallel for collapse(3)
-            for (int b = 0; b < batchSize; ++b)
-                for (int seq = 0; seq < srcLen; ++seq)
-                    for (int i = qCols; i < qkvCols; i += headSize) {
+            for (uint64_t b = 0; b < batchSize; ++b)
+                for (uint64_t seq = 0; seq < srcLen; ++seq)
+                    for (uint64_t i = qCols; i < qkvCols; i += headSize) {
                         const float *srcPtr = qkvMatMul.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
                         bfloat16_t *dstPtr
                                 = (bfloat16_t *)tmpBuf.Data() + b * srcLen * kvCols * 2 + seq * kvCols * 2 + i - qCols;
@@ -733,12 +733,12 @@ protected:
         // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
         // When M dimension is split, also multiple tasks per copy, so do copy seperately
 #pragma omp parallel for collapse(3)
-        for (int b = 0; b < batchSize; ++b) {
-            for (int i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
+        for (uint64_t b = 0; b < batchSize; ++b) {
+            for (uint64_t i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
                 // Copy current key/value to cached keys/values
                 // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
                 // Be noted: for group attention, the key/value is less than query
-                for (int seq = 0; seq < tgtLen; ++seq) {
+                for (uint64_t seq = 0; seq < tgtLen; ++seq) {
                     auto srcK = key + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
                     auto dstK = presentKey.getSequence(pastSeqLen + seq, b, i);
 
@@ -804,8 +804,8 @@ protected:
                     int tid = omp_get_thread_num();
 
                     int qRealBlk = std::min(srcBlk, srcLen - m);
-                    int srcOff = i * srcLen * qStride + j * headSize;
-                    int outOff = i * srcLen * stride + j * headSize;
+                    uint64_t srcOff = i * srcLen * qStride + j * headSize;
+                    uint64_t outOff = i * srcLen * stride + j * headSize;
                     const float *qbuf = query + srcOff + m * qStride;
                     AttnT *q = (AttnT *)qArr[tid];
                     float *out = output + outOff + m * stride;
@@ -827,7 +827,7 @@ protected:
                         max[tid][ii] = std::numeric_limits<float>::lowest();
                     }
 
-                    int tgtOff = i * tgtLen * kvStride + (j / numGroup) * headSize;
+                    uint64_t tgtOff = i * tgtLen * kvStride + (j / numGroup) * headSize;
                     const float *attnMsk = getMask(attnMask, i, j, srcLen, tgtLen) + m * tgtLen;
                     const AttnT *k = key + tgtOff;
                     const AttnT *v = value + tgtOff;
