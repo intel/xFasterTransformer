@@ -215,9 +215,9 @@ bool Model::setStopWords(std::vector<std::vector<int>> stopWordsList) {
     }
     messenger.broadcast(wordsSize.data(), listSize);
 
-    int wordsDataLen = 1;
+    int wordsDataLen = 0;
     for (auto x : wordsSize) {
-        wordsDataLen *= x;
+        wordsDataLen += x;
     }
 
     // flatten to 1-D vector
