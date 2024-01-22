@@ -24,9 +24,7 @@ typedef uint8_t u8;
 
 typedef struct {
     int8_t s8;
-    operator int8_t() {
-        return s8;
-    }
+    operator int8_t() { return s8; }
 } w8a8_t;
 
 #define unlikely(x) __builtin_expect((x), 0)
@@ -56,7 +54,7 @@ struct MatData {
     // A sub matrix of others, if true
     bool shadow;
 
-    int buf_alloc_size;
+    uint64_t buf_alloc_size;
     T *buf;
 
     MatData() {
@@ -81,7 +79,7 @@ struct MatData {
     }
     void Resize(int rows, int cols, int stride) {
         assert(!shadow);
-        int size = rows * stride;
+        uint64_t size = (uint64_t)rows * stride;
         if (this->buf_alloc_size >= size) {
             return;
         } else {
@@ -93,7 +91,7 @@ struct MatData {
     }
     void Release() {
         if (!shadow && buf) {
-            xft_numa_free(buf, sizeof(T) *buf_alloc_size);
+            xft_numa_free(buf, sizeof(T) * buf_alloc_size);
             buf = NULL;
         }
         buf_alloc_size = 0;
@@ -115,7 +113,7 @@ struct MatData<T, true> {
     // A sub matrix of others, if true
     bool shadow;
 
-    int buf_alloc_size;
+    uint64_t buf_alloc_size;
 
     T *buf;
 
@@ -129,7 +127,7 @@ struct MatData<T, true> {
         struct QParamPerChannel {
             float *scales;
             int32_t *zps;
-            int alloc_size;
+            uint64_t alloc_size;
         } per_c;
     } qparam;
 
@@ -141,7 +139,7 @@ struct MatData<T, true> {
     }
     void Resize(int rows, int cols, int stride) {
         assert(!shadow);
-        int size = rows * stride;
+        uint64_t size = (uint64_t)rows * stride;
         if (this->buf_alloc_size < size) {
             if (buf) { xft_numa_free(buf, sizeof(T) * buf_alloc_size); }
             this->buf_alloc_size = size;
@@ -288,7 +286,7 @@ public:
         }
 
         // Previously, we used to pad the matrix when the columns aligned with the boundary of 1024.
-        // However, we discovered that this did not enhance the performance. 
+        // However, we discovered that this did not enhance the performance.
         // As a result, we have decided to remove this approach.
         this->stride = cols;
         this->rows = rows;
@@ -337,8 +335,8 @@ template <typename T>
 class Vector {
 private:
     T *data;
-    int size;
-    int alloc_size;
+    uint64_t size;
+    uint64_t alloc_size;
 
 public:
     Vector() {
@@ -347,7 +345,7 @@ public:
         alloc_size = 0;
     }
     ~Vector() { this->Release(); }
-    void Resize(int size) {
+    void Resize(uint64_t size) {
         if (size <= 0) {
             this->Release();
             return;
@@ -372,6 +370,6 @@ public:
         size = 0;
         alloc_size = 0;
     }
-    int Size() { return size; }
+    uint64_t Size() { return size; }
 };
 } // namespace hpj

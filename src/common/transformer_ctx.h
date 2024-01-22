@@ -98,7 +98,7 @@ struct DecoderContext {
 
 private:
     float *rawBuffer;
-    int rawBufSize; // how many floats
+    uint64_t rawBufSize; // how many floats
 
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
@@ -190,23 +190,23 @@ public:
                                                               : (intermediateSize / numSplit);
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output
 
-        int normSize = batchSize * inputSeqLen * hiddenStride;
-        int qkvSize = batchSize * inputSeqLen * qkvStride;
-        int imOutSize = batchSize * inputSeqLen * imStride * mlpFactor;
+        uint64_t normSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
+        uint64_t qkvSize = (uint64_t)batchSize * inputSeqLen * qkvStride;
+        uint64_t imOutSize = (uint64_t)batchSize * inputSeqLen * imStride * mlpFactor;
 
         int presentSeqLen = preSeqLen + 1;
         int paddedSize = (presentSeqLen + 15) / 16 * 16;
 
         // Note: the score buffer for first token generation is not padded
-        int scoreBufSize = preSeqLen > 0 ? batchSize * responsibleHead * inputSeqLen * paddedSize
-                                         : batchSize * responsibleHead * inputSeqLen * inputSeqLen;
-        int tmpBufSize = batchSize * inputSeqLen * hiddenStride;
+        uint64_t scoreBufSize = preSeqLen > 0 ? (uint64_t)batchSize * responsibleHead * inputSeqLen * paddedSize
+                                              : (uint64_t)batchSize * responsibleHead * inputSeqLen * inputSeqLen;
+        uint64_t tmpBufSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
 
-        int size1 = normSize;
-        int size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
-        int size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
+        uint64_t size1 = normSize;
+        uint64_t size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
+        uint64_t size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
 
-        int total = size1 + size2 + size3;
+        uint64_t total = size1 + size2 + size3;
         if (total > this->rawBufSize) {
             this->rawBufSize = total;
             free(this->rawBuffer);

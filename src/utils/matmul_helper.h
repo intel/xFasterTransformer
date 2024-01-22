@@ -80,14 +80,14 @@ public:
                     quantizedWeight.Resize(colsPerSplit, rows);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         memcpy(quantizedWeight.Data() + i * quantizedWeight.Stride(), base + i * rows,
                                 quantizedWeight.Cols());
                     }
                 } else {
                     quantizedWeight.Resize(rows, colsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         memcpy(quantizedWeight.Data() + i * quantizedWeight.Stride(), src + i * cols + splitOffset,
                                 quantizedWeight.Cols());
                     }
@@ -97,7 +97,7 @@ public:
                 if (trans) {
                     quantizedWeight.Resize(cols, rowsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         memcpy(quantizedWeight.Data() + i * quantizedWeight.Stride(), src + i * rows + splitOffset,
                                 quantizedWeight.Cols());
                     }
@@ -105,7 +105,7 @@ public:
                     quantizedWeight.Resize(rowsPerSplit, cols);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         memcpy(quantizedWeight.Data() + i * quantizedWeight.Stride(), base + i * cols,
                                 quantizedWeight.Cols());
                     }
@@ -121,14 +121,14 @@ public:
                     quantizedWeight.Resize(colsPerSplit, rows);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         float16_t::cvt_float_to_float16(base + i * rows,
                                 quantizedWeight.Data() + i * quantizedWeight.Stride(), quantizedWeight.Cols());
                     }
                 } else {
                     quantizedWeight.Resize(rows, colsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         float16_t::cvt_float_to_float16(src + i * cols + splitOffset,
                                 quantizedWeight.Data() + i * quantizedWeight.Stride(), quantizedWeight.Cols());
                     }
@@ -138,7 +138,7 @@ public:
                 if (trans) {
                     quantizedWeight.Resize(cols, rowsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         float16_t::cvt_float_to_float16(src + i * rows + splitOffset,
                                 quantizedWeight.Data() + i * quantizedWeight.Stride(), quantizedWeight.Cols());
                     }
@@ -146,7 +146,7 @@ public:
                     quantizedWeight.Resize(rowsPerSplit, cols);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
                         float16_t::cvt_float_to_float16(base + i * cols,
                                 quantizedWeight.Data() + i * quantizedWeight.Stride(), quantizedWeight.Cols());
                     }
@@ -162,16 +162,16 @@ public:
                     quantizedWeight.Resize(colsPerSplit, rows);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
-                        for (int j = 0; j < quantizedWeight.Cols(); ++j) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
+                        for (uint64_t j = 0; j < quantizedWeight.Cols(); ++j) {
                             quantizedWeight.Data()[i * quantizedWeight.Stride() + j] = bfloat16_t(base[i * rows + j]);
                         }
                     }
                 } else {
                     quantizedWeight.Resize(rows, colsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
-                        for (int j = 0; j < quantizedWeight.Cols(); ++j) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
+                        for (uint16_t j = 0; j < quantizedWeight.Cols(); ++j) {
                             quantizedWeight.Data()[i * quantizedWeight.Stride() + j]
                                     = bfloat16_t(src[i * cols + splitOffset + j]);
                         }
@@ -182,8 +182,8 @@ public:
                 if (trans) {
                     quantizedWeight.Resize(cols, rowsPerSplit);
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
-                        for (int j = 0; j < quantizedWeight.Cols(); ++j) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
+                        for (uint64_t j = 0; j < quantizedWeight.Cols(); ++j) {
                             quantizedWeight.Data()[i * quantizedWeight.Stride() + j]
                                     = bfloat16_t(src[i * rows + splitOffset + j]);
                         }
@@ -192,8 +192,8 @@ public:
                     quantizedWeight.Resize(rowsPerSplit, cols);
                     const float *base = src + splitOffset * quantizedWeight.Stride();
 #pragma omp parallel for
-                    for (int i = 0; i < quantizedWeight.Rows(); ++i) {
-                        for (int j = 0; j < quantizedWeight.Cols(); ++j) {
+                    for (uint64_t i = 0; i < quantizedWeight.Rows(); ++i) {
+                        for (uint64_t j = 0; j < quantizedWeight.Cols(); ++j) {
                             quantizedWeight.Data()[i * quantizedWeight.Stride() + j] = bfloat16_t(base[i * cols + j]);
                         }
                     }
@@ -232,17 +232,17 @@ public:
 #endif
                 if (trans) {
 #pragma omp parallel for
-                    for (int i = 0; i < colsPerSplit; i++) {
+                    for (uint64_t i = 0; i < colsPerSplit; i++) {
                         sumWeight.Data()[i] = 0.0f;
-                        for (int j = 0; j < rows; j++) {
+                        for (uint64_t j = 0; j < rows; j++) {
                             sumWeight.Data()[i] += quantizedWeight.Data()[i * quantizedWeight.Stride() + j];
                         }
                     }
                 } else {
 #pragma omp parallel for
-                    for (int i = 0; i < colsPerSplit; i++) {
+                    for (uint64_t i = 0; i < colsPerSplit; i++) {
                         sumWeight.Data()[i] = 0.0f;
-                        for (int j = 0; j < rows; j++) {
+                        for (uint64_t j = 0; j < rows; j++) {
                             sumWeight.Data()[i] += quantizedWeight.Data()[j * quantizedWeight.Stride() + i];
                         }
                     }
@@ -276,17 +276,17 @@ public:
 #endif
                 if (trans) {
 #pragma omp parallel for
-                    for (int i = 0; i < cols; i++) {
+                    for (uint64_t i = 0; i < cols; i++) {
                         sumWeight.Data()[i] = 0.0f;
-                        for (int j = 0; j < rowsPerSplit; j++) {
+                        for (uint64_t j = 0; j < rowsPerSplit; j++) {
                             sumWeight.Data()[i] += quantizedWeight.Data()[i * quantizedWeight.Stride() + j];
                         }
                     }
                 } else {
 #pragma omp parallel for
-                    for (int i = 0; i < cols; i++) {
+                    for (uint64_t i = 0; i < cols; i++) {
                         sumWeight.Data()[i] = 0.0f;
-                        for (int j = 0; j < rowsPerSplit; j++) {
+                        for (uint64_t j = 0; j < rowsPerSplit; j++) {
                             sumWeight.Data()[i] += quantizedWeight.Data()[j * quantizedWeight.Stride() + i];
                         }
                     }
@@ -464,7 +464,7 @@ public:
             int amx_rows = (int)((K + 15) / 16) * 16;
             int amx_cols = (int)((N + 63) / 64) * 64;
             weight.Resize(amx_rows, amx_cols);
-            memset(weight.Data(), 0, amx_rows * amx_cols * sizeof(bfloat16_t));
+            memset(weight.Data(), 0, sizeof(bfloat16_t) * amx_rows * amx_cols);
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
             xdnn_sgemm_f32bf16f32_packb(
                     trans, N, K, (const XDNN_BF16 *)src.Data(), src.Stride(), (XDNN_BF16 *)weight.Data(), 16, 64);
@@ -1195,8 +1195,8 @@ public:
             if (M > USE_AMX_M) {
                 TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
-                for (int i = 0; i < M; ++i) {
-                    for (int j = 0; j < N; ++j) {
+                for (uint64_t i = 0; i < M; ++i) {
+                    for (uint64_t j = 0; j < N; ++j) {
                         res[i * ldres + j] = res[i * ldres + j] * gamma;
                     }
                 }
@@ -1377,7 +1377,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1459,7 +1459,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1550,7 +1550,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1636,7 +1636,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1705,7 +1705,7 @@ private:
         if (C == res) {
             scale_mem = memory(scale_md, get_dnnl_engine());
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 memcpy((float *)scale_mem.get_data_handle() + i * N, res + i * ldres, N * sizeof(float));
             }
         } else {
@@ -1737,7 +1737,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1843,7 +1843,7 @@ private:
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
             }
         }
@@ -1920,9 +1920,9 @@ private:
         for (int i = 0; i < numSplit; i++) {
             std::pair<int, int> range = SplitUtil::getTaskRange(M, numSplit, i);
             int MB = range.second - range.first;
-            int offset = range.first;
-            onednn_amx_gemm_f32s8f32_compute_base(transA, MB, N, K, alpha, A + lda * offset, lda, B, scaleB, zeroB,
-                    sumB, beta, C + ldc * offset, ldc, bias, res + ldres * offset, ldres, gamma, kind);
+            uint64_t offset = range.first;
+            onednn_amx_gemm_f32s8f32_compute_base(transA, MB, N, K, alpha, A + offset * lda, lda, B, scaleB, zeroB,
+                    sumB, beta, C + offset * ldc, ldc, bias, res + offset * ldres, ldres, gamma, kind);
         }
     }
 
@@ -1960,7 +1960,7 @@ private:
     static void quantize_s8(
             int M, int N, const float *src, int lda, int8_t *dst, int ldb, float *scale, float *zero, float *sum) {
 #pragma omp parallel for
-        for (int i = 0; i < M; i++) {
+        for (uint16_t i = 0; i < M; i++) {
             __m512 vmax = _mm512_loadu_ps(src + i * lda);
             __m512 vmin = vmax;
             for (int j = 16; j < N; j += 16) {
@@ -2005,7 +2005,7 @@ private:
     static void dequant_base(int M, int N, const int32_t *C_int32, const int ldc_int32, float *C, const int ldc,
             const DequantOp &dequant_op, const PostOp &post_op) {
 #pragma omp parallel for collapse(2)
-        for (int i = 0; i < M; i++) {
+        for (uint64_t i = 0; i < M; i++) {
             for (int j = 0; j < N; j += 16) {
                 __m512i xi = _mm512_load_epi32(C_int32 + i * ldc_int32 + j);
                 __m512 x = dequant_op(xi, i, j);
