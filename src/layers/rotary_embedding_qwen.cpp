@@ -124,11 +124,17 @@ void QwenRotaryEmbedding::forward(
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
 
+    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    if (std::abs(new_base - this->base) > 1e-5) {
+        this->base = new_base;
+        reinitialized = false;
+    }
+
     if (!reinitialized) {
-        float new_base = getNewBaseValue(seqLen, maxSeqLength);
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+#pragma omp parallel for
             for (size_t i = 0; i < this->inv_freq_size; i++) {
                 inv_freq[i] = 1.0 / pow(new_base, float(i * 2) / dim);
             }
@@ -189,11 +195,17 @@ void QwenRotaryEmbedding::forward(
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
 
+    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    if (std::abs(new_base - this->base) > 1e-5) {
+        this->base = new_base;
+        reinitialized = false;
+    }
+
     if (!reinitialized) {
-        float new_base = getNewBaseValue(seqLen, maxSeqLength);
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+#pragma omp parallel for
             for (size_t i = 0; i < this->inv_freq_size; i++) {
                 inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
             }
