@@ -50,7 +50,6 @@ private:
 
 private:
     static bool initialized;
-    static bool reinitialized;
     static int inv_freq_size;
     static int max_seq_len_cached;
     int dim = 0;

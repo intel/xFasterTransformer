@@ -22,7 +22,6 @@ static float *cur_emb_cos = nullptr;
 static float *cur_emb_sin = nullptr;
 
 bool QwenRotaryEmbedding::initialized = false;
-bool QwenRotaryEmbedding::reinitialized = false;
 int QwenRotaryEmbedding::max_seq_len_cached = -1;
 int QwenRotaryEmbedding::inv_freq_size = -1;
 
@@ -127,10 +126,10 @@ void QwenRotaryEmbedding::forward(
     float new_base = getNewBaseValue(seqLen, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-        reinitialized = false;
+        initialized = false;
     }
 
-    if (!reinitialized) {
+    if (!initialized) {
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -145,7 +144,7 @@ void QwenRotaryEmbedding::forward(
         auto &value = embCosSin[new_base];
         cur_emb_cos = std::get<0>(value);
         cur_emb_sin = std::get<1>(value);
-        reinitialized = true;
+        initialized = true;
     }
 
     // for (size_t i = 0; i < emb_size; i++) {
@@ -198,10 +197,10 @@ void QwenRotaryEmbedding::forward(
     float new_base = getNewBaseValue(seqLen, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-        reinitialized = false;
+        initialized = false;
     }
 
-    if (!reinitialized) {
+    if (!initialized) {
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -216,7 +215,7 @@ void QwenRotaryEmbedding::forward(
         auto &value = embCosSin[new_base];
         cur_emb_cos = std::get<0>(value);
         cur_emb_sin = std::get<1>(value);
-        reinitialized = true;
+        initialized = true;
     }
 
 #pragma omp parallel for collapse(3)
