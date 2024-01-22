@@ -31,9 +31,10 @@ public:
 
     void config(int maxLen_ = -1, int numBeams_ = 1, int numBeamHypsToKeep_ = 1, float lenPenalty_ = 1.0,
             bool doEarlyStopping_ = false, int eosTokenId_ = -1, int padTokenId_ = -1, bool doSample_ = false,
-            float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0, float repetitionPenalty_ = 1.0);
+            float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0, float repetitionPenalty_ = 1.0,
+            const std::vector<std::vector<int>> &stopWordsList_ = {});
 
-    void config(SearcherConfig &config_);
+    void config(SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
     bool isDone();
 
@@ -59,7 +60,7 @@ public:
 
     void unsetPrefix();
 
-    bool setStopWords(std::vector<std::vector<int>> &stopWordsList);
+    bool setStopWords(std::vector<std::vector<int>> stopWordsList);
 
 private:
     AbstractDecoder *decoder;

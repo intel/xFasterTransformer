@@ -82,10 +82,8 @@ class AutoModel:
             top_k,
             top_p,
             repetition_penalty,
+            stop_words_ids,
         )
-
-        if stop_words_ids is not None and len(stop_words_ids) > 0:
-            self.model.set_stop_words_ids(stop_words_ids)
 
     def input(self, input_ids=None):
         self.model.input(input_ids)

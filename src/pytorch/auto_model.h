@@ -93,7 +93,8 @@ public:
             torch::optional<bool> earlyStoppingOpt, torch::optional<int64_t> eosTokenIdOpt,
             torch::optional<int64_t> padTokenIdOpt, torch::optional<bool> doSampleOpt,
             torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt, torch::optional<double> topPOpt,
-            torch::optional<double> repetitionPenaltyOpt) {
+            torch::optional<double> repetitionPenaltyOpt,
+            torch::optional<std::vector<std::vector<int64_t>>> stopWordsListOpt) {
         TORCH_CHECK(maxLength.has_value(), "Make sure master's maxLen is not None.")
         int maxLen = static_cast<int>(maxLength.value());
         int numBeams = numBeamsOpt.has_value() ? (int)numBeamsOpt.value() : 1;
@@ -109,8 +110,23 @@ public:
         float repetitionPenalty
                 = repetitionPenaltyOpt.has_value() ? static_cast<float>(repetitionPenaltyOpt.value()) : 1.0;
 
+        std::vector<std::vector<int>> stopWordsList_int32;
+        if (stopWordsListOpt.has_value()) {
+            std::vector<std::vector<int64_t>> &stopWordsList = stopWordsListOpt.value();
+            stopWordsList_int32.reserve(stopWordsList.size());
+            for (const auto &inner_vector : stopWordsList) {
+                std::vector<int> converted_vector;
+                converted_vector.reserve(inner_vector.size());
+
+                std::transform(inner_vector.begin(), inner_vector.end(), std::back_inserter(converted_vector),
+                        [](int64_t value) { return static_cast<int>(value); });
+
+                stopWordsList_int32.emplace_back(converted_vector);
+            }
+        }
+
         model->config(maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping, eosTokenId, padTokenId,
-                doSample, temperature, topK, topP, repetitionPenalty);
+                doSample, temperature, topK, topP, repetitionPenalty, stopWordsList_int32);
     }
 
     torch::Tensor generate() {
@@ -166,23 +182,6 @@ public:
     };
 
     void unsetPrefix() { model->unsetPrefix(); };
-
-    void setStopWords(std::vector<std::vector<int64_t>> stopWordsList) {
-        std::vector<std::vector<int>> stopWordsList_int32;
-        stopWordsList_int32.reserve(stopWordsList.size());
-
-        for (const auto &inner_vector : stopWordsList) {
-            std::vector<int> converted_vector;
-            converted_vector.reserve(inner_vector.size());
-
-            std::transform(inner_vector.begin(), inner_vector.end(), std::back_inserter(converted_vector),
-                    [](int64_t value) { return static_cast<int>(value); });
-
-            stopWordsList_int32.emplace_back(converted_vector);
-        }
-
-        model->setStopWords(stopWordsList_int32);
-    }
 
 private:
     xft::Model *model;
