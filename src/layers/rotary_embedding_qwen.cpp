@@ -33,12 +33,17 @@ QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_e
         this->max_seq_len_cached = max_position_embeddings;
         this->inv_freq_size = (dim + 1) / 2;
         float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+#pragma omp parallel for
         for (size_t i = 0; i < this->inv_freq_size; i++) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
 
         QwenCalEmb(inv_freq, base, embCosSin);
         free(inv_freq);
+
+        auto &value = embCosSin[base];
+        cur_emb_cos = std::get<0>(value);
+        cur_emb_sin = std::get<1>(value);
         initialized = true;
     } else if (dim != this->inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, this->inv_freq_size);
@@ -126,10 +131,7 @@ void QwenRotaryEmbedding::forward(
     float new_base = getNewBaseValue(seqLen, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-        initialized = false;
-    }
 
-    if (!initialized) {
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -144,7 +146,6 @@ void QwenRotaryEmbedding::forward(
         auto &value = embCosSin[new_base];
         cur_emb_cos = std::get<0>(value);
         cur_emb_sin = std::get<1>(value);
-        initialized = true;
     }
 
     // for (size_t i = 0; i < emb_size; i++) {
@@ -197,10 +198,7 @@ void QwenRotaryEmbedding::forward(
     float new_base = getNewBaseValue(seqLen, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-        initialized = false;
-    }
 
-    if (!initialized) {
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -215,7 +213,6 @@ void QwenRotaryEmbedding::forward(
         auto &value = embCosSin[new_base];
         cur_emb_cos = std::get<0>(value);
         cur_emb_sin = std::get<1>(value);
-        initialized = true;
     }
 
 #pragma omp parallel for collapse(3)
