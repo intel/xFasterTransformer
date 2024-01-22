@@ -19,8 +19,8 @@ static int threadNum = 0;
 
 // TODO: group attention
 void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
-        int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale) {
+        int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
+        const void *kcache, const void *vcache, int *slots) {
 #ifdef DEBUG
     printf("Q[0]=%f, K[0]=%f, V[0]=%f\n", (float)query[0], (float)key[0], (float)value[0]);
     printf("kvHeadNum=%d, headSize=%d, qStride=%d, kvStride=%d, batchSize=%d\n", kvHeadNum, headSize, qStride, kvStride,
@@ -72,6 +72,10 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
             bfloat16_t *packedB = packBuf + tid * (kPackSize + vPackSize);
             bfloat16_t *packedV = packedB + kPackSize;
 
+            // Copy one head of current key to cached keys
+            auto dst = (bfloat16_t *)kcache + slots[b] * kvHeadNum * headSize + i * headSize;
+            xft::copy(dst, key + i * headSize, headSize);
+
             // Pack the key and value
             auto B = key + offsets[b] * kvStride + i * headSize;
             xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -108,6 +112,10 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
                             p[tokens - 2] * scale, p[tokens - 1] * scale);
                 }
 #endif
+
+                // Copy current value to cached values
+                dst = (bfloat16_t *)vcache + slots[b] * kvHeadNum * headSize + i * headSize;
+                xft::copy(dst, value + i * headSize, headSize);
 
                 // Softmax(Q * Kᵀ)
                 for (int seq = 0; seq < endSeq - startSeq; ++seq) {
@@ -155,13 +163,27 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
     int maxCtxSize = 0;
     int blkOffsets[batchSize]; // offset in blockTables
     int curOff = 0;
-    for (int i = 0; i < batchSize; ++i) {
-        if (contextSizes[i] > maxCtxSize) { maxCtxSize = contextSizes[i]; }
-        blkOffsets[i] = curOff;
-        curOff += blockNums[i];
+
+    if (unlikely(threadNum == 0)) {
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            if (tid == 0) { threadNum = omp_get_num_threads(); }
+        }
     }
 
-    int thrScoreSize = (maxCtxSize + 1 + 15) / 16 * 16; // +1 to include current KV cache
+    // blocktables dim = 2
+    for (int i = 0; i < batchSize; ++i) {
+        if (contextSizes[i] > maxCtxSize) { maxCtxSize = contextSizes[i]; }
+    }
+
+    int max_block_num = (maxCtxSize + cacheBlkSize - 1) / cacheBlkSize;
+    for (int i = 0; i < batchSize; ++i) {
+        blkOffsets[i] = curOff;
+        curOff += max_block_num;
+    }
+
+    int thrScoreSize = (maxCtxSize + 15) / 16 * 16;
     float *scores = (float *)SimpleMemPool::instance().getBuffer("qkscore", threadNum * thrScoreSize * sizeof(float));
 
 #pragma omp parallel for collapse(2)
@@ -217,8 +239,8 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             ldb = kvHeadNum * headSize;
             ldc = qHeadNum * headSize;
             baseB = (bfloat16_t *)vcache + i * headSize;
-
-            small_sgemm_f32bf16bf16_b(false, m, n, k, C, lda, (XDNN_BF16 *)baseB, ldb, (XDNN_BF16 *)output, ldc,
+            auto baseC = output + b * ldc + i * headSize;
+            small_sgemm_f32bf16bf16_b(false, m, n, k, C, lda, (XDNN_BF16 *)baseB, ldb, (XDNN_BF16 *)baseC, ldc,
                     blkIndices, cacheBlkStride, cacheBlkSize);
 
 #ifdef DEBUG
@@ -248,11 +270,12 @@ void invokeAttention(DataType dt, void *__restrict__ output, const void *__restr
             int cacheBlkSize = kvcache_shape[1]; // typically 4 on GPU
             int cacheBlkStride = kvcache_shape[1] * kvcache_shape[2] * kvcache_shape[3];
             crossAttention((bfloat16_t *)output, (bfloat16_t *)query, (bfloat16_t *)key, (bfloat16_t *)value, qHeadNum,
-                    kvHeadNum, headSize, q_stride, kv_stride, batch_size, cacheBlkStride, cacheBlkSize, token_lens,
+                    kvHeadNum, headSize, q_stride, kv_stride, batch_size, cacheBlkStride, cacheBlkSize, context_lens,
                     scale, kcache, vcache, block_tables, block_nums, slot_mapping);
         } else { // prefill phase
             selfAttention((bfloat16_t *)output, (bfloat16_t *)query, (bfloat16_t *)key, (bfloat16_t *)value, qHeadNum,
-                    kvHeadNum, headSize, q_stride, kv_stride, batch_size, token_lens, scale);
+                    kvHeadNum, headSize, q_stride, kv_stride, batch_size, token_lens, scale, kcache, vcache,
+                    slot_mapping);
         }
     } else {
         printf("Error: data type (%d) is not supported yet!\n", dt);
