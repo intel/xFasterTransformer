@@ -107,13 +107,7 @@ std::vector<int32_t> SampleSearch::finalize() {
 bool SampleSearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
     this->stopWordsList = stopWordsList;
     for (auto it = this->stopWordsList.rbegin(); it != this->stopWordsList.rend(); ++it) {
-        if ((*it).size() == 1 && (*it)[0] == this->eosTokenId) {
-            this->stopWordsList.erase(std::next(it).base());
-            continue;
-        }
-        for (auto x : *it) {
-            if (x <= 0) { this->stopWordsList.erase(std::next(it).base()); }
-        }
+        if ((*it).size() == 1 && (*it)[0] == this->eosTokenId) { this->stopWordsList.erase(std::next(it).base()); }
     }
     return !this->stopWordsList.empty();
 }
