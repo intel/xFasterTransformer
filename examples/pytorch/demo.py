@@ -21,6 +21,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import torch
 import time
 from transformers import AutoTokenizer, TextStreamer
+from transformers import PreTrainedTokenizer
 
 import argparse
 
@@ -53,7 +54,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/chatglm-6b-cpu", help="Path to model file")
 parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
-parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=False)
+parser.add_argument("--padding", help="Enable padding, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
 parser.add_argument("--output_len", help="max tokens can generate excluded input.", type=int, default=100)
@@ -81,6 +82,83 @@ def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[st
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
 
+def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
+    history: List[Tuple[str, str]] = None, system: str = "You are a helpful assistant.",
+    max_window_size: int = 6144, chat_format: str = "chatml",
+):
+    if history is None:
+        history = []
+
+    if chat_format == "chatml":
+        im_start, im_end = "<|im_start|>", "<|im_end|>"
+        im_start_tokens = [tokenizer.im_start_id]
+        im_end_tokens = [tokenizer.im_end_id]
+        nl_tokens = tokenizer.encode("\n")
+
+        def _tokenize_str(role, content):
+            return f"{role}\n{content}", tokenizer.encode(
+                role, allowed_special=set()
+            ) + nl_tokens + tokenizer.encode(content, allowed_special=set())
+
+        system_text, system_tokens_part = _tokenize_str("system", system)
+        system_tokens = im_start_tokens + system_tokens_part + im_end_tokens
+
+        raw_text = ""
+        context_tokens = []
+
+        for turn_query, turn_response in reversed(history):
+            query_text, query_tokens_part = _tokenize_str("user", turn_query)
+            query_tokens = im_start_tokens + query_tokens_part + im_end_tokens
+            response_text, response_tokens_part = _tokenize_str(
+                "assistant", turn_response
+            )
+            response_tokens = im_start_tokens + response_tokens_part + im_end_tokens
+
+            next_context_tokens = nl_tokens + query_tokens + nl_tokens + response_tokens
+            prev_chat = (
+                f"\n{im_start}{query_text}{im_end}\n{im_start}{response_text}{im_end}"
+            )
+
+            current_context_size = (
+                len(system_tokens) + len(next_context_tokens) + len(context_tokens)
+            )
+            if current_context_size < max_window_size:
+                context_tokens = next_context_tokens + context_tokens
+                raw_text = prev_chat + raw_text
+            else:
+                break
+
+        context_tokens = system_tokens + context_tokens
+        raw_text = f"{im_start}{system_text}{im_end}" + raw_text
+        context_tokens += (
+            nl_tokens
+            + im_start_tokens
+            + _tokenize_str("user", query)[1]
+            + im_end_tokens
+            + nl_tokens
+            + im_start_tokens
+            + tokenizer.encode("assistant")
+            + nl_tokens
+        )
+        raw_text += f"\n{im_start}user\n{query}{im_end}\n{im_start}assistant\n"
+
+    elif chat_format == "raw":
+        raw_text = query
+        context_tokens = tokenizer.encode(raw_text)
+    else:
+        raise NotImplementedError(f"Unknown chat format {chat_format!r}")
+
+    return torch.tensor([context_tokens])
+
+def get_stop_words_ids_qwen(chat_format, tokenizer):
+    if chat_format == "raw":
+        stop_words_ids = [tokenizer.encode("Human:"), [tokenizer.eod_id]]
+    elif chat_format == "chatml":
+        stop_words_ids = [[tokenizer.im_end_id], [tokenizer.im_start_id]]
+    else:
+        raise NotImplementedError(f"Unknown chat format {chat_format!r}")
+    return stop_words_ids
+
 
 import importlib.util
 
@@ -107,6 +185,7 @@ if __name__ == "__main__":
 
     model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
     streamer = None
+    stop_words_ids = None
     if model.rank == 0 and args.streaming and args.num_beams == 1:
         streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=False)
 
@@ -117,10 +196,14 @@ if __name__ == "__main__":
             if input_prompt == "":
                 input_prompt = DEFAULT_PROMPT
                 print("[Use default prompt]:" + input_prompt)
+
             if args.chat and "chatglm" in args.model_path.lower():
                 input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
             elif "baichuan" in args.model_path.lower():
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
+            elif "qwen" in args.model_path.lower() and "chat" in args.model_path.lower():
+                input_ids = build_inputs_qwen(tokenizer, input_prompt, args.padding)
+                stop_words_ids = get_stop_words_ids_qwen("chatml", tokenizer)
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)
@@ -131,6 +214,7 @@ if __name__ == "__main__":
                 max_length=input_ids.shape[-1] + args.output_len,
                 streamer=streamer,
                 num_beams=args.num_beams,
+                stop_words_ids=stop_words_ids,
                 do_sample=args.do_sample,
                 temperature=args.temperature,
                 top_k=args.top_k,

@@ -238,7 +238,7 @@ public:
         TimeLine t3("QKPO");
         int qheads = this->endQHead - this->startQHead;
         int kheads = this->endKVHead - this->startKVHead;
-        int qkShape[5] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads};
+        int qkShape[6] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads, ctx->maxSeqLength};
         if (positionIds != nullptr) {
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds);
         } else if (ctx->maxPosEmbed > 0) {
