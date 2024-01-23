@@ -39,20 +39,11 @@ public:
     }
 
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
-    void forward(int *tokenIds, float *output, int batchSize, int seqLen) {
-        if constexpr (std::is_same_v<T, float>) {
-            for (int i = 0; i < batchSize * seqLen; ++i) {
-                int id = tokenIds[i];
-                memcpy(output + i * hiddenSize, embTable + id * hiddenSize, hiddenSize * sizeof(float));
-            }
-        } else if constexpr (std::is_same_v<T, float16_t>) {
-            for (int i = 0; i < batchSize * seqLen; ++i) {
-                int id = tokenIds[i];
-                float16_t::cvt_float16_to_float(embTable + id * hiddenSize, output + i * hiddenSize, hiddenSize);
-            }
-        } else {
-            printf("Type %s not supported!\n", typeid(T).name());
-            exit(-1);
+    template <typename OutT>
+    void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
+        for (int i = 0; i < batchSize * seqLen; ++i) {
+            int id = tokenIds[i];
+            xft::copy(output + i * hiddenSize, embTable + id * hiddenSize, hiddenSize);
         }
     }
 

@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <iostream>
 
+#include "bfloat16.h"
 #include "compile_util.h"
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
@@ -48,6 +49,7 @@ private:
         helperInit = (int (*)(int *, int *))dlsym(commHelperHanlde, "init");
         helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
         helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
+        helperAllreduceBF16 = (void (*)(bfloat16_t *, bfloat16_t *, size_t))dlsym(commHelperHanlde, "allreduceBF16");
         helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
@@ -99,6 +101,22 @@ public:
         }
 #else
         (*helperAllreduce)(sendBuf, recvBuf, count);
+#endif
+    }
+
+    void reduceAdd(bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t count) {
+        TimeLine t("Messenger.reduceAdd");
+
+#ifdef USE_SHM
+        if (count * sizeof(bfloat16_t) > pshm->getSHMSize() || !localRanksFlag) {
+            (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        } else {
+            // TODO: fix it
+            printf("Error: BF16 reduce add not implemented.\n");
+            exit(-1);
+        }
+#else
+        (*helperAllreduceBF16)(sendBuf, recvBuf, count);
 #endif
     }
 
@@ -167,6 +185,7 @@ private:
     int (*helperInit)(int *, int *);
     void (*helperFreePCOMM)();
     void (*helperAllreduce)(float *, float *, size_t);
+    void (*helperAllreduceBF16)(bfloat16_t *, bfloat16_t *, size_t);
     void (*helperBroadcast)(int *, size_t);
     void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
 };

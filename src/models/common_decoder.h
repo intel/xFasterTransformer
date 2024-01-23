@@ -27,6 +27,8 @@
 #include "dist_linear.h"
 #include "kvcache_manager.h"
 #include "messenger.h"
+#include "mlp_chatglm2.h"
+#include "mlp_standard.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"
@@ -37,6 +39,28 @@ using namespace xft;
 struct QKPO_Dummy {
     QKPO_Dummy(int dim, int maxPos) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
+};
+
+// To get data types in MLP class
+template <typename T>
+struct MlpTypeExtractor;
+template <template <typename...> class MLP_CLS, typename WeiT, typename InT, typename ImT, typename OutT>
+struct MlpTypeExtractor<MLP_CLS<WeiT, InT, ImT, OutT>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
+};
+template <typename WeiT, typename InT, typename ImT, typename OutT>
+struct MlpTypeExtractor<MLP<WeiT, InT, ImT, OutT, true>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
+};
+template <typename WeiT, typename InT, typename ImT, typename OutT, typename NORM_CLS>
+struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
 };
 
 // Template parameters:
@@ -53,6 +77,12 @@ public:
         , dbg("model_decoder.csv")
 #endif
     {
+        // Make sure Attention output can be feed to MLP
+        static_assert(std::is_same_v<AttnOutT, MlpInT>, "Error: Attention Output and MLP Input are not the same type.");
+
+        // Make sure MLP output can be feed to Attention
+        static_assert(std::is_same_v<MlpOutT, AttnInT>, "Error: MLP Output and Attention Input are not the same type.");
+
         std::string configPath = modelPath + "/config.ini";
         INIReader reader = INIReader(configPath);
         wType = getWeightType(configPath, modelType);
@@ -97,8 +127,7 @@ public:
         this->inputTokens = nullptr;
         this->maskSize = 0;
         this->attnMask = nullptr;
-        embBuf.reset(new hpj::Matrix<float>());
-        outBuf.reset(new hpj::Matrix<float>());
+        actBuffers.reset(new hpj::Matrix<float>());
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
@@ -114,7 +143,7 @@ public:
         // Predictor
         int workers = messenger.getSize();
         int rank = messenger.getRank();
-        this->predictor = new DistLinear<float16_t>(hiddenSize, vocabSize, rank, workers);
+        this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
         this->setPredictorWeight(modelPath);
 
         // KVCache Manager
@@ -175,8 +204,11 @@ public:
             prepareBuffers(ctx, userSideBS, beamSize, logitsAll);
         }
 
+        AttnInT *embBuf = (AttnInT *)actBuffers->Data();
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * ctx->hiddenSize);
+
         // Embedding
-        this->embeddingForward(ids, this->embBuf->Data(), batchSize, inputSeqLen);
+        this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
         this->accSeqLen += seqLen;
 
 #ifdef DEBUG
@@ -207,9 +239,8 @@ public:
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
-            auto &attnOut = this->getContext()->tmpBuf;
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
-                    attnOut.Data(), attnMask,
+            AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
+            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     inputSeqLen, // inputSeqLen,
@@ -225,45 +256,38 @@ public:
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
             if constexpr (!ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->messenger.reduceAdd(
-                            attnOut.Data(), attnOut.Data(), batchSize * inputSeqLen * attnOut.Stride());
+                    this->messenger.reduceAdd(attnOut, attnOut, batchSize * inputSeqLen * hiddenSize);
                 }
             }
 
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), this->embBuf->Data(), this->outBuf->Data(), hiddenSize, hiddenSize, true);
-                    this->messenger.reduceAdd(
-                            this->outBuf->Data(), this->embBuf->Data(), batchSize * inputSeqLen * hiddenSize);
+                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), this->embBuf->Data(), this->embBuf->Data(), hiddenSize, hiddenSize, true);
+                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), attnOut.Data(), this->outBuf->Data(), attnOut.Stride(), hiddenSize, true);
-                    this->messenger.reduceAdd(
-                            this->outBuf->Data(), this->embBuf->Data(), batchSize * inputSeqLen * hiddenSize);
+                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), attnOut.Data(), this->embBuf->Data(), attnOut.Stride(), hiddenSize, true);
+                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
-        float *lnIn = this->embBuf->Data();
+        MlpOutT *lnIn = embBuf;
         if (inputSeqLen > 1 && !logitsAll) { // copy is not needed when seqLen = 1 or logitsAll is true
-            lnIn = this->outBuf->Data();
+            lnIn = outBuf;
 #pragma omp parallel for
             for (int b = 0; b < batchSize; ++b) {
-                memcpy(lnIn + b * hiddenSize, this->embBuf->Data() + ((b + 1) * inputSeqLen - 1) * hiddenSize,
-                        hiddenSize * sizeof(float));
+                memcpy(lnIn + b * hiddenSize, embBuf + ((b + 1) * inputSeqLen - 1) * hiddenSize,
+                        hiddenSize * sizeof(MlpOutT));
             }
         }
 
@@ -273,7 +297,7 @@ public:
 #endif
 
         // LN, as it supports inplace computing, input and output can be the same
-        float *lnOut = this->embBuf->Data();
+        MlpOutT *lnOut = embBuf;
         if (!logitsAll)
             lastLayerNormForward(lnIn, lnOut, batchSize);
         else
@@ -285,26 +309,27 @@ public:
 #endif
 
         // Predictor
+        float *finalOut = (float *)outBuf;
         if (!logitsAll)
-            this->predictor->forward(lnOut, this->outBuf->Data(), batchSize);
+            this->predictor->forward(lnOut, finalOut, batchSize);
         else
-            this->predictor->forward(lnOut, this->outBuf->Data(), batchSize * seqLen);
+            this->predictor->forward(lnOut, finalOut, batchSize * seqLen);
 
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
-        dbg.debugPrint("outBuf:\n");
-        dbg.dumpMatrix(outBuf->Data(), batchSize, splitSize, splitSize);
+        dbg.debugPrint("finalOut:\n");
+        dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
 #endif
 
         // Expand the result to make it cover multiple beams
         if (step == 0 && beamSize > 1) {
             const int splitSize = this->predictor->getSplitSize();
             for (int b = userSideBS - 1; b >= 0; --b) {
-                float *src = this->outBuf->Data() + b * splitSize;
+                float *src = finalOut + b * splitSize;
 #pragma omp parallel for
                 for (int idx = b * beamSize; idx < (b + 1) * beamSize; ++idx) {
                     if (idx == b) { continue; }
-                    float *dst = this->outBuf->Data() + idx * splitSize;
+                    float *dst = finalOut + idx * splitSize;
                     memcpy(dst, src, splitSize * sizeof(float));
                 }
             }
@@ -314,7 +339,7 @@ public:
         if (step == 0 && this->prefixSharing) { free(ids); }
 
         return std::tuple<float *, int, int>(
-                this->outBuf->Data(), this->predictor->getSplitOffset(), this->predictor->getSplitSize());
+                finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
     }
 
     void setPrefix(int *ids, int seqLen) {
@@ -337,8 +362,11 @@ public:
 
         prepareBuffers(ctx, 1, 1, false, true);
 
+        AttnInT *embBuf = (AttnInT *)actBuffers->Data();
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + 1 * seqLen * ctx->hiddenSize);
+
         // Embedding
-        this->embeddingForward(ids, this->embBuf->Data(), 1, seqLen);
+        this->embeddingForward(ids, embBuf, 1, seqLen);
 
         // Prepare attention mask
         this->prepareAttnMask(ids, 0);
@@ -355,9 +383,8 @@ public:
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
-            auto &attnOut = this->getContext()->tmpBuf;
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
-                    attnOut.Data(), attnMask,
+            AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
+            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     seqLen, // inputSeqLen,
@@ -369,30 +396,24 @@ public:
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
             if constexpr (!ATTN_MLP_PARALLEL) {
-                if (this->messenger.getSize() > 1) {
-                    this->messenger.reduceAdd(attnOut.Data(), attnOut.Data(), seqLen * attnOut.Stride());
-                }
+                if (this->messenger.getSize() > 1) { this->messenger.reduceAdd(attnOut, attnOut, seqLen * hiddenSize); }
             }
 
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), this->embBuf->Data(), this->outBuf->Data(), hiddenSize, hiddenSize, true);
-                    this->messenger.reduceAdd(this->outBuf->Data(), this->embBuf->Data(), seqLen * hiddenSize);
+                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), this->embBuf->Data(), this->embBuf->Data(), hiddenSize, hiddenSize, true);
+                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), attnOut.Data(), this->outBuf->Data(), attnOut.Stride(), hiddenSize, true);
-                    this->messenger.reduceAdd(this->outBuf->Data(), this->embBuf->Data(), seqLen * hiddenSize);
+                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(
-                            getContext(), attnOut.Data(), this->embBuf->Data(), attnOut.Stride(), hiddenSize, true);
+                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
@@ -418,17 +439,16 @@ public:
     int getInitSeqLen() { return initSeqLen; }
 
     std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>, std::shared_ptr<hpj::Matrix<float>>>
+            std::shared_ptr<hpj::Matrix<float>>>
     getSharedResources() {
-        return std::make_tuple(context, kvCacheMgr, embBuf, outBuf);
+        return std::make_tuple(context, kvCacheMgr, actBuffers);
     }
 
     void setSharedResources(const std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>, std::shared_ptr<hpj::Matrix<float>>> &r) {
+            std::shared_ptr<hpj::Matrix<float>>> &r) {
         this->context = std::get<0>(r);
         this->kvCacheMgr = std::get<1>(r);
-        this->embBuf = std::get<2>(r);
-        this->outBuf = std::get<3>(r);
+        this->actBuffers = std::get<2>(r);
     }
 
     // When first step is skipped, call this function to make everything aligned
@@ -599,18 +619,15 @@ protected:
         int layers = this->decoders.size();
         int workers = this->messenger.getSize();
 
-        // Prepare buffers (embBuf & outBuf), userSideBS * beamSize is the output rows really needed
+        // Prepare buffers
         int logitsLen = logitsAll ? batchSize * seqLen : userSideBS * beamSize;
-        int requiredRows = batchSize * seqLen;
+        int actRows = batchSize * seqLen; // rows for activation
 
-        // The required output buffer size is bigger than the embedding size
-        if (logitsLen * vocabSize > batchSize * seqLen * hiddenSize) {
-            requiredRows = logitsLen * vocabSize / hiddenSize + 1;
-        }
-        if (requiredRows > this->embBuf->Rows()) {
-            this->embBuf->Resize(requiredRows, hiddenSize);
-            this->outBuf->Resize(requiredRows, hiddenSize);
-        }
+        // Convert final output buffer size into rows in the units of hiddenSize
+        int outRows = actRows;
+        if (logitsLen * vocabSize > outRows * hiddenSize) { outRows = logitsLen * vocabSize / hiddenSize + 1; }
+
+        this->actBuffers->Resize(actRows + outRows, hiddenSize);
 
         // Attention mask
         int sizeRequired = batchSize * seqLen * seqLen;
@@ -635,8 +652,24 @@ protected:
 
     int getStartId() { return startId; }
 
-    virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen) = 0;
-    virtual void lastLayerNormForward(float *input, float *output, int rows) = 0;
+    virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+        printf("embeddingForward(float) must be implemented.\n");
+        exit(-1);
+    }
+    virtual void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+        printf("embeddingForward(bfloat16_t) must be implemented.\n");
+        exit(-1);
+    }
+
+    virtual void lastLayerNormForward(float *input, float *output, int rows) {
+        printf("lastLayerNormForward(float) must be implemented.\n");
+        exit(-1);
+    }
+    virtual void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+        printf("lastLayerNormForward(bfloat16_t) must be implemented.\n");
+        exit(-1);
+    }
+
     virtual void prepareAttnMask(int *ids, int step) = 0;
 
 public:
@@ -663,13 +696,21 @@ protected:
 
     std::shared_ptr<KVCacheManager<KVCacheT>> kvCacheMgr;
 
-    std::shared_ptr<hpj::Matrix<float>> embBuf; // used to store the embedding result
-    std::shared_ptr<hpj::Matrix<float>> outBuf; // output buffer for decoder layers, same size as embBuf
+    // Embedding output data type = input data type of Attention
+    using AttnInT = typename AttnTypeExtractor<ATTN_CLS>::Tin;
+    using AttnOutT = typename AttnTypeExtractor<ATTN_CLS>::Tout;
+    using MlpInT = typename MlpTypeExtractor<MLP_CLS>::Tin;
+    using MlpOutT = typename MlpTypeExtractor<MLP_CLS>::Tout;
+
+    // Activation buffers (declared as float, but the actual data type may be different)
+    std::shared_ptr<hpj::Matrix<float>> actBuffers;
 
 protected:
     // Components most LLMs may use
     std::vector<DECODER *> decoders;
-    DistLinear<float16_t> *predictor;
+
+    using LinearWeiT = typename std::conditional<std::is_same_v<MlpOutT, bfloat16_t>, bfloat16_t, float16_t>::type;
+    DistLinear<LinearWeiT> *predictor;
 
 private:
     int maskSize; // size of allocated attnMask

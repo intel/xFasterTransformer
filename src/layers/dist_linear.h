@@ -74,7 +74,8 @@ public:
     }
 
     // input is in the shape of (batchSize, inputSize)
-    void forward(const float *input, float *output, int batchSize) {
+    template <typename T1, typename T2>
+    void forward(const T1 *input, T2 *output, int batchSize) {
         TimeLine t("DistLinear.forward");
         if (bias) {
             MMHelper::compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),

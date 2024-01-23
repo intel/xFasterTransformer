@@ -38,14 +38,18 @@
 
 // To get weight data type in attention class
 template <typename T>
-struct AttnParameters;
+struct AttnTypeExtractor;
 template <template <typename...> class ATTN_CLS, typename WeiT, typename QKPO_CLS, typename NORM_CLS>
-struct AttnParameters<ATTN_CLS<WeiT, QKPO_CLS, NORM_CLS>> {
+struct AttnTypeExtractor<ATTN_CLS<WeiT, QKPO_CLS, NORM_CLS>> {
+    using Tin = float;
     using Tim = float;
+    using Tout = float;
 };
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT, typename ImT, typename OutT>
-struct AttnParameters<Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+struct AttnTypeExtractor<Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+    using Tin = InT;
     using Tim = ImT;
+    using Tout = OutT;
 };
 
 template <typename ATTN_CLS, typename MLP_CLS>
@@ -94,14 +98,15 @@ public:
             bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
         TimeLine t("Decoder.forwardAttention");
 
-        using Ttarget = typename AttnParameters<ATTN_CLS>::Tim;
+        using Ttarget = typename AttnTypeExtractor<ATTN_CLS>::Tim;
         static_assert(sizeof(ImT) >= sizeof(Ttarget), "Intermediate buffer is NOT big enough!");
 
         attn.forward(ctx, input, (Ttarget *)imBuf, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen,
                 useSelfAttn, doLnBefore, positionIds);
     }
 
-    void forwardFFN(DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore = true) {
+    template <typename InT, typename OutT>
+    void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true) {
         TimeLine t("Decoder.forwardFFN");
         mlp.forward(ctx, input, output, iStride, oStride, doLnBefore);
     }

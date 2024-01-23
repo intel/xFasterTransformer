@@ -17,22 +17,28 @@
 #include "common_decoder.h"
 #include "mlp_llama.h"
 #include "rms_norm.h"
-#include "type_selector.h"
 #include "rotary_embedding.h"
 #include "token_embedding.h"
+#include "type_selector.h"
 
 template <typename WeiT>
 class LlamaLLM
-    : public CommonDecoder<
-              Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, float, typename TypeSelector<WeiT>::ImType, float, true>,
-              LlamaMLP<WeiT>, float> {
+    : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                                   typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+              LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                      typename TypeSelector<WeiT>::OutType>,
+              typename TypeSelector<WeiT>::KVCacheType> {
 public:
     LlamaLLM(const std::string &modelPath);
     ~LlamaLLM();
 
     void prepareAttnMask(int *ids, int step);
+
     void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
+    void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen);
+
     void lastLayerNormForward(float *input, float *output, int rows);
+    void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
 
 private:
     void setEmbeddingWeights(const std::string &modelPath);

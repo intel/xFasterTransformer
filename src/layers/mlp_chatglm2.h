@@ -16,7 +16,7 @@
 #include <cmath>
 #include "mlp_llama.h"
 
-template <typename WeiT, typename NORM_CLS, bool INPUT_AS_RESID>
+template <typename WeiT, typename InT, typename ImT, typename OutT, typename NORM_CLS, bool INPUT_AS_RESID>
 class ChatGLM2MLP : public LlamaMLP<WeiT> {
 public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
