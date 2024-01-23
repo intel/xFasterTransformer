@@ -29,7 +29,7 @@ void rmsNorm(T *output, const float *input, const float *weight, int rows, int c
     static_assert(std::is_same_v<T, float> || std::is_same_v<T, bfloat16_t>,
             "Template parameter of rmsNorm must be either float or bfloat16_t");
 
-#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
+#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 3))
     auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) { return (__m256i)_mm512_cvtneps_pbh(input_vector); };
 #else
     const __m512i nan = _mm512_set1_epi32(0xffff);
