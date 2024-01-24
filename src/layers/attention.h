@@ -27,6 +27,7 @@
 #include "simple_mem_pool.h"
 #include "transformer_ctx.h"
 #include "transformer_util.h"
+#include "gpu_matmul_helper.h"
 
 /**
  * WeiT: weight data type
@@ -98,10 +99,11 @@ public:
             }
         }
 
-        hpj::Matrix<WeiT> convertedqkvWeight;
-        MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, convertedqkvWeight, qkvWeightScale,
-                qkvWeightZero, qkvWeightSum);
-        MMHelper::packWeight(trans, convertedqkvWeight, qkvWeight);
+        // hpj::Matrix<WeiT> convertedqkvWeight;
+        // MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, convertedqkvWeight, qkvWeightScale,
+        //         qkvWeightZero, qkvWeightSum);
+        // MMHelper::packWeight(trans, convertedqkvWeight, qkvWeight);
+        memcpy(qkvWeight.Data(), concatBuf, hiddenSize * responsibleCols * sizeof(float));
 
         free(concatBuf);
 
@@ -218,7 +220,10 @@ public:
 
         // Query, Key, Value computed together
         TimeLine t2("QKV.linear");
-        DecoderUtil::dense(imBuffer, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
+        // DecoderUtil::dense(imBuffer, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
+        GPUMatMulHelper::onednn_sgemm_f32f32f32_compute(dnnl::engine::kind::gpu, 4, false, imBuffer.Rows(), qkvWeight.Cols(),
+                imBuffer.Cols(), 1.0f, imBuffer.Data(), imBuffer.Stride(), qkvWeight.Data(), qkvWeight.Stride(), 0.0f, qkvGroupMatMul.Data(),
+                qkvGroupMatMul.Stride());
         t2.release();
 
         hpj::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
@@ -893,7 +898,7 @@ protected:
     }
 
     // query, key, value weighs
-    hpj::Matrix<WeiT> qkvWeight;
+    hpj::Matrix<float> qkvWeight;
     hpj::Vector<float> qkvWeightScale; // if weight is int8
     hpj::Vector<float> qkvWeightZero; // if weight is int8
     hpj::Vector<float> qkvWeightSum; // if weight is int8

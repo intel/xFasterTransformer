@@ -19,6 +19,7 @@
 #include "matmul_helper.h"
 #include "singleton.h"
 #include "timeline.h"
+#include "gpu_matmul_helper.h"
 
 extern bool enableCATMLP;
 extern bool enableCBLASMLP;
@@ -78,7 +79,11 @@ public:
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
-            MMHelper::packWeight(trans, quantizedCatWeights, catWeights);
+            // MMHelper::packWeight(trans, quantizedCatWeights, catWeights);
+            for (int i = 0; i < hiddenSize; ++i) {
+                memcpy(catWeights.Data() + i * catWeights.Stride(), gateW + i * imSize, imSize * sizeof(float));
+                memcpy(catWeights.Data() + i * catWeights.Stride() + imSize, upW + i * imSize, imSize * sizeof(float));
+            }
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
@@ -282,15 +287,17 @@ private:
 
         int M = input.Rows(), N = output.Cols(), K = input.Cols();
         int lda = input.Stride(), ldc = output.Stride();
+        int ldb = catWeights.Stride();
 
         const float *A = input.Data();
-        const WeiT *B = catWeights.Data();
+        const float *B = catWeights.Data();
         const float *scaleB = catWeightsScale.Data();
         const float *zeroB = catWeightsZero.Data();
         const float *sumB = catWeightsSum.Data();
         float *C = output.Data();
 
-        MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        // MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        GPUMatMulHelper::onednn_sgemm_f32f32f32_compute(dnnl::engine::kind::gpu, 4, false, M, N, K, 1.0f,  A, lda, B, ldb, 0.0f, C, ldc);
         // compute silu on the left half and then add it with the right half
         DecoderUtil::siluSum(output);
     }
@@ -340,7 +347,7 @@ protected:
     hpj::Vector<float> upWeightScale; // For int8_t weight
     hpj::Vector<float> upWeightZero; // For int8_t weight
     hpj::Vector<float> upWeightSum; // For int8_t weight
-    hpj::Matrix<WeiT> catWeights;
+    hpj::Matrix<float> catWeights;
     hpj::Vector<float> catWeightsScale; // For int8_t weight
     hpj::Vector<float> catWeightsZero; // For int8_t weight
     hpj::Vector<float> catWeightsSum; // For int8_t weight

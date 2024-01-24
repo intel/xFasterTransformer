@@ -84,11 +84,13 @@ public:
                             colSplit * sizeof(float));
                     weightPTR += intermediateSize;
                 }
-                hpj::Matrix<WeiT> quantizedCatWeights;
-                MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, quantizedCatWeights,
-                        this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
-                this->catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
-                MMHelper::packWeight(trans, quantizedCatWeights, this->catWeights);
+                // hpj::Matrix<WeiT> quantizedCatWeights;
+                // MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, quantizedCatWeights,
+                //         this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
+                // this->catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
+                // MMHelper::packWeight(trans, quantizedCatWeights, this->catWeights);
+                this->catWeights.Resize(hiddenSize, colSplitStride);
+                memcpy(this->catWeights.Data(), gate_upW, hiddenSize * colSplitStride * sizeof(float));
                 free(gateUpW);
             }
         }

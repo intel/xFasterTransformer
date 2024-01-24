@@ -10,4 +10,4 @@ export CXX=icpx
 cmake -DBUILD_WITH_SHARED_LIBS=ON ..
 make -j
 
-LD_LIBRARY_PATH=/home/xfast/xFasterTransformer/build/ SINGLE_INSTANCE=1 OMP_NUM_THREADS=20 mpirun -n 1 numactl -N 1 -m 1 ./example --model /home/xfast/models/llama-2-7b-chat-xft/ --token /home/xfast/models/llama-2-7b-chat-hf/tokenizer.model --dtype fp16 --loop 3 --no_stream --input_len 16 --output_len 16
+ONEDNN_VERBOSE=1 XFT_VERBOSE=1 LD_LIBRARY_PATH=/home/xfast/xFasterTransformer/build-icpx/ SINGLE_INSTANCE=1 OMP_NUM_THREADS=20 ENABLE_CAT_MLP=1 mpirun -n 1 numactl -N 1 -m 1 ./example --model /home/xfast/models/llama-2-7b-chat-xft/ --token /home/xfast/models/llama-2-7b-chat-hf/tokenizer.model --dtype fp16 --loop 1 --no_stream --input_len 16 --output_len 16

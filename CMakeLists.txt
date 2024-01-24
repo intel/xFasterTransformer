@@ -28,7 +28,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -fopenmp -mavx512f -mavx512bw -mavx512vl -fPIC -D_GLIBCXX_USE_CXX11_ABI=0")
+    "${CMAKE_CXX_FLAGS} -fopenmp -mavx512f -mavx512bw -mavx512vl -fPIC -D_GLIBCXX_USE_CXX11_ABI=0 -fsycl -fsycl-device-code-split=per_kernel -lOpenCL")
 
 if(GCC_VERSION VERSION_GREATER_EQUAL "12.3")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512bf16")
