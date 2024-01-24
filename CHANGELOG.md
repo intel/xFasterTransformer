@@ -1,5 +1,10 @@
 # CHANGELOG
 
+# [Version v1.3.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.1)
+v1.3.1
+## BUG fix
+- Fix oneCCL environment is still needed when running in single-rank mode.
+
 # [Version v1.3.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.0)
 v1.3.0 - Qwen model support enhancement and added support for the SecLLM (YaRN-Llama) model.
 ## Models
