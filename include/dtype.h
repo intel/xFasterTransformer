@@ -15,8 +15,8 @@
 #pragma once
 
 namespace xft {
-enum class DataType {
-    fp32,
+enum DataType {
+    fp32 = 0,
     bf16,
     fp16,
     int8,

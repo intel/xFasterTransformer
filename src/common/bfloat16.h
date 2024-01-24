@@ -87,7 +87,7 @@ public:
     }
 
     static inline __m256i cvt_fp32_to_bf16(const __m512 src) {
-#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
+#if (__GNUC__ > 13) || ((__GNUC__ == 13) && (__GNUC_MINOR__ >= 1))
         return (__m256i)_mm512_cvtneps_pbh(src);
 #else
         const __m512i nan = _mm512_set1_epi32(0xffff);
@@ -122,7 +122,7 @@ inline void bfloat16_t::cvt_float_to_bfloat16(const float *src, bfloat16_t *dst,
     const __m512i ones = _mm512_set1_epi32(0x1);
     const __m512i vec_bias = _mm512_set1_epi32(0x7fff);
 
-#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
+#if (__GNUC__ > 13) || ((__GNUC__ == 13) && (__GNUC_MINOR__ >= 1))
     auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) { return (__m256i)_mm512_cvtneps_pbh(input_vector); };
 #else
     auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) {

@@ -373,7 +373,10 @@ void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {
     // 4. add beam socre. Initialize -1e9 to all beams except the first one
     if (msgerSize > 1) {
         // Get the maximum value of each beam through all instance
-        float maxVal[batchSize * numBeams] = {std::numeric_limits<float>::lowest()};
+        float maxVal[batchSize * numBeams];
+        for (int i = 0; i < batchSize * numBeams; ++i) {
+            maxVal[i] = std::numeric_limits<float>::lowest();
+        }
         float recvMax[batchSize * numBeams * msgerSize];
 #pragma omp parallel for
         for (int i = 0; i < batchSize * numBeams; ++i) {
@@ -392,7 +395,10 @@ void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {
         std::vector<long unsigned int> recvCount(msgerSize, static_cast<long unsigned int>(batchSize * numBeams));
         messenger.allgatherv(maxVal, batchSize * numBeams, recvMax, recvCount);
 
-        float sumVal[batchSize * numBeams] = {0};
+        float sumVal[batchSize * numBeams];
+        for (int i = 0; i < batchSize * numBeams; ++i) {
+            sumVal[i] = 0.0f;
+        }
         float recvSum[batchSize * numBeams * msgerSize];
         // Get the global sum for each beam
 #pragma omp parallel for

@@ -266,24 +266,24 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new OptDecoder<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new OptDecoder<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new OptDecoder<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<OptDecoder, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8:
-                setDecoder(new HybridModel<OptDecoder, bfloat16_t, int8_t>(modelPath));
-                break;
-            case xft::DataType::bf16_w8a8:
-                setDecoder(new HybridModel<OptDecoder, bfloat16_t, w8a8_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<OptDecoder, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4:
-                setDecoder(new HybridModel<OptDecoder, bfloat16_t, nf4x2_t>(modelPath));
-                break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<OptDecoder, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<OptDecoder, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<OptDecoder, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<OptDecoder, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8:
+            //     setDecoder(new HybridModel<OptDecoder, bfloat16_t, int8_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_w8a8:
+            //     setDecoder(new HybridModel<OptDecoder, bfloat16_t, w8a8_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<OptDecoder, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4:
+            //     setDecoder(new HybridModel<OptDecoder, bfloat16_t, nf4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<OptDecoder, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<OptDecoder, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<OptDecoder, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "llama") {
@@ -294,18 +294,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new LlamaLLM<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new LlamaLLM<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new LlamaLLM<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<LlamaLLM, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<LlamaLLM, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<LlamaLLM, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<LlamaLLM, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<LlamaLLM, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<LlamaLLM, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<LlamaLLM, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "yarn_llama") {
@@ -316,18 +316,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new YaRNLlama<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new YaRNLlama<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new YaRNLlama<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<YaRNLlama, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<YaRNLlama, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<YaRNLlama, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<YaRNLlama, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<YaRNLlama, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<YaRNLlama, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "baichuan") {
@@ -338,18 +338,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new Baichuan<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new Baichuan<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new Baichuan<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<Baichuan, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<Baichuan, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<Baichuan, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<Baichuan, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<Baichuan, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<Baichuan, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<Baichuan, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<Baichuan, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<Baichuan, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<Baichuan, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<Baichuan, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<Baichuan, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<Baichuan, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<Baichuan, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<Baichuan, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<Baichuan, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "chatglm") {
@@ -360,18 +360,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new ChatGLM<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<ChatGLM, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<ChatGLM, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<ChatGLM, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<ChatGLM, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "chatglm2") {
@@ -382,18 +382,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new ChatGLM2<w8a8_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM2<uint4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM2<nf4x2_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<ChatGLM2, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<ChatGLM2, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM2, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM2, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM2, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<ChatGLM2, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<ChatGLM2, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM2, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM2, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM2, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM2, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "chatglm3") {
@@ -404,18 +404,18 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new ChatGLM3<w8a8_t, RmsNorm>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new ChatGLM3<uint4x2_t, RmsNorm>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new ChatGLM3<nf4x2_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::bf16_fp16:
-                setDecoder(new HybridModel<ChatGLM3, bfloat16_t, float16_t>(modelPath));
-                break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4:
-                setDecoder(new HybridModel<ChatGLM3, bfloat16_t, uint4x2_t>(modelPath));
-                break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM3, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM3, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM3, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16:
+            //     setDecoder(new HybridModel<ChatGLM3, bfloat16_t, float16_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4:
+            //     setDecoder(new HybridModel<ChatGLM3, bfloat16_t, uint4x2_t>(modelPath));
+            //     break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<ChatGLM3, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<ChatGLM3, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<ChatGLM3, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<ChatGLM3, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "qwen") {
@@ -426,14 +426,14 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8: setDecoder(new Qwen<w8a8_t>(modelPath)); break;
             case xft::DataType::int4: setDecoder(new Qwen<uint4x2_t>(modelPath)); break;
             case xft::DataType::nf4: setDecoder(new Qwen<nf4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_fp16: setDecoder(new HybridModel<Qwen, bfloat16_t, float16_t>(modelPath)); break;
-            case xft::DataType::bf16_int8: setDecoder(new HybridModel<Qwen, bfloat16_t, int8_t>(modelPath)); break;
-            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<Qwen, bfloat16_t, w8a8_t>(modelPath)); break;
-            case xft::DataType::bf16_int4: setDecoder(new HybridModel<Qwen, bfloat16_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<Qwen, bfloat16_t, nf4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<Qwen, w8a8_t, int8_t>(modelPath)); break;
-            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<Qwen, w8a8_t, uint4x2_t>(modelPath)); break;
-            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<Qwen, w8a8_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_fp16: setDecoder(new HybridModel<Qwen, bfloat16_t, float16_t>(modelPath)); break;
+            // case xft::DataType::bf16_int8: setDecoder(new HybridModel<Qwen, bfloat16_t, int8_t>(modelPath)); break;
+            // case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<Qwen, bfloat16_t, w8a8_t>(modelPath)); break;
+            // case xft::DataType::bf16_int4: setDecoder(new HybridModel<Qwen, bfloat16_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::bf16_nf4: setDecoder(new HybridModel<Qwen, bfloat16_t, nf4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int8: setDecoder(new HybridModel<Qwen, w8a8_t, int8_t>(modelPath)); break;
+            // case xft::DataType::w8a8_int4: setDecoder(new HybridModel<Qwen, w8a8_t, uint4x2_t>(modelPath)); break;
+            // case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<Qwen, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else {
