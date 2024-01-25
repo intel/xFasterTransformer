@@ -13,23 +13,19 @@
 # limitations under the License.
 # ============================================================================
 import os
-import re
 
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
-import time
-from demo_utils import ChatDemo
+from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
-
-DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm3-6b-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/chatglm3-6b-xft", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
 
 
 class ChatGLM3Demo(ChatDemo):
@@ -57,7 +53,6 @@ class ChatGLM3Demo(ChatDemo):
         input_ids.extend([self.tokenizer.get_command("<|assistant|>")])
         inputs = self.tokenizer.batch_encode_plus([input_ids], return_tensors="pt", is_split_into_words=True).input_ids
         return inputs
-
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")

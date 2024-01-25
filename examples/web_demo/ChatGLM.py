@@ -20,30 +20,12 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
-from demo_utils import ChatDemo
-
-
-DTYPE_LIST = [
-    "fp16",
-    "bf16",
-    "int8",
-    "w8a8",
-    "int4",
-    "nf4",
-    "bf16_fp16",
-    "bf16_int8",
-    "bf16_w8a8",
-    "bf16_int4",
-    "bf16_nf4",
-    "w8a8_int8",
-    "w8a8_int4",
-    "w8a8_nf4",
-]
+from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/chatglm-6b-cpu", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
 
 
 class ChatGLMDemo(ChatDemo):

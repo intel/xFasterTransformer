@@ -13,59 +13,25 @@
 # limitations under the License.
 # ============================================================================
 import os
-import re
 
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
-import time
 import torch
-from demo_utils import ChatDemo
+from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
-
-DTYPE_LIST = ["fp16", "bf16", "int8", "int4", "bf16_fp16", "bf16_int8", "bf16_int4"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/Qwen-7B-Chat-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/Qwen-7B-Chat-xft", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
 
 
 class QwenDemo(ChatDemo):
-    # Replace English punctuation with Chinese punctuation in the Chinese sentences.
     def process_response(self, response):
-        lines = response.split("\n")
-        lines = [line for line in lines if line != ""]
-        count = 0
-        for i, line in enumerate(lines):
-            if "```" in line:
-                count += 1
-                items = line.split("`")
-                if count % 2 == 1:
-                    lines[i] = f'<pre><code class="language-{items[-1]}">'
-                else:
-                    lines[i] = f"<br></code></pre>"
-            else:
-                if i > 0:
-                    if count % 2 == 1:
-                        line = line.replace("`", r"\`")
-                        line = line.replace("<", "&lt;")
-                        line = line.replace(">", "&gt;")
-                        line = line.replace(" ", "&nbsp;")
-                        line = line.replace("*", "&ast;")
-                        line = line.replace("_", "&lowbar;")
-                        line = line.replace("-", "&#45;")
-                        line = line.replace(".", "&#46;")
-                        line = line.replace("!", "&#33;")
-                        line = line.replace("(", "&#40;")
-                        line = line.replace(")", "&#41;")
-                        line = line.replace("$", "&#36;")
-                    lines[i] = "<br>" + line
-        response = "".join(lines)
-        response = response.rstrip("human:")
-        return response
+        return response.rstrip("human:")
 
     def create_chat_input_token(self, query, history):
         system_context = "You are a helpful assistant."
@@ -123,7 +89,7 @@ class QwenDemo(ChatDemo):
             "top_p": 0.8,
             "repetition_penalty": 1.1,
             # "<|im_end|>":151645, "\n": 198, "<|im_start|>":151644
-            "stop_words_ids": [[151645, 198, 151644]]
+            "stop_words_ids": [[151645, 198, 151644]],
         }
 
     def html_func(self):
