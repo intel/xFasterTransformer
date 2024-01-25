@@ -21,6 +21,29 @@
 
 #include "my_types.h"
 
+struct RopeParams {
+    float base;
+    std::string type;
+    float scale;
+    int orgMaxPosEmbed;
+    float extraPolFactor;
+    float attnFactor;
+    float betaFast;
+    float betaSlow;
+
+public:
+    RopeParams(float theta = 10000.0, std::string vtype = "", float vscale = 1.0, int vorgMaxPosEmbed = 2048,
+            float vextraPolFactor = 1, float vattnFactor = 1, float vbetaFast = 32, float vbetaSlow = 1)
+        : base(theta)
+        , type(vtype)
+        , scale(vscale)
+        , orgMaxPosEmbed(vorgMaxPosEmbed)
+        , extraPolFactor(vextraPolFactor)
+        , attnFactor(vattnFactor)
+        , betaFast(vbetaFast)
+        , betaSlow(vbetaSlow) {}
+};
+
 struct DecoderContext {
     // # of mini-batch
     int batchSize;
@@ -34,6 +57,7 @@ struct DecoderContext {
     int embeddingSize;
     int maxPositions;
     int maxPosEmbed;
+    int maxSeqLength; // From Qwen model's seq_length
     int layers;
 
     // For BERT-base, hidden_size=768
@@ -50,6 +74,9 @@ struct DecoderContext {
 
     // norm epsilon
     float epsilon;
+
+    // rope scaling parameters
+    RopeParams *ropeParamsPtr;
 
     // Which split this context is for
     const int splitIdx;
@@ -72,12 +99,12 @@ struct DecoderContext {
 
 private:
     float *rawBuffer;
-    int rawBufSize; // how many floats
+    uint64_t rawBufSize; // how many floats
 
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
-            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _splitIdx,
-            int _splits, int numThreads = 0)
+            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
+            int _splitIdx, int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -87,6 +114,8 @@ public:
         , embeddingSize(_embeddingSize)
         , maxPositions(_maxPositions)
         , maxPosEmbed(_maxPosEmbed)
+        , maxSeqLength(_maxSeqLength)
+        , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)
         , numSplit(_splits)
         , epsilon(epsilon) {
@@ -163,23 +192,23 @@ public:
                                                               : (intermediateSize / numSplit);
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output
 
-        int normSize = batchSize * inputSeqLen * hiddenStride;
-        int qkvSize = batchSize * inputSeqLen * qkvStride;
-        int imOutSize = batchSize * inputSeqLen * imStride * mlpFactor;
+        uint64_t normSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
+        uint64_t qkvSize = (uint64_t)batchSize * inputSeqLen * qkvStride;
+        uint64_t imOutSize = (uint64_t)batchSize * inputSeqLen * imStride * mlpFactor;
 
         int presentSeqLen = preSeqLen + 1;
         int paddedSize = (presentSeqLen + 15) / 16 * 16;
 
         // Note: the score buffer for first token generation is not padded
-        int scoreBufSize = preSeqLen > 0 ? batchSize * responsibleHead * inputSeqLen * paddedSize
-                                         : batchSize * responsibleHead * inputSeqLen * inputSeqLen;
-        int tmpBufSize = batchSize * inputSeqLen * hiddenStride;
+        uint64_t scoreBufSize = preSeqLen > 0 ? (uint64_t)batchSize * responsibleHead * inputSeqLen * paddedSize
+                                              : (uint64_t)batchSize * responsibleHead * inputSeqLen * inputSeqLen;
+        uint64_t tmpBufSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
 
-        int size1 = normSize;
-        int size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
-        int size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
+        uint64_t size1 = normSize;
+        uint64_t size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
+        uint64_t size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
 
-        int total = size1 + size2 + size3;
+        uint64_t total = size1 + size2 + size3;
         if (total > this->rawBufSize) {
             this->rawBufSize = total;
             free(this->rawBuffer);

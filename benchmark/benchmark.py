@@ -98,6 +98,8 @@ if __name__ == "__main__":
         model_prompt=prompt_pool["baichuan2"]
     if "opt" in args.model_name.lower() :
         model_prompt=prompt_pool["opt"]
+    if "qwen" in args.model_name.lower() :
+        model_prompt=prompt_pool["qwen"]
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.token_path, use_fast=False, padding_side="left", trust_remote_code=True

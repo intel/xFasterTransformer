@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.generation import GenerationConfig
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(dir_path, "../../../.."))
@@ -115,8 +116,8 @@ def split_and_convert(args):
         os.makedirs(saved_dir)
 
     # load the model
+    gen_config = GenerationConfig.from_pretrained(args.in_file, trust_remote_code=True, resume_download=True)
     model = AutoModelForCausalLM.from_pretrained(args.in_file, device_map="auto", trust_remote_code=True)
-
     hf_config = vars(model.config)
 
     layer_names = [name for name, param in model.named_parameters()]
@@ -142,8 +143,10 @@ def split_and_convert(args):
         config["qwen"]["activation_type"] = "silu"
         config["qwen"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
         config["qwen"]["vocab_size"] = str(hf_config["vocab_size"])
-        config["qwen"]["start_id"] = str(hf_config["bos_token_id"])
-        config["qwen"]["end_id"] = str(hf_config["eos_token_id"])
+        config["qwen"]["seq_length"] = str(hf_config["seq_length"])
+        config["qwen"]["start_id"] = str(gen_config.bos_token_id)
+        config["qwen"]["end_id"] = str(gen_config.eos_token_id)
+        config["qwen"]["pad_id"] = str(gen_config.pad_token_id)
         config["qwen"]["weight_data_type"] = args.weight_data_type
         with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
             config.write(configfile)

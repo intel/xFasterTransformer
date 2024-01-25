@@ -102,6 +102,8 @@ public:
 
     bool isDone();
 
+    bool setStopWords(std::vector<std::vector<int>> stopWordsList);
+
 private:
     void searchTopK(std::tuple<float *, int, int> &result);
 

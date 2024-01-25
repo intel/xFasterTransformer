@@ -121,7 +121,7 @@ class LlamaConvert(BaseModelConvert):
             config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
             config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
             config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
-            config["llama"]["rms_norm_eps"] = "1e-6"
+            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
             config["llama"]["layernorm_type"] = "pre_layernorm"
             config["llama"]["activation_type"] = "silu"
             config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"

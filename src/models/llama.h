@@ -16,12 +16,16 @@
 
 #include "common_decoder.h"
 #include "mlp_llama.h"
-#include "layers_norm.h"
+#include "rms_norm.h"
+#include "type_selector.h"
 #include "rotary_embedding.h"
 #include "token_embedding.h"
 
 template <typename WeiT>
-class LlamaLLM : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+class LlamaLLM
+    : public CommonDecoder<
+              Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, float, typename TypeSelector<WeiT>::ImType, float, true>,
+              LlamaMLP<WeiT>, float> {
 public:
     LlamaLLM(const std::string &modelPath);
     ~LlamaLLM();

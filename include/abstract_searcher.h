@@ -29,6 +29,8 @@ public:
     virtual bool isDone() = 0;
 
     virtual std::vector<int32_t> finalize() = 0;
+
+    virtual bool setStopWords(std::vector<std::vector<int>> stopWordsList) = 0;
 };
 
 struct SearcherConfig {
@@ -43,10 +45,11 @@ struct SearcherConfig {
     float lenPenalty = 1.0;
     float temperature = 1.0;
     float topP = 1.0;
+    float repetitionPenalty = 1.0;
 
     SearcherConfig(int maxLen_ = -1, int numBeams_ = 1, int numBeamHypsToKeep_ = 1, float lenPenalty_ = 1.0,
             bool doEarlyStopping_ = false, int eosTokenId_ = -1, int padTokenId_ = -1, bool doSample_ = false,
-            float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0)
+            float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0, float repetitionPenalty_ = 1.0)
         : maxLen(maxLen_)
         , numBeams(numBeams_)
         , numBeamHypsToKeep(numBeamHypsToKeep_)
@@ -57,5 +60,6 @@ struct SearcherConfig {
         , doSample(doSample_)
         , temperature(temperature_)
         , topK(topK_)
-        , topP(topP_) {}
+        , topP(topP_)
+        , repetitionPenalty(repetitionPenalty_) {}
 };

@@ -34,6 +34,8 @@ public:
 
     std::vector<int32_t> finalize();
 
+    bool setStopWords(std::vector<std::vector<int>> stopWordsList);
+
 private:
     void sample(std::tuple<float *, int, int> &result);
 
@@ -42,7 +44,8 @@ private:
     // Predicted token IDs
     std::vector<int> nextTokens;
     std::vector<int> output;
-    std::vector<bool> doneBatch;
+    std::vector<std::vector<int>> cachedRepetVec;
+    std::vector<int> doneBatch;
 
     int batchSize;
     int step;
@@ -54,4 +57,7 @@ private:
     int topK;
     float topP;
     float temperatureInv;
+    float repetitionPenalty;
+    std::vector<std::vector<int>> stopWordsList;
+    std::vector<std::vector<int>> stopWordsIndex;
 };

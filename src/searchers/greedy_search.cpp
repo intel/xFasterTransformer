@@ -13,11 +13,18 @@
 // limitations under the License.
 // ============================================================================
 #include "greedy_search.h"
+#include "search_utils.h"
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
-    : decoder(dec), maxLen(config.maxLen), step(0) {
+    : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
+    if (repetitionPenalty <= 0) {
+        printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", repetitionPenalty);
+        exit(-1);
+    }
+    stopWordsList = {};
+    stopWordsIndex = {};
 }
 
 // Get next tokens accoring to the prompt IDs
@@ -26,8 +33,11 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
     this->step = 0;
     this->batchSize = batchSize;
     this->curLen = seqLen;
-    this->doneBatch.resize(batchSize);
-    std::fill(doneBatch.begin(), doneBatch.end(), false);
+    this->doneBatch = std::vector<int>(batchSize, 0);
+
+    if (!this->stopWordsList.empty()) {
+        stopWordsIndex = std::vector<std::vector<int>>(stopWordsList.size(), std::vector<int>(batchSize, 0));
+    }
 
     this->output.resize(batchSize * seqLen);
     std::copy(ids, ids + batchSize * seqLen, output.begin());
@@ -68,17 +78,25 @@ bool GreedySearch::isDone() {
     } else if (curLen >= maxLen) {
         return true;
     } else {
-        for (bool flag : doneBatch) {
-            if (!flag) { return false; }
+        for (auto flag : doneBatch) {
+            if (flag <= 0) { return false; }
         }
     }
     return true;
 }
 
 std::vector<int32_t> GreedySearch::finalize() {
-    TimeLine t("dump_file");
-    t.dump_file("timeline.json");
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return output;
+}
+
+bool GreedySearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    this->stopWordsList = stopWordsList;
+    for (auto it = this->stopWordsList.rbegin(); it != this->stopWordsList.rend(); ++it) {
+        if ((*it).size() == 1 && (*it)[0] == this->eosTokenId) { this->stopWordsList.erase(std::next(it).base()); }
+    }
+    return !this->stopWordsList.empty();
 }
 
 std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
@@ -88,6 +106,25 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
     float *outBuf = std::get<0>(result);
     int sampleOffset = std::get<1>(result);
     int sampleSize = std::get<2>(result);
+
+    Messenger &messenger = decoder.getMessenger();
+    auto msgerSize = messenger.getSize();
+
+    // Repetition penalty logits processor
+    if (this->repetitionPenalty != 1.0) {
+        TimeLine t("GreedySearch.repetitionPenalty");
+        // step has already been incremented by 1
+        if (this->step == 1) {
+            this->cachedRepetVec.clear();
+            this->cachedRepetVec.resize(batchSize, std::vector<int>());
+
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->output,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        } else {
+            repetitionPenaltyLogitsProcess(this->repetitionPenalty, outBuf, sampleOffset, sampleSize, this->nextTokens,
+                    batchSize, this->cachedRepetVec, this->step, msgerSize > 1);
+        }
+    }
 
     // Max ID and value for each sample
     int maxIds[batchSize];
@@ -159,23 +196,22 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
     }
 
     // Reduce to get the max index (any better method??)
-    Messenger &messenger = decoder.getMessenger();
-    if (messenger.getSize() > 1) {
+    if (msgerSize > 1) {
         float sendBuf[2 * batchSize];
-        float recvBuf[2 * batchSize * messenger.getSize()];
+        float recvBuf[2 * batchSize * msgerSize];
 
         for (int i = 0; i < batchSize; ++i) {
             sendBuf[2 * i] = (float)(maxIds[i] + sampleOffset);
             sendBuf[2 * i + 1] = maxVals[i];
         }
 
-        std::vector<long unsigned int> recvCount(messenger.getSize(), static_cast<long unsigned int>(2 * batchSize));
+        std::vector<long unsigned int> recvCount(msgerSize, static_cast<long unsigned int>(2 * batchSize));
         messenger.allgatherv(sendBuf, 2 * batchSize, recvBuf, recvCount);
 
         for (int i = 0; i < batchSize; ++i) {
             int maxId = (int)(recvBuf[2 * i] + 0.5f);
             float maxVal = recvBuf[2 * i + 1];
-            for (int j = 1; j < messenger.getSize(); ++j) {
+            for (int j = 1; j < msgerSize; ++j) {
                 if (recvBuf[2 * j * batchSize + 2 * i + 1] > maxVal) {
                     maxVal = recvBuf[2 * j * batchSize + 2 * i + 1];
                     maxId = (int)(recvBuf[2 * j * batchSize + 2 * i] + 0.5f);
@@ -187,13 +223,23 @@ std::vector<int> GreedySearch::search(std::tuple<float *, int, int> &result) {
 
     if (eosTokenId != -1) {
         for (int batchId = 0; batchId < batchSize; ++batchId) {
-            if (!doneBatch[batchId]) {
-                if (maxIds[batchId] == eosTokenId) { doneBatch[batchId] = true; }
-            } else {
+            if (doneBatch[batchId] == 0) {
+                if (maxIds[batchId] == eosTokenId) { doneBatch[batchId] = 1; }
+            } else if (doneBatch[batchId] > 0) {
                 // Padding finished seq with padTokenId;
                 maxIds[batchId] = padTokenId;
+            } else if (doneBatch[batchId] < 0) {
+                // Set to eosTokenId as really done;
+                maxIds[batchId] = eosTokenId;
+                doneBatch[batchId] = 1;
             }
         }
     }
-    return std::vector<int>(maxIds, maxIds + batchSize);
+
+    auto nextTokenIds_ = std::vector<int>(maxIds, maxIds + batchSize);
+    if (!this->stopWordsList.empty() && !this->stopWordsIndex.empty()) {
+        stopWordsCheck(nextTokenIds_, this->stopWordsList, this->stopWordsIndex, this->doneBatch);
+    }
+
+    return nextTokenIds_;
 }

@@ -17,7 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "layers_norm.h"
+#include "rms_norm.h"
 #include "rmsnorm_kernels.h"
 #include "timeline.h"
 
@@ -41,7 +41,12 @@ void RmsNorm::setWeight(const float *w, const float *, int cols) {
 // input and output are in shape of (rows, normSize)
 void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
-    invokeRmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+}
+
+void RmsNorm::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
 
 } // namespace xft
