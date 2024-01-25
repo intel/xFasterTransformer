@@ -29,6 +29,7 @@ from pathlib import Path
 from tqdm import tqdm
 from transformers import OPTForCausalLM, AutoModelForCausalLM, AutoTokenizer  # transformers-4.20.0.dev0
 from transformers.models.opt.modeling_opt import OPTAttention, OPTDecoderLayer
+from convert_tools import compatibility_check
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(dir_path, "../../../.."))
@@ -288,6 +289,8 @@ if __name__ == "__main__":
     for key in vars(args):
         print(f"{key}: {vars(args)[key]}")
     print("========================================")
+
+    compatibility_check(args.in_file)
 
     start_time = datetime.now()
     split_and_convert(args)
