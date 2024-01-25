@@ -7,6 +7,7 @@ Support models list:
 - ChatGLM3
 - Llama2-chat
 - Baichuan2
+- Qwen
 
 ## Step 1: Prepare xFasterTransformer  
 Please refer to [Installation](../../README.md#installation). This example supports use source code which means you don't need install xFasterTransformer into pip and just build xFasterTransformer library, and it will search library in src directory.
@@ -21,6 +22,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
     # requirements.txt in `examples/web_demo/`.
     pip install -r requirements.txt
     ```
+    ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 
 ## Step 4: Run the script corresponding to the model. 
 After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory.

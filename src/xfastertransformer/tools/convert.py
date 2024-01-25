@@ -14,6 +14,28 @@
 # ============================================================================
 import numpy as np
 import os
+import json
+import traceback
+import transformers
+
+
+def check_transformers_version_compatibility(token_path):
+    config_path = os.path.join(token_path, "config.json")
+    try:
+        with open(config_path, "r") as file:
+            config_data = json.load(file)
+
+        transformers_version = config_data.get("transformers_version")
+    except Exception as e:
+        pass
+    else:
+        if transformers_version:
+            if transformers.__version__ != transformers_version:
+                print(
+                    f"[Warning] The version of `transformers` in model configuration is {transformers_version}, and version installed is {transformers.__version__}. "
+                    + "This model convert error may be caused by transformers version compatibility. "
+                    + f"You can downgrade or reinstall transformers by `pip install transformers=={transformers_version} --force-reinstall` and try again."
+                )
 
 
 class BaseModelConvert:
@@ -36,8 +58,11 @@ class BaseModelConvert:
         if output_dir is None:
             input_dir = input_dir.rstrip(os.path.sep)
             output_dir = os.path.join(os.path.dirname(input_dir), os.path.basename(input_dir) + "-xft")
-
-        self.split_and_convert(input_dir, output_dir, dtype, processes)
+        try:
+            self.split_and_convert(input_dir, output_dir, dtype, processes)
+        except Exception as e:
+            traceback.print_exc()
+            check_transformers_version_compatibility(input_dir)
 
     def split_and_convert(self, input_dir, output_dir, dtype, processes):
         pass

@@ -14,6 +14,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
     # requirements.txt in root directory.
     pip install -r requirements.txt
     ```
+    ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 
 ## Step 4: Run
 ```bash
