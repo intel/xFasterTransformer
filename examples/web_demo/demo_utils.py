@@ -16,7 +16,11 @@ import time
 import gradio as gr
 import importlib.util
 from transformers import AutoTokenizer
+import transformers
+import json
+import os
 import sys
+import traceback
 
 sys.stdout = open(sys.stdout.fileno(), mode="w", buffering=1)
 
@@ -59,9 +63,36 @@ XFT_DTYPE_LIST = [
 ]
 
 
+def check_transformers_version_compatibility(token_path):
+    config_path = os.path.join(token_path, "config.json")
+    try:
+        with open(config_path, "r") as file:
+            config_data = json.load(file)
+
+        transformers_version = config_data.get("transformers_version")
+    except Exception as e:
+        pass
+    else:
+        if transformers_version:
+            if transformers.__version__ != transformers_version:
+                print(
+                    f"[Warning] The version of `transformers` in model configuration is {transformers_version}, and version installed is {transformers.__version__}. "
+                    + "This tokenizer loading error may be caused by transformers version compatibility. "
+                    + f"You can downgrade or reinstall transformers by `pip install transformers=={transformers_version} --force-reinstall` and try again."
+                )
+
+
 class ChatDemo:
     def __init__(self, token_path, model_path, dtype):
-        self.tokenizer = AutoTokenizer.from_pretrained(token_path, trust_remote_code=True)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(token_path, trust_remote_code=True)
+        except Exception as e:
+            traceback.print_exc()
+            print("[ERROR] An exception occurred during the tokenizer loading process.")
+            # print(f"{type(e).__name__}: {str(e)}")
+            check_transformers_version_compatibility(token_path)
+            sys.exit(-1)
+
         self.model = xfastertransformer.AutoModel.from_pretrained(model_path, dtype=dtype)
 
     @property

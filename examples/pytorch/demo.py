@@ -13,6 +13,7 @@
 # limitations under the License.
 # ============================================================================
 import os
+import sys
 from typing import Tuple, List
 
 # Ignore Tensor-RT warning from huggingface
@@ -20,6 +21,9 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import torch
 import time
+import json
+import traceback
+import transformers
 from transformers import AutoTokenizer, TextStreamer
 from transformers import PreTrainedTokenizer
 
@@ -66,6 +70,25 @@ parser.add_argument("--top_k", help="num of highest probability tokens to keep f
 parser.add_argument("--rep_penalty", help="param for repetition penalty. 1.0 means no penalty", type=float, default=1.0)
 
 
+def check_transformers_version_compatibility(token_path):
+    config_path = os.path.join(token_path, "config.json")
+    try:
+        with open(config_path, "r") as file:
+            config_data = json.load(file)
+
+        transformers_version = config_data.get("transformers_version")
+    except Exception as e:
+        pass
+    else:
+        if transformers_version:
+            if transformers.__version__ != transformers_version:
+                print(
+                    f"[Warning] The version of `transformers` in model configuration is {transformers_version}, and version installed is {transformers.__version__}. "
+                    + "This tokenizer loading error may be caused by transformers version compatibility. "
+                    + f"You can downgrade or reinstall transformers by `pip install transformers=={transformers_version} --force-reinstall` and try again."
+                )
+
+
 def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
     prompt = ""
     for i, (old_query, response) in enumerate(history):
@@ -82,9 +105,15 @@ def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[st
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
 
-def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
-    history: List[Tuple[str, str]] = None, system: str = "You are a helpful assistant.",
-    max_window_size: int = 6144, chat_format: str = "chatml",
+
+def build_inputs_qwen(
+    tokenizer: PreTrainedTokenizer,
+    query: str,
+    padding,
+    history: List[Tuple[str, str]] = None,
+    system: str = "You are a helpful assistant.",
+    max_window_size: int = 6144,
+    chat_format: str = "chatml",
 ):
     if history is None:
         history = []
@@ -96,9 +125,9 @@ def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
         nl_tokens = tokenizer.encode("\n")
 
         def _tokenize_str(role, content):
-            return f"{role}\n{content}", tokenizer.encode(
-                role, allowed_special=set()
-            ) + nl_tokens + tokenizer.encode(content, allowed_special=set())
+            return f"{role}\n{content}", tokenizer.encode(role, allowed_special=set()) + nl_tokens + tokenizer.encode(
+                content, allowed_special=set()
+            )
 
         system_text, system_tokens_part = _tokenize_str("system", system)
         system_tokens = im_start_tokens + system_tokens_part + im_end_tokens
@@ -109,19 +138,13 @@ def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
         for turn_query, turn_response in reversed(history):
             query_text, query_tokens_part = _tokenize_str("user", turn_query)
             query_tokens = im_start_tokens + query_tokens_part + im_end_tokens
-            response_text, response_tokens_part = _tokenize_str(
-                "assistant", turn_response
-            )
+            response_text, response_tokens_part = _tokenize_str("assistant", turn_response)
             response_tokens = im_start_tokens + response_tokens_part + im_end_tokens
 
             next_context_tokens = nl_tokens + query_tokens + nl_tokens + response_tokens
-            prev_chat = (
-                f"\n{im_start}{query_text}{im_end}\n{im_start}{response_text}{im_end}"
-            )
+            prev_chat = f"\n{im_start}{query_text}{im_end}\n{im_start}{response_text}{im_end}"
 
-            current_context_size = (
-                len(system_tokens) + len(next_context_tokens) + len(context_tokens)
-            )
+            current_context_size = len(system_tokens) + len(next_context_tokens) + len(context_tokens)
             if current_context_size < max_window_size:
                 context_tokens = next_context_tokens + context_tokens
                 raw_text = prev_chat + raw_text
@@ -150,6 +173,7 @@ def build_inputs_qwen(tokenizer: PreTrainedTokenizer, query: str, padding,
 
     return torch.tensor([context_tokens])
 
+
 def get_stop_words_ids_qwen(chat_format, tokenizer):
     if chat_format == "raw":
         stop_words_ids = [tokenizer.encode("Human:"), [tokenizer.eod_id]]
@@ -165,8 +189,6 @@ import importlib.util
 xft_spec = importlib.util.find_spec("xfastertransformer")
 
 if xft_spec is None:
-    import sys
-
     sys.path.append("../../src")
     print("[INFO] xfastertransformer is not installed in pip, using source code.")
 else:
@@ -179,9 +201,16 @@ DEFAULT_PROMPT = "Once upon a time, there existed a little girl who liked to hav
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.token_path, use_fast=False, padding_side="left", trust_remote_code=True
-    )
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.token_path, use_fast=False, padding_side="left", trust_remote_code=True
+        )
+    except Exception as e:
+        traceback.print_exc()
+        print("[ERROR] An exception occurred during the tokenizer loading process.")
+        # print(f"{type(e).__name__}: {str(e)}")
+        check_transformers_version_compatibility(args.token_path)
+        sys.exit(-1)
 
     model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
     streamer = None

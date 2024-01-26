@@ -12,4 +12,7 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo.
 Support list:
 - ChatGLM
 - ChatGLM2
+- ChatGLM3
 - Llama2-chat
+- Baichuan2
+- Qwen
