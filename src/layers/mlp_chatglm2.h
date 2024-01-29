@@ -22,15 +22,14 @@ class ChatGLM2MLP : public LlamaMLP<WeiT> {
 public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
 
-    // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
-            xft::DataType dt = xft::DataType::fp32) {
+    // SrcT: float
+    template <typename SrcT>
+    void setWeights(DecoderContext *ctx, const SrcT *gate_upW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const SrcT *downW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const float *normW, const float * /*unused*/, const SrcT * /*unused*/,
+            const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
-
-        const float *gate_upW = (const float *)params[0];
-        const float *downW = (const float *)params[2];
-        const float *normW = (const float *)params[4];
 
         REQUIRES(ctx->actType == DecoderContext::SWIGLU, "unsupported activation.");
 
@@ -42,19 +41,19 @@ public:
 
         setMLPOPTConfig();
         if (!enableCATMLP) {
-            float *gateW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
-            float *upW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
+            SrcT *gateW = (SrcT *)malloc(hiddenSize * colSplit * sizeof(SrcT));
+            SrcT *upW = (SrcT *)malloc(hiddenSize * colSplit * sizeof(SrcT));
             if (trans) {
                 int blockSize = colSplit * hiddenSize;
-                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(float));
+                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(SrcT));
                 memcpy(upW, gate_upW + intermediateSize * hiddenSize + ctx->splitIdx * blockSize,
-                        blockSize * sizeof(float));
+                        blockSize * sizeof(SrcT));
             } else {
-                const float *weightPTR = gate_upW;
+                const SrcT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(float));
+                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
                     weightPTR += intermediateSize;
-                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(float));
+                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
                     weightPTR += intermediateSize;
                 }
             }
@@ -76,14 +75,13 @@ public:
                 exit(-1);
             } else {
                 int colSplitStride = colSplit * 2;
-                float *gateUpW = (float *)malloc(hiddenSize * colSplitStride * sizeof(float));
-                const float *weightPTR = gate_upW;
+                SrcT *gateUpW = (SrcT *)malloc(hiddenSize * colSplitStride * sizeof(SrcT));
+                const SrcT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(float));
+                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
                     weightPTR += intermediateSize;
                     memcpy(gateUpW + colSplit + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(float));
+                            colSplit * sizeof(SrcT));
                     weightPTR += intermediateSize;
                 }
                 hpj::Matrix<WeiT> quantizedCatWeights;

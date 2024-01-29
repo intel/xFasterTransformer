@@ -41,37 +41,12 @@ public:
 
     LlamaMLP(DecoderContext *ctx) {}
 
-    // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
-            xft::DataType dt = xft::DataType::fp32) {
-        if (dt == xft::DataType::fp32) {
-            // Refer to CommonDecoder for parameters order
-            const float *gateW = (const float *)params[0];
-            const float *upW = (const float *)params[2];
-            const float *normW = (const float *)params[4];
-            const float *downW = (const float *)params[6];
-            setWeights(ctx, gateW, nullptr, nullptr, upW, nullptr, nullptr, normW, downW, nullptr, nullptr, trans);
-        } else if (dt == xft::DataType::int8) {
-            // Refer to CommonDecoder for parameters order
-            const int8_t *gateW = (const int8_t *)params[0];
-            const float *gateS = (const float *)params[1];
-            const float *gateZ = (const float *)params[2];
-            const int8_t *upW = (const int8_t *)params[4];
-            const float *upS = (const float *)params[5];
-            const float *upZ = (const float *)params[6];
-            const float *normW = (const float *)params[8];
-            const int8_t *downW = (const int8_t *)params[10];
-            const float *downS = (const float *)params[11];
-            const float *downZ = (const float *)params[12];
-            setWeights(ctx, gateW, gateS, gateZ, upW, upS, upZ, normW, downW, downS, downZ, trans);
-        }
-    }
-
     // SrcT: float or int8_t
     template <typename SrcT>
-    void setWeights(DecoderContext *ctx, const SrcT *gateW, const float *gateS, const float *gateZ, const SrcT *upW,
-            const float *upS, const float *upZ, const float *normW, const SrcT *downW, const float *downS,
-            const float *downZ, bool trans = true) {
+    void setWeights(DecoderContext *ctx, const SrcT *gateW, const float *gateS, const float *gateZ,
+            const float * /*unused*/, const SrcT *upW, const float *upS, const float *upZ, const float * /*unused*/,
+            const float *normW, const float * /*unused*/, const SrcT *downW, const float *downS, const float *downZ,
+            bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
 

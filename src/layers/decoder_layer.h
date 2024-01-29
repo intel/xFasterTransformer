@@ -70,53 +70,23 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
-            xft::DataType dt = xft::DataType::fp32) {
-        if (dt == xft::DataType::fp32) {
-            const float *queryWeight = (const float *)params[0];
-            const float *queryBias = (const float *)params[1];
-            const float *keyWeight = (const float *)params[2];
-            const float *keyBias = (const float *)params[3];
-            const float *valueWeight = (const float *)params[4];
-            const float *valueBias = (const float *)params[5];
-            const float *attnOutWeight = (const float *)params[6];
-            const float *attnOutBias = (const float *)params[7];
-            const float *gamma1 = (const float *)params[8];
-            const float *beta1 = (const float *)params[9];
+    // SrcT: float or int8_t
+    template <typename SrcT>
+    void setWeights(DecoderContext *ctx, const SrcT *queryWeight, const float *queryScale, const float *queryZero,
+            const float *queryBias, const SrcT *keyWeight, const float *keyScale, const float *keyZero,
+            const float *keyBias, const SrcT *valueWeight, const float *valueScale, const float *valueZero,
+            const float *valueBias, const SrcT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
+            const float *attnOutBias, const float *ln1Gamma, const float *ln1Beta, const SrcT *fc1Weight,
+            const float *fc1Scales, const float *fc1Zeros, const float *fc1Bias, const SrcT *fc2Weight,
+            const float *fc2Scales, const float *fc2Zeros, const float *fc2Bias, const float *ln2Gamma,
+            const float *ln2Beta, const SrcT *fc3Weight, const float *fc3Scales, const float *fc3Zeros,
+            bool trans = true) {
+        attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
+                valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
+                ln1Gamma, ln1Beta, trans);
 
-            attn.setWeights(ctx, queryWeight, nullptr, nullptr, queryBias, keyWeight, nullptr, nullptr, keyBias,
-                    valueWeight, nullptr, nullptr, valueBias, attnOutWeight, nullptr, nullptr, attnOutBias, gamma1,
-                    beta1, trans);
-
-            std::vector<void *> mlpParams(params.begin() + 10, params.end());
-            mlp.setWeights(ctx, mlpParams, trans, dt);
-        } else if (dt == xft::DataType::int8) {
-            const int8_t *queryWeight = (const int8_t *)params[0];
-            const float *queryScale = (const float *)params[1];
-            const float *queryZero = (const float *)params[2];
-            const float *queryBias = (const float *)params[3];
-            const int8_t *keyWeight = (const int8_t *)params[4];
-            const float *keyScale = (const float *)params[5];
-            const float *keyZero = (const float *)params[6];
-            const float *keyBias = (const float *)params[7];
-            const int8_t *valueWeight = (const int8_t *)params[8];
-            const float *valueScale = (const float *)params[9];
-            const float *valueZero = (const float *)params[10];
-            const float *valueBias = (const float *)params[11];
-            const int8_t *attnOutWeight = (const int8_t *)params[12];
-            const float *attnOutScale = (const float *)params[13];
-            const float *attnOutZero = (const float *)params[14];
-            const float *attnOutBias = (const float *)params[15];
-            const float *gamma1 = (const float *)params[16];
-            const float *beta1 = (const float *)params[17];
-
-            attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
-                    valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero,
-                    attnOutBias, gamma1, beta1, trans);
-
-            std::vector<void *> mlpParams(params.begin() + 18, params.end());
-            mlp.setWeights(ctx, mlpParams, trans, dt);
-        }
+        mlp.setWeights(ctx, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma,
+                ln2Beta, fc3Weight, fc3Scales, fc3Zeros, trans);
     }
 
     template <typename InT, typename ImT, typename OutT, typename KVCacheT>

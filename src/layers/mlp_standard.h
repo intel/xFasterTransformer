@@ -28,18 +28,14 @@ class MLP {
 public:
     MLP(DecoderContext *ctx) {}
 
-    // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<void *> &params, bool trans = true,
-            xft::DataType dt = xft::DataType::fp32) {
+    // SrcT: float or int8_t
+    template <typename SrcT>
+    void setWeights(DecoderContext *ctx, const SrcT *_imWeight, const float * /*unused*/, const float * /*unused*/,
+            const float *_imBias, const SrcT *_outputWeight, const float * /*unused*/, const float * /*unused*/,
+            const float *_outputBias, const float *_gamma2, const float *_beta2, const SrcT * /*unused*/,
+            const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
-
-        const float *_imWeight = (const float *)params[0];
-        const float *_imBias = (const float *)params[1];
-        const float *_outputWeight = (const float *)params[2];
-        const float *_outputBias = (const float *)params[3];
-        const float *_gamma2 = (const float *)params[4];
-        const float *_beta2 = (const float *)params[5];
 
         // Vertically split intermediate(FC1) weight
         hpj::Matrix<WeiT> quantizedIntermediateWeight;

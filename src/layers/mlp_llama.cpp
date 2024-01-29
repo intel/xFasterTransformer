@@ -52,11 +52,9 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         auto it_created = llama_mlp_hub.find(llama_mlp_key);
         if (it_created == llama_mlp_hub.end()) {
             // LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
-            std::vector<void *> params {(void *)gateWeight, (void *)nullptr, (void *)upWeight, (void *)nullptr,
-                    (void *)nullptr, (void *)nullptr, (void *)downWeight};
-
             llama_mlp = new LlamaMLP<bfloat16_t>;
-            llama_mlp->setWeights(ctx, params, false);
+            llama_mlp->setWeights(ctx, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr,
+                    nullptr, nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, false);
             llama_mlp_hub[llama_mlp_key] = llama_mlp;
             printf(">> create llama_mlp_key: %s\n", llama_mlp_key.c_str());
         } else {
