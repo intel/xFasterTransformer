@@ -70,7 +70,7 @@ class YiDemo(ChatDemo):
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
-        gr.HTML("""<h1 align="center">Yi</h1>""")
+        gr.HTML("""<h1 align="center">Mistral</h1>""")
 
     def config(self):
         return {

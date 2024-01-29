@@ -101,6 +101,9 @@ public:
         const int maxPositions = reader.GetInteger(modelType, "model_max_length", maxPosEmbed);
         // Seq length in Qwen model, if none, please ignore
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
+        // top K and number of expert in MOE model, if none, please ignore
+        const int numExpertsPerTok = reader.GetInteger(modelType, "num_experts_per_tok", -1);
+        const int numLocalExperts = reader.GetInteger(modelType, "num_local_experts", -1);
         const int hiddenSize = attHeadNum * size_per_head;
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
@@ -144,7 +147,8 @@ public:
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
+                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, numExpertsPerTok, numLocalExperts,
+                ropeParamsPtr);
 
         // Decoder
         for (int i = 0; i < layers; ++i) {
@@ -485,7 +489,8 @@ protected:
 
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
+            int maxPositions, int maxPosEmbed, int maxSeqLength, int numExpertsPerTok, int numLocalExperts,
+            RopeParams *ropeParamsPtr) {
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
 
@@ -500,7 +505,8 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, splitIdx, splits, ropeParamsPtr));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, splitIdx, splits,
+                    numExpertsPerTok, numLocalExperts, ropeParamsPtr));
         }
 
         return this->context.get();

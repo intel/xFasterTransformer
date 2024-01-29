@@ -21,3 +21,5 @@ from .opt_convert import OPTConvert
 from .baichuan_convert import BaichuanConvert
 from .qwen_convert import QwenConvert
 from .yarn_llama_convert import YaRNLlamaConvert
+from .mixtral_convert import MixtralConvert
+from .mistral_convert import MistralConvert

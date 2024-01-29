@@ -60,6 +60,8 @@ struct DecoderContext {
     int maxPositions;
     int maxPosEmbed;
     int maxSeqLength; // From Qwen model's seq_length
+    int numExpertsPerTok; // From MOE model
+    int numLocalExperts; // From MOE model
     int layers;
 
     // For BERT-base, hidden_size=768
@@ -106,7 +108,8 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
+            int _splitIdx, int _splits, int _numExpertsPerTok = -1, int _numLocalExperts = -1,
+            RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -117,6 +120,8 @@ public:
         , maxPositions(_maxPositions)
         , maxPosEmbed(_maxPosEmbed)
         , maxSeqLength(_maxSeqLength)
+        , numExpertsPerTok(_numExpertsPerTok)
+        , numLocalExperts(_numLocalExperts)
         , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)
         , numSplit(_splits)
