@@ -20,7 +20,14 @@ from typing import Any
 from typing import TYPE_CHECKING
 from ctypes import *
 
-cdll.LoadLibrary(os.path.dirname(os.path.abspath(__file__)) + "/libxft_comm_helper.so")
+
+def with_mpirun():
+    return any(os.getenv(env) for env in ["MPI_LOCALRANKID", "MPI_LOCALNRANKS", "PMI_RANK", "PMI_SIZE", "PMIX_RANK"])
+
+
+if os.getenv("SINGLE_INSTANCE", "0") == "0" and with_mpirun():
+    cdll.LoadLibrary(os.path.dirname(os.path.abspath(__file__)) + "/libxft_comm_helper.so")
+
 torch.classes.load_library(os.path.dirname(os.path.abspath(__file__)) + "/libxfastertransformer_pt.so")
 
 _import_structure = {
@@ -33,6 +40,7 @@ _import_structure = {
         "OPTConvert",
         "BaichuanConvert",
         "QwenConvert",
+        "YaRNLlamaConvert",
     ],
 }
 
@@ -44,6 +52,7 @@ if TYPE_CHECKING:
     from .tools import OPTConvert
     from .tools import BaichuanConvert
     from .tools import QwenConvert
+    from .tools import YaRNLlamaConvert
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule
     # Source code url https://github.com/optuna/optuna/blob/master/optuna/integration/__init__.py

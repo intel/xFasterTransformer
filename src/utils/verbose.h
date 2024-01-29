@@ -52,13 +52,18 @@ private:
     }
 
 public:
-    static void setVerbose() {
+    static void initValue() {
         char *xft_verbose_value = getenv("XFT_VERBOSE");
         if (xft_verbose_value != NULL) {
             int value = atoi(xft_verbose_value);
             verbose_value() = value;
         } else {
             verbose_value() = 0;
+        }
+
+        // TODO: Move XFT_FAKE_MODEL here.
+        if (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0) {
+            printf("[INFO] XFT_FAKE_MODEL is enabled. Using `export XFT_FAKE_LOAD_INFO=1` for more details.\n");
         }
     }
 

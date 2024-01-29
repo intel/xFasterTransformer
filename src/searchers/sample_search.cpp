@@ -35,6 +35,8 @@ SampleSearch::SampleSearch(AbstractDecoder &dec, const SearcherConfig &config)
         printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", repetitionPenalty);
         exit(-1);
     }
+    stopWordsList = {};
+    stopWordsIndex = {};
 }
 
 // Get next tokens accoring to the prompt IDs
@@ -43,8 +45,11 @@ std::vector<int> SampleSearch::getNextToken(int *ids, int batchSize, int seqLen)
     this->step = 0;
     this->batchSize = batchSize;
     this->curLen = seqLen;
-    this->doneBatch.resize(batchSize);
-    std::fill(doneBatch.begin(), doneBatch.end(), false);
+    this->doneBatch = std::vector<int>(batchSize, 0);
+
+    if (!this->stopWordsList.empty()) {
+        stopWordsIndex = std::vector<std::vector<int>>(stopWordsList.size(), std::vector<int>(batchSize, 0));
+    }
 
     this->output.resize(batchSize * seqLen);
     std::copy(ids, ids + batchSize * seqLen, output.begin());
@@ -86,8 +91,8 @@ bool SampleSearch::isDone() {
     } else if (curLen >= maxLen) {
         return true;
     } else {
-        for (bool flag : doneBatch) {
-            if (!flag) { return false; }
+        for (auto flag : doneBatch) {
+            if (flag <= 0) { return false; }
         }
     }
     return true;
@@ -97,6 +102,14 @@ std::vector<int32_t> SampleSearch::finalize() {
     TimeLine t("dumpFile");
     t.dumpFile("timeline.json");
     return output;
+}
+
+bool SampleSearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    this->stopWordsList = stopWordsList;
+    for (auto it = this->stopWordsList.rbegin(); it != this->stopWordsList.rend(); ++it) {
+        if ((*it).size() == 1 && (*it)[0] == this->eosTokenId) { this->stopWordsList.erase(std::next(it).base()); }
+    }
+    return !this->stopWordsList.empty();
 }
 
 void SampleSearch::sample(std::tuple<float *, int, int> &result) {
@@ -233,5 +246,24 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
                 break;
             }
         }
+    }
+
+    if (eosTokenId != -1) {
+        for (int batchId = 0; batchId < batchSize; ++batchId) {
+            if (doneBatch[batchId] == 0) {
+                if (nextTokens[batchId] == eosTokenId) { doneBatch[batchId] = 1; }
+            } else if (doneBatch[batchId] > 0) {
+                // Padding finished seq with padTokenId;
+                nextTokens[batchId] = padTokenId;
+            } else if (doneBatch[batchId] < 0) {
+                // Set to eosTokenId as really done;
+                nextTokens[batchId] = eosTokenId;
+                doneBatch[batchId] = 1;
+            }
+        }
+    }
+
+    if (!this->stopWordsList.empty() && !this->stopWordsIndex.empty()) {
+        stopWordsCheck(nextTokens, this->stopWordsList, this->stopWordsIndex, this->doneBatch);
     }
 };

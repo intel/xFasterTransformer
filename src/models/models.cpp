@@ -29,6 +29,7 @@
 #include "qwen.h"
 #include "searcher.h"
 #include "timeline.h"
+#include "yarn_llama.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -49,7 +50,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 }
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
-    Env::setVerbose();
+    Env::initValue();
     TimeLine::init();
 }
 
@@ -86,32 +87,24 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
         int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_,
-        float repetitionPenalty_) {
-    isNewInput = true;
-    if (decoder->getRank() == 0) {
-        configuration.maxLen = maxLen_;
-        configuration.numBeams = numBeams_;
-        configuration.numBeamHypsToKeep = numBeamHypsToKeep_;
-        configuration.lenPenalty = lenPenalty_;
-        configuration.doEarlyStopping = doEarlyStopping_;
-        configuration.eosTokenId = eosTokenId_;
-        configuration.padTokenId = padTokenId_;
-        configuration.doSample = doSample_;
-        configuration.temperature = temperature_;
-        configuration.topK = topK_;
-        configuration.topP = topP_;
-        configuration.repetitionPenalty = repetitionPenalty_;
-    }
-    Messenger &messenger = decoder->getMessenger();
-    messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+        float repetitionPenalty_, const std::vector<std::vector<int>> &stopWordsList_) {
+    configuration.maxLen = maxLen_;
+    configuration.numBeams = numBeams_;
+    configuration.numBeamHypsToKeep = numBeamHypsToKeep_;
+    configuration.lenPenalty = lenPenalty_;
+    configuration.doEarlyStopping = doEarlyStopping_;
+    configuration.eosTokenId = eosTokenId_;
+    configuration.padTokenId = padTokenId_;
+    configuration.doSample = doSample_;
+    configuration.temperature = temperature_;
+    configuration.topK = topK_;
+    configuration.topP = topP_;
+    configuration.repetitionPenalty = repetitionPenalty_;
 
-    // Slaves get exit flags and exit directly
-    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
-
-    createSearcher(configuration);
+    this->config(configuration, stopWordsList_);
 }
 
-void Model::config(SearcherConfig &config_) {
+void Model::config(SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_) {
     isNewInput = true;
     if (decoder->getRank() == 0) { configuration = config_; }
     Messenger &messenger = decoder->getMessenger();
@@ -121,6 +114,7 @@ void Model::config(SearcherConfig &config_) {
     if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
     createSearcher(configuration);
+    setStopWords(stopWordsList_);
 }
 
 bool Model::isDone() {
@@ -188,6 +182,72 @@ void Model::unsetPrefix() {
     decoder->unsetPrefix();
 }
 
+bool Model::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    if (searcher == nullptr) {
+        printf("[Warning] Fails to set stop words. Please config model first.");
+        return false;
+    }
+    Messenger &messenger = decoder->getMessenger();
+
+    // Remove empty words and words containing non-positive elements.
+    if (decoder->getRank() == 0) {
+        for (auto it = stopWordsList.rbegin(); it != stopWordsList.rend(); ++it) {
+            if ((*it).empty()) {
+                stopWordsList.erase(std::next(it).base());
+                continue;
+            }
+            for (auto x : *it) {
+                if (x <= 0) { stopWordsList.erase(std::next(it).base()); }
+            }
+        }
+    }
+
+    int listSize = stopWordsList.size();
+    messenger.broadcast(&listSize, 1);
+    // If stopWordsList is empty, stop broadcasting and return.
+    if (listSize == 0) { return false; }
+
+    vector<int> wordsSize(listSize);
+    if (decoder->getRank() == 0) {
+        for (int i = 0; i < listSize; i++) {
+            wordsSize[i] = stopWordsList[i].size();
+        }
+    }
+    messenger.broadcast(wordsSize.data(), listSize);
+
+    int wordsDataLen = 0;
+    for (auto x : wordsSize) {
+        wordsDataLen += x;
+    }
+
+    // flatten to 1-D vector
+    vector<int> wordsData(wordsDataLen);
+    if (decoder->getRank() == 0) {
+        int currentIndex = 0;
+        for (const auto &words : stopWordsList) {
+            std::copy(words.begin(), words.end(), wordsData.begin() + currentIndex);
+            currentIndex += words.size();
+        }
+    }
+    messenger.broadcast(wordsData.data(), wordsDataLen);
+
+    if (decoder->getRank() == 0) {
+        return searcher->setStopWords(stopWordsList);
+    } else {
+        // restore stop words list to 2-D vector
+        std::vector<std::vector<int>> restoredList;
+        int currentIndex = 0;
+        for (int i = 0; i < wordsSize.size(); ++i) {
+            int size = wordsSize[i];
+            std::vector<int> subVector(wordsData.begin() + currentIndex, wordsData.begin() + currentIndex + size);
+            currentIndex += size;
+            restoredList.emplace_back(subVector);
+        }
+
+        return searcher->setStopWords(restoredList);
+    }
+}
+
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
@@ -246,6 +306,28 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8_int8: setDecoder(new HybridModel<LlamaLLM, w8a8_t, int8_t>(modelPath)); break;
             case xft::DataType::w8a8_int4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, uint4x2_t>(modelPath)); break;
             case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, nf4x2_t>(modelPath)); break;
+            default: printf("Unsupported data type.\n"); exit(-1);
+        }
+    } else if (modeltype == "yarn_llama") {
+        switch (datatype) {
+            case xft::DataType::fp16: setDecoder(new YaRNLlama<float16_t>(modelPath)); break;
+            case xft::DataType::bf16: setDecoder(new YaRNLlama<bfloat16_t>(modelPath)); break;
+            case xft::DataType::int8: setDecoder(new YaRNLlama<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new YaRNLlama<w8a8_t>(modelPath)); break;
+            case xft::DataType::int4: setDecoder(new YaRNLlama<uint4x2_t>(modelPath)); break;
+            case xft::DataType::nf4: setDecoder(new YaRNLlama<nf4x2_t>(modelPath)); break;
+            case xft::DataType::bf16_fp16:
+                setDecoder(new HybridModel<YaRNLlama, bfloat16_t, float16_t>(modelPath));
+                break;
+            case xft::DataType::bf16_int8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, int8_t>(modelPath)); break;
+            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, w8a8_t>(modelPath)); break;
+            case xft::DataType::bf16_int4:
+                setDecoder(new HybridModel<YaRNLlama, bfloat16_t, uint4x2_t>(modelPath));
+                break;
+            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<YaRNLlama, bfloat16_t, nf4x2_t>(modelPath)); break;
+            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<YaRNLlama, w8a8_t, int8_t>(modelPath)); break;
+            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, uint4x2_t>(modelPath)); break;
+            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<YaRNLlama, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "baichuan") {

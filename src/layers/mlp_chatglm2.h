@@ -14,7 +14,6 @@
 // ============================================================================
 #pragma once
 #include <cmath>
-#include "dtype.h"
 #include "mlp_llama.h"
 
 template <typename WeiT, typename NORM_CLS, bool INPUT_AS_RESID>

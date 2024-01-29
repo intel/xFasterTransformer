@@ -41,17 +41,18 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 
 ### Model support matrix
 
-|  Models  | Framework |          | Distribution |
-| :------: | :-------: | :------: | :----------: |
-|          |  PyTorch  |   C++    |              |
-| ChatGLM  | &#10004;  | &#10004; |   &#10004;   |
-| ChatGLM2 | &#10004;  | &#10004; |   &#10004;   |
-| ChatGLM3 | &#10004;  | &#10004; |   &#10004;   |
-|  Llama   | &#10004;  | &#10004; |   &#10004;   |
-|  Llama2  | &#10004;  | &#10004; |   &#10004;   |
-| Baichuan | &#10004;  | &#10004; |   &#10004;   |
-|   QWen   | &#10004;  | &#10004; |   &#10004;   |
-|   Opt    | &#10004;  | &#10004; |   &#10004;   |
+|       Models       | Framework |          | Distribution |
+| :----------------: | :-------: | :------: | :----------: |
+|                    |  PyTorch  |   C++    |              |
+|      ChatGLM       | &#10004;  | &#10004; |   &#10004;   |
+|      ChatGLM2      | &#10004;  | &#10004; |   &#10004;   |
+|      ChatGLM3      | &#10004;  | &#10004; |   &#10004;   |
+|       Llama        | &#10004;  | &#10004; |   &#10004;   |
+|       Llama2       | &#10004;  | &#10004; |   &#10004;   |
+|      Baichuan      | &#10004;  | &#10004; |   &#10004;   |
+|        QWen        | &#10004;  | &#10004; |   &#10004;   |
+| SecLLM(YaRN-Llama) | &#10004;  | &#10004; |   &#10004;   |
+|        Opt         | &#10004;  | &#10004; |   &#10004;   |
 
 ### DataType support list
 
@@ -148,6 +149,8 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     ```
     python -c 'import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")'
     ```
+    ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
+    
     Supported model convert list:
     - LlamaConvert
     - ChatGLMConvert
@@ -165,6 +168,7 @@ Firstly, please install the dependencies.
   ```bash
   pip install -r requirements.txt
   ```
+  ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 - oneCCL (For multi ranks)  
   Install oneCCL and setup the environment. Please refer to [Prepare Environment](#prepare-environment).
 
@@ -281,6 +285,7 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. Now s
   ```bash
   pip install -r examples/web_demo/requirements.txt
   ```
+  ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 - Run the script corresponding to the model. After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory. This demo also support multi-rank.
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.

@@ -13,7 +13,7 @@
 # limitations under the License.
 # ============================================================================
 import torch
-from typing import Union, Literal
+from typing import Union, List
 
 
 class AutoModel:
@@ -66,6 +66,8 @@ class AutoModel:
         top_k=50,
         top_p=1.0,
         repetition_penalty=1.0,
+        stop_words_ids: Union[List[List[int]], None] = None,
+        **kwargs,
     ):
         self.model.config(
             max_length,
@@ -80,6 +82,7 @@ class AutoModel:
             top_k,
             top_p,
             repetition_penalty,
+            stop_words_ids,
         )
 
     def input(self, input_ids=None):
@@ -113,7 +116,9 @@ class AutoModel:
         top_k=50,
         top_p=1.0,
         repetition_penalty=1.0,
+        stop_words_ids: Union[List[List[int]], None] = None,
         streamer=None,
+        **kwargs,
     ):
         #  streamer: Optional["BaseStreamer"] = None):
         if streamer is not None:
@@ -139,6 +144,7 @@ class AutoModel:
             top_k,
             top_p,
             repetition_penalty,
+            stop_words_ids,
         )
         self.input(input_ids)
 

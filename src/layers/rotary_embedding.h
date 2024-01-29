@@ -17,6 +17,8 @@
 #include <cstring>
 #include <iostream>
 
+#include "bfloat16.h"
+
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
         int max_len = 10;
@@ -36,6 +38,9 @@ public:
     ~LlamaRotaryEmbedding() {}
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+
+    void forward(
+            bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
 private:
     void llamaCalEmb();

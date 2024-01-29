@@ -16,7 +16,6 @@
 #include "bert_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
-#include "dtype.h"
 #include "matmul_helper.h"
 #include "split_util.h"
 

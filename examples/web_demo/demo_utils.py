@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-import mdtex2html
-import re
 import time
 import gradio as gr
 import importlib.util
 from transformers import AutoTokenizer
+import transformers
+import json
+import os
 import sys
+import traceback
 
-sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
+sys.stdout = open(sys.stdout.fileno(), mode="w", buffering=1)
 
 xft_spec = importlib.util.find_spec("xfastertransformer")
 
@@ -35,21 +37,6 @@ else:
 import xfastertransformer
 
 
-def postprocess(self, y):
-    if y is None:
-        return []
-    for i, (message, response) in enumerate(y):
-        y[i] = (
-            None if message is None else mdtex2html.convert((message)),
-            None if response is None else mdtex2html.convert(response),
-        )
-    return y
-
-
-# Override Chatbot.postprocess
-gr.Chatbot.postprocess = postprocess
-
-
 def clean_input():
     return gr.update(value="")
 
@@ -58,9 +45,54 @@ def reset():
     return [], []
 
 
+XFT_DTYPE_LIST = [
+    "fp16",
+    "bf16",
+    "int8",
+    "w8a8",
+    "int4",
+    "nf4",
+    "bf16_fp16",
+    "bf16_int8",
+    "bf16_w8a8",
+    "bf16_int4",
+    "bf16_nf4",
+    "w8a8_int8",
+    "w8a8_int4",
+    "w8a8_nf4",
+]
+
+
+def check_transformers_version_compatibility(token_path):
+    config_path = os.path.join(token_path, "config.json")
+    try:
+        with open(config_path, "r") as file:
+            config_data = json.load(file)
+
+        transformers_version = config_data.get("transformers_version")
+    except Exception as e:
+        pass
+    else:
+        if transformers_version:
+            if transformers.__version__ != transformers_version:
+                print(
+                    f"[Warning] The version of `transformers` in model configuration is {transformers_version}, and version installed is {transformers.__version__}. "
+                    + "This tokenizer loading error may be caused by transformers version compatibility. "
+                    + f"You can downgrade or reinstall transformers by `pip install transformers=={transformers_version} --force-reinstall` and try again."
+                )
+
+
 class ChatDemo:
     def __init__(self, token_path, model_path, dtype):
-        self.tokenizer = AutoTokenizer.from_pretrained(token_path, trust_remote_code=True)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(token_path, trust_remote_code=True)
+        except Exception as e:
+            traceback.print_exc()
+            print("[ERROR] An exception occurred during the tokenizer loading process.")
+            # print(f"{type(e).__name__}: {str(e)}")
+            check_transformers_version_compatibility(token_path)
+            sys.exit(-1)
+
         self.model = xfastertransformer.AutoModel.from_pretrained(model_path, dtype=dtype)
 
     @property
@@ -83,9 +115,7 @@ class ChatDemo:
                 with gr.Row():
                     with gr.Column(scale=3):
                         with gr.Column(scale=12):
-                            user_input = gr.Textbox(show_label=False, placeholder="Input...", lines=7).style(
-                                container=False
-                            )
+                            user_input = gr.Textbox(show_label=False, placeholder="Input...", lines=7, container=False)
                         with gr.Column(min_width=32, scale=1):
                             submitBtn = gr.Button("Submit", variant="primary")
                     with gr.Column(scale=1):
@@ -117,44 +147,14 @@ class ChatDemo:
             while True:
                 self.model.generate()
 
-    # Process code blocks with HTML tags, and escape certain special characters
     def parse_text(self, text):
-        text = re.compile(r"(?<!\n)```|```(?!`\n)").sub("\n```\n", text)
-        lines = text.split("\n")
-        lines = [line for line in lines if line != ""]
-        count = 0
-        puncts_map = {
-            "`": "\`",
-            "<": "&lt;",
-            ">": "&gt;",
-            " ": "&nbsp;",
-            "*": "&ast;",
-            "_": "&lowbar;",
-            "-": "&#45;",
-            ".": "&#46;",
-            "!": "&#33;",
-            "(": "&#40;",
-            ")": "&#41;",
-            "$": "&#36;",
-        }
-        for i, line in enumerate(lines):
-            if "```" in line:
-                count += 1
-                items = line.split("`")
-                if count % 2 == 1:
-                    lines[i] = f'<pre><code class="language-{items[-1]}">'
-                else:
-                    lines[i] = f"<br></code></pre>"
-            else:
-                if i > 0:
-                    if count % 2 == 1:
-                        for key, val in puncts_map.items():
-                            line = line.replace(key, val)
-                    lines[i] = "<br>" + line
-        return "".join(lines)
+        return text
 
     def process_response(self, response):
         return response
+
+    def config(self):
+        return {}
 
     def post_process_generation(self, next_token_id, token_list, chatbot, query, history, perf_info):
         token_list.extend(next_token_id)
@@ -170,7 +170,7 @@ class ChatDemo:
 
     def predict(self, query, chatbot, batch_size, max_length, history):
         chatbot.append((self.parse_text(query), ""))
-        self.model.config(max_length)
+        self.model.config(max_length, **self.config())
 
         input_tokens = self.create_chat_input_token(query, history)
         if batch_size > 1:

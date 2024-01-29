@@ -16,7 +16,6 @@
 #include "bert_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
-#include "dtype.h"
 #include "matmul_helper.h"
 #include "singleton.h"
 #include "timeline.h"
@@ -258,14 +257,14 @@ private:
         int beta = 0.0;
         if (R != nullptr) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 memcpy(C + i * ldc, R + i * ldr, N * sizeof(float));
             }
             beta = 1.0;
         }
         int ldaH = lda * 2;
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
+        for (uint64_t i = 0; i < M; ++i) {
             bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)A + i * ldaH, K);
         }
         cblas_gemm_bf16bf16f32(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, alpha, (const MKL_BF16 *)(A), ldaH,
@@ -313,7 +312,7 @@ private:
             N /= 2;
         }
 #pragma omp parallel for
-        for (int i = 0; i < M; ++i) {
+        for (uint64_t i = 0; i < M; ++i) {
             memcpy(catWeights.Data() + i * Stride, gateWeight.Data() + i * N, N * sizeof(WeiT));
             memcpy(catWeights.Data() + i * Stride + N, upWeight.Data() + i * N, N * sizeof(WeiT));
         }

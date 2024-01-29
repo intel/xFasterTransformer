@@ -32,7 +32,6 @@
 
 #include "attention.h"
 #include "debugger.h"
-#include "dtype.h"
 #include "kvcache_tensor.h"
 #include "timeline.h"
 #include "type_selector.h"

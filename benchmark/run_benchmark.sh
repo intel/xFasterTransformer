@@ -100,11 +100,8 @@ echo "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size
 
 # Example here is using fake model, you can use real model as well
 export XFT_FAKE_MODEL=1
-if [[ ${model_name} == *"chatglm3"* ]]; then
-    model_path="${SCRIPT_DIR}"/../examples/model_config/chatglm2-6b/
-else
-    model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
-fi
+
+model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
 
 benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_path "${model_path}" \
@@ -185,6 +182,26 @@ elif [ "${numa_nodes}" -eq 2 ]; then
         run_cmd+=" : \
         -n 1 $(WEIGHT_LOCATION 1 1) numactl -m 1 -N 1 ${benchmark_cmd} "
     fi
+elif [ "${numa_nodes}" -eq 1 ]; then
+    # General Test mode
+    XFT_CLOUD_ENV=${XFT_CLOUD_ENV:-0}
+    echo "General Test mode:
+            The mapping method for CPU IDs in the cloud server environment is different,
+            for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
+            to a single physical core. In this mapping relationship,
+            you can enable \`export XFT_CLOUD_ENV=1\` to bind to the correct physical core."
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    echo ""
+    if [ "$XFT_CLOUD_ENV" -eq 1 ]; then
+        cpu_index="0"
+        for ((i=2; i<${cores_per_numa}; i+=2)); do
+		cpu_index+=",$i"
+	    done
+    else
+        cpu_index=0-`expr $OMP_NUM_THREADS - 1`
+    fi
+    run_cmd="numactl -C ${cpu_index} -m 0 ${benchmark_cmd}"
 else
     echo "Please double check the memory nodes"
 fi

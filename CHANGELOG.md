@@ -1,5 +1,30 @@
 # CHANGELOG
 
+# [Version v1.3.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.1)
+v1.3.1
+## BUG fix
+- Fix oneCCL environment is still needed when running in single-rank mode.
+
+# [Version v1.3.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.0)
+v1.3.0 - Qwen model support enhancement and added support for the SecLLM (YaRN-Llama) model.
+## Models
+- Introduce SecLLM(YaRN-Llama) model support.
+- Integrating the Qwen web demo, enhancing Qwen model support, and fix known issues in the Qwen convert tool.
+
+## Functionality
+- Introduce new generation configuration, `repetition_penalty` and `stop_words_ids`.
+- Rotary embedding supports BF16 data type now.
+- Introduce attention interfaces similar to page attention.
+- Add a whitelist to gather timeline events based on filtered events.
+
+## BUG fix
+- Fix `libxft_comm_helper.so` can't be found issue in multi-ranks mode.
+- Fix assert error in MLP when CAT_MLP opt is enabled.
+- Fix a w8a8 crash issue due to buffer size isn't big enough.
+- Correct GCC version for AVX512_BF16 instruction set.
+- Fix int32 overflow issue for larger size.
+
+
 # [Version v1.2.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.2.0)
 v1.2.0 - Qwen models and much more data types supported.
 ## Models

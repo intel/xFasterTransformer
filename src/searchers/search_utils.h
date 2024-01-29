@@ -19,3 +19,6 @@ void insertAndSort(std::vector<int> &targetVector, int num);
 
 void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffset, int sampleSize,
         std::vector<int> &inputIds, int batchSize, std::vector<std::vector<int>> &cachedVec, int step, bool multiRank);
+
+void stopWordsCheck(std::vector<int> &nextTokenIds, std::vector<std::vector<int>> &stopWordsList,
+        std::vector<std::vector<int>> &stopWordsIndex, std::vector<int> &doneBatch);
