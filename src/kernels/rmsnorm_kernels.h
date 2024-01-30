@@ -28,6 +28,9 @@ void rmsNorm(float *output, const float *input, const float *weight, int rows, i
 void rmsNorm(bfloat16_t *output, const float *input, const float *weight, int rows, int cols, int iStride = -1,
         int oStride = -1, float epsilon = 1e-6);
 
+void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const float *weight, int rows, int cols, int iStride = -1,
+        int oStride = -1, float epsilon = 1e-6);
+
 void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *weight, int rows, int cols,
         int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 

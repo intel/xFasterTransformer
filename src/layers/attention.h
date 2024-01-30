@@ -15,6 +15,7 @@
 #pragma once
 #include <numeric>
 
+#include "attention_kernels.h"
 #include "aligned_type.h"
 #include "bfloat16.h"
 #include "copy_util.h"
@@ -272,11 +273,20 @@ public:
             imBuffer.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
             inputBuffer.Assign(tmp, rows, cols, stride);
         }
-        // TODO: support large inputSeqLen when pastSeqLen > 0
-        if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
-            flashAttention(ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
-        else
-            fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+        // TODO: refine the logic (and support large inputSeqLen when pastSeqLen > 0)
+        if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
+            if (pastSeqLen == 0) {
+                selfAttentionBF16(ctx, query, key, value, imBuffer, presentKey, presentValue);
+            } else {
+                fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+            }
+        } else {
+            if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
+                flashAttention(
+                        ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+            else
+                fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+        }
         t4.release();
 
         // For multiple nodes inference, not the whole result buffer
@@ -325,6 +335,32 @@ public:
     }
 
 protected:
+    // TODO: improve the perf
+    template <typename KVCacheT>
+    void selfAttentionBF16(DecoderContext *ctx, hpj::Matrix<bfloat16_t> &query, hpj::Matrix<bfloat16_t> &key,
+            hpj::Matrix<bfloat16_t> &value, hpj::Matrix<bfloat16_t> &result, KVCacheTensor<KVCacheT> &presentKey,
+            KVCacheTensor<KVCacheT> &presentValue) {
+        int responsibleQHeads = this->endQHead - this->startQHead;
+        int responsibleKVHeads = this->endKVHead - this->startKVHead;
+
+        if (responsibleKVHeads != responsibleQHeads) {
+            printf("Error: encounter the case not supported in selfAttentionBF16.\n");
+            exit(-1);
+        }
+
+        int tokenSizes[ctx->batchSize];
+        for (int i = 0; i < ctx->batchSize; ++i) {
+            tokenSizes[i] = ctx->inputSeqLen;
+        }
+
+        xft::selfAttention(
+                result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
+                ctx->attHeadSize, query.Stride(), key.Stride(), ctx->batchSize, tokenSizes, ctx->attFactor,
+                ctx->numThreads,
+                [&](int b, int headIdx, int seqIdx) { return presentKey.getSequence(seqIdx, b, headIdx); },
+                [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
+    }
+
     // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
     void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
@@ -369,7 +405,10 @@ protected:
         bool scoreBufByThread = (ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen) <= scoreBufSize);
 
         // If total tasks are too small (compared to total thread number), need to shard the head
-        bool shardHead = (ctx->inputSeqLen == 1) && (ctx->numThreads >= batchSize * responsibleHeads * 2);
+        // TODO: make sure BF16 can also shard head
+        bool shardHead
+                = (!std::is_same_v<InT, bfloat16_t> && !std::is_same_v<OutT, bfloat16_t>)&&(ctx->inputSeqLen == 1)
+                && (ctx->numThreads >= batchSize * responsibleHeads * 2);
 
         // Need to copy current key/values to cache seperately if:
         // (1) For group attention (#kvHeads != #qHeads)
@@ -398,9 +437,12 @@ protected:
             kvCopied = true;
         }
 
-        // Seperate impl. when head is sharded
-        if (shardHead) {
-            return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
+        // TODO: remove it (currently here to bypass compile issue)
+        if constexpr (!std::is_same_v<WeiT, bfloat16_t>) {
+            // Seperate impl. when head is sharded
+            if (shardHead) {
+                return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
+            }
         }
 
 #pragma omp parallel for collapse(3)
@@ -453,21 +495,6 @@ protected:
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
                                 p[2] * ctx->attFactor, p[strideC - 3] * ctx->attFactor, p[strideC - 2] * ctx->attFactor,
                                 p[strideC - 1] * ctx->attFactor);
-                        // for (int qki = 0; qki < queryLen; qki++) {
-                        //     for (int qkj = 0; qkj < keyLen; qkj++) {
-                        //         dbg.debugPrint("%.2f\t", p[qki * strideC + qkj] * ctx->attFactor);
-                        //     }
-                        //     dbg.debugPrint("\n");
-                        // }
-
-                        // dbg.debugPrint("Attention Mask:\n");
-                        // for (int qki = 0; qki < queryLen; qki++) {
-                        //     for (int qkj = 0; qkj < keyLen; qkj++) {
-                        //         dbg.debugPrint("%.0f\t",
-                        //                 attnMask[qki * keyLen + qkj] < 0 ? -1.0 : attnMask[qki * keyLen + qkj]);
-                        //     }
-                        //     dbg.debugPrint("\n");
-                        // }
                     }
 #endif
 
@@ -508,21 +535,16 @@ protected:
                     lda = strideC;
                     ldb = valueMatInfo.second;
                     ldc = result.Stride();
-                    A = C;
+                    auto newA = C;
                     B = valueMatInfo.first;
-                    C = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
+                    auto newC = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
 
-                    if constexpr (std::is_same_v<KVCacheT, float>) {
-                        xdnn_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
-                    } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                        xdnn_sgemm_f32f16f32_single_thread(
-                                false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
-                    }
+                    xft::small_gemm(newA, B, newC, m, n, k, lda, ldb, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
-                        auto p = C;
+                        auto p = newC;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[ctx->attHeadSize - 3],
                                 p[ctx->attHeadSize - 2], p[ctx->attHeadSize - 1]);
                     }

@@ -22,7 +22,7 @@
 // WeiT: weight data type
 // INPUT_AS_RESID: input as residential or not, most models use input as residential,
 //                 but there are exceptions like ChatGLM use values after layernorm as residential
-template <typename WeiT, bool INPUT_AS_RESID = true>
+template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float, bool INPUT_AS_RESID = true>
 class MLP {
 public:
     MLP(DecoderContext *ctx) {}
