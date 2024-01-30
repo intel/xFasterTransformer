@@ -31,10 +31,13 @@ More parameter options settings:
 ## 2. Start MLServer
 ```
 cd mlserver/multi-node
-mlserver start .
+MLSERVER_PARALLEL_WORKERS=0 mlserver start .
 ```
 
 ## 3. Run Client Demo
 ```
 python client.py
+
+#Stream
+python stream.py
 ```
