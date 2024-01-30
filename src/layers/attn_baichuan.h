@@ -18,7 +18,7 @@
 #include <cstring>
 
 #include "common_decoder.h"
-#include "layers_norm.h"
+#include "rms_norm.h"
 #include "attention.h"
 
 template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm>

@@ -18,7 +18,9 @@
 
 template <typename WeiT>
 LlamaLLM<WeiT>::LlamaLLM(const std::string &modelPath)
-    : CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "llama") {
+    : CommonDecoder<
+            Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, float, typename TypeSelector<WeiT>::ImType, float, true>,
+            LlamaMLP<WeiT>, float>(modelPath, "llama") {
     // Context
     DecoderContext *ctx = this->getContext();
 

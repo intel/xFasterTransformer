@@ -68,10 +68,18 @@ public:
         const int maxPosEmbed = reader.GetInteger(modelType, "max_pos_seq_len", 0);
         // Max num of tokens that LLM can process. Also for allocating buffers. Default maxPosEmbed
         const int maxPositions = reader.GetInteger(modelType, "model_max_length", maxPosEmbed);
+        // Seq length in Qwen model, if none, please ignore
+        const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
         const int hiddenSize = attHeadNum * size_per_head;
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
+        const std::string ropeType = reader.Get(modelType, "rope_scaling_type", "");
+        const float ropeFactor = reader.GetFloat(modelType, "rope_scaling_factor", 1.0);
+        const int ropeOrgMaxPosEmbed
+                = reader.GetInteger(modelType, "rope_scaling_original_max_position_embeddings", 2048);
+        const float ropeTheta = reader.GetFloat(modelType, "rope_theta", 10000.0);
+        RopeParams *ropeParamsPtr = new RopeParams(ropeTheta, ropeType, ropeFactor, ropeOrgMaxPosEmbed);
 
         std::string act = reader.Get(modelType, "activation_type");
         std::transform(act.begin(), act.end(), act.begin(), ::tolower);
@@ -94,7 +102,7 @@ public:
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed);
+                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
         for (int i = 0; i < layers; ++i) {
@@ -175,7 +183,8 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(), this->embBuf->Stride());
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(),
+                this->embBuf->Stride());
         dbg.dumpMatrix(*this->embBuf);
 #endif
 
@@ -197,22 +206,20 @@ public:
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
 
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
+            // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
+            auto &attnOut = this->getContext()->tmpBuf;
+            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
+                    attnOut.Data(), attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     inputSeqLen, // inputSeqLen,
                     pastSeqLen, // pastSeqLen
                     step == 0, // useSelfAttn,
                     true, // doLnBefore,
-                    false, // returnAttn,
-                    false, // returnKVs
-                    false, // forPT
                     positionIds);
 
             // Expand the KV cache as it only has values for beam 0
             if (step == 0 && beamSize > 1) { this->kvCacheMgr->expandCache(i, userSideBS, beamSize, seqLen); }
-
-            auto &attnOut = this->getContext()->tmpBuf;
 
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
@@ -347,19 +354,17 @@ public:
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getPrefixKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
 
-            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(), attnMask,
+            // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
+            auto &attnOut = this->getContext()->tmpBuf;
+            this->decoders[i]->forwardAttention(getContext(), this->embBuf->Data(), this->outBuf->Data(),
+                    attnOut.Data(), attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     seqLen, // inputSeqLen,
                     0, // pastSeqLen
                     true, // useSelfAttn,
                     true, // doLnBefore,
-                    false, // returnAttn,
-                    false, // returnKVs
-                    false, // forPT
                     positionIds);
-
-            auto &attnOut = this->getContext()->tmpBuf;
 
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
@@ -443,7 +448,7 @@ protected:
 
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed) {
+            int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
 
@@ -458,7 +463,7 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, splitIdx, splits));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, splitIdx, splits, ropeParamsPtr));
         }
 
         return this->context.get();

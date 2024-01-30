@@ -1,5 +1,47 @@
 # CHANGELOG
 
+# [Version v1.3.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.1)
+v1.3.1
+## BUG fix
+- Fix oneCCL environment is still needed when running in single-rank mode.
+
+# [Version v1.3.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.0)
+v1.3.0 - Qwen model support enhancement and added support for the SecLLM (YaRN-Llama) model.
+## Models
+- Introduce SecLLM(YaRN-Llama) model support.
+- Integrating the Qwen web demo, enhancing Qwen model support, and fix known issues in the Qwen convert tool.
+
+## Functionality
+- Introduce new generation configuration, `repetition_penalty` and `stop_words_ids`.
+- Rotary embedding supports BF16 data type now.
+- Introduce attention interfaces similar to page attention.
+- Add a whitelist to gather timeline events based on filtered events.
+
+## BUG fix
+- Fix `libxft_comm_helper.so` can't be found issue in multi-ranks mode.
+- Fix assert error in MLP when CAT_MLP opt is enabled.
+- Fix a w8a8 crash issue due to buffer size isn't big enough.
+- Correct GCC version for AVX512_BF16 instruction set.
+- Fix int32 overflow issue for larger size.
+
+
+# [Version v1.2.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.2.0)
+v1.2.0 - Qwen models and much more data types supported.
+## Models
+- Introduced Qwen models support and added the convert tool for Qwen models.
+- ChatGLM3 model is verfied and API supported.
+
+## Performance Optimizations
+- Update xDNN to version 1.4.2 to improve performance and support more data types.
+- Accelerate first token's generation with BF16-gemm Multi-Head Attention.
+
+## Functionality
+- Introduce more data types supports, including `W8A8`, `INT4`, and `NF4`. The hybrid data types between these new data types are supported.
+- Add accuracy evaluation script to assess the impact of different precisions on the text generation performance of the model.
+- Introduce `XFT_VERBOSE` macro to help profile model performance of each gemm. Set `1` to enable information ouput and default is `0`.  
+- Decouple oneCCL and MPI dependencies into a communication helper library. oneCCL environment is no longer needed when running in single-rank mode.
+
+
 # [Version 1.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.1.0)
 v1.1.0 - Baichuan models supported.
 

@@ -1,7 +1,11 @@
-gradio==3.40.1
-gradio_client==0.4.0
-mdtex2html==1.2.0
+-f https://download.pytorch.org/whl/torch_stable.html
+gradio==4.11.0
+gradio_client==0.7.3
 sentencepiece==0.1.99
 tokenizers==0.13.3
-torch==2.0.1
+torch==2.0.1+cpu
 transformers==4.36.0
+transformers_stream_generator==0.0.4
+einops==0.7.0
+accelerate==0.26.1
+tiktoken==0.5.2

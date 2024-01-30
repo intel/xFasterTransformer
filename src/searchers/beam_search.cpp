@@ -278,6 +278,10 @@ BeamSearch::BeamSearch(AbstractDecoder &dec, const SearcherConfig &config)
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
     kVal = 2 * numBeams;
+    if (config.repetitionPenalty != 1.0) {
+        printf("[Warning] BeamSearch doesn't support repetition penalty now and repetition penalty is %f.\n",
+                config.repetitionPenalty);
+    }
 }
 
 // The first setp to get next tokens accoring to the prompt IDs
@@ -335,13 +339,18 @@ std::vector<int> BeamSearch::getNextToken() {
 std::vector<int32_t> BeamSearch::finalize() {
     auto sequenceOutputs
             = beamScorer.finalize(inputIds, beamNextScores, beamNextTokens, beamNextIndices, padTokenId, eosTokenId);
-    TimeLine t("dump_file");
-    t.dump_file("timeline.json");
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return sequenceOutputs;
 }
 
 bool BeamSearch::isDone() {
     return step != 0 && (beamScorer.isDone() || curLen >= maxLen);
+}
+
+bool BeamSearch::setStopWords(std::vector<std::vector<int>> stopWordsList) {
+    printf("[Warning] BeamSearch is not supporting stop words yet.\n");
+    return false;
 }
 
 void BeamSearch::searchTopK(std::tuple<float *, int, int> &result) {

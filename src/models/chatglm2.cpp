@@ -20,8 +20,8 @@
 
 template <typename WeiT, typename NormT>
 ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
-    : CommonDecoder<ChatGLM2Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, true>, ChatGLM2MLP<WeiT, NormT, true>>(
-            modelPath, modelType) {
+    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, float, float, float, true>,
+            ChatGLM2MLP<WeiT, NormT, true>>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
