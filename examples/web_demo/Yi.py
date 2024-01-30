@@ -19,48 +19,67 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import gradio as gr
 import argparse
+import time
 import torch
-from demo_utils import ChatDemo, XFT_DTYPE_LIST
+from demo_utils import ChatDemo
 
+
+DTYPE_LIST = [
+    "fp16",
+    "bf16",
+    "int8",
+    "w8a8",
+    "int4",
+    "nf4",
+    "bf16_fp16",
+    "bf16_int8",
+    "bf16_w8a8",
+    "bf16_int4",
+    "bf16_nf4",
+    "w8a8_int8",
+    "w8a8_int4",
+    "w8a8_nf4",
+]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/llama-2-7b-chat-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/llama-2-7b-chat-cpu", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
-
-B_INST, E_INST = "[INST]", "[/INST]"
-B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
-EOS_ID = 2
+parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 
 
-class Llama2Demo(ChatDemo):
+class YiDemo(ChatDemo):
     # Refer to https://github.com/facebookresearch/llama/blob/main/llama/generation.py
     def create_chat_input_token(self, query, history):
-        tokens = []
         if history is None:
             history = []
-        if not history:
-            input_tokens = self.tokenizer([f"{B_INST} {query.strip()} {E_INST}"], return_tensors="pt").input_ids
-        else:
-            history = history[-2:] if len(history) > 2 else history
-        for i, (old_query, response) in enumerate(history):
-            tokens.append(
-                self.tokenizer(
-                    [f"{B_INST} {old_query.strip()} {E_INST} {response.strip()} "], return_tensors="pt"
-                ).input_ids
-            )
-            tokens.append(torch.tensor([[EOS_ID]]))
-        tokens.append(self.tokenizer([f"{B_INST} {query.strip()} {E_INST}"], return_tensors="pt").input_ids)
-        input_tokens = torch.cat(tokens, dim=1)
-        return input_tokens
+
+        history.append((query, None))
+        messages = []
+        for idx, (user_msg, model_msg) in enumerate(history):
+            print(f"user_msg={user_msg}, model_msg={model_msg}")
+            if idx == len(history) - 1 and not model_msg:
+                messages.append({"role": "user", "content": user_msg})
+                break
+            if user_msg:
+                messages.append({"role": "user", "content": user_msg})
+            if model_msg:
+                messages.append({"role": "assistant", "content": model_msg})
+        
+        model_inputs = self.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt").to("cpu")
+        return model_inputs
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
-        gr.HTML("""<h1 align="center">Llama2</h1>""")
+        gr.HTML("""<h1 align="center">Yi</h1>""")
 
+    def config(self):
+        return {
+            "stop_words_ids": [[2], [6], [7], [8]]
+        }
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    demo = Llama2Demo(args.token_path, args.model_path, dtype=args.dtype)
+    demo = YiDemo(args.token_path, args.model_path, dtype=args.dtype)
 
     demo.launch(False)

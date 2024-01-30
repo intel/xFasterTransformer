@@ -20,7 +20,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import gradio as gr
 import argparse
 import torch
-from demo_utils import ChatDemo
+from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
 USER_TOKEN_ID = 195
 ASSISTANT_TOKEN_ID = 196
@@ -28,30 +28,13 @@ user_id_tensor = torch.tensor([[USER_TOKEN_ID]])
 assist_id_tensor = torch.tensor([[ASSISTANT_TOKEN_ID]])
 
 
-DTYPE_LIST = [
-    "fp16",
-    "bf16",
-    "int8",
-    "w8a8",
-    "int4",
-    "nf4",
-    "bf16_fp16",
-    "bf16_int8",
-    "bf16_w8a8",
-    "bf16_int4",
-    "bf16_nf4",
-    "w8a8_int8",
-    "w8a8_int4",
-    "w8a8_nf4",
-]
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/Baichuan2-7B-Chat-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/Baichuan2-7B-Chat-cpu", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
 
 
-class ChatGLMDemo(ChatDemo):
+class BaiChuan2Demo(ChatDemo):
     # Refer to https://github.com/baichuan-inc/Baichuan2/blob/main/web_demo.py
     def create_chat_input_token(self, query, history):
         input_tokens = self.tokenizer(query, return_tensors="pt").input_ids
@@ -76,6 +59,6 @@ class ChatGLMDemo(ChatDemo):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    demo = ChatGLMDemo(args.token_path, args.model_path, dtype=args.dtype)
+    demo = BaiChuan2Demo(args.token_path, args.model_path, dtype=args.dtype)
 
     demo.launch(False)

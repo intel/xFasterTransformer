@@ -53,5 +53,6 @@ private:
     static int inv_freq_size;
     static int max_seq_len_cached;
     int dim = 0;
+    float base_initial = 10000.0;
     float base = 10000.0;
 };

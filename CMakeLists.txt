@@ -30,8 +30,30 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -fopenmp -mavx512f -mavx512bw -mavx512vl -fPIC -D_GLIBCXX_USE_CXX11_ABI=0")
 
+# GCC>=10.1 should support avx512bf16, but need to double check as some versions have issues
 if(GCC_VERSION VERSION_GREATER_EQUAL "10.1")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512bf16")
+
+    # Source code for BF16 test
+    set(TEST_SOURCE_CODE "#include <immintrin.h>\n#include <cstdio>\nint main() { int buf[8]; _mm256_mask_storeu_epi32((void *)buf, 0xff, (__m256i)_mm512_cvtneps_pbh(_mm512_set1_ps(1.0f))); printf(\"%d\", buf[0]); }")
+
+    # Create a temporary file for BF16 test program
+    file(WRITE ${CMAKE_BINARY_DIR}/test_avx512bf16.cpp "${TEST_SOURCE_CODE}")
+
+    # Try to compile the BF16 test program
+    try_compile(SUPPORTS_FEATURE
+        ${CMAKE_BINARY_DIR}/test_avx512bf16
+        ${CMAKE_BINARY_DIR}/test_avx512bf16.cpp
+        OUTPUT_VARIABLE TRY_COMPILE_OUTPUT
+        )
+
+    file(REMOVE ${CMAKE_BINARY_DIR}/test_avx512bf16.cpp)
+    file(REMOVE_RECURSE ${CMAKE_BINARY_DIR}/test_avx512bf16)
+
+    # Check the result and show an error message if the feature is not supported
+    if(NOT SUPPORTS_FEATURE)
+        message(FATAL_ERROR "Error: Your compiler has issues to support avx512bf16.")
+    endif()
 endif()
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")

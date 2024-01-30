@@ -29,6 +29,7 @@ int QwenRotaryEmbedding::inv_freq_size = -1;
 QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
     if (!initialized) {
         this->dim = dim;
+        this->base_initial = base;
         this->base = base;
         this->max_seq_len_cached = max_position_embeddings;
         this->inv_freq_size = (dim + 1) / 2;
@@ -59,7 +60,7 @@ float QwenRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max
     float context_value = log((float)true_seq_len / (float)max_seq_length) / log(2.0) + 1;
     float ntk_alpha = pow((float)2.0, ceil(context_value)) - 1;
     ntk_alpha = std::max(ntk_alpha, (float)1.0);
-    float new_base = this->base * pow(ntk_alpha, (float)this->dim / (this->dim - 2));
+    float new_base = this->base_initial * pow(ntk_alpha, (float)this->dim / (this->dim - 2));
     return new_base;
 }
 
