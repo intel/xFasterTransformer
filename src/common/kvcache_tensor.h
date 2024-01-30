@@ -72,7 +72,7 @@ public:
 
         uint64_t requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * headSize;
         if (requiredSize > allocSize) {
-            this->data = (T *)aligned_alloc(64, requiredSize * sizeof(T));
+            this->data = (T *)aligned_alloc(1024, requiredSize * sizeof(T));
             if (!this->data) {
                 printf("Failed to alloc mem for KV Cache [%d][%d][%d][%d].\n", maxSeqLen, batchSize, headNum, headSize);
                 exit(-1);

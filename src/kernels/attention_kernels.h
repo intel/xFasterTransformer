@@ -76,7 +76,7 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
             kvStride);
 #endif
 
-#pragma omp parallel for collapse(2) num_threads(1)
+#pragma omp parallel for collapse(2)
     for (int b = 0; b < batchSize; ++b) {
         for (int i = 0; i < qHeadNum; ++i) {
             int tid = omp_get_thread_num();
