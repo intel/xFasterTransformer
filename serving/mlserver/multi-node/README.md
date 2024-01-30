@@ -30,7 +30,7 @@ More parameter options settings:
 
 ## 2. Start MLServer
 ```
-cd mlserver/llama2_multi_node
+cd mlserver/multi-node
 mlserver start .
 ```
 

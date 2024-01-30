@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-from mlserver import MLModel
+from mlserver import MLModel, types
+from mlserver.codecs import StringCodec
 from mlserver.codecs import decode_args
 from transformers import AutoTokenizer
 import torch
-from typing import List
+from typing import List, Dict, Any
 import time
 
-
+import json
 import grpc
 import xft_pb2
 import xft_pb2_grpc
@@ -28,10 +29,6 @@ from grpc_health.v1 import health_pb2_grpc
 
 
 TOKEN_PATH = "/data/llama-2-7b-chat-hf"
-
-B_INST, E_INST = "[INST]", "[/INST]"
-B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
-EOS_ID = 2
 
 XFT_IP = "localhost"
 XFT_PORT = "50051"
@@ -63,7 +60,8 @@ class XFTLlama2Model(MLModel):
         )
 
         # Llama doesn't have padding ID.
-        self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
+        if self._tokenizer.pad_token_id is None:
+            self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
 
         self.channel = grpc.insecure_channel(f"{XFT_IP}:{XFT_PORT}")
         self.stub = xft_pb2_grpc.XFTServerStub(self.channel)
@@ -71,8 +69,6 @@ class XFTLlama2Model(MLModel):
         return health_check_call(health_stub)
 
     def create_chat_input_token(self, query):
-        # 构造llama2-chat输入
-        query = [f"{B_INST} {q.strip()} {E_INST}" for q in query]
         return self._tokenizer(query, return_tensors="pt", padding=True).input_ids
 
     @decode_args
@@ -88,9 +84,20 @@ class XFTLlama2Model(MLModel):
         response_ids = torch.Tensor(response.Ids).view(response.batch_size, response.seq_len)
         response = self._tokenizer.batch_decode(response_ids, skip_special_tokens=True)
         return response
+    
+    def _extract_json(self, payload: types.InferenceRequest) -> Dict[str, Any]:
+        inputs = {}
+        for inp in payload.inputs:
+            inputs[inp.name] = json.loads(
+                "".join(self.decode(inp, default_codec=StringCodec))
+            )
 
-    async def predict_stream(self, questions: List[str]) -> List[str]:
-        input_token_ids = self.create_chat_input_token(questions)
+        return inputs   
+
+    async def predict_stream(self, payload: types.InferenceRequest):
+        request = self._extract_json(payload)
+        query = request["xft-llama-2-model"]["prompt"]
+        input_token_ids = self.create_chat_input_token(query)
 
         for response in self.stub.predict_stream(
             xft_pb2.QueryIds(
@@ -100,4 +107,6 @@ class XFTLlama2Model(MLModel):
             )
         ):
             next_token_id = response.Ids[0]
-            yield f"data: {self._tokenizer.decode(next_token_id, skip_special_tokens=True)}\n\n"
+            next_token = self._tokenizer.decode(next_token_id, skip_special_tokens=True)
+            if next_token != '':
+                yield f"data: {next_token}\n\n"

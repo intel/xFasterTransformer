@@ -16,18 +16,16 @@ from mlserver.codecs import StringCodec
 import requests
 
 DEFAULT_QUERY = "Hello! How are you today?"
-B_INST, E_INST = "[INST]", "[/INST]"
 
-while True:
-    input_prompt = input("[Please enter the query]: ")
-    if input_prompt == "":
-        input_prompt = DEFAULT_QUERY
-        print("[Use default query]:" + input_prompt)
+input_prompt = input("[Please enter the query]: ")
+if input_prompt == "":
+    input_prompt = DEFAULT_QUERY
+    print("[Use default query]:" + input_prompt)
 
-    inference_request = {
-        "inputs": [StringCodec.encode_input(name="questions", payload=[input_prompt], use_bytes=False).dict()]
-    }
+inference_request = {
+    "inputs": [StringCodec.encode_input(name="questions", payload=[input_prompt], use_bytes=False).dict()]
+}
 
-    r = requests.post("http://127.0.0.1:8080/v2/models/xft-llama-2-model/infer", json=inference_request)
+r = requests.post("http://127.0.0.1:8080/v2/models/xft-llama-2-model/infer", json=inference_request)
 
-    print("[Response]:" + r.json()["outputs"][0]["data"][0].split(E_INST, 1)[1].lstrip())
+print("[Response]:" + r.json()["outputs"][0]["data"][0])
