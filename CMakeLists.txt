@@ -52,7 +52,7 @@ if(GCC_VERSION VERSION_GREATER_EQUAL "10.1")
 
     # Check the result and show an error message if the feature is not supported
     if(NOT SUPPORTS_FEATURE)
-        message(FATAL_ERROR "Error: Your compiler has issues to support avx512bf16.")
+        message(FATAL_ERROR "Error: Your compiler has issues to support avx512bf16.\n We recommend GCC version >= 12.3.0")
     endif()
 endif()
 
