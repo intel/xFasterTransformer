@@ -18,9 +18,11 @@
 
 template <typename WeiT>
 LlamaLLM<WeiT>::LlamaLLM(const std::string &modelPath)
-    : CommonDecoder<
-            Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, float, typename TypeSelector<WeiT>::ImType, float, true>,
-            LlamaMLP<WeiT>, float>(modelPath, "llama") {
+    : CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                            typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+            LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType>,
+            typename TypeSelector<WeiT>::KVCacheType>(modelPath, "llama") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -125,7 +127,17 @@ void LlamaLLM<WeiT>::embeddingForward(int *ids, float *output, int batchSize, in
 }
 
 template <typename WeiT>
+void LlamaLLM<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+    embedding->forward(ids, output, batchSize, seqLen);
+}
+
+template <typename WeiT>
 void LlamaLLM<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
+
+template <typename WeiT>
+void LlamaLLM<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 

@@ -21,6 +21,7 @@
 #include "bfloat16.h"
 #include "compile_util.h"
 #include "float16.h"
+#include "intrinsics_util.h"
 #include "matmul_helper.h"
 #include "my_types.h"
 #include "timeline.h"
@@ -58,10 +59,10 @@ public:
     }
 
     // result = x * weight + bias + input
-    template <typename WeiT>
-    static void denseWithSum(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
+    template <typename InT, typename WeiT, typename OutT>
+    static void denseWithSum(hpj::Matrix<InT> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
             hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias,
-            hpj::Matrix<float> &input, hpj::Matrix<float> &result) {
+            hpj::Matrix<InT> &input, hpj::Matrix<OutT> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "denseWithSum error: x.Cols (%d) != weight.Rows (%d)", x.Cols(),
                 weight.Rows());
         REQUIRES(x.Rows() == result.Rows(), "denseWithSum error: x.Rows (%d) != result.Rows (%d)", x.Rows(),
@@ -84,10 +85,10 @@ public:
 
     // result = x * weight + bias + gamma * input
     // TODO: some path is commented
-    template <typename WeiT>
-    static void denseWithScaledSum(hpj::Matrix<float> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
+    template <typename InT, typename WeiT, typename OutT>
+    static void denseWithScaledSum(hpj::Matrix<InT> &x, hpj::Matrix<WeiT> &weight, hpj::Vector<float> &scaleWeight,
             hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight, hpj::Vector<float> &bias, float gamma,
-            hpj::Matrix<float> &input, hpj::Matrix<float> &result) {
+            hpj::Matrix<InT> &input, hpj::Matrix<OutT> &result) {
         REQUIRES(x.Cols() == weight.Rows(), "Error: x.Cols() != weight.Rows()");
         REQUIRES(x.Rows() == result.Rows(), "Error: x.Rows() != result.Rows()");
         REQUIRES(weight.Cols() == result.Cols(), "Error: weight.Cols() != result.Cols()");
@@ -512,7 +513,8 @@ public:
     }
 
     // compute silu on the left half and then add it with the right half
-    static void siluSum(hpj::Matrix<float> &src) {
+    template <typename T>
+    static void siluSum(hpj::Matrix<T> &src) {
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
         int M = src.Rows();
@@ -524,13 +526,13 @@ public:
             for (int64_t j = 0; j < N; j += 16) {
                 int remain = N - j;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-                auto left = _mm512_maskz_loadu_ps(mask, src.Data() + i * stride + j);
-                auto right = _mm512_maskz_loadu_ps(mask, src.Data() + i * stride + j + N);
+                auto left = xft::load_avx512(mask, src.Data() + i * stride + j);
+                auto right = xft::load_avx512(mask, src.Data() + i * stride + j + N);
                 auto x0 = BertUtil::vexp(_mm512_mul_ps(left, negOne));
                 auto x1 = _mm512_add_ps(one, x0);
                 auto x2 = _mm512_div_ps(left, x1);
                 auto res = _mm512_mul_ps(right, x2);
-                _mm512_mask_storeu_ps(src.Data() + i * stride + j, mask, res);
+                xft::store_avx512(src.Data() + i * stride + j, mask, res);
             }
         }
     }

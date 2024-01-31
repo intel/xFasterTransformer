@@ -24,7 +24,7 @@
 
 template <typename WeiT, typename NormT = RmsNorm>
 class ChatGLM2 : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, float, float, float, true>,
-                         ChatGLM2MLP<WeiT, NormT, true>> {
+                         ChatGLM2MLP<WeiT, float, float, float, NormT, true>> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();

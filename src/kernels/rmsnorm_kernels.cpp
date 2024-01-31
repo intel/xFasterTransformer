@@ -18,34 +18,19 @@
 #include "dtype.h"
 #include "float16.h"
 #include "intrinsic_ext.h"
+#include "intrinsics_util.h"
 #include "my_types.h"
 #include "rmsnorm_kernels.h"
 
 namespace xft {
 
-template <typename T>
-void rmsNorm(T *output, const float *input, const float *weight, int rows, int cols, int iStride, int oStride,
+template <typename Tout, typename Tin>
+void rmsNorm(Tout *output, const Tin *input, const float *weight, int rows, int cols, int iStride, int oStride,
         float epsilon) {
-    static_assert(std::is_same_v<T, float> || std::is_same_v<T, bfloat16_t>,
-            "Template parameter of rmsNorm must be either float or bfloat16_t");
-
-#if (__GNUC__ > 10) || ((__GNUC__ == 10) && (__GNUC_MINOR__ >= 1))
-    auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) { return (__m256i)_mm512_cvtneps_pbh(input_vector); };
-#else
-    const __m512i nan = _mm512_set1_epi32(0xffff);
-    const __m512i ones = _mm512_set1_epi32(0x1);
-    const __m512i vec_bias = _mm512_set1_epi32(0x7fff);
-    auto cvt_fp32_to_bf16 = [&](const __m512 input_vector) {
-        __m512i value = _mm512_castps_si512(input_vector);
-        auto mask = _mm512_cmp_ps_mask(input_vector, input_vector, _CMP_ORD_Q);
-        auto result = _mm512_and_si512(_mm512_srli_epi32(value, 16), ones);
-        result = _mm512_add_epi32(result, vec_bias);
-        result = _mm512_add_epi32(result, value);
-        result = _mm512_srli_epi32(result, 16);
-        result = _mm512_mask_blend_epi32(mask, nan, result);
-        return _mm512_cvtusepi32_epi16(result);
-    };
-#endif
+    static_assert(std::is_same_v<Tout, float> || std::is_same_v<Tout, bfloat16_t>,
+            "Output of rmsNorm must be either float or bfloat16_t.");
+    static_assert(std::is_same_v<Tin, float> || std::is_same_v<Tin, bfloat16_t>,
+            "Input of rmsNorm must be either float or bfloat16_t.");
 
     int size = cols;
     if (iStride == -1) iStride = cols;
@@ -53,8 +38,8 @@ void rmsNorm(T *output, const float *input, const float *weight, int rows, int c
 
 #pragma omp parallel for
     for (int r = 0; r < rows; ++r) {
-        const float *px = input + r * iStride;
-        T *py = output + r * oStride;
+        const Tin *px = input + r * iStride;
+        Tout *py = output + r * oStride;
 
         float squareSum = 0;
 
@@ -63,13 +48,13 @@ void rmsNorm(T *output, const float *input, const float *weight, int rows, int c
         int col = 0;
         for (; col + 15 < size; col += 16) {
             // SUM(x*x)
-            __m512 vx = _mm512_loadu_ps(px + col);
+            __m512 vx = xft::load_avx512(px + col);
             __m512 tmp = _mm512_mul_ps(vx, vx);
             vsqare = _mm512_add_ps(vsqare, tmp);
         }
         if (col < size) {
             __mmask16 mask = (1 << (size - col)) - 1;
-            __m512 vx = _mm512_maskz_loadu_ps(mask, px + col);
+            __m512 vx = xft::load_avx512(mask, px + col);
             __m512 tmp = _mm512_mul_ps(vx, vx);
             vsqare = _mm512_add_ps(vsqare, tmp);
         }
@@ -81,29 +66,17 @@ void rmsNorm(T *output, const float *input, const float *weight, int rows, int c
         __m512 vvar = _mm512_set1_ps(var);
 
         for (col = 0; col + 15 < size; col += 16) {
-            __m512 vx = _mm512_loadu_ps(px + col);
+            __m512 vx = xft::load_avx512(px + col);
             __m512 vw = _mm512_loadu_ps(weight + col);
             __m512 vy = vx * vvar * vw;
-            if constexpr (std::is_same_v<T, float>) {
-                _mm512_storeu_ps(py + col, vy);
-            }
-            if constexpr (std::is_same_v<T, bfloat16_t>) {
-                __m256i vbf16 = cvt_fp32_to_bf16(vy);
-                _mm256_mask_storeu_epi16(py + col, 0xffff, vbf16);
-            }
+            xft::store_avx512(py + col, 0xffff, vy);
         }
         if (col < size) {
             __mmask16 mask = (1 << (size - col)) - 1;
-            __m512 vx = _mm512_maskz_loadu_ps(mask, px + col);
+            __m512 vx = xft::load_avx512(mask, px + col);
             __m512 vw = _mm512_maskz_loadu_ps(mask, weight + col);
             __m512 vy = vx * vvar * vw;
-            if constexpr (std::is_same_v<T, float>) {
-                _mm512_mask_storeu_ps(py + col, mask, vy);
-            }
-            if constexpr (std::is_same_v<T, bfloat16_t>) {
-                __m256i vbf16 = cvt_fp32_to_bf16(vy);
-                _mm256_mask_storeu_epi16(py + col, mask, vbf16);
-            }
+            xft::store_avx512(py + col, mask, vy);
         }
     } // end for rows
 }
@@ -162,12 +135,17 @@ void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *weig
 
 void rmsNorm(float *output, const float *input, const float *weight, int rows, int cols, int iStride, int oStride,
         float epsilon) {
-    rmsNorm<float>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+    rmsNorm<float, float>(output, input, weight, rows, cols, iStride, oStride, epsilon);
 }
 
 void rmsNorm(bfloat16_t *output, const float *input, const float *weight, int rows, int cols, int iStride, int oStride,
         float epsilon) {
-    rmsNorm<bfloat16_t>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+    rmsNorm<bfloat16_t, float>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+}
+
+void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const float *weight, int rows, int cols, int iStride, int oStride,
+        float epsilon) {
+    rmsNorm<bfloat16_t, bfloat16_t>(output, input, weight, rows, cols, iStride, oStride, epsilon);
 }
 
 void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols, int iStride,
