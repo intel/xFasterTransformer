@@ -486,8 +486,8 @@ protected:
         return this->context.get();
     }
 
-    // SrcT: float or int8_t
-    template <typename SrcT>
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
     void setDecoderWeights(DECODER *pdecoder, const std::string &modelPath, int layerIdx) {
         const int hiddenSize = getContext()->hiddenSize;
         const int imSize = getContext()->intermediateSize;
@@ -499,22 +499,22 @@ protected:
         int qkvSize = qSize + kvSize + kvSize;
 
 #define ALLOC(size, alignment) aligned_alloc((alignment), (size))
-        SrcT *qkvWeight = (SrcT *)ALLOC(hiddenSize * qkvSize * sizeof(SrcT), 64);
+        OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;
         float *qkvBias = (float *)ALLOC(qkvSize * sizeof(float), 64);
 
-        SrcT *attnOutWeight = (SrcT *)ALLOC(hiddenSize * hiddenSize * sizeof(SrcT), 64);
+        OriWeiT *attnOutWeight = (OriWeiT *)ALLOC(hiddenSize * hiddenSize * sizeof(OriWeiT), 64);
         float *attnOutScales = nullptr;
         float *attnOutZeros = nullptr;
         float *attnOutBias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
 
-        SrcT *fc1Weight = (SrcT *)ALLOC(hiddenSize * imSize * mlpFactor * sizeof(SrcT), 64);
+        OriWeiT *fc1Weight = (OriWeiT *)ALLOC(hiddenSize * imSize * mlpFactor * sizeof(OriWeiT), 64);
         float *fc1Scales = nullptr;
         float *fc1Zeros = nullptr;
         float *fc1Bias = (float *)ALLOC(imSize * sizeof(float), 64);
 
-        SrcT *fc2Weight = (SrcT *)ALLOC(hiddenSize * imSize * sizeof(SrcT), 64);
+        OriWeiT *fc2Weight = (OriWeiT *)ALLOC(hiddenSize * imSize * sizeof(OriWeiT), 64);
         float *fc2Scales = nullptr;
         float *fc2Zeros = nullptr;
         float *fc2Bias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
@@ -524,12 +524,12 @@ protected:
         float *ln2Gamma = (float *)ALLOC(hiddenSize * sizeof(float), 64);
         float *ln2Beta = (float *)ALLOC(hiddenSize * sizeof(float), 64);
 
-        SrcT *fc3Weight = nullptr;
+        OriWeiT *fc3Weight = nullptr;
         float *fc3Scales = nullptr;
         float *fc3Zeros = nullptr;
 
         // INT8 quant, wbits = 8, qweight dtype: int8
-        if constexpr (std::is_same_v<SrcT, int8_t>) {
+        if constexpr (std::is_same_v<OriWeiT, int8_t>) {
             qkvZeros = (float *)ALLOC(qkvSize * sizeof(float), 64);
             qkvScales = (float *)ALLOC(qkvSize * sizeof(float), 64);
             attnOutZeros = (float *)ALLOC(hiddenSize * sizeof(float), 64);
@@ -575,7 +575,7 @@ protected:
             }
             // gate, up, down weights for Llama like model
             else {
-                fc3Weight = (SrcT *)ALLOC(hiddenSize * imSize * sizeof(SrcT), 64);
+                fc3Weight = (OriWeiT *)ALLOC(hiddenSize * imSize * sizeof(OriWeiT), 64);
                 fc3Zeros = (float *)ALLOC(hiddenSize * sizeof(float), 64);
                 fc3Scales = (float *)ALLOC(hiddenSize * sizeof(float), 64);
 
@@ -601,7 +601,7 @@ protected:
                         fc3Scales, hiddenSize, WDataType::FP32);
             }
 
-        } else if constexpr (std::is_same_v<SrcT, float>) {
+        } else if constexpr (std::is_same_v<OriWeiT, float>) {
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.weight.0.bin",
                     qkvWeight, hiddenSize * qkvSize, getDataType());
@@ -618,7 +618,7 @@ protected:
             }
             // gate, up, down weights for Llama like model
             else {
-                fc3Weight = (SrcT *)ALLOC(hiddenSize * imSize * sizeof(SrcT), 64);
+                fc3Weight = (OriWeiT *)ALLOC(hiddenSize * imSize * sizeof(OriWeiT), 64);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.weight.0.bin",
                         fc1Weight, hiddenSize * imSize * mlpFactor, getDataType());
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.weight.0.bin",

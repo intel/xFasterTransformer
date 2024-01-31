@@ -69,16 +69,16 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    // SrcT: float or int8_t
-    template <typename SrcT>
-    void setWeights(DecoderContext *ctx, const SrcT *queryWeight, const float *queryScale, const float *queryZero,
-            const float *queryBias, const SrcT *keyWeight, const float *keyScale, const float *keyZero,
-            const float *keyBias, const SrcT *valueWeight, const float *valueScale, const float *valueZero,
-            const float *valueBias, const SrcT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
-            const float *attnOutBias, const float *ln1Gamma, const float *ln1Beta, const SrcT *fc1Weight,
-            const float *fc1Scales, const float *fc1Zeros, const float *fc1Bias, const SrcT *fc2Weight,
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
+            const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
+            const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
+            const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
+            const float *attnOutBias, const float *ln1Gamma, const float *ln1Beta, const OriWeiT *fc1Weight,
+            const float *fc1Scales, const float *fc1Zeros, const float *fc1Bias, const OriWeiT *fc2Weight,
             const float *fc2Scales, const float *fc2Zeros, const float *fc2Bias, const float *ln2Gamma,
-            const float *ln2Beta, const SrcT *fc3Weight, const float *fc3Scales, const float *fc3Zeros,
+            const float *ln2Beta, const OriWeiT *fc3Weight, const float *fc3Scales, const float *fc3Zeros,
             bool trans = true) {
         attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
                 valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,

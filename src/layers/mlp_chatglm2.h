@@ -21,11 +21,11 @@ class ChatGLM2MLP : public LlamaMLP<WeiT> {
 public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
 
-    // SrcT: float
-    template <typename SrcT>
-    void setWeights(DecoderContext *ctx, const SrcT *gate_upW, const float * /*unused*/, const float * /*unused*/,
-            const float * /*unused*/, const SrcT *downW, const float * /*unused*/, const float * /*unused*/,
-            const float * /*unused*/, const float *normW, const float * /*unused*/, const SrcT * /*unused*/,
+    // OriWeiT: float
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *gate_upW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const OriWeiT *downW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const float *normW, const float * /*unused*/, const OriWeiT * /*unused*/,
             const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
@@ -40,19 +40,19 @@ public:
 
         setMLPOPTConfig();
         if (!enableCATMLP) {
-            SrcT *gateW = (SrcT *)malloc(hiddenSize * colSplit * sizeof(SrcT));
-            SrcT *upW = (SrcT *)malloc(hiddenSize * colSplit * sizeof(SrcT));
+            OriWeiT *gateW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
+            OriWeiT *upW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             if (trans) {
                 int blockSize = colSplit * hiddenSize;
-                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(SrcT));
+                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(OriWeiT));
                 memcpy(upW, gate_upW + intermediateSize * hiddenSize + ctx->splitIdx * blockSize,
-                        blockSize * sizeof(SrcT));
+                        blockSize * sizeof(OriWeiT));
             } else {
-                const SrcT *weightPTR = gate_upW;
+                const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
+                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
-                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
+                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
             }
@@ -74,13 +74,13 @@ public:
                 exit(-1);
             } else {
                 int colSplitStride = colSplit * 2;
-                SrcT *gateUpW = (SrcT *)malloc(hiddenSize * colSplitStride * sizeof(SrcT));
-                const SrcT *weightPTR = gate_upW;
+                OriWeiT *gateUpW = (OriWeiT *)malloc(hiddenSize * colSplitStride * sizeof(OriWeiT));
+                const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(SrcT));
+                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                     memcpy(gateUpW + colSplit + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(SrcT));
+                            colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
                 hpj::Matrix<WeiT> quantizedCatWeights;

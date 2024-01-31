@@ -40,11 +40,11 @@ public:
 
     LlamaMLP(DecoderContext *ctx) {}
 
-    // SrcT: float or int8_t
-    template <typename SrcT>
-    void setWeights(DecoderContext *ctx, const SrcT *gateW, const float *gateS, const float *gateZ,
-            const float * /*unused*/, const SrcT *upW, const float *upS, const float *upZ, const float * /*unused*/,
-            const float *normW, const float * /*unused*/, const SrcT *downW, const float *downS, const float *downZ,
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
+            const float * /*unused*/, const OriWeiT *upW, const float *upS, const float *upZ, const float * /*unused*/,
+            const float *normW, const float * /*unused*/, const OriWeiT *downW, const float *downS, const float *downZ,
             bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;

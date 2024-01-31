@@ -27,11 +27,11 @@ class MLP {
 public:
     MLP(DecoderContext *ctx) {}
 
-    // SrcT: float or int8_t
-    template <typename SrcT>
-    void setWeights(DecoderContext *ctx, const SrcT *_imWeight, const float * /*unused*/, const float * /*unused*/,
-            const float *_imBias, const SrcT *_outputWeight, const float * /*unused*/, const float * /*unused*/,
-            const float *_outputBias, const float *_gamma2, const float *_beta2, const SrcT * /*unused*/,
+    // OriWeiT: float
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *_imWeight, const float * /*unused*/, const float * /*unused*/,
+            const float *_imBias, const OriWeiT *_outputWeight, const float * /*unused*/, const float * /*unused*/,
+            const float *_outputBias, const float *_gamma2, const float *_beta2, const OriWeiT * /*unused*/,
             const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
