@@ -20,6 +20,7 @@
 #include <string>
 
 #include "my_types.h"
+#include "split_util.h"
 
 struct RopeParams {
     float base;
@@ -188,8 +189,8 @@ public:
         int qkvCols = qCols + kCols + vCols;
         int qkvStride = (qkvCols % 512 == 0 ? qkvCols + pad : qkvCols); // stride for the concated QKV
         int mlpFactor = (this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
-        int imCols = splitIdx < (intermediateSize % numSplit) ? (intermediateSize / numSplit + 1)
-                                                              : (intermediateSize / numSplit);
+        auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
+        int imCols = range.second - range.first;
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output
 
         uint64_t normSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
