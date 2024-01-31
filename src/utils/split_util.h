@@ -13,6 +13,16 @@ public:
             startId = splitIdx * tasksPerSplit;
             endId = startId + tasksPerSplit;
         } else {
+            int granularity = 1;
+            int candidates[] = {64, 16, 2};
+            for (int i = 0; i < sizeof(candidates) / sizeof(int); ++i) {
+                if (N % candidates[i] == 0) {
+                    N /= candidates[i];
+                    granularity = candidates[i];
+                    break;
+                }
+            }
+
             int baseTasksPerSplit = N / splits;
             int remainingTasks = N % splits;
 
@@ -29,6 +39,9 @@ public:
                 startId = taskOffset + (splitIdx - remainingTasks) * baseTasksPerSplit;
                 endId = startId + baseTasksPerSplit;
             }
+
+            startId *= granularity;
+            endId *= granularity;
         }
 
         return std::make_pair(startId, endId);
