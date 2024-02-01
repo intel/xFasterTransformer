@@ -152,59 +152,47 @@ if __name__ == "__main__":
         # Perform 100 runs and store execution times in a list
         execution_times = []
         first_token_times = []
-        remained_token_times = []
+        next_token_times = []
         total_times = []
         # warm up
         for i in range(args.warmup):
             model.generate(input_ids, num_beams=args.beam_width, max_length=max_len, streamer=None)
+
         print("Start benchmark:")
         for i in range(args.iteration):
-            total_time = 0.0
             print("iteration", i, ":")
             model.config(max_length=max_len, num_beams=args.beam_width)
             model.input(input_ids)
             # first token
             start_time = time.perf_counter()
             next_tokens = model.forward()
-            end_time = time.perf_counter()
-            first_token_time = end_time - start_time
-            total_time += first_token_time
+            first_token_time = time.perf_counter() - start_time
             first_token_times.append(first_token_time)
             # remaining tokens
             cost_list = []
             while not model.is_done():
                 start_time = time.perf_counter()
                 next_tokens = model.forward()
-                end_time = time.perf_counter()
-                total_time += end_time - start_time
-                cost_list.append(end_time - start_time)
+                next_time = time.perf_counter() - start_time
+                cost_list.append(next_time)
             generated_ids = model.finalize()
-            total_times.append(total_time)
-            remained_token_times.append(sum(cost_list))
+            total_times.append(first_token_time + sum(cost_list))
+            next_token_times += cost_list
 
-        output_token_nums = int(torch.numel(generated_ids) / args.batch_size) - input_token_nums
-        # Sort the execution times in ascending order
-        remained_token_times.sort()
-        # Get the max, min, avg and 90th element (index 89) from the sorted list
-        next_token_latency_max = remained_token_times[-1] * 1000 / (output_token_nums - 1)
-        next_token_latency_min = remained_token_times[0] * 1000 / (output_token_nums - 1)
-        next_token_latency_avg = np.mean(remained_token_times) * 1000 / (output_token_nums - 1)
-        next_token_latency_90 = remained_token_times[int(args.iteration * 0.9) - 1] * 1000 / (output_token_nums - 1)
-        # Calculate total latency
-        inference_latency = sum(total_times) / len(total_times)
-        # Calculate the first token latency
-        first_token_latency = sum(first_token_times) / len(first_token_times) * 1000
-        Next_token_throughput = 1000 / next_token_latency_90 * args.batch_size
+        total_times = list(map(lambda x: x * 1000, total_times))
+        first_token_times = list(map(lambda x: x * 1000, first_token_times))
+        next_token_times = list(map(lambda x: x * 1000, next_token_times))
+
         print("\n")
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
-        print(f"Inference Latency:\t{inference_latency:.2f} s")
-        print(f"First token Avg Latency:\t{first_token_latency:.2f} ms")
-        print(f"Next token Max Latency:\t{next_token_latency_max:.2f} ms")
-        print(f"Next token Min Latency:\t{next_token_latency_min:.2f} ms")
-        print(f"Next token P90 Latency:\t{next_token_latency_90:.2f} ms")
-        print(f"Next token Avg Latency:\t{next_token_latency_avg:.2f} ms")
-        print(f"Next token Latency:\t{next_token_latency_90:.2f} ms")
-        print(f"Throughput without 1st token:\t{Next_token_throughput:.2f} tokens/s")
+        print(f"Inference Avg Latency:\t{np.mean(total_times):.2f} s")
+        print(f"First token Avg Latency:\t{np.mean(first_token_times):.2f} ms")
+        print(f"Next token Max Latency:\t{np.max(next_token_times):.2f} ms")
+        print(f"Next token Min Latency:\t{np.min(next_token_times):.2f} ms")
+        print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
+        print(f"Next token Avg Latency:\t{np.max(next_token_times):.2f} ms")
+        print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
+        print(f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s")
     else:
         for i in range(args.warmup + args.iteration):
             model.generate()

@@ -69,3 +69,14 @@ bash run_benchmark.sh -m llama-2-7b -d bf16 -s 1 -bs 1 -in 1024 -out 128 -i 10
 
 **Notes!!!**: The system and CPU configuration may be different. For the best performance, please try to modify OMP_NUM_THREADS, datatype and the memory nodes number (check the memory nodes using `numactl -H`) according to your test environment.
 
+
+## Step 4: Run distributed scripts
+
+- Ensure identical physical hardware, and the network is on the same subnet.
+- [Optional] Use NFS to store code and ensure a consistent environment.
+- Enable passwordless SSH between machines.
+- Maintain the IP <-> hosts mapping in each device `/etc/hosts` file.
+
+```bash
+bash -x run_benchmark_dist.sh
+```
