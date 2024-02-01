@@ -21,14 +21,14 @@ class ChatGLM2MLP : public LlamaMLP<WeiT> {
 public:
     ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
 
-    // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
+    // OriWeiT: float
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *gate_upW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const OriWeiT *downW, const float * /*unused*/, const float * /*unused*/,
+            const float * /*unused*/, const float *normW, const float * /*unused*/, const OriWeiT * /*unused*/,
+            const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int intermediateSize = ctx->intermediateSize;
-
-        const float *gate_upW = params[0];
-        const float *downW = params[2];
-        const float *normW = params[4];
 
         REQUIRES(ctx->actType == DecoderContext::SWIGLU, "unsupported activation.");
 
@@ -40,29 +40,29 @@ public:
 
         setMLPOPTConfig();
         if (!enableCATMLP) {
-            float *gateW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
-            float *upW = (float *)malloc(hiddenSize * colSplit * sizeof(float));
+            OriWeiT *gateW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
+            OriWeiT *upW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             if (trans) {
                 int blockSize = colSplit * hiddenSize;
-                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(float));
+                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(OriWeiT));
                 memcpy(upW, gate_upW + intermediateSize * hiddenSize + ctx->splitIdx * blockSize,
-                        blockSize * sizeof(float));
+                        blockSize * sizeof(OriWeiT));
             } else {
-                const float *weightPTR = gate_upW;
+                const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(float));
+                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
-                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(float));
+                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
             }
 
-            MMHelper::convertWeight(trans, hiddenSize, colSplit, gateW, convertedGateWeight, this->gateWeightScale,
-                    this->gateWeightZero, this->gateWeightSum);
+            MMHelper::convertWeight(trans, hiddenSize, colSplit, gateW, nullptr, nullptr, convertedGateWeight,
+                    this->gateWeightScale, this->gateWeightZero, this->gateWeightSum);
             MMHelper::packWeight(trans, convertedGateWeight, this->gateWeight);
 
-            MMHelper::convertWeight(trans, hiddenSize, colSplit, upW, convertedUpWeight, this->upWeightScale,
-                    this->upWeightZero, this->upWeightSum);
+            MMHelper::convertWeight(trans, hiddenSize, colSplit, upW, nullptr, nullptr, convertedUpWeight,
+                    this->upWeightScale, this->upWeightZero, this->upWeightSum);
             MMHelper::packWeight(trans, convertedUpWeight, this->upWeight);
 
             free(gateW);
@@ -74,19 +74,18 @@ public:
                 exit(-1);
             } else {
                 int colSplitStride = colSplit * 2;
-                float *gateUpW = (float *)malloc(hiddenSize * colSplitStride * sizeof(float));
-                const float *weightPTR = gate_upW;
+                OriWeiT *gateUpW = (OriWeiT *)malloc(hiddenSize * colSplitStride * sizeof(OriWeiT));
+                const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(float));
+                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                     memcpy(gateUpW + colSplit + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(float));
+                            colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
                 hpj::Matrix<WeiT> quantizedCatWeights;
-                MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, quantizedCatWeights,
-                        this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
+                MMHelper::convertWeight(trans, hiddenSize, colSplitStride, gateUpW, nullptr, nullptr,
+                        quantizedCatWeights, this->catWeightsScale, this->catWeightsZero, this->catWeightsSum);
                 this->catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
                 MMHelper::packWeight(trans, quantizedCatWeights, this->catWeights);
                 free(gateUpW);
@@ -94,11 +93,11 @@ public:
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
-            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, this->downWeight,
-                    this->downWeightScale, this->downWeightZero, this->gateWeightSum);
+            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    this->downWeight, this->downWeightScale, this->downWeightZero, this->gateWeightSum);
         } else {
-            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, false, convertedDownWeight,
-                    this->downWeightScale, this->downWeightZero, this->downWeightSum);
+            MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
             MMHelper::packWeight(trans, convertedDownWeight, this->downWeight);
         }
 #ifdef DEBUG

@@ -42,16 +42,14 @@ public:
 
     LlamaMLP(DecoderContext *ctx) {}
 
-    // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
+            const float * /*unused*/, const OriWeiT *upW, const float *upS, const float *upZ, const float * /*unused*/,
+            const float *normW, const float * /*unused*/, const OriWeiT *downW, const float *downS, const float *downZ,
+            bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
-
-        // Refer to CommonDecoder for parameters order
-        const float *gateW = params[0];
-        const float *upW = params[2];
-        const float *normW = params[4];
-        const float *downW = params[6];
 
         REQUIRES(ctx->actType == DecoderContext::SILU, "unsupported activation.");
 
@@ -61,10 +59,10 @@ public:
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
         downWeight.Resize(it.second - it.first, hiddenSize);
 
-        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, gateW, true, quantizedGateWeight, gateWeightScale,
-                gateWeightZero, gateWeightSum);
-        MMHelper::convertWeight(
-                ctx, trans, hiddenSize, imSize, upW, true, quantizedUpWeight, upWeightScale, upWeightZero, upWeightSum);
+        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
+                gateWeightScale, gateWeightZero, gateWeightSum);
+        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight, upWeightScale,
+                upWeightZero, upWeightSum);
 
         setMLPOPTConfig();
         if (!enableCATMLP) {
@@ -84,11 +82,11 @@ public:
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
-            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, false, downWeight, downWeightScale,
-                    downWeightZero, downWeightSum);
+            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, downWeight,
+                    downWeightScale, downWeightZero, downWeightSum);
         } else {
-            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, false, quantizedDownWeight, downWeightScale,
-                    downWeightZero, downWeightSum);
+            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
+                    downWeightScale, downWeightZero, downWeightSum);
             MMHelper::packWeight(trans, quantizedDownWeight, downWeight);
         }
 

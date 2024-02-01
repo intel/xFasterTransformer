@@ -73,23 +73,23 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    void setWeights(DecoderContext *ctx, std::vector<float *> &params, bool trans = true) {
-        const float *queryWeight = params[0];
-        const float *queryBias = params[1];
-        const float *keyWeight = params[2];
-        const float *keyBias = params[3];
-        const float *valueWeight = params[4];
-        const float *valueBias = params[5];
-        const float *attnOutWeight = params[6];
-        const float *attnOutBias = params[7];
-        const float *gamma1 = params[8];
-        const float *beta1 = params[9];
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
+            const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
+            const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
+            const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
+            const float *attnOutBias, const float *ln1Gamma, const float *ln1Beta, const OriWeiT *fc1Weight,
+            const float *fc1Scales, const float *fc1Zeros, const float *fc1Bias, const OriWeiT *fc2Weight,
+            const float *fc2Scales, const float *fc2Zeros, const float *fc2Bias, const float *ln2Gamma,
+            const float *ln2Beta, const OriWeiT *fc3Weight, const float *fc3Scales, const float *fc3Zeros,
+            bool trans = true) {
+        attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
+                valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
+                ln1Gamma, ln1Beta, trans);
 
-        attn.setWeights(ctx, queryWeight, queryBias, keyWeight, keyBias, valueWeight, valueBias, attnOutWeight,
-                attnOutBias, gamma1, beta1, trans);
-
-        std::vector<float *> mlpParams(params.begin() + 10, params.end());
-        mlp.setWeights(ctx, mlpParams, trans);
+        mlp.setWeights(ctx, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma,
+                ln2Beta, fc3Weight, fc3Scales, fc3Zeros, trans);
     }
 
     template <typename InT, typename ImT, typename OutT, typename KVCacheT>

@@ -64,8 +64,12 @@ public:
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    void setWeights(DecoderContext *ctx, const float *queryWeight, const float *queryBias, const float *keyWeight,
-            const float *keyBias, const float *valueWeight, const float *valueBias, const float *attnOutWeight,
+    // OriWeiT: float or int8_t
+    template <typename OriWeiT>
+    void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
+            const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
+            const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
+            const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
             const float *attnOutBias, const float *gamma1, const float *beta1, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int headSize = ctx->attHeadSize;
@@ -77,34 +81,52 @@ public:
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
         qkvWeight.Resize(hiddenSize, responsibleCols);
 
-        float *concatBuf = (float *)malloc(hiddenSize * responsibleCols * sizeof(float));
+        OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT));
         if (trans) {
             memcpy(concatBuf, queryWeight + this->startQHead * headSize * hiddenSize,
-                    hiddenSize * qResponsibleCols * sizeof(float));
+                    hiddenSize * qResponsibleCols * sizeof(OriWeiT));
             memcpy(concatBuf + hiddenSize * qResponsibleCols, keyWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(float));
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
             memcpy(concatBuf + hiddenSize * (qResponsibleCols + kvResponsibleCols),
                     valueWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(float));
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
         } else {
             int qkvStride = (ctx->attHeadNum + ctx->kvHeadNum + ctx->kvHeadNum) * ctx->attHeadSize;
 #pragma omp parallel for
             for (int i = 0; i < hiddenSize; ++i) {
                 memcpy(concatBuf + i * responsibleCols, queryWeight + i * qkvStride + this->startQHead * headSize,
-                        qResponsibleCols * sizeof(float));
+                        qResponsibleCols * sizeof(OriWeiT));
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols,
-                        keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(float));
+                        keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols + kvResponsibleCols,
-                        valueWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(float));
+                        valueWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
             }
+        }
+        float *concatScale = nullptr;
+        float *concatZero = nullptr;
+        if constexpr (std::is_same_v<OriWeiT, int8_t>) {
+            concatScale = (float *)malloc(responsibleCols * sizeof(float));
+            concatZero = (float *)malloc(responsibleCols * sizeof(float));
+            memcpy(concatScale, queryScale + this->startQHead * headSize, qResponsibleCols * sizeof(float));
+            memcpy(concatScale + qResponsibleCols, keyScale + this->startKVHead * headSize,
+                    kvResponsibleCols * sizeof(float));
+            memcpy(concatScale + qResponsibleCols + kvResponsibleCols, valueScale + this->startKVHead * headSize,
+                    kvResponsibleCols * sizeof(float));
+            memcpy(concatZero, queryZero + this->startQHead * headSize, qResponsibleCols * sizeof(float));
+            memcpy(concatZero + qResponsibleCols, keyZero + this->startKVHead * headSize,
+                    kvResponsibleCols * sizeof(float));
+            memcpy(concatZero + qResponsibleCols + kvResponsibleCols, valueZero + this->startKVHead * headSize,
+                    kvResponsibleCols * sizeof(float));
         }
 
         hpj::Matrix<WeiT> convertedqkvWeight;
-        MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, convertedqkvWeight, qkvWeightScale,
-                qkvWeightZero, qkvWeightSum);
+        MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
+                convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
         MMHelper::packWeight(trans, convertedqkvWeight, qkvWeight);
 
         free(concatBuf);
+        free(concatScale);
+        free(concatZero);
 
 #ifdef DEBUG
         dbg.debugPrint("attention qkv weight: [%d, %d] (%d)\n", convertedqkvWeight.Rows(), convertedqkvWeight.Cols(),
@@ -128,9 +150,9 @@ public:
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
         hpj::Matrix<WeiT> convertedWeight;
-        MMHelper::convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, this->startQHead * headSize,
-                qResponsibleCols, false, convertedWeight, attnOutputWeightScale, attnOutputWeightZero,
-                attnOutputWeightSum, true);
+        MMHelper::convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, attnOutScale, attnOutZero,
+                this->startQHead * headSize, qResponsibleCols, false, convertedWeight, attnOutputWeightScale,
+                attnOutputWeightZero, attnOutputWeightSum, true);
         MMHelper::packWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG

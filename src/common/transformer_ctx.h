@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "my_types.h"
@@ -140,6 +141,7 @@ public:
 
         this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
         this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+        memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
 
         if (act == "relu") {
             this->actType = RELU;
@@ -215,6 +217,7 @@ public:
             free(this->rawBuffer);
 
             this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+            memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
         }
 
         // Assign the buffer
