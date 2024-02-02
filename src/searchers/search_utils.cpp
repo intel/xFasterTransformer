@@ -64,8 +64,10 @@ void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffs
 
 #pragma omp parallel for
     for (int b = 0; b < batchSize; b++) {
+        int startLogits = b * sampleSize;
         for (int index : cachedVec[b]) {
-            logits[index] = logits[index] < 0 ? logits[index] * penalty : logits[index] / penalty;
+            float &logit = logits[startLogits + index];
+            logit = logit < 0 ? logit * penalty : logit / penalty;
         }
     }
 }
