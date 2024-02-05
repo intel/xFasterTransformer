@@ -13,31 +13,17 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <cmath>
 
 #include "common_decoder.h"
-#include "mlp_llama.h"
 #include "rms_norm.h"
-#include "rotary_embedding_qwen.h"
-#include "token_embedding.h"
-#include "attn_qwen.h"
+#include "attention.h"
 
-
-// TODO: Need to check FP16 KV Cache
-template <typename WeiT>
-class Qwen : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS = RmsNorm>
+class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
 public:
-    Qwen(const std::string &modelPath);
-    ~Qwen();
-
-    void prepareAttnMask(int *ids, int step);
-    void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
-    void lastLayerNormForward(float *input, float *output, int rows);
-
-private:
-    void setEmbeddingWeights(const std::string &modelPath);
-    void setFinalLnWeight(const std::string &modelPath);
-
-private:
-    TokenEmbedding<float16_t> *embedding;
-    RmsNorm finalLN;
+    QwenAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
+        this->qkpo.init_logn(ctx->maxSeqLength);
+    }
 };

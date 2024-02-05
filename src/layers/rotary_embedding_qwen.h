@@ -44,12 +44,15 @@ public:
     void forward(
             bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
+    void init_logn( const int max_length = 2048);
+
 private:
     float getNewBaseValue(const int true_seq_len, const int max_seq_length = -1);
     void QwenCalEmb(float *inv_freq, float base, std::unordered_map<float, std::tuple<float *, float *>> &embCosSin);
 
 private:
     static bool initialized;
+    static bool logn_initialized;
     static int inv_freq_size;
     static int max_seq_len_cached;
     int dim = 0;

@@ -20,8 +20,10 @@
 static std::unordered_map<float, std::tuple<float *, float *>> embCosSin;
 static float *cur_emb_cos = nullptr;
 static float *cur_emb_sin = nullptr;
+static float *logn = nullptr;
 
 bool QwenRotaryEmbedding::initialized = false;
+bool QwenRotaryEmbedding::logn_initialized = false;
 int QwenRotaryEmbedding::max_seq_len_cached = -1;
 int QwenRotaryEmbedding::inv_freq_size = -1;
 
@@ -53,6 +55,28 @@ QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_e
 };
 
 QwenRotaryEmbedding::~QwenRotaryEmbedding() {}
+
+void QwenRotaryEmbedding::init_logn(const int max_seq_length) {
+    if (!logn_initialized) {
+        logn_initialized = true;
+        /*LOGN
+        logn_list = [
+            math.log(i, self.seq_length) if i > self.seq_length else 1
+            for i in range(1, 32768)
+        ]
+        */
+        logn = (float *)malloc(32768 * sizeof(float));
+#pragma omp parallel for
+        for (size_t i = 0; i < max_seq_length; i++) {
+            logn[i] = 1.0;
+        }
+        float log_base = log(max_seq_length);
+#pragma omp parallel for
+        for (size_t i = max_seq_length; i < 32768; i++) {
+            logn[i] = log(i + 1) / log_base;
+        }
+    }
+}
 
 float QwenRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max_seq_length) {
     if (max_seq_length <= 0) { return (float)1.0; }
@@ -126,6 +150,7 @@ void QwenRotaryEmbedding::forward(
     const int qHeads = qkShape[2];
     const int kHeads = qkShape[4];
     const int maxSeqLength = qkShape[5];
+    const int pastKeyLength = qkShape[6];
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
 
@@ -149,33 +174,68 @@ void QwenRotaryEmbedding::forward(
         cur_emb_sin = std::get<1>(value);
     }
 
-    // for (size_t i = 0; i < emb_size; i++) {
-    //     emb[i] = x[i] * emb_cos[position_ids[i % cached_size / dim]][i % dim];
-    //     int offset = (i % dim + this->inv_freq_size) % dim;
-    //     float sign = ((offset < this->inv_freq_size) * 1) + ((offset >= this->inv_freq_size) * -1);
-    //     emb[i] += x[(i - i % dim) + offset] * sign * emb_sin[position_ids[i % cached_size / dim]][i % dim];
-    // }
+    /*LOGN??
+        if key_size > self.seq_length and self.use_logn_attn and not self.training:
+            if self.use_cache_quantization:
+                seq_start = key[0].size(2) - query.size(1)
+                seq_end = key[0].size(2)
+            else:
+                seq_start = key.size(1) - query.size(1)
+                seq_end = key.size(1)
+            logn_tensor = self.logn_tensor[:, seq_start:seq_end, :, :].type_as(query)
+            query = query * logn_tensor.expand_as(query)
+*/
+    if (seqLen + pastKeyLength > maxSeqLength && logn != nullptr) {
+        float *q_scale = logn + pastKeyLength;
 #pragma omp parallel for collapse(3)
-    for (int head = 0; head < heads; ++head) {
-        for (int bs = 0; bs < batchSize; ++bs) {
-            for (int seq = 0; seq < seqLen; ++seq) {
-                int pos = positionIds[seq];
-                float *pcos = cur_emb_cos + pos * dim;
-                float *psin = cur_emb_sin + pos * dim;
+        for (int head = 0; head < heads; ++head) {
+            for (int bs = 0; bs < batchSize; ++bs) {
+                for (int seq = 0; seq < seqLen; ++seq) {
+                    int pos = positionIds[seq];
+                    float *pcos = cur_emb_cos + pos * dim;
+                    float *psin = cur_emb_sin + pos * dim;
 
-                float *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
-                float *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
+                    float *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
+                    float *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
 #pragma omp simd
-                for (int i = 0; i < half; ++i) {
-                    if (head < qHeads) {
-                        auto q1 = q[i];
-                        q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
-                        q[i + half] = q[i + half] * pcos[i + half] + q1 * psin[i + half];
+                    for (int i = 0; i < half; ++i) {
+                        if (head < qHeads) {
+                            auto q1 = q[i];
+                            q[i] = (q[i] * pcos[i] - q[i + half] * psin[i]) * q_scale[seq];
+                            q[i + half] = (q[i + half] * pcos[i + half] + q1 * psin[i + half]) * q_scale[seq];
+                        }
+                        if (head < kHeads) {
+                            auto k1 = k[i];
+                            k[i] = k[i] * pcos[i] - k[i + half] * psin[i];
+                            k[i + half] = k[i + half] * pcos[i + half] + k1 * psin[i + half];
+                        }
                     }
-                    if (head < kHeads) {
-                        auto k1 = k[i];
-                        k[i] = k[i] * pcos[i] - k[i + half] * psin[i];
-                        k[i + half] = k[i + half] * pcos[i + half] + k1 * psin[i + half];
+                }
+            }
+        }
+    } else {
+#pragma omp parallel for collapse(3)
+        for (int head = 0; head < heads; ++head) {
+            for (int bs = 0; bs < batchSize; ++bs) {
+                for (int seq = 0; seq < seqLen; ++seq) {
+                    int pos = positionIds[seq];
+                    float *pcos = cur_emb_cos + pos * dim;
+                    float *psin = cur_emb_sin + pos * dim;
+
+                    float *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
+                    float *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
+#pragma omp simd
+                    for (int i = 0; i < half; ++i) {
+                        if (head < qHeads) {
+                            auto q1 = q[i];
+                            q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
+                            q[i + half] = q[i + half] * pcos[i + half] + q1 * psin[i + half];
+                        }
+                        if (head < kHeads) {
+                            auto k1 = k[i];
+                            k[i] = k[i] * pcos[i] - k[i + half] * psin[i];
+                            k[i + half] = k[i + half] * pcos[i + half] + k1 * psin[i + half];
+                        }
                     }
                 }
             }
