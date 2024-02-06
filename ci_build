@@ -9,7 +9,7 @@ popd
 # Define functions for build, UT, and model
 build() {
     echo "Running build function with arguments: $@"
-    rm -rf build && mkdir build && cd build && cmake .. && make -j
+    rm -rf build && mkdir build && cd build && cmake -DPython_EXECUTABLE=`which python` .. && make -j
 }
 
 ut() {
