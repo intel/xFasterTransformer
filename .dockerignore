@@ -1,6 +1,0 @@
-.dockerignore
-.gitignore
-
-*build*
-__pycache__
-.vscode
