@@ -77,6 +77,10 @@ public:
 
     int getRank() { return firstModel->getRank(); }
 
+    int getPPSize() { return firstModel->getPPSize(); }
+
+    int getTPSize() { return firstModel->getTPSize(); }
+
     int getEndId() { return firstModel->getEndId(); }
 
     void setPrefix(int *ids, int seqLen) { firstModel->setPrefix(ids, seqLen); }

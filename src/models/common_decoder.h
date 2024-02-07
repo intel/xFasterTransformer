@@ -65,6 +65,82 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
     using Tout = OutT;
 };
 
+/*
+Pipeline parallel and tensor parallel introduction:
+
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  pp_size = 4, tp_size = 4
+  2) TP sync by oneCCL(row_comm) or shared_memory
+  3) PP sync by MPI MPI_COMM_WORLD
+
+  World Rank:      => Row Rank:       =>      tp0 tp1 tp2 tp3
+  [ 0,  1,  2,  3,    [ 0, 1, 2, 3];     pp0 [  0,  1,  2,  3];
+    4,  5,  6,  7,    [ 0, 1, 2, 3];     pp1 [  0,  1,  2,  3];
+    8,  9, 10, 11,    [ 0, 1, 2, 3];     pp2 [  0,  1,  2,  3];
+   12, 13, 14, 15];   [ 0, 1, 2, 3];     pp3 [  0,  1,  2,  3];
+
+      Prompts
+       │
+       ▼
+    Embedding(PP0) ◄────────────────────────────────────────────────────────────────────┐
+	   │                                                                                │
+  PP0  ▼                                                                                │
+  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+  │ TP0                TP1                TP2                TP3                    │   │
+  │ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐     │   │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │   │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │   │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │   │
+  │ └──┬─────────────┘ └─┬──────────────┘ └─┬──────────────┘ └─┬──────────────┘ ... │   │
+  │    │◄────────────────┘◄─────────────────┘◄─────────────────┘                    │   │
+  │    ▼                                                                   layer0-7 │   │
+  └────┬────────────────────────────────────────────────────────────────────────────┘   │
+       │                                                                                │
+  PP1  ▼                                                                                │
+  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+  │ TP0                TP1                TP2                TP3                    │   │
+  │ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐     │   │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │   │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │   │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │   │
+  │ └──┬─────────────┘ └─┬──────────────┘ └─┬──────────────┘ └─┬──────────────┘ ... │   │
+  │    │◄────────────────┘◄─────────────────┘◄─────────────────┘                    │   │
+  │    ▼                                                                  layer8-15 │   │
+  └────┬────────────────────────────────────────────────────────────────────────────┘   │
+       │                                                                                │
+  PP2  ▼                                                                                │
+  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+  │ TP0                TP1                TP2                TP3                    │   │
+  │ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐     │   │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │   │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │   │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │   │
+  │ └──┬─────────────┘ └─┬──────────────┘ └─┬──────────────┘ └─┬──────────────┘ ... │   │
+  │    │◄────────────────┘◄─────────────────┘◄─────────────────┘                    │   │
+  │    ▼                                                                 layer16-23 │   │
+  └────┬────────────────────────────────────────────────────────────────────────────┘   │
+       │                                                                                │
+  PP3  ▼                                                                                │
+  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+  │ TP0                TP1                TP2                TP3                    │   │
+  │ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐     │   │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │   │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │   │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │   │
+  │ └──┬─────────────┘ └─┬──────────────┘ └─┬──────────────┘ └─┬──────────────┘ ... │   │
+  │    │◄────────────────┘◄─────────────────┘◄─────────────────┘                    │   │
+  │    ▼                                                                 layer24-31 │   │
+  └────┬────────────────────────────────────────────────────────────────────────────┘   │
+      ...                                                                              ...
+       │                                                                                │
+       ▼                                                                                │
+	Predictor(PP3)                                                                      │
+       │                                                                                │
+       ▼                                                                                │
+    Searchers                                                                           │
+       │                                                                                │
+       ▼ ───────────────────────────────────────────────────────────────────────────────┘
+*/
+
 // Template parameters:
 // ATTN_CLS - class for attention impl.
 // MLP_CLS - MLP implementation
@@ -136,14 +212,13 @@ public:
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
-        if (layers % pp_stages_num != 0) {
-            std::cerr << "Warning: layers cannot be evenly divided by pp_stage." << std::endl;
+        if (layers % pp_size != 0) {
+            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(pp_size)." << std::endl;
         }
 
-        int layers_per_stage = layers / pp_stages_num;
-        int start_layer = pp_stage_idx * layers_per_stage;
-        printf("new layers: %d, layers_per_stage: %d, start_layer: %d\n", layers, layers_per_stage, start_layer);
-        for (int i = start_layer; i < start_layer + layers_per_stage; ++i) {
+        int layers_per_pp_stage = layers / pp_size;
+        int start_layer = pp_rank * layers_per_pp_stage;
+        for (int i = start_layer; i < start_layer + layers_per_pp_stage; ++i) {
             auto pdec = new DECODER(ctx, i);
             this->setDecoderWeights(pdec, modelPath, i);
             this->decoders.push_back(pdec);
@@ -153,7 +228,6 @@ public:
         int workers = messenger.getSize();
         int rank = messenger.getRank();
         int color = messenger.getColor();
-        printf("workers: %d, rank: %d, color: %d\n", workers, rank, color);
         this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
         this->setPredictorWeight(modelPath);
 
@@ -238,17 +312,16 @@ public:
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
         t1.release();
 
-        if (pp_stage_idx > 0) {
-            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            printf("wait... gather : pp_stage_idx %d\n", pp_stage_idx);
+        // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
+        if (pp_rank > 0) {
+            // [MPI] Recv data from world_rank 0
+            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, pp_rank - 1, 100 * (pp_rank - 1), MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
         // Decoder: forward
         int hiddenSize = ctx->hiddenSize;
-        int layers_per_stage = this->decoders.size();
-        int start_layer = pp_stage_idx * layers_per_stage;
-        printf("forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
-        for (int i = 0; i < layers_per_stage; ++i) {
+        int layers_per_pp_stage = this->decoders.size();
+        for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
                 // Expand the prefix KV cache for each batch
@@ -256,12 +329,10 @@ public:
             }
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
-// printf("attention start 1 forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
-fflush(stdout);
+
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
-// printf("attention start 2 forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
-fflush(stdout);
+
             this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
@@ -273,7 +344,7 @@ fflush(stdout);
 
             // Expand the KV cache as it only has values for beam 0
             if (step == 0 && beamSize > 1) { this->kvCacheMgr->expandCache(i, userSideBS, beamSize, seqLen); }
-// printf("attention end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
             if constexpr (!ATTN_MLP_PARALLEL) {
@@ -281,7 +352,7 @@ fflush(stdout);
                     this->messenger.reduceAdd(attnOut, attnOut, batchSize * inputSeqLen * hiddenSize);
                 }
             }
-// printf("attention reduceadd end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
@@ -301,12 +372,10 @@ fflush(stdout);
             }
         }
 
-        MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, 1, 0, MPI_COMM_WORLD);
-
-        printf("end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
-
-        if (pp_stage_idx == 0) {
-            printf("finish : pp_stage_idx %d\n", pp_stage_idx);
+        if (pp_rank < pp_size - 1) {
+            // If current pipeline stage isn't the end of stage, return nullptr
+            // [MPI] Send data to next pipeline stage
+            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, pp_rank + 1, 100 * pp_rank, MPI_COMM_WORLD);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 
@@ -463,6 +532,10 @@ fflush(stdout);
 
     int getRank() { return messenger.getRank(); }
 
+    int getPPSize() { return this->pp_size; }
+
+    int getTPSize() { return this->tp_size; }
+
     WDataType getDataType() { return wType; }
 
     int getEndId() { return endId; }
@@ -500,12 +573,13 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
             int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
-        pp_stages_num = Env::getPipeline();
+        pp_size = Env::getPipeline();
+        pp_rank = messenger.getColor();
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
-        pp_stage_idx = messenger.getColor();
+        tp_size = splits;
         tp_rank = splitIdx;
-        printf("pp_stages_num: %d, pp_stage_idx: %d, tp_rank: %d\n", pp_stages_num, pp_stage_idx, tp_rank);
+        printf("pp_size: %d, pp_rank: %d, tp_size: %d, tp_rank: %d\n", pp_size, pp_rank, tp_size, tp_rank);
 
         if (context != nullptr) {
             if (context->hiddenSize == hiddenSize && context->attHeadNum == attHeadNum
@@ -714,6 +788,12 @@ protected:
     // For communication
     Messenger &messenger;
 
+    // For pipeline parallel and tensor parallel config
+    int pp_size = 1; // pipeline parallel stage size
+    int pp_rank = 0; // pipeline parallel stage rank
+    int tp_size = 1; // tensor parallel size
+    int tp_rank = 0; // tensor parallel rank
+
     // Execution context
     std::shared_ptr<DecoderContext> context;
 
@@ -753,10 +833,6 @@ private:
 
     int startId;
     int endId;
-
-    int pp_stages_num = 1; // pipeline_parallel_stages_num
-    int pp_stage_idx = 0; // pipeline_parallel_stage
-    int tp_rank = 0; // tensor_parallel_rank
 
     WDataType wType;
 

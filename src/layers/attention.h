@@ -48,10 +48,8 @@ public:
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
             auto range = getTaskRange(ctx->attHeadNum, ctx->numSplit, ctx->splitIdx);
-            printf("ctx->attHeadNum: %d, ctx->numSplit: %d, ctx->splitIdx: %d\n", ctx->attHeadNum, ctx->numSplit, ctx->splitIdx);
             this->startQHead = range.first;
             this->endQHead = range.second;
-            printf("this->startQHead: %d, this->endQHead: %d\n", this->startQHead, this->endQHead);
 
             int expandFactor = ctx->attHeadNum / ctx->kvHeadNum;
             this->startKVHead = startQHead / expandFactor;
@@ -188,19 +186,19 @@ public:
         hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
         hpj::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
         hpj::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
-// printf("attention.forward 1\n"); fflush(stdout);
-        float epsilon = ctx->epsilon; // printf("af 1\n"); fflush(stdout);
-        int headSize = ctx->attHeadSize; // printf("af 2\n"); fflush(stdout);
-        int qkvRows = ctx->batchSize * inputSeqLen; // printf("af 3\n"); fflush(stdout);
-        int qCols = (this->endQHead - this->startQHead) * headSize; // printf("af 4\n"); fflush(stdout);
-        int kvCols = (this->endKVHead - this->startKVHead) * headSize; // printf("af 5\n"); fflush(stdout);
-        int qkCols = qCols + kvCols; // printf("af 6\n"); fflush(stdout);
-        int qkvCols = qkCols + kvCols; // printf("af 7\n"); fflush(stdout);
-// printf("attention.forward 2\n"); fflush(stdout);
+
+        float epsilon = ctx->epsilon;
+        int headSize = ctx->attHeadSize;
+        int qkvRows = ctx->batchSize * inputSeqLen;
+        int qCols = (this->endQHead - this->startQHead) * headSize;
+        int kvCols = (this->endKVHead - this->startKVHead) * headSize;
+        int qkCols = qCols + kvCols;
+        int qkvCols = qkCols + kvCols;
+
         int qkvStride = qkvCols;
         auto &qkvMatMul = ctx->qkvMatMul;
         hpj::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
-// printf("attention.forward 3\n"); fflush(stdout);
+
 #ifdef DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");

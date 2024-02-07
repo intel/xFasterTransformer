@@ -18,30 +18,22 @@
 
 static ccl::communicator *pcomm;
 
+// world_color is initialized to pipeline_parallel_stages_num(pp_size)
+// and will be re-assign to world_color of MPI
 extern "C" int init(int *world_size, int *world_rank, int *world_color) {
     ccl::init();
 
     MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, world_rank);
-printf("world_size: %d, world_rank: %d, world_color: %d\n", *world_size, *world_rank, *world_color);
-fflush(stdout);
 
-    // 1) rank = 0, 1, 2, 3, 4, 5, 6, 7; pp = 2; tp = 4
-    //    color = 0, 0, 0, 0, 1, 1, 1, 1
-    // 2) rank = 0, 1, 2, 3, 4, 5, 6, 7; pp = 4; tp = 2
-    //    color = 0, 0, 1, 1, 2, 2, 3, 3
-    // 3) rank = 0, 1, 2, 3; pp = 1; tp = 4
-    //    color = 0, 0, 0, 0
-    // 4) rank = 0, 1, 2, 3; pp = 2; tp = 2
-    //    color = 0, 0, 1, 1
-    // 5) rank = 0, 1, 2, 3; pp = 4; tp = 1
-    //    color = 0, 1, 2, 3
-    // 7) rank = 0, 1; pp = 1; tp = 2
-    //    color = 0, 0
-    // 8) rank = 0, 1; pp = 2; tp = 1
-    //    color = 0, 1
-    // world_color = world_rank / tp_num = world_rank / (world_size / pp_num)
+    // world_color = world_rank / tp_size = world_rank / (world_size / pp_size)
+    // like: world_rank = 0, 1,  ->  row_rank = 0, 1;
+    //                    2, 3,                 0, 1;
+    //                    4, 5,                 0, 1;
+    //                    6, 7;                 0, 1;
+    //       pp = 4; tp = 2
+    //       color = 0, 0, 1, 1, 2, 2, 3, 3
     *world_color = *world_rank / (*world_size / *world_color);
     MPI_Comm row_comm;
     MPI_Comm_split(MPI_COMM_WORLD, *world_color, *world_rank, &row_comm);
@@ -49,8 +41,7 @@ fflush(stdout);
     int row_size, row_rank;
     MPI_Comm_size(row_comm, &row_size);
     MPI_Comm_rank(row_comm, &row_rank);
-printf("row_size: %d, row_rank: %d, world_color: %d\n", row_size, row_rank, *world_color);
-fflush(stdout);
+
     ccl::shared_ptr_class<ccl::kvs> kvs;
     ccl::kvs::address_type mainAddr;
 
@@ -67,8 +58,7 @@ fflush(stdout);
 
     *world_size = pcomm->size();
     *world_rank = pcomm->rank();
-printf("ccl world_size: %d, world_rank: %d, world_color: %d\n", *world_size, *world_rank, *world_color);
-fflush(stdout);
+
 #ifdef USE_SHM
     char myHostname[MPI_MAX_PROCESSOR_NAME];
     char all_hostnames[MPI_MAX_PROCESSOR_NAME * MPI_MAX_PROCESSOR_NAME];
@@ -114,11 +104,6 @@ extern "C" void broadcast(int *buf, size_t count) {
 }
 
 extern "C" void allgatherv(
-        const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
-    ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
-}
-
-extern "C" void barrier(
         const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
     ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
 }
