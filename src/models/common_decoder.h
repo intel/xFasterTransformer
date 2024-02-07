@@ -82,7 +82,7 @@ Pipeline parallel and tensor parallel introduction:
        │
        ▼
     Embedding(PP0) ◄────────────────────────────────────────────────────────────────────┐
-	   │                                                                                │
+       │                                                                                │
   PP0  ▼                                                                                │
   ┌─────────────────────────────────────────────────────────────────────────────────┐   │
   │ TP0                TP1                TP2                TP3                    │   │
@@ -133,7 +133,7 @@ Pipeline parallel and tensor parallel introduction:
       ...                                                                              ...
        │                                                                                │
        ▼                                                                                │
-	Predictor(PP3)                                                                      │
+    Predictor(PP3)                                                                      │
        │                                                                                │
        ▼                                                                                │
     Searchers                                                                           │
