@@ -46,7 +46,13 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
 
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
-    this->nextTokens = search(result);
+    if (std::get<0>(result) == nullptr) {
+        this->nextTokens = std::vector<int>(batchSize, 0);
+        MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, 1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    } else {
+        this->nextTokens = search(result);
+        MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, 0, 1, MPI_COMM_WORLD);
+    }
 
     this->curLen++;
     for (int batchId = 0; batchId < batchSize; ++batchId) {
@@ -62,7 +68,13 @@ std::vector<int> GreedySearch::getNextToken() {
     int64_t dims[3] = {batchSize, 1, 1};
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
-    this->nextTokens = search(result);
+    if (std::get<0>(result) == nullptr) {
+        this->nextTokens = std::vector<int>(batchSize, 0);
+        MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, 1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    } else {
+        this->nextTokens = search(result);
+        MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, 0, 1, MPI_COMM_WORLD);
+    }
 
     this->curLen++;
     for (int batchId = 0; batchId < batchSize; ++batchId) {

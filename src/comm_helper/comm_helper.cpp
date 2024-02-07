@@ -18,30 +18,57 @@
 
 static ccl::communicator *pcomm;
 
-extern "C" int init(int *rank, int *size) {
+extern "C" int init(int *world_size, int *world_rank, int *world_color) {
     ccl::init();
 
     MPI_Init(NULL, NULL);
-    MPI_Comm_size(MPI_COMM_WORLD, size);
-    MPI_Comm_rank(MPI_COMM_WORLD, rank);
+    MPI_Comm_size(MPI_COMM_WORLD, world_size);
+    MPI_Comm_rank(MPI_COMM_WORLD, world_rank);
+printf("world_size: %d, world_rank: %d, world_color: %d\n", *world_size, *world_rank, *world_color);
+fflush(stdout);
 
+    // 1) rank = 0, 1, 2, 3, 4, 5, 6, 7; pp = 2; tp = 4
+    //    color = 0, 0, 0, 0, 1, 1, 1, 1
+    // 2) rank = 0, 1, 2, 3, 4, 5, 6, 7; pp = 4; tp = 2
+    //    color = 0, 0, 1, 1, 2, 2, 3, 3
+    // 3) rank = 0, 1, 2, 3; pp = 1; tp = 4
+    //    color = 0, 0, 0, 0
+    // 4) rank = 0, 1, 2, 3; pp = 2; tp = 2
+    //    color = 0, 0, 1, 1
+    // 5) rank = 0, 1, 2, 3; pp = 4; tp = 1
+    //    color = 0, 1, 2, 3
+    // 7) rank = 0, 1; pp = 1; tp = 2
+    //    color = 0, 0
+    // 8) rank = 0, 1; pp = 2; tp = 1
+    //    color = 0, 1
+    // world_color = world_rank / tp_num = world_rank / (world_size / pp_num)
+    *world_color = *world_rank / (*world_size / *world_color);
+    MPI_Comm row_comm;
+    MPI_Comm_split(MPI_COMM_WORLD, *world_color, *world_rank, &row_comm);
+
+    int row_size, row_rank;
+    MPI_Comm_size(row_comm, &row_size);
+    MPI_Comm_rank(row_comm, &row_rank);
+printf("row_size: %d, row_rank: %d, world_color: %d\n", row_size, row_rank, *world_color);
+fflush(stdout);
     ccl::shared_ptr_class<ccl::kvs> kvs;
     ccl::kvs::address_type mainAddr;
 
-    if (*rank == 0) {
+    if (row_rank == 0) {
         kvs = ccl::create_main_kvs();
         mainAddr = kvs->get_address();
-        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, row_comm);
     } else {
-        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, row_comm);
         kvs = ccl::create_kvs(mainAddr);
     }
 
-    pcomm = new ccl::communicator(ccl::create_communicator(*size, *rank, kvs));
+    pcomm = new ccl::communicator(ccl::create_communicator(row_size, row_rank, kvs));
 
-    *rank = pcomm->rank();
-    *size = pcomm->size();
-
+    *world_size = pcomm->size();
+    *world_rank = pcomm->rank();
+printf("ccl world_size: %d, world_rank: %d, world_color: %d\n", *world_size, *world_rank, *world_color);
+fflush(stdout);
 #ifdef USE_SHM
     char myHostname[MPI_MAX_PROCESSOR_NAME];
     char all_hostnames[MPI_MAX_PROCESSOR_NAME * MPI_MAX_PROCESSOR_NAME];
@@ -53,7 +80,7 @@ extern "C" int init(int *rank, int *size) {
             MPI_COMM_WORLD);
 
     int sameHostnames = 1;
-    for (int i = 1; i < *size; i++) {
+    for (int i = 1; i < *world_size; i++) {
         if (strcmp(myHostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
             sameHostnames = 0;
             break;
@@ -87,6 +114,11 @@ extern "C" void broadcast(int *buf, size_t count) {
 }
 
 extern "C" void allgatherv(
+        const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
+    ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
+}
+
+extern "C" void barrier(
         const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
     ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
 }

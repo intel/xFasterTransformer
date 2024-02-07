@@ -18,6 +18,8 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <thread>
+#include <mpi.h>
 
 #include "INIReader.h"
 #include "abstract_decoder.h"
@@ -134,7 +136,14 @@ public:
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
-        for (int i = 0; i < layers; ++i) {
+        if (layers % pp_stages_num != 0) {
+            std::cerr << "Warning: layers cannot be evenly divided by pp_stage." << std::endl;
+        }
+
+        int layers_per_stage = layers / pp_stages_num;
+        int start_layer = pp_stage_idx * layers_per_stage;
+        printf("new layers: %d, layers_per_stage: %d, start_layer: %d\n", layers, layers_per_stage, start_layer);
+        for (int i = start_layer; i < start_layer + layers_per_stage; ++i) {
             auto pdec = new DECODER(ctx, i);
             this->setDecoderWeights(pdec, modelPath, i);
             this->decoders.push_back(pdec);
@@ -143,6 +152,8 @@ public:
         // Predictor
         int workers = messenger.getSize();
         int rank = messenger.getRank();
+        int color = messenger.getColor();
+        printf("workers: %d, rank: %d, color: %d\n", workers, rank, color);
         this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
         this->setPredictorWeight(modelPath);
 
@@ -215,9 +226,9 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(),
-                this->embBuf->Stride());
-        dbg.dumpMatrix(*this->embBuf);
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize,
+                ctx->hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
 #endif
 
         // Prepare attention mask
@@ -227,9 +238,17 @@ public:
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
         t1.release();
 
+        if (pp_stage_idx > 0) {
+            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            printf("wait... gather : pp_stage_idx %d\n", pp_stage_idx);
+        }
+
         // Decoder: forward
         int hiddenSize = ctx->hiddenSize;
-        for (int i = 0; i < this->decoders.size(); ++i) {
+        int layers_per_stage = this->decoders.size();
+        int start_layer = pp_stage_idx * layers_per_stage;
+        printf("forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+        for (int i = 0; i < layers_per_stage; ++i) {
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
                 // Expand the prefix KV cache for each batch
@@ -237,9 +256,12 @@ public:
             }
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getValue(i);
-
+// printf("attention start 1 forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+fflush(stdout);
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
+// printf("attention start 2 forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+fflush(stdout);
             this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
@@ -251,7 +273,7 @@ public:
 
             // Expand the KV cache as it only has values for beam 0
             if (step == 0 && beamSize > 1) { this->kvCacheMgr->expandCache(i, userSideBS, beamSize, seqLen); }
-
+// printf("attention end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
             if constexpr (!ATTN_MLP_PARALLEL) {
@@ -259,7 +281,7 @@ public:
                     this->messenger.reduceAdd(attnOut, attnOut, batchSize * inputSeqLen * hiddenSize);
                 }
             }
-
+// printf("attention reduceadd end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
@@ -277,6 +299,15 @@ public:
                     this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
+        }
+
+        MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, 1, 0, MPI_COMM_WORLD);
+
+        printf("end forward layers_per_stage: %d, start_layer: %d\n", layers_per_stage, start_layer);
+
+        if (pp_stage_idx == 0) {
+            printf("finish : pp_stage_idx %d\n", pp_stage_idx);
+            return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
@@ -469,8 +500,12 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
             int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
+        pp_stages_num = Env::getPipeline();
         int splits = messenger.getSize();
         int splitIdx = messenger.getRank();
+        pp_stage_idx = messenger.getColor();
+        tp_rank = splitIdx;
+        printf("pp_stages_num: %d, pp_stage_idx: %d, tp_rank: %d\n", pp_stages_num, pp_stage_idx, tp_rank);
 
         if (context != nullptr) {
             if (context->hiddenSize == hiddenSize && context->attHeadNum == attHeadNum
@@ -718,6 +753,10 @@ private:
 
     int startId;
     int endId;
+
+    int pp_stages_num = 1; // pipeline_parallel_stages_num
+    int pp_stage_idx = 0; // pipeline_parallel_stage
+    int tp_rank = 0; // tensor_parallel_rank
 
     WDataType wType;
 

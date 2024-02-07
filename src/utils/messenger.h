@@ -24,6 +24,7 @@
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "timeline.h"
+#include "verbose.h"
 
 class Messenger {
 private:
@@ -46,7 +47,7 @@ private:
             exit(-1);
         }
 
-        helperInit = (int (*)(int *, int *))dlsym(commHelperHanlde, "init");
+        helperInit = (int (*)(int *, int *, int *))dlsym(commHelperHanlde, "init");
         helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
         helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
         helperAllreduceBF16 = (void (*)(bfloat16_t *, bfloat16_t *, size_t))dlsym(commHelperHanlde, "allreduceBF16");
@@ -56,7 +57,8 @@ private:
 
         atexit(Messenger::mpi_finalize);
 
-        int sameHostnames = (*helperInit)(&rank, &size);
+        color = Env::getPipeline();
+        int sameHostnames = (*helperInit)(&size, &rank, &color);
 
 #ifdef USE_SHM
         if (sameHostnames && !std::getenv("XFT_ONECCL")) {
@@ -87,6 +89,8 @@ public:
     int getRank() { return rank; }
 
     int getSize() { return size; }
+
+    int getColor() { return color; }
 
     // From some example code of oneCCL, inplace reducing is supported
     // Only float is used now
@@ -176,13 +180,14 @@ private:
 private:
     int size;
     int rank;
+    int color;
     bool localRanksFlag;
 
 #ifdef USE_SHM
     ShmReduction *pshm;
 #endif
     void *commHelperHanlde;
-    int (*helperInit)(int *, int *);
+    int (*helperInit)(int *, int *, int *);
     void (*helperFreePCOMM)();
     void (*helperAllreduce)(float *, float *, size_t);
     void (*helperAllreduceBF16)(bfloat16_t *, bfloat16_t *, size_t);
