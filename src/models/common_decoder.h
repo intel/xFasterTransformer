@@ -15,11 +15,11 @@
 #pragma once
 
 #include <fstream>
-#include <mpi.h>
 #include <string>
-#include <thread>
 #include <tuple>
 #include <vector>
+
+#include <mpi.h>
 
 #include "INIReader.h"
 #include "abstract_decoder.h"
@@ -577,7 +577,7 @@ protected:
         int tpRank = messenger.getRank();
         int ppSize = Env::getPipeline();
         int ppRank = messenger.getColor();
-        printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
+        // printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 
         if (context != nullptr) {
             if (context->hiddenSize == hiddenSize && context->attHeadNum == attHeadNum
