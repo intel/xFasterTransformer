@@ -46,13 +46,20 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
 
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
-    int predictor_world_rank = (decoder.getPPSize() - 1) * decoder.getTPSize();
-    if (std::get<0>(result) == nullptr) { // The first pipeline parallel stage
+    DecoderContext *ctx = decoder.getContext();
+    if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
         this->nextTokens = std::vector<int>(batchSize, 0);
-        MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    } else { // The last pipeline parallel stage
+        if (ctx->ppRank == 0) {
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    } else { // The last predictor pipeline parallel stage
         this->nextTokens = search(result);
-        MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, 0, 0, MPI_COMM_WORLD);
+        if (ctx->ppRank == ctx->ppSize - 1) {
+            int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
+        }
     }
 
     this->curLen++;
@@ -69,12 +76,20 @@ std::vector<int> GreedySearch::getNextToken() {
     int64_t dims[3] = {batchSize, 1, 1};
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
-    if (std::get<0>(result) == nullptr) {
+    DecoderContext *ctx = decoder.getContext();
+    if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
         this->nextTokens = std::vector<int>(batchSize, 0);
-        MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, 1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    } else {
+        if (ctx->ppRank == 0) {
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    } else { // The last predictor pipeline parallel stage
         this->nextTokens = search(result);
-        MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, 0, 1, MPI_COMM_WORLD);
+        if (ctx->ppRank == ctx->ppSize - 1) {
+            int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
+        }
     }
 
     this->curLen++;

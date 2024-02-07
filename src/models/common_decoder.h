@@ -68,7 +68,7 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
 /*
 Pipeline parallel and tensor parallel introduction:
 
-  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  pp_size = 4, tp_size = 4
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
   2) TP sync by oneCCL(row_comm) or shared_memory
   3) PP sync by MPI MPI_COMM_WORLD
 
@@ -212,12 +212,12 @@ public:
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
-        if (layers % pp_size != 0) {
-            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(pp_size)." << std::endl;
+        if (layers % ctx->ppSize != 0) {
+            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)." << std::endl;
         }
 
-        int layers_per_pp_stage = layers / pp_size;
-        int start_layer = pp_rank * layers_per_pp_stage;
+        int layers_per_pp_stage = layers / ctx->ppSize;
+        int start_layer = ctx->ppRank * layers_per_pp_stage;
         for (int i = start_layer; i < start_layer + layers_per_pp_stage; ++i) {
             auto pdec = new DECODER(ctx, i);
             this->setDecoderWeights(pdec, modelPath, i);
@@ -313,9 +313,11 @@ public:
         t1.release();
 
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
-        if (pp_rank > 0) {
+        if (ctx->ppRank > 0) {
             // [MPI] Recv data from world_rank 0
-            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, pp_rank - 1, 100 * (pp_rank - 1), MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
+            int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
         // Decoder: forward
@@ -372,10 +374,11 @@ public:
             }
         }
 
-        if (pp_rank < pp_size - 1) {
+        if (ctx->ppRank < ctx->ppSize - 1) {
             // If current pipeline stage isn't the end of stage, return nullptr
             // [MPI] Send data to next pipeline stage
-            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, pp_rank + 1, 100 * pp_rank, MPI_COMM_WORLD);
+            int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 
@@ -532,10 +535,6 @@ public:
 
     int getRank() { return messenger.getRank(); }
 
-    int getPPSize() { return this->pp_size; }
-
-    int getTPSize() { return this->tp_size; }
-
     WDataType getDataType() { return wType; }
 
     int getEndId() { return endId; }
@@ -573,18 +572,16 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
             int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
-        pp_size = Env::getPipeline();
-        pp_rank = messenger.getColor();
-        int splits = messenger.getSize();
-        int splitIdx = messenger.getRank();
-        tp_size = splits;
-        tp_rank = splitIdx;
-        printf("pp_size: %d, pp_rank: %d, tp_size: %d, tp_rank: %d\n", pp_size, pp_rank, tp_size, tp_rank);
+        int tpSize = messenger.getSize();
+        int tpRank = messenger.getRank();
+        int ppSize = Env::getPipeline();
+        int ppRank = messenger.getColor();
+        printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 
         if (context != nullptr) {
             if (context->hiddenSize == hiddenSize && context->attHeadNum == attHeadNum
                     && context->kvHeadNum == kvHeadNum && context->intermediateSize == imSize
-                    && context->splitIdx == splitIdx) {
+                    && context->tpRank == tpRank) {
                 return context.get();
             } else {
                 printf("Different context size not unsupported!\n");
@@ -592,7 +589,7 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, splitIdx, splits, ropeParamsPtr));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank, ropeParamsPtr));
         }
 
         return this->context.get();
@@ -787,12 +784,6 @@ public:
 protected:
     // For communication
     Messenger &messenger;
-
-    // For pipeline parallel and tensor parallel config
-    int pp_size = 1; // pipeline parallel stage size
-    int pp_rank = 0; // pipeline parallel stage rank
-    int tp_size = 1; // tensor parallel size
-    int tp_rank = 0; // tensor parallel rank
 
     // Execution context
     std::shared_ptr<DecoderContext> context;

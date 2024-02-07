@@ -44,10 +44,6 @@ public:
 
     virtual int getRank() = 0;
 
-    virtual int getPPSize() = 0;
-
-    virtual int getTPSize() = 0;
-
     virtual int getEndId() = 0;
 
     virtual void setPrefix(int *ids, int seqLen) = 0;
