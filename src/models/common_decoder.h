@@ -15,11 +15,11 @@
 #pragma once
 
 #include <fstream>
+#include <mpi.h>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
-#include <thread>
-#include <mpi.h>
 
 #include "INIReader.h"
 #include "abstract_decoder.h"
@@ -213,7 +213,8 @@ public:
 
         // Decoder
         if (layers % ctx->ppSize != 0) {
-            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)." << std::endl;
+            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)."
+                      << std::endl;
         }
 
         int layers_per_pp_stage = layers / ctx->ppSize;
@@ -299,8 +300,8 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize,
-                ctx->hiddenSize);
+        dbg.debugPrint(
+                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
 #endif
 
@@ -316,7 +317,8 @@ public:
             // [MPI] Recv data from world_rank 0
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, prev_world_rank, curr_world_rank,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
         // Decoder: forward
@@ -376,7 +378,8 @@ public:
             // If current pipeline stage isn't the end of stage, return nullptr
             // [MPI] Send data to next pipeline stage
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
+            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, next_world_rank, next_world_rank,
+                    MPI_COMM_WORLD);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 
@@ -587,7 +590,8 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank, ropeParamsPtr));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
+                    ropeParamsPtr));
         }
 
         return this->context.get();
