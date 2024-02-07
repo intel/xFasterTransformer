@@ -227,7 +227,6 @@ public:
         // Predictor
         int workers = messenger.getSize();
         int rank = messenger.getRank();
-        int color = messenger.getColor();
         this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
         this->setPredictorWeight(modelPath);
 
@@ -334,7 +333,6 @@ public:
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
-
             this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
