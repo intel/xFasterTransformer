@@ -19,7 +19,7 @@
 static ccl::communicator *pcomm;
 
 // world_color is initialized to pipeline_parallel_stages_num(pp_size)
-// and will be re-assign to world_color of MPI
+// and will be re-assign to world_color of MPI == ppRank
 extern "C" int init(int *world_size, int *world_rank, int *world_color) {
     ccl::init();
 

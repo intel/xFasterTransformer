@@ -574,7 +574,7 @@ protected:
             int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
-        int ppSize = Env::getPipeline();
+        int ppSize = Env::getPipelineStage();
         int ppRank = messenger.getColor();
         // printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 

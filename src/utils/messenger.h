@@ -57,7 +57,7 @@ private:
 
         atexit(Messenger::mpi_finalize);
 
-        color = Env::getPipeline();
+        color = Env::getPipelineStage();
         int sameHostnames = (*helperInit)(&size, &rank, &color);
 
 #ifdef USE_SHM

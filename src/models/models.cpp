@@ -51,7 +51,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
     Env::initVerbose();
-    Env::initPipeline();
+    Env::initPipelineStage();
     TimeLine::init();
 }
 

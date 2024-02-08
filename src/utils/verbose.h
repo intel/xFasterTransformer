@@ -71,24 +71,24 @@ public:
 
 // Pipeline Parallel
 private:
-    static int &pipelineValue() {
+    static int &pipelineStageValue() {
         static int value = 1;
         return value;
     }
 
 public:
-    static void initPipeline() {
+    static void initPipelineStage() {
         char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGES");
         if (xft_pipeline_value != NULL) {
             int value = atoi(xft_pipeline_value);
             if (value >= 1)
-                pipelineValue() = value;
+                pipelineStageValue() = value;
         } else {
-            pipelineValue() = 1;
+            pipelineStageValue() = 1;
         }
     }
 
-    static int getPipeline() { return pipelineValue(); }
+    static int getPipelineStage() { return pipelineStageValue(); }
 };
 
 #define GEMMVERBOSE(api_func, compute_func)                \
