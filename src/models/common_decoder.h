@@ -19,8 +19,6 @@
 #include <tuple>
 #include <vector>
 
-#include <mpi.h>
-
 #include "INIReader.h"
 #include "abstract_decoder.h"
 #include "attention.h"
@@ -316,6 +314,8 @@ public:
             // [MPI] Recv data from world_rank 0
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // this->messenger.worldRecvFP32(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, prev_world_rank, curr_world_rank);
             MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, prev_world_rank, curr_world_rank,
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
@@ -377,6 +377,8 @@ public:
             // If current pipeline stage isn't the end of stage, return nullptr
             // [MPI] Send data to next pipeline stage
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // this->messenger.worldSendFP32(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, next_world_rank, next_world_rank);
             MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, next_world_rank, next_world_rank,
                     MPI_COMM_WORLD);
             return std::tuple<float *, int, int>(nullptr, 0, 0);

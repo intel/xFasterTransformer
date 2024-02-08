@@ -106,3 +106,19 @@ extern "C" void allgatherv(
         const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts) {
     ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, *pcomm).wait();
 }
+
+extern "C" void worldSendFP32(const float *buf, int count, int dest, int tag) {
+    MPI_Send((const void *)buf, count, MPI_FLOAT, dest, tag, MPI_COMM_WORLD);
+}
+
+extern "C" void worldRecvFP32(float *buf, int count, int source, int tag) {
+    MPI_Recv((void *)buf, count, MPI_FLOAT, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+}
+
+extern "C" void worldSendINT32(const int32_t *buf, int count, int dest, int tag) {
+    MPI_Send((const void *)buf, count, MPI_INT32_T, dest, tag, MPI_COMM_WORLD);
+}
+
+extern "C" void worldRecvINT32(int32_t *buf, int count, int source, int tag) {
+    MPI_Recv((void *)buf, count, MPI_INT32_T, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+}

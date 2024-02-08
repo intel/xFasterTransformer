@@ -14,6 +14,7 @@
 // ============================================================================
 #include "greedy_search.h"
 #include "search_utils.h"
+#include "messenger.h"
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
@@ -47,18 +48,25 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
     DecoderContext *ctx = decoder.getContext();
+    // Messenger &messenger = decoder.getMessenger();
+
     if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
         this->nextTokens = std::vector<int>(batchSize, 0);
         if (ctx->ppSize > 1 && ctx->ppRank == 0) {
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
             MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
         }
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = search(result);
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
             MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD);
         }
@@ -79,10 +87,14 @@ std::vector<int> GreedySearch::getNextToken() {
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
     DecoderContext *ctx = decoder.getContext();
+    // Messenger &messenger = decoder.getMessenger();
+
     if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
         this->nextTokens = std::vector<int>(batchSize, 0);
         if (ctx->ppSize > 1 && ctx->ppRank == 0) {
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
             MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
@@ -91,6 +103,8 @@ std::vector<int> GreedySearch::getNextToken() {
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
             MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD);
         }
