@@ -13,8 +13,8 @@
 // limitations under the License.
 // ============================================================================
 #include "greedy_search.h"
-#include "search_utils.h"
 #include "messenger.h"
+#include "search_utils.h"
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
@@ -58,7 +58,6 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
             // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
             MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
         }
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = search(result);

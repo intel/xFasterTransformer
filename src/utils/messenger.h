@@ -54,10 +54,14 @@ private:
         helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
-        helperWorldSendFP32 = (void (*)(const float *buf, int count, int dest, int tag))dlsym(commHelperHanlde, "worldSendFP32");
-        helperWorldRecvFP32 = (void (*)(float *buf, int count, int source, int tag))dlsym(commHelperHanlde, "worldRecvFP32");
-        helperWorldSendINT32 = (void (*)(const int32_t *buf, int count, int dest, int tag))dlsym(commHelperHanlde, "worldSendINT32");
-        helperWorldRecvINT32 = (void (*)(int32_t *buf, int count, int source, int tag))dlsym(commHelperHanlde, "worldRecvINT32");
+        helperWorldSendFP32
+                = (void (*)(const float *buf, int count, int dest, int tag))dlsym(commHelperHanlde, "worldSendFP32");
+        helperWorldRecvFP32
+                = (void (*)(float *buf, int count, int source, int tag))dlsym(commHelperHanlde, "worldRecvFP32");
+        helperWorldSendINT32
+                = (void (*)(const int32_t *buf, int count, int dest, int tag))dlsym(commHelperHanlde, "worldSendINT32");
+        helperWorldRecvINT32
+                = (void (*)(int32_t *buf, int count, int source, int tag))dlsym(commHelperHanlde, "worldRecvINT32");
 
         atexit(Messenger::mpi_finalize);
 
