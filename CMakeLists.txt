@@ -145,7 +145,7 @@ add_definitions(-DAVX512_FP32_WEIGHT_ONLY_NF4=true)
 
 # add_definitions(-DDEBUG=true)
 # add_definitions(-DSTEP_BY_STEP_ATTN=true)
-# add_definitions(-DUSE_SHM=true)
+add_definitions(-DUSE_SHM=true)
 option(XFT_BUILD_TESTS "Build xfastertransformer unit tests" OFF)
 
 # timeline event
