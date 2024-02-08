@@ -72,7 +72,7 @@ public:
 // Pipeline Parallel
 private:
     static int &pipelineValue() {
-        static int value = 0;
+        static int value = 1;
         return value;
     }
 
@@ -81,7 +81,8 @@ public:
         char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGES");
         if (xft_pipeline_value != NULL) {
             int value = atoi(xft_pipeline_value);
-            pipelineValue() = value;
+            if (value >= 1)
+                pipelineValue() = value;
         } else {
             pipelineValue() = 1;
         }
