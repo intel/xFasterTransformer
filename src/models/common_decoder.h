@@ -311,13 +311,12 @@ public:
 
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
-            // [MPI] Recv data from world_rank 0
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
+            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
-            // this->messenger.worldRecvFP32(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, prev_world_rank, curr_world_rank);
-            MPI_Recv(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, prev_world_rank, curr_world_rank,
-                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
         }
 
         // Decoder: forward
@@ -373,14 +372,13 @@ public:
             }
         }
 
+        // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
-            // If current pipeline stage isn't the end of stage, return nullptr
-            // [MPI] Send data to next pipeline stage
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
+            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
-            // this->messenger.worldSendFP32(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, next_world_rank, next_world_rank);
-            MPI_Send(embBuf, batchSize * inputSeqLen * ctx->hiddenSize, MPI_FLOAT, next_world_rank, next_world_rank,
-                    MPI_COMM_WORLD);
+            // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 
