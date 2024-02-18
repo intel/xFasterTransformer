@@ -201,7 +201,7 @@ private:
 private:
     int size;
     int rank;
-    int color;
+    int color; // Processes with the same color will be placed into the same sub-communicator
     bool localRanksFlag;
 
 #ifdef USE_SHM
