@@ -29,6 +29,8 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
 }
 
 std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) {
+    // send data from last predictor stage to first embedding stage in pipeline parallel
+#ifdef PIPELINE_PARALLEL
     DecoderContext *ctx = decoder.getContext();
     // Messenger &messenger = decoder.getMessenger();
 
@@ -52,6 +54,9 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
         }
     }
+#else
+    this->nextTokens = this->search(result);
+#endif
 
     this->curLen++;
     for (int batchId = 0; batchId < batchSize; ++batchId) {

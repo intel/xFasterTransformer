@@ -309,6 +309,7 @@ public:
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
         t1.release();
 
+#ifdef PIPELINE_PARALLEL
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
@@ -318,6 +319,7 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
         }
+#endif
 
         // Decoder: forward
         int hiddenSize = ctx->hiddenSize;
@@ -372,6 +374,7 @@ public:
             }
         }
 
+#ifdef PIPELINE_PARALLEL
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
@@ -381,6 +384,7 @@ public:
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
+#endif
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
