@@ -212,6 +212,7 @@ public:
         if (layers % ctx->ppSize != 0) {
             std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)."
                       << std::endl;
+            std::exit(-1);
         }
 
         int layers_per_pp_stage = layers / ctx->ppSize;
@@ -483,6 +484,7 @@ public:
         t1.release();
 
         // Decoder: forward
+        // TODO: Add PIPELINE_PARALLEL feature
         int hiddenSize = ctx->hiddenSize;
         for (int i = 0; i < this->decoders.size(); ++i) {
             int workers = this->messenger.getSize();
