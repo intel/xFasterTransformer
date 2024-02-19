@@ -33,28 +33,6 @@ class QwenConvert(BaseModelConvert):
     def __init__(self):
         super().__init__()
 
-    # TODO: support fp16 and set default if issue has been fixed.
-    def __call__(self, input_dir, output_dir=None, dtype: str = "fp32", processes=8):
-        self.convert(input_dir, output_dir, dtype, processes)
-
-    def convert(self, input_dir, output_dir=None, dtype: str = "fp32", processes=8):
-        self.dtype = self.get_weight_data_type(dtype)
-        if output_dir is None:
-            input_dir = input_dir.rstrip(os.path.sep)
-            output_dir = os.path.join(os.path.dirname(input_dir), os.path.basename(input_dir) + "-xft")
-
-        self.split_and_convert(input_dir, output_dir, dtype, processes)
-
-    def get_weight_data_type(self, dtype: str):
-        if dtype == "fp32":
-            return np.float32
-        elif dtype == "fp16":
-            raise Exception(
-                "Qwen don't support convert weight to fp16, since there is some known issues. Please use fp32 data type."
-            )
-        else:
-            raise Exception(f"{self.__class__.__name__} don't support convert weight to {dtype}.")
-
     def split_and_convert_process(self, i, saved_dir, factor, key, val, num_attention_heads, num_key_value_heads):
         def save_val(val, key, tp_num=None):
             if key.startswith("model."):

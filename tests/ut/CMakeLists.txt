@@ -49,6 +49,7 @@ foreach(src ${sources})
     elseif(${executable} STREQUAL "kv_reorder_test")
         add_executable(kv_reorder_test
                        ${src}
+                       ${SRC_DIR}/layers/layer_norm.cpp
                        ${SRC_DIR}/models/opt_decoder.cpp
                        ${SRC_DIR}/models/kvcache_manager.cpp
                        ${SRC_DIR}/utils/numa_allocator.cpp
@@ -57,6 +58,7 @@ foreach(src ${sources})
     elseif(${executable} STREQUAL "beam_search_test")
         add_executable(beam_search_test
                        ${src}
+                       ${SRC_DIR}/layers/layer_norm.cpp
                        ${SRC_DIR}/models/opt_decoder.cpp
                        ${SRC_DIR}/models/kvcache_manager.cpp
                        ${SRC_DIR}/searchers/beam_search.cpp

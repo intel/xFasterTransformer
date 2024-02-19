@@ -812,13 +812,8 @@ protected:
                     auto srcV = value + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
 
-                    if constexpr (std::is_same_v<KVCacheT, float>) {
-                        memcpy(dstK, srcK, headSize * sizeof(float));
-                        memcpy(dstV, srcV, headSize * sizeof(float));
-                    } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                        float16_t::cvt_float_to_float16(srcK, dstK, headSize);
-                        float16_t::cvt_float_to_float16(srcV, dstV, headSize);
-                    }
+                    xft::copy(dstK, srcK, headSize);
+                    xft::copy(srcV, dstV, headSize);
                 }
             }
         }
