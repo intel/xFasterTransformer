@@ -85,6 +85,12 @@ struct DecoderContext {
     // # of splits (the same as NUMA node number in the system)
     const int numSplit;
 
+    // For pipeline parallel and tensor parallel config
+    int ppSize = 1; // pipeline parallel stage size
+    int ppRank = 0; // pipeline parallel stage rank
+    int tpSize = 1; // tensor parallel size
+    int tpRank = 0; // tensor parallel rank
+
     enum ActivationType { RELU, GELU, SWIGLU, SILU };
     ActivationType actType;
 
@@ -106,7 +112,7 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
+            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -120,6 +126,10 @@ public:
         , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)
         , numSplit(_splits)
+        , ppSize(_ppSize)
+        , ppRank(_ppRank)
+        , tpSize(_splits)
+        , tpRank(_splitIdx)
         , epsilon(epsilon) {
         if (attHeadNum != 0) {
             this->attHeadSize = hiddenSize / attHeadNum;

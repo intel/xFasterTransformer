@@ -295,6 +295,7 @@ public:
             imBuffer.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
             inputBuffer.Assign(tmp, rows, cols, stride);
         }
+
         // TODO: refine the logic (and support large inputSeqLen when pastSeqLen > 0)
         if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
             if (pastSeqLen == 0) {
@@ -306,8 +307,9 @@ public:
             if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
                 flashAttention(
                         ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
-            else
+            else {
                 fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+            }
         }
         t4.release();
 
@@ -397,7 +399,7 @@ protected:
         // to make sure it works better (the logic here is trying to make sure each head of BMM result [seq * seq] in cache)
         // WARN: reserve field in context is used to make it effective for all layers, do not change it in other places
         int &mBlockSize = ctx->reserved1;
-        if (layerId == 0) {
+        if (layerId % (ctx->layers / ctx->ppSize) == 0) {
             // TODO: if pastSeqLen > 0 and inputSeqLen large.
             if (pastSeqLen == 0) {
                 const int l2CacheSize = 2 * 1024 * 1024; // TODO: get it dynamically

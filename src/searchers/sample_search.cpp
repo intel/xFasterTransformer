@@ -59,6 +59,7 @@ std::vector<int> SampleSearch::getNextToken(int *ids, int batchSize, int seqLen)
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
     nextTokens.resize(batchSize);
+    // TODO: Add PIPELINE_PARALLEL feature
     sample(result);
 
     this->curLen++;
@@ -75,6 +76,7 @@ std::vector<int> SampleSearch::getNextToken() {
     int64_t dims[3] = {batchSize, 1, 1};
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
+    // TODO: Add PIPELINE_PARALLEL feature
     sample(result);
 
     this->curLen++;

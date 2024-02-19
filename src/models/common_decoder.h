@@ -64,6 +64,81 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
     using Tout = OutT;
 };
 
+/*
+Pipeline parallel and tensor parallel introduction:
+
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
+  2) TP sync by oneCCL(row_comm) or shared_memory
+  3) PP sync by MPI MPI_COMM_WORLD
+
+  World Rank:      => Row Rank:       => Rank:  tp0 tp1 tp2 tp3
+  [ 0,  1,  2,  3,    [ 0, 1, 2, 3];      pp0 [  0,  1,  2,  3];
+    4,  5,  6,  7,    [ 0, 1, 2, 3];      pp1 [  0,  1,  2,  3];
+    8,  9, 10, 11,    [ 0, 1, 2, 3];      pp2 [  0,  1,  2,  3];
+   12, 13, 14, 15];   [ 0, 1, 2, 3];      pp3 [  0,  1,  2,  3];
+
+                                      Prompts
+                                         │
+            ┌──────────────────┬─────────┴────────┬──────────────────┐
+            │                  │                  │                  │
+            ▼                  ▼                  ▼                  ▼
+       Embedding(PP0)     Embedding(PP0)     Embedding(PP0)     Embedding(PP0)
+            │                  │                  │                  │
+  PP0       │                  │                  │                  │
+  ┌─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┐
+  │ TP0     │          TP1     │          TP2     │          TP3     │    layer0-7  │
+  │ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐     │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │
+  │ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘     │
+  │ ┌───────┼──────────────────┼─────AllReduce────┼──────────────────┼────────┐     │
+  │ └───────┼──────────────────┼──────────────────┼──────────────────┼────────┘     │
+  └─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┘
+  PP1       │ MPI Send/Recv    │                  │                  │
+  ┌─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┐
+  │ TP0     │          TP1     │           TP2    │            TP3   │   layer8-15  │
+  │ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐     │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │
+  │ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘     │
+  │ ┌───────┼──────────────────┼─────AllReduce────┼──────────────────┼────────┐     │
+  │ └───────┼──────────────────┼──────────────────┼──────────────────┼────────┘     │
+  └─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┘
+  PP2       │ MPI Send/Recv    │                  │                  │
+  ┌─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┐
+  │ TP0     │          TP1     │           TP2    │            TP3   │  layer16-23  │
+  │ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐     │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │
+  │ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘     │
+  │ ┌───────┼──────────────────┼─────AllReduce────┼──────────────────┼────────┐     │
+  │ └───────┼──────────────────┼──────────────────┼──────────────────┼────────┘     │
+  └─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┘
+  PP3       │ MPI Send/Recv    │                  │                  │
+  ┌─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┐
+  │ TP0     │          TP1     │           TP2    │            TP3   │  layer24-31  │
+  │ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐ ┌───────▼────────┐     │
+  │ │ OMP            │ │ OMP            │ │ OMP            │ │ OMP            │     │
+  │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │ │ │ │ │ │ │ │    │     │
+  │ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│ │ ▼ ▼ ▼ ▼ ▼ ▼ ...│     │
+  │ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘ └───────┬────────┘     │
+  │ ┌───────┼──────────────────┼─────AllReduce────┼──────────────────┼────────┐     │
+  │ └───────┼──────────────────┼──────────────────┼──────────────────┼────────┘     │
+  └─────────┼──────────────────┼──────────────────┼──────────────────┼──────────────┘
+            │                  │                  │                  │
+            ▼                  ▼                  ▼                  ▼
+       Predictor(PP3)     Predictor(PP3)     Predictor(PP3)     Predictor(PP3)
+            │ MPI Send/Recv    │                  │                  │
+            ▼                  ▼                  ▼                  ▼
+       Searchers(PP0)     Searchers(PP0)     Searchers(PP0)     Searchers(PP0)
+            │
+            ▼
+         Output
+*/
+
 // Template parameters:
 // ATTN_CLS - class for attention impl.
 // MLP_CLS - MLP implementation
@@ -147,7 +222,15 @@ public:
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
-        for (int i = 0; i < layers; ++i) {
+        if (layers % ctx->ppSize != 0) {
+            std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)."
+                      << std::endl;
+            std::exit(-1);
+        }
+
+        int layers_per_pp_stage = layers / ctx->ppSize;
+        int start_layer = ctx->ppRank * layers_per_pp_stage;
+        for (int i = start_layer; i < start_layer + layers_per_pp_stage; ++i) {
             auto pdec = new DECODER(ctx, i);
             if (dt == DataType::int8) {
                 this->setDecoderWeights<int8_t>(pdec, modelPath, i);
@@ -232,9 +315,9 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", this->embBuf->Rows(), this->embBuf->Cols(),
-                this->embBuf->Stride());
-        dbg.dumpMatrix(*this->embBuf);
+        dbg.debugPrint(
+                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
 #endif
 
         // Prepare attention mask
@@ -244,9 +327,22 @@ public:
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
         t1.release();
 
+#ifdef PIPELINE_PARALLEL
+        // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
+        if (ctx->ppSize > 1 && ctx->ppRank > 0) {
+            int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
+            int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
+            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // TODO: Error: different scope when dynamic loading so file
+            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+        }
+#endif
+
         // Decoder: forward
         int hiddenSize = ctx->hiddenSize;
-        for (int i = 0; i < this->decoders.size(); ++i) {
+        int layers_per_pp_stage = this->decoders.size();
+        for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
                 // Expand the prefix KV cache for each batch
@@ -295,6 +391,18 @@ public:
                 }
             }
         }
+
+#ifdef PIPELINE_PARALLEL
+        // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
+        if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
+            int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
+            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
+            // TODO: Error: different scope when dynamic loading so file
+            // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
+            return std::tuple<float *, int, int>(nullptr, 0, 0);
+        }
+#endif
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
@@ -393,6 +501,7 @@ public:
         t1.release();
 
         // Decoder: forward
+        // TODO: Add PIPELINE_PARALLEL feature
         int hiddenSize = ctx->hiddenSize;
         for (int i = 0; i < this->decoders.size(); ++i) {
             int workers = this->messenger.getSize();
@@ -486,13 +595,16 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
             int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
-        int splits = messenger.getSize();
-        int splitIdx = messenger.getRank();
+        int tpSize = messenger.getSize();
+        int tpRank = messenger.getRank();
+        int ppSize = Env::getPipelineStage();
+        int ppRank = messenger.getColor();
+        // printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 
         if (context != nullptr) {
             if (context->hiddenSize == hiddenSize && context->attHeadNum == attHeadNum
                     && context->kvHeadNum == kvHeadNum && context->intermediateSize == imSize
-                    && context->splitIdx == splitIdx) {
+                    && context->tpRank == tpRank) {
                 return context.get();
             } else {
                 printf("Different context size not unsupported!\n");
@@ -500,7 +612,8 @@ protected:
             }
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, splitIdx, splits, ropeParamsPtr));
+                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
+                    ropeParamsPtr));
         }
 
         return this->context.get();

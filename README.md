@@ -15,7 +15,6 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
     - [Built from source](#built-from-source)
       - [Prepare Environment](#prepare-environment)
         - [Manually](#manually)
-        - [Docker](#docker)
         - [How to build](#how-to-build)
   - [Models Preparation](#models-preparation)
   - [API usage](#api-usage)
@@ -87,6 +86,18 @@ pip install xfastertransformer
 ```bash
 docker pull intel/xfastertransformer:latest
 ```
+Run the docker with the command (Assume model files are in `/data/` directory):  
+```bash
+docker run -it \
+    --name xfastertransformer \
+    --privileged \
+    --shm-size=16g \
+    -v /data/:/data/ \
+    -e "http_proxy=$http_proxy" \
+    -e "https_proxy=$https_proxy" \
+    intel/xfastertransformer:latest
+```
+**Notice!!!**: Please enlarge `--shm-size` if  **bus error** occurred while running in the multi-ranks mode . The default docker limits the shared memory size to 64MB and our implementation uses many shared memories to achieve a  better performance.
 
 ### Built from source
 #### Prepare Environment
@@ -95,30 +106,6 @@ docker pull intel/xfastertransformer:latest
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
-
-##### Docker
-- Build docker image from Dockerfile
-  ```bash
-  docker build \
-  -f dockerfiles/Dockerfile \
-  --build-arg "HTTP_PROXY=${http_proxy}" \
-  --build-arg "HTTPS_PROXY=${https_proxy}" \
-  -t intel/xfastertransformer:dev-ubuntu22.04 .
-  ```
-Then run the docker with the command (Assume model files are in `/data/` directory):  
-```bash
-docker run -it \
-    --name xfastertransformer-dev \
-    --privileged \
-    --shm-size=16g \
-    -v "${PWD}":/root/xfastertransformer \
-    -v /data/:/data/ \
-    -w /root/xfastertransformer \
-    -e "http_proxy=$http_proxy" \
-    -e "https_proxy=$https_proxy" \
-    intel/xfastertransformer:dev-ubuntu22.04
-```
-**Notice!!!**: Please enlarge `--shm-size` if  **bus error** occurred while running in the multi-ranks mode . The default docker limits the shared memory size to 64MB and our implementation uses many shared memories to achieve a  better performance.
 
 ##### How to build
 - Using 'CMake'
