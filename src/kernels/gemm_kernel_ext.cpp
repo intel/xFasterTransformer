@@ -429,6 +429,16 @@ void small_gemm_transb(const float *attnMask, const float *A, const float16_t *B
     small_gemm_transb<float, float16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
 }
 
+void small_gemm_transb(const float *attnMask, const float *A, const bfloat16_t *B, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc) {
+    small_gemm_transb<float, bfloat16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
+}
+
+void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const bfloat16_t *B, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc) {
+    small_gemm_transb<bfloat16_t, bfloat16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
+}
+
 void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K,
         int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, float16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
