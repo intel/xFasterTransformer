@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -276,7 +276,7 @@ void QwenRotaryEmbedding::forward(
                     __m512 pSinHalfVec = _mm512_maskz_loadu_ps(mask, &psin[i + half]);
 
                     // Compute something like:
-                    // q[i] = ( q[i] * pcos[i] - q[i + half] * psin[i] )*logN;
+                    // q[i] = ( q[i] * pcos[i] - q[i + half] * psin[i] ) * logN;
                     // q[i + half] = ( q[i + half] * pcos[i + half] + q[i] * psin[i + half] ) * logN;
                     if (head < qHeads) {
                         __m512 qVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &q[i]));

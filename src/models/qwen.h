@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,13 +14,12 @@
 // ============================================================================
 #pragma once
 
+#include "attn_qwen.h"
 #include "common_decoder.h"
 #include "mlp_llama.h"
 #include "rms_norm.h"
 #include "rotary_embedding_qwen.h"
 #include "token_embedding.h"
-#include "attn_qwen.h"
-
 
 // TODO: Need to check FP16 KV Cache
 template <typename WeiT>

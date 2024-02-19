@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,15 +15,14 @@
 #pragma once
 #include <cmath>
 
+#include "attention.h"
 #include "common_decoder.h"
 #include "rms_norm.h"
-#include "attention.h"
 
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS = RmsNorm>
 class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
 public:
-    QwenAttention(int layerId, DecoderContext *ctx)
-        : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
+    QwenAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
         this->qkpo.init_logn(ctx->maxSeqLength);
     }
 };
