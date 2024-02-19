@@ -77,6 +77,10 @@ do
 		iter=$2
 		shift 2
         ;;
+        -w | --warmup)
+		warmup=$2
+		shift 2
+        ;;
         "")
         shift
         break
@@ -95,11 +99,12 @@ input_tokens=${input_tokens:-32}
 output_tokens=${output_tokens:-32}
 beam_width=${beam_width:-1}
 iter=${iter:-10}
+warmup=${warmup:-2}
 
 echo "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
-# Example here is using fake model, you can use real model as well
-export XFT_FAKE_MODEL=1
+# Example here is default using fake model, you can use real model as well
+export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-1}
 
 model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
 
@@ -113,7 +118,8 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_in ${input_tokens}	\
     --token_out ${output_tokens} \
     --beam_width ${beam_width} \
-    --iteration ${iter}"
+    --iteration ${iter} \
+    --warmup ${warmup}"
 
 if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
     benchmark_cmd+=" --padding=False"

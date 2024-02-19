@@ -46,19 +46,19 @@ public:
 
 class Env {
 private:
-    static int &verbose_value() {
+    static int &verboseValue() {
         static int value = 0;
         return value;
     }
 
 public:
-    static void initValue() {
+    static void initVerbose() {
         char *xft_verbose_value = getenv("XFT_VERBOSE");
         if (xft_verbose_value != NULL) {
             int value = atoi(xft_verbose_value);
-            verbose_value() = value;
+            verboseValue() = value;
         } else {
-            verbose_value() = 0;
+            verboseValue() = 0;
         }
 
         // TODO: Move XFT_FAKE_MODEL here.
@@ -67,7 +67,32 @@ public:
         }
     }
 
-    static int getVerbose() { return verbose_value(); }
+    static int getVerbose() { return verboseValue(); }
+
+// Pipeline Parallel
+private:
+    static int &pipelineStageValue() {
+        static int value = 1;
+        return value;
+    }
+
+public:
+    static void initPipelineStage() {
+        char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGES");
+        if (xft_pipeline_value != NULL) {
+#ifdef PIPELINE_PARALLEL
+            int value = atoi(xft_pipeline_value);
+            if (value >= 1)
+                pipelineStageValue() = value;
+#else
+            printf("[WARNING] XFT_PIPELINE_STAGES need to build with WITH_PIPELINE_PARALLEL=ON.\n");
+#endif
+        } else {
+            pipelineStageValue() = 1;
+        }
+    }
+
+    static int getPipelineStage() { return pipelineStageValue(); }
 };
 
 #define GEMMVERBOSE(api_func, compute_func)                \

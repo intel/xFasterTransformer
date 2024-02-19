@@ -34,6 +34,7 @@ public:
     bool setStopWords(std::vector<std::vector<int>> stopWordsList);
 
 private:
+    std::vector<int> syncToken(std::tuple<float *, int, int> &result);
     std::vector<int> search(std::tuple<float *, int, int> &result);
 
     AbstractDecoder &decoder;

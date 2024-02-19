@@ -132,6 +132,13 @@ else()
     list(APPEND 3RDPART_LIB_LIST "xdnn_static")
 endif()
 
+# pipeline parallel feature
+option(WITH_PIPELINE_PARALLEL "Build with pipeline parallel" OFF)
+if(WITH_PIPELINE_PARALLEL)
+    message(STATUS "Notice: Building with pipeline parallel.")
+    add_definitions(-DPIPELINE_PARALLEL=true)
+endif()
+
 # Enable AVX512_FP16 optimization
 # add_definitions(-DAVX512_FP32_WEIGHT_ONLY_FP16=true)
 add_definitions(-DAVX512_FP16_WEIGHT_ONLY_FP16=true)

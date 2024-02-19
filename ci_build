@@ -1,39 +1,87 @@
 #!/bin/bash
-set -e -x
 
 pushd 3rdparty/
 sh prepare_oneccl.sh
 source ./oneccl/build/_install/env/setvars.sh
 popd
 
+current_dir=$(pwd)
+workspace_dir=$(echo $current_dir | sed 's|\(.*\/xFasterTransformer\).*|\1|')
+
+interrupt_handler() {
+    exit 1
+}
+trap interrupt_handler SIGINT
+
+function Info() {
+    echo -e "\033[32m[Info] $@ \033[0m"
+}
+
+function Warning() {
+    echo -e "\033[33;3m[Warning] $@ \033[0m"
+}
+
+function Error() {
+    echo -e "\033[31m[Error] $@ \033[0m"
+    exit 1
+}
+
 # Define functions for build, UT, and model
 build() {
-    echo "Running build function with arguments: $@"
-    rm -rf build && mkdir build && cd build && cmake -DPython_EXECUTABLE=`which python` .. && make -j
+    Info "Running build function with arguments: $@"
+    rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=1 -DPython_EXECUTABLE=$(which python) .. && make -j
 }
 
 ut() {
-    echo "Running UT function with arguments: $@"
-    cd tests/ut
-    # rm -rf build && mkdir build && cd build && cmake .. && make -j
+    pushd $workspace_dir/build/ut/
+    Info "Running UT function with arguments: $@"
+    for file in ./*; do
+        if [ -x "$file" ]; then
+            Info "Running UT: $file"
+            ./$file
+            if [ $? -ne 0 ]; then
+                Warning "Error: $file execution failed"
+            fi
+        fi
+    done
+    popd
 }
 
 model() {
-    numactl -H
-    core_count=$(lscpu | grep "Core(s) per socket" | awk '{print $NF}')
+    pushd benchmark/
+    Info "Running model function with arguments: $@"
+    case $1 in
+    "full")
+        Info "model full test..."
+        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/*/)
+        DTYPE_LIST=("fp16" "bf16" "int8" "w8a8" "int4" "nf4"
+            "bf16_fp16" "bf16_int8" "bf16_w8a8" "bf16_int4"
+            "bf16_nf4" "w8a8_int8" "w8a8_int4" "w8a8_nf4")
+        ;;
+    *)
+        Info "model simple test..."
+        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/llama*/ \
+            $workspace_dir/examples/model_config/chatglm*/)
+        DTYPE_LIST=('fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8')
+        ;;
+    esac
 
-    echo "Running model function with arguments: $@"
-    # DATASETS_LIST=( 'Llama-2-7b' 'chatglm-6b' 'chatglm2-6b' 'llama-13b' 'llama-7b' 'opt-1.3b' 'opt-13b' 'opt-30b' )
-    DATASETS_LIST=( 'llama-2-7b-chat' 'llama-2-13b-chat' 'chatglm2-6b' 'llama-13b' 'llama-7b' )
-    DATATYPE_LIST=( 'fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8' )
-    for DATASET in ${DATASETS_LIST[@]}; do
-    for DATATYPE in ${DATATYPE_LIST[@]}; do
-        # always run one socket
-        OMP_NUM_THREADS=$core_count numactl -N 0 -m 0 \
-            build/example --model=/data/${DATASET}-cpu/ --token=/data/${DATASET}-hf/tokenizer.model \
-            --dtype=${DATATYPE} --loop=3 --input_len=18 --output_len=32 --no_stream
+    for MODEL in ${MODEL_LIST[@]}; do
+        model_name=$(basename "$MODEL")
+
+        case "$model_name" in
+        *30* | *60* | *65* | *66* | *70* | *72*)
+            Info "Skipping the large model: $model_name."
+            continue
+            ;;
+        esac
+
+        for DTYPE in ${DTYPE_LIST[@]}; do
+            # always run one socket
+            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0
+        done
     done
-    done
+    popd
 }
 
 # Check if a function with the given name exists and call it with provided arguments
@@ -43,8 +91,8 @@ if [ "$#" -ge 1 ]; then
     if [ "$(type -t $function_name)" = "function" ]; then
         $function_name "$@"
     else
-        echo "Function $function_name not found."
+        Error "Function $function_name not found."
     fi
 else
-    echo "Usage: ci_build function_name [function_arguments...]"
+    Info "Usage: ci_build function_name [function_arguments...]"
 fi

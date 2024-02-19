@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #include "greedy_search.h"
+#include "messenger.h"
 #include "search_utils.h"
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
@@ -27,7 +28,45 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     stopWordsIndex = {};
 }
 
-// Get next tokens accoring to the prompt IDs
+std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) {
+    // send data from last predictor stage to first embedding stage in pipeline parallel
+#ifdef PIPELINE_PARALLEL
+    DecoderContext *ctx = decoder.getContext();
+    // Messenger &messenger = decoder.getMessenger();
+
+    if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
+        this->nextTokens = std::vector<int>(batchSize, 0);
+        if (ctx->ppSize > 1 && ctx->ppRank == 0) {
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
+        }
+    } else { // The last predictor pipeline parallel stage
+        this->nextTokens = this->search(result);
+        if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
+            int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
+            int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
+                    MPI_COMM_WORLD);
+            // TODO: Error: different scope when dynamic loading so file
+            // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
+        }
+    }
+#else
+    this->nextTokens = this->search(result);
+#endif
+
+    this->curLen++;
+    for (int batchId = 0; batchId < batchSize; ++batchId) {
+        output.insert(output.begin() + (batchId + 1) * curLen - 1, nextTokens[batchId]);
+    }
+
+    return this->nextTokens;
+}
+
+// Get next tokens accoring to the prompt IDs for first token
 std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen) {
     TimeLine t("1st Token");
     this->step = 0;
@@ -46,30 +85,17 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
 
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
-    this->nextTokens = search(result);
-
-    this->curLen++;
-    for (int batchId = 0; batchId < batchSize; ++batchId) {
-        output.insert(output.begin() + (batchId + 1) * curLen - 1, nextTokens[batchId]);
-    }
-
-    return this->nextTokens;
+    return this->syncToken(result);
 }
 
-// Get next tokens according to previous predicted ID
+// Get next tokens according to previous predicted ID for next tokens
 std::vector<int> GreedySearch::getNextToken() {
     TimeLine t("Next Token");
     int64_t dims[3] = {batchSize, 1, 1};
+
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 
-    this->nextTokens = search(result);
-
-    this->curLen++;
-    for (int batchId = 0; batchId < batchSize; ++batchId) {
-        output.insert(output.begin() + (batchId + 1) * curLen - 1, nextTokens[batchId]);
-    }
-
-    return this->nextTokens;
+    return this->syncToken(result);
 }
 
 bool GreedySearch::isDone() {

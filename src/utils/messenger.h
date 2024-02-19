@@ -24,6 +24,7 @@
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "timeline.h"
+#include "verbose.h"
 
 class Messenger {
 private:
@@ -46,7 +47,7 @@ private:
             exit(-1);
         }
 
-        helperInit = (int (*)(int *, int *))dlsym(commHelperHanlde, "init");
+        helperInit = (int (*)(int *, int *, int *))dlsym(commHelperHanlde, "init");
         helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
         helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
         helperAllreduceBF16 = (void (*)(bfloat16_t *, bfloat16_t *, size_t))dlsym(commHelperHanlde, "allreduceBF16");
@@ -54,9 +55,15 @@ private:
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
 
+        helperWorldSendFP32 = (void (*)(const float *, int, int, int))dlsym(commHelperHanlde, "worldSendFP32");
+        helperWorldRecvFP32 = (void (*)(float *, int, int, int))dlsym(commHelperHanlde, "worldRecvFP32");
+        helperWorldSendINT32 = (void (*)(const int32_t *, int, int, int))dlsym(commHelperHanlde, "worldSendINT32");
+        helperWorldRecvINT32 = (void (*)(int32_t *, int, int, int))dlsym(commHelperHanlde, "worldRecvINT32");
+
         atexit(Messenger::mpi_finalize);
 
-        int sameHostnames = (*helperInit)(&rank, &size);
+        color = Env::getPipelineStage();
+        int sameHostnames = (*helperInit)(&size, &rank, &color);
 
 #ifdef USE_SHM
         if (sameHostnames && !std::getenv("XFT_ONECCL")) {
@@ -87,6 +94,8 @@ public:
     int getRank() { return rank; }
 
     int getSize() { return size; }
+
+    int getColor() { return color; }
 
     // From some example code of oneCCL, inplace reducing is supported
     // Only float is used now
@@ -144,6 +153,22 @@ public:
         if (check()) { (*helperAllgatherv)(send_buf, count, recv_buf, recv_counts); }
     }
 
+    void worldSendFP32(const float *buf, int count, int dest, int tag) {
+        if (check()) { (*helperWorldSendFP32)(buf, count, dest, tag); }
+    }
+
+    void worldRecvFP32(float *buf, int count, int source, int tag) {
+        if (check()) { (*helperWorldRecvFP32)(buf, count, source, tag); }
+    }
+
+    void worldSendINT32(const int32_t *buf, int count, int dest, int tag) {
+        if (check()) { (*helperWorldSendINT32)(buf, count, dest, tag); }
+    }
+
+    void worldRecvINT32(int32_t *buf, int count, int source, int tag) {
+        if (check()) { (*helperWorldRecvINT32)(buf, count, source, tag); }
+    }
+
     bool withMpirun() {
         return (std::getenv("MPI_LOCALRANKID") || std::getenv("MPI_LOCALNRANKS") || std::getenv("PMI_RANK")
                        || std::getenv("PMI_SIZE") || std::getenv("PMIX_RANK"))
@@ -176,16 +201,21 @@ private:
 private:
     int size;
     int rank;
+    int color; // Processes with the same color will be placed into the same sub-communicator
     bool localRanksFlag;
 
 #ifdef USE_SHM
     ShmReduction *pshm;
 #endif
     void *commHelperHanlde;
-    int (*helperInit)(int *, int *);
+    int (*helperInit)(int *, int *, int *);
     void (*helperFreePCOMM)();
     void (*helperAllreduce)(float *, float *, size_t);
     void (*helperAllreduceBF16)(bfloat16_t *, bfloat16_t *, size_t);
     void (*helperBroadcast)(int *, size_t);
     void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
+    void (*helperWorldSendFP32)(const float *, int, int, int);
+    void (*helperWorldRecvFP32)(float *, int, int, int);
+    void (*helperWorldSendINT32)(const int32_t *, int, int, int);
+    void (*helperWorldRecvINT32)(int32_t *, int, int, int);
 };
