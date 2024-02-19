@@ -15,8 +15,8 @@
 #pragma once
 
 namespace xft {
-enum class DataType {
-    fp32,
+enum DataType {
+    fp32 = 0,
     bf16,
     fp16,
     int8,
@@ -31,5 +31,10 @@ enum class DataType {
     w8a8_int8,
     w8a8_int4,
     w8a8_nf4,
+};
+
+enum DeviceKind {
+    CPU = 0,
+    GPU,
 };
 } // namespace xft

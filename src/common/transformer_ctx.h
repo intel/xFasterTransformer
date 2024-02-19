@@ -46,6 +46,8 @@ public:
         , betaSlow(vbetaSlow) {}
 };
 
+class MMHelper;
+
 struct DecoderContext {
     // # of mini-batch
     int batchSize;
@@ -105,6 +107,8 @@ struct DecoderContext {
     hpj::Matrix<float> qkvMatMul; // query, key, value
     hpj::Matrix<float> imOut; // intermediate output
 
+    MMHelper *mmHelper;
+
 private:
     float *rawBuffer;
     uint64_t rawBufSize; // how many floats
@@ -112,7 +116,8 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr, int numThreads = 0)
+            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
+            int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)

@@ -38,9 +38,9 @@ public:
 
         // Vertically split intermediate(FC1) weight
         hpj::Matrix<WeiT> quantizedIntermediateWeight;
-        MMHelper::convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, nullptr, nullptr, true,
+        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, nullptr, nullptr, true,
                 quantizedIntermediateWeight, intermediateWeightScale, intermediateWeightZero, intermediateWeightSum);
-        MMHelper::packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
+        ctx->mmHelper->packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
 
         // Intermediate bias
         auto range = SplitUtil::getTaskRange(intermediateSize, ctx->numSplit, ctx->splitIdx);
@@ -50,9 +50,9 @@ public:
 
         // Horizontally split the output(FC2) weight
         hpj::Matrix<WeiT> quantizedOutputWeight;
-        MMHelper::convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, nullptr, nullptr, false,
+        ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, nullptr, nullptr, false,
                 quantizedOutputWeight, outputWeightScale, outputWeightZero, outputWeightSum);
-        MMHelper::packWeight(trans, quantizedOutputWeight, outputWeight);
+        ctx->mmHelper->packWeight(trans, quantizedOutputWeight, outputWeight);
 
         // Output bias
         outputBias.Resize(hiddenSize);
@@ -105,8 +105,8 @@ public:
 
         // intermediate
         switch (ctx->actType) {
-            case DecoderContext::RELU: intermediate_relu(imInput, imBuffer); break;
-            case DecoderContext::GELU: intermediate_gelu(imInput, imBuffer); break;
+            case DecoderContext::RELU: intermediate_relu(ctx, imInput, imBuffer); break;
+            case DecoderContext::GELU: intermediate_gelu(ctx, imInput, imBuffer); break;
         }
 
 #ifdef DEBUG
@@ -120,15 +120,32 @@ public:
 
             // denseWithScaledSum is enough, but as the perf of denseWithScaledSum is not verified, so denseWithSum is still here
             if (gamma == 1) {
-                DecoderUtil::denseWithSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputWeightSum,
-                        outputBias, resultBuffer2, resultBuffer1);
+                float *pbias = outputBias.Data();
+                if (outputBias.Size() == 0) { pbias = nullptr; }
+                ctx->mmHelper->compute_residential(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
+                        imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
+                        outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
+                        resultBuffer1.Stride(), pbias, resultBuffer2.Data(), resultBuffer2.Stride());
             } else {
-                DecoderUtil::denseWithScaledSum(imBuffer, outputWeight, outputWeightScale, outputWeightZero,
-                        outputWeightSum, outputBias, gamma, resultBuffer2, resultBuffer1);
+                float *pbias = outputBias.Data();
+                if (outputBias.Size() == 0) { pbias = nullptr; }
+                ctx->mmHelper->compute_resext(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
+                        imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
+                        outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
+                        resultBuffer1.Stride(), pbias, gamma, resultBuffer2.Data(), resultBuffer2.Stride());
             }
         } else {
-            DecoderUtil::dense(imBuffer, outputWeight, outputWeightScale, outputWeightZero, outputWeightSum, outputBias,
-                    resultBuffer1);
+            if (outputBias.Size() == 0) {
+                ctx->mmHelper->compute(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
+                        imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
+                        outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
+                        resultBuffer1.Stride());
+            } else {
+                ctx->mmHelper->compute_bias(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
+                        imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
+                        outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
+                        resultBuffer1.Stride(), outputBias.Data());
+            }
         }
 
 #ifdef DEBUG
@@ -146,15 +163,15 @@ public:
     }
 
 protected:
-    void intermediate_relu(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
-        MMHelper::compute_biasadd_relu(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(),
+    void intermediate_relu(DecoderContext *ctx, hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
+        ctx->mmHelper->compute_biasadd_relu(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(),
                 input.Stride(), intermediateWeight.Data(), intermediateWeightScale.Data(),
                 intermediateWeightZero.Data(), intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride(),
                 intermediateBias.Data());
     }
 
-    void intermediate_gelu(hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
-        MMHelper::compute(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(), input.Stride(),
+    void intermediate_gelu(DecoderContext *ctx, hpj::Matrix<float> &input, hpj::Matrix<float> &output) {
+        ctx->mmHelper->compute(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(), input.Stride(),
                 intermediateWeight.Data(), intermediateWeightScale.Data(), intermediateWeightZero.Data(),
                 intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride());
 
