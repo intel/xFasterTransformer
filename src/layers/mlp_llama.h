@@ -271,7 +271,7 @@ private:
             //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, R, ldr, tmpBuf, ldt);
             // }
             {
-                ctx->MMHelper->compute_residential(
+                ctx->mmHelper->compute_residential(
                         false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
             }
         } else {
@@ -279,7 +279,7 @@ private:
             //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, nullptr, 0, tmpBuf, ldt);
             // }
             {
-                ctx->MMHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+                ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
             }
         }
     }
@@ -326,7 +326,7 @@ private:
     }
 
     template <typename T1, typename T2>
-    void catGateUpProj((DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
+    void catGateUpProj(DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
         TimeLine t("catGateUpProj");
 
         assert(input.Rows() == output.Rows());
@@ -343,7 +343,7 @@ private:
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        ctx->MMHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
 
         // Compute silu on the left half and then add it with the right half
         DecoderUtil::siluSum(output, siluBuf);
