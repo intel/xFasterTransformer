@@ -2,7 +2,6 @@
 gradio==4.11.0
 gradio_client==0.7.3
 sentencepiece==0.1.99
-tokenizers==0.13.3
 torch==2.0.1+cpu
 transformers==4.36.0
 transformers_stream_generator==0.0.4
