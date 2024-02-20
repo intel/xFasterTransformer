@@ -15,8 +15,8 @@
 #pragma once
 #include <numeric>
 
-#include "attention_kernels.h"
 #include "aligned_type.h"
+#include "attention_kernels.h"
 #include "bfloat16.h"
 #include "copy_util.h"
 #include "debugger.h"
@@ -99,7 +99,8 @@ public:
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols,
                         keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
                 memcpy(concatBuf + i * responsibleCols + qResponsibleCols + kvResponsibleCols,
-                        valueWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
+                        valueWeight + i * qkvStride + this->startKVHead * headSize,
+                        kvResponsibleCols * sizeof(OriWeiT));
             }
         }
         float *concatScale = nullptr;
@@ -120,9 +121,9 @@ public:
         }
 
         hpj::Matrix<WeiT> convertedqkvWeight;
-        MMHelper::convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
+        ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
-        MMHelper::packWeight(trans, convertedqkvWeight, qkvWeight);
+        ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
 
         free(concatBuf);
         free(concatScale);
@@ -150,10 +151,10 @@ public:
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
         hpj::Matrix<WeiT> convertedWeight;
-        MMHelper::convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, attnOutScale, attnOutZero,
+        ctx->mmHelper->convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, attnOutScale, attnOutZero,
                 this->startQHead * headSize, qResponsibleCols, false, convertedWeight, attnOutputWeightScale,
                 attnOutputWeightZero, attnOutputWeightSum, true);
-        MMHelper::packWeight(trans, convertedWeight, attnOutputWeight);
+        ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG
         dbg.debugPrint("attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
@@ -241,7 +242,15 @@ public:
 
         // Query, Key, Value computed together
         TimeLine t2("QKV.linear");
-        DecoderUtil::dense(imBuffer, qkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, qkvBias, qkvGroupMatMul);
+        if (qkvBias.Size() == 0) {
+            ctx->mmHelper->compute(false, imBuffer.Rows(), qkvWeight.Cols(), imBuffer.Cols(), 1.0f, imBuffer.Data(),
+                    imBuffer.Stride(), qkvWeight.Data(), qkvWeightScale.Data(), qkvWeightZero.Data(),
+                    qkvWeightSum.Data(), 0.0f, qkvGroupMatMul.Data(), qkvGroupMatMul.Stride());
+        } else {
+            ctx->mmHelper->compute_bias(false, imBuffer.Rows(), qkvWeight.Cols(), imBuffer.Cols(), 1.0f,
+                    imBuffer.Data(), imBuffer.Stride(), qkvWeight.Data(), qkvWeightScale.Data(), qkvWeightZero.Data(),
+                    qkvWeightSum.Data(), 0.0f, qkvGroupMatMul.Data(), qkvGroupMatMul.Stride(), qkvBias.Data());
+        }
         t2.release();
 
         hpj::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
@@ -307,9 +316,7 @@ public:
             if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
                 flashAttention(
                         ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
-            else {
-                fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
-            }
+            else { fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen); }
         }
         t4.release();
 
@@ -330,15 +337,32 @@ public:
             // denseWithScaledSum should be enough, but as the performance of denseWithScaledSum is not verified,
             // So here still use denseWithSum
             if (gamma == 1) {
-                DecoderUtil::denseWithSum(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
-                        attnOutputWeightSum, attnOutputBias, inputBuffer, outBuffer);
+                float *pbias = attnOutputBias.Data();
+                if (attnOutputBias.Size() == 0) { pbias = nullptr; }
+                ctx->mmHelper->compute_residential(false, attnSplit.Rows(), attnOutputWeight.Cols(), attnSplit.Cols(),
+                        1.0f, attnSplit.Data(), attnSplit.Stride(), attnOutputWeight.Data(),
+                        attnOutputWeightScale.Data(), attnOutputWeightZero.Data(), attnOutputWeightSum.Data(), 0.0f,
+                        outBuffer.Data(), outBuffer.Stride(), pbias, inputBuffer.Data(), inputBuffer.Stride());
             } else {
-                DecoderUtil::denseWithScaledSum(attnSplit, attnOutputWeight, attnOutputWeightScale,
-                        attnOutputWeightZero, attnOutputWeightSum, attnOutputBias, gamma, inputBuffer, outBuffer);
+                float *pbias = attnOutputBias.Data();
+                if (attnOutputBias.Size() == 0) { pbias = nullptr; }
+                ctx->mmHelper->compute_resext(false, attnSplit.Rows(), attnOutputWeight.Cols(), attnSplit.Cols(), 1.0f,
+                        attnSplit.Data(), attnSplit.Stride(), attnOutputWeight.Data(), attnOutputWeightScale.Data(),
+                        attnOutputWeightZero.Data(), attnOutputWeightSum.Data(), 0.0f, outBuffer.Data(),
+                        outBuffer.Stride(), pbias, gamma, inputBuffer.Data(), inputBuffer.Stride());
             }
         } else {
-            DecoderUtil::dense(attnSplit, attnOutputWeight, attnOutputWeightScale, attnOutputWeightZero,
-                    attnOutputWeightSum, attnOutputBias, outBuffer);
+            if (attnOutputBias.Size() == 0) {
+                ctx->mmHelper->compute(false, attnSplit.Rows(), attnOutputWeight.Cols(), attnSplit.Cols(), 1.0f,
+                        attnSplit.Data(), attnSplit.Stride(), attnOutputWeight.Data(), attnOutputWeightScale.Data(),
+                        attnOutputWeightZero.Data(), attnOutputWeightSum.Data(), 0.0f, outBuffer.Data(),
+                        outBuffer.Stride());
+            } else {
+                ctx->mmHelper->compute_bias(false, attnSplit.Rows(), attnOutputWeight.Cols(), attnSplit.Cols(), 1.0f,
+                        attnSplit.Data(), attnSplit.Stride(), attnOutputWeight.Data(), attnOutputWeightScale.Data(),
+                        attnOutputWeightZero.Data(), attnOutputWeightSum.Data(), 0.0f, outBuffer.Data(),
+                        outBuffer.Stride(), attnOutputBias.Data());
+            }
         }
         t5.release();
 

@@ -244,7 +244,7 @@ public:
         int workers = messenger.getSize();
         int rank = messenger.getRank();
         this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
-        this->setPredictorWeight(modelPath);
+        this->setPredictorWeight(ctx, modelPath);
 
         // KVCache Manager
         this->kvCacheMgr.reset(new KVCacheManager<KVCacheT>(layers));
@@ -436,9 +436,9 @@ public:
         // Predictor
         float *finalOut = (float *)outBuf;
         if (!logitsAll)
-            this->predictor->forward(lnOut, finalOut, batchSize);
+            this->predictor->forward(ctx, lnOut, finalOut, batchSize);
         else
-            this->predictor->forward(lnOut, finalOut, batchSize * seqLen);
+            this->predictor->forward(ctx, lnOut, finalOut, batchSize * seqLen);
 
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
@@ -614,6 +614,7 @@ protected:
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
+            this->context->mmHelper = new MMHelper(xft::DeviceKind::CPU, 0);
         }
 
         return this->context.get();
@@ -825,7 +826,7 @@ protected:
         free(ln2Beta);
     }
 
-    void setPredictorWeight(const std::string &modelPath) {
+    void setPredictorWeight(DecoderContext *ctx, const std::string &modelPath) {
         int inputSize = predictor->getInputSize();
         int outputSize = predictor->getOutputSize();
 
@@ -834,7 +835,7 @@ protected:
 
         loadWeight(modelPath + "/model.lm_head.weight.bin", weight, inputSize * outputSize, this->getDataType());
 
-        predictor->setWeight(weight, bias);
+        predictor->setWeight(ctx, weight, bias);
 
         free(weight);
     }
