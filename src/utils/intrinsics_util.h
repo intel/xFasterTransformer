@@ -20,6 +20,12 @@
 
 namespace xft {
 
+inline __m512 set_avx512(float v) {
+    return _mm512_set1_ps(v);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 template <typename T>
 inline __m512 load_avx512(const T *addr) {
     static_assert(std::is_same_v<T, float>, "Data type in load_avx512 is not supported!");

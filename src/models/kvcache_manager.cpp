@@ -17,11 +17,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "bfloat16.h"
 #include "float16.h"
 
 /******************** Start functions used by reorderCache *******************/
+template <typename T>
+void swapValues32(T *p1, T *p2, int size) {
+    static_assert(sizeof(T) == 4, "swapValues32 is designed for data types with 4 bytes.");
 
-static void swapValues(float *p1, float *p2, int size) {
     int i = 0;
     for (; i + 15 < size; i += 16) {
         __m512 v1 = _mm512_loadu_ps(p1 + i);
@@ -41,7 +44,10 @@ static void swapValues(float *p1, float *p2, int size) {
     }
 }
 
-static void swapValues(float16_t *p1, float16_t *p2, int size) {
+template <typename T>
+void swapValues16(T *p1, T *p2, int size) {
+    static_assert(sizeof(T) == 2, "swapValues16 is designed for data types with 2 bytes.");
+
     int i = 0;
     for (; i + 31 < size; i += 32) {
         __m512i v1 = _mm512_loadu_si512((__m512i *)(p1 + i));
@@ -59,6 +65,18 @@ static void swapValues(float16_t *p1, float16_t *p2, int size) {
         _mm512_mask_storeu_epi16(p1 + i, mask, v2);
         _mm512_mask_storeu_epi16(p2 + i, mask, v1);
     }
+}
+
+static void swapValues(float *p1, float *p2, int size) {
+    swapValues32(p1, p2, size);
+}
+
+static void swapValues(float16_t *p1, float16_t *p2, int size) {
+    swapValues16(p1, p2, size);
+}
+
+static void swapValues(bfloat16_t *p1, bfloat16_t *p2, int size) {
+    swapValues16(p1, p2, size);
 }
 
 template <typename T>
@@ -231,4 +249,5 @@ void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, 
 }
 
 template class KVCacheManager<float16_t>;
+template class KVCacheManager<bfloat16_t>;
 template class KVCacheManager<float>;

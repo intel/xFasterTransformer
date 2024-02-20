@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,22 +13,16 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
-#include "bfloat16.h"
+#include <cmath>
 
-// Selected data types according to weight data type
-template <typename WeiT>
-struct TypeSelector {
-    using InType = float;
-    using ImType = float; // intermediate data type, default in float
-    using OutType = float;
-    using KVCacheType = float16_t;
-};
+#include "attention.h"
+#include "common_decoder.h"
+#include "rms_norm.h"
 
-// Specialization for bfloat16_t
-template <>
-struct TypeSelector<bfloat16_t> {
-    using InType = bfloat16_t;
-    using ImType = bfloat16_t;
-    using OutType = bfloat16_t;
-    using KVCacheType = float16_t;
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS = RmsNorm>
+class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
+public:
+    QwenAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
+        this->qkpo.init_logn(ctx->maxSeqLength);
+    }
 };

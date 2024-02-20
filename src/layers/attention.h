@@ -270,7 +270,7 @@ public:
         TimeLine t3("QKPO");
         int qheads = this->endQHead - this->startQHead;
         int kheads = this->endKVHead - this->startKVHead;
-        int qkShape[6] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads, ctx->maxSeqLength};
+        int qkShape[7] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads, ctx->maxSeqLength, pastSeqLen};
         if (positionIds != nullptr) {
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds);
         } else if (ctx->maxPosEmbed > 0) {
@@ -383,7 +383,6 @@ public:
     }
 
 protected:
-    // TODO: improve the perf
     template <typename KVCacheT>
     void selfAttentionBF16(DecoderContext *ctx, hpj::Matrix<bfloat16_t> &query, hpj::Matrix<bfloat16_t> &key,
             hpj::Matrix<bfloat16_t> &value, hpj::Matrix<bfloat16_t> &result, KVCacheTensor<KVCacheT> &presentKey,
@@ -453,10 +452,7 @@ protected:
         bool scoreBufByThread = (ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen) <= scoreBufSize);
 
         // If total tasks are too small (compared to total thread number), need to shard the head
-        // TODO: make sure BF16 can also shard head
-        bool shardHead
-                = (!std::is_same_v<InT, bfloat16_t> && !std::is_same_v<OutT, bfloat16_t>)&&(ctx->inputSeqLen == 1)
-                && (ctx->numThreads >= batchSize * responsibleHeads * 2);
+        bool shardHead = (ctx->inputSeqLen == 1) && (ctx->numThreads >= batchSize * responsibleHeads * 2);
 
         // Need to copy current key/values to cache seperately if:
         // (1) For group attention (#kvHeads != #qHeads)
@@ -485,13 +481,9 @@ protected:
             kvCopied = true;
         }
 
-        // TODO: remove it (currently here to bypass compile issue)
-        if constexpr (!std::is_same_v<WeiT, bfloat16_t>) {
-            // Seperate impl. when head is sharded
-            if (shardHead) {
-                return crossAttnShardHead(
-                        ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
-            }
+        // Seperate impl. when head is sharded
+        if (shardHead) {
+            return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
         }
 
 #pragma omp parallel for collapse(3)
@@ -614,9 +606,12 @@ protected:
 
         int N = pastSeqLen + ctx->inputSeqLen;
         int splits = ctx->numThreads / (batchSize * responsibleHeads);
-        int nb = (N + splits - 1) / splits;
+        int nb = (N + splits - 1) / splits; // block size for each thread
 
         REQUIRES(splits > 1, "Do not call me when splits=%d", splits);
+
+        // AVX512 is used and the case where head_size is not multiple of 16 hasn't been taken into account
+        REQUIRES(ctx->attHeadSize % 16 == 0, "Head size (%d) is not supported.", ctx->attHeadSize);
 
         // max(xi), sum(exp(xi)), finish_tag for each split
         int totalTasks = batchSize * responsibleHeads * splits;
@@ -686,16 +681,11 @@ protected:
                     lda = strideC;
                     ldb = valueMatInfo.second;
                     ldc = result.Stride();
-                    A = C;
-                    B = valueMatInfo.first + nOff * ldb;
-                    C = (s == 0 ? result.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize
-                                : &shardedOut[threadIdx * ctx->attHeadSize]);
-
-                    if constexpr (std::is_same_v<KVCacheT, float>) {
-                        xdnn_sgemm_single_thread(false, false, m, n, k, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
-                    } else if constexpr (std::is_same_v<KVCacheT, float16_t>) {
-                        xdnn_sgemm_f32f16f32_single_thread(
-                                false, false, m, n, k, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
+                    {
+                        float *A = C;
+                        KVCacheT *B = valueMatInfo.first + nOff * ldb;
+                        auto C = &shardedOut[threadIdx * ctx->attHeadSize];
+                        xft::small_gemm(A, B, C, m, n, k, lda, ldb, ldc);
                     }
 
                     std::get<2>(splitInfo[threadIdx].data) = 1; // set finished flag
@@ -722,25 +712,31 @@ protected:
                             realSum += splitSum * revFactor;
                         }
 
-                        float *p = C;
-#pragma simd
-                        for (int t = 0; t < ctx->attHeadSize; ++t) {
-                            int idx = threadIdx;
+                        // Accumulate in float
+                        float acc[ctx->attHeadSize];
+                        memset(acc, 0, ctx->attHeadSize * sizeof(float));
+
+                        for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
                             float splitMax = std::get<0>(splitInfo[idx].data);
                             float splitSum = std::get<1>(splitInfo[idx].data);
                             float revFactor = std::get<2>(splitInfo[idx].data);
-                            C[t] = p[t] * revFactor * (splitSum / realSum);
+
+                            float factor = revFactor * (splitSum / realSum);
+                            auto vfactor = xft::set_avx512(factor);
+
+                            float *p = &shardedOut[idx * ctx->attHeadSize];
+                            for (int off = 0; off < ctx->attHeadSize; off += 16) {
+                                auto vacc = xft::load_avx512(acc + off);
+                                vacc = vacc + xft::load_avx512(p + off) * vfactor;
+                                xft::store_avx512(acc + off, 0xffff, vacc);
+                            }
                         }
 
-                        for (int idx = headStartIdx + 1; idx < headStartIdx + splits; ++idx) {
-                            float *p = &shardedOut[idx * ctx->attHeadSize];
-#pragma simd
-                            for (int t = 0; t < ctx->attHeadSize; ++t) {
-                                float splitMax = std::get<0>(splitInfo[idx].data);
-                                float splitSum = std::get<1>(splitInfo[idx].data);
-                                float revFactor = std::get<2>(splitInfo[idx].data);
-                                C[t] += p[t] * revFactor * (splitSum / realSum);
-                            }
+                        // Store the result (acc -> result)
+                        ImT *pResult = result.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize;
+                        for (int off = 0; off < ctx->attHeadSize; off += 16) {
+                            auto vacc = xft::load_avx512(acc + off);
+                            xft::store_avx512(pResult + off, 0xffff, vacc);
                         }
                     }
 

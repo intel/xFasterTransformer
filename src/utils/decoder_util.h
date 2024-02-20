@@ -439,13 +439,14 @@ public:
     }
 
     // compute silu on the left half and then add it with the right half
-    template <typename T>
-    static void siluSum(hpj::Matrix<T> &src) {
+    template <typename T1, typename T2>
+    static void siluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
         int M = src.Rows();
         int stride = src.Cols();
         int N = stride / 2;
+        int ldd = dst.Stride();
 
 #pragma omp parallel for collapse(2)
         for (int64_t i = 0; i < M; ++i) {
@@ -458,7 +459,7 @@ public:
                 auto x1 = _mm512_add_ps(one, x0);
                 auto x2 = _mm512_div_ps(left, x1);
                 auto res = _mm512_mul_ps(right, x2);
-                xft::store_avx512(src.Data() + i * stride + j, mask, res);
+                xft::store_avx512(dst.Data() + i * ldd + j, mask, res);
             }
         }
     }

@@ -18,7 +18,7 @@
 
 template <typename WeiT>
 Qwen<WeiT>::Qwen(const std::string &modelPath)
-    : CommonDecoder<Attention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
+    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
     // Context
     DecoderContext *ctx = this->getContext();
 
