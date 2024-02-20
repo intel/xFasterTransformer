@@ -614,7 +614,7 @@ protected:
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
-            this->context->mmHelper = new MMHelper(xft::DeviceKind::CPU, 0);
+            this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, 0);
         }
 
         return this->context.get();
