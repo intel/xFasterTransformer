@@ -27,9 +27,8 @@ struct TypeSelector {
 // Specialization for bfloat16_t
 template <>
 struct TypeSelector<bfloat16_t> {
-    // TODO: change it to bfloat16_t, make it work and verify the accuracy
-    using InType = float;
-    using ImType = float;
-    using OutType = float;
+    using InType = bfloat16_t;
+    using ImType = bfloat16_t;
+    using OutType = bfloat16_t;
     using KVCacheType = float16_t;
 };

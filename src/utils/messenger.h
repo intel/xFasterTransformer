@@ -120,9 +120,7 @@ public:
         if (count * sizeof(bfloat16_t) > pshm->getSHMSize() || !localRanksFlag) {
             (*helperAllreduceBF16)(sendBuf, recvBuf, count);
         } else {
-            // TODO: fix it
-            printf("Error: BF16 reduce add not implemented.\n");
-            exit(-1);
+            pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
         }
 #else
         (*helperAllreduceBF16)(sendBuf, recvBuf, count);
