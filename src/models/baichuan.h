@@ -16,8 +16,8 @@
 
 #include "attn_baichuan.h"
 #include "common_decoder.h"
-#include "mlp_llama.h"
 #include "layers_norm.h"
+#include "mlp_llama.h"
 #include "rotary_embedding.h"
 #include "token_embedding.h"
 
@@ -27,6 +27,7 @@ public:
     Baichuan(const std::string &modelPath);
     ~Baichuan();
 
+    void prepareAttnMaskBase(int *ids, int step);
     void prepareAttnMask(int *ids, int step);
     void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
     void lastLayerNormForward(float *input, float *output, int rows);

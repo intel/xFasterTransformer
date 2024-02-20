@@ -14,54 +14,55 @@
 // ============================================================================
 #pragma once
 #include <cmath>
-#include <iostream>
 #include <cstring>
+#include <iostream>
 
+#include "attention.h"
 #include "common_decoder.h"
 #include "rms_norm.h"
-#include "attention.h"
+
+static int respBaichuanHeads = 0;
+static float *alibiSlopes = nullptr;
 
 template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm>
 class BaichuanAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
 public:
     BaichuanAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
-        alibiSlopes = nullptr;
-    }
-
-    virtual ~BaichuanAttention() {
-        if (alibiSlopes != nullptr)
-            delete[] alibiSlopes;
-    }
-
-    const float* getAlibiSlopes(int attHeadNum) {
-        if (alibiSlopes == nullptr) {
-            int responsibleHeads = this->endQHead - this->startQHead;
-            alibiSlopes = new float[responsibleHeads];
-            // alibi mask element 
+        if (ctx->maxPosEmbed <= 0 && alibiSlopes == nullptr) {
+            respBaichuanHeads = this->endQHead - this->startQHead;
+            alibiSlopes = new float[respBaichuanHeads];
+            // alibi mask element
             float ratio = std::pow(2, 8);
-            int closestPowerOf2 = std::pow(2, int(std::log2(attHeadNum)));
+            int closestPowerOf2 = std::pow(2, int(std::log2(ctx->attHeadNum)));
             float x0 = std::pow(ratio, 1.0 / closestPowerOf2);
             float x1 = std::pow(ratio, 1.0 / (closestPowerOf2 * 2));
-            for (int i = 0, h = this->startQHead; i < responsibleHeads; ++i, ++h) {
+            for (int i = 0, h = this->startQHead; i < respBaichuanHeads; ++i, ++h) {
                 if (h < closestPowerOf2)
                     alibiSlopes[i] = 1 / std::pow(x0, h + 1);
                 else
                     alibiSlopes[i] = 1 / std::pow(x1, 2 * (h - closestPowerOf2) + 1);
             }
         }
-        return alibiSlopes;
     }
 
-    const int getResponsibleHeads() {
-        return this->endQHead - this->startQHead;
+    const static float *getAlibiSlopes() { return alibiSlopes; }
+
+    const static int getResponsibleHeads() { return respBaichuanHeads; }
+
+    virtual ~BaichuanAttention() {
+        if (alibiSlopes != nullptr) {
+            delete[] alibiSlopes;
+            alibiSlopes = nullptr;
+        }
     }
 
 protected:
-
-    const float* getMask(const float* attnMask, int bId, int hId, int srcLen, int tgtLen) override {
-        return attnMask + hId * srcLen * tgtLen;
+    const float *getMask(const float *attnMask, int bId, int hId, int srcLen, int tgtLen) override {
+        if (alibiSlopes != nullptr)
+            return attnMask + hId * srcLen * tgtLen;
+        else
+            return attnMask + bId * srcLen * tgtLen;
     }
 
 private:
-    float* alibiSlopes;
 };
