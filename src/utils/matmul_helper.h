@@ -1179,7 +1179,7 @@ private:
 
     dnnl::memory::format_tag get_onednn_input_layout(dnnl::memory::data_type dt) {
         if (this->kind == dnnl::engine::kind::cpu) {
-            return dnnl::memory::format_tag::undef;
+            return dnnl::memory::format_tag::ab;
         } else if (this->kind == dnnl::engine::kind::gpu) {
             return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
@@ -1208,9 +1208,45 @@ private:
         }
     }
 
+    dnnl::memory::format_tag get_onednn_bias_layout(dnnl::memory::data_type dt) {
+        if (this->kind == dnnl::engine::kind::cpu) {
+            return dnnl::memory::format_tag::ab;
+        } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::AB32a16b;
+            return dnnl::memory::format_tag::any;
+        } else {
+            printf("[XFT][ERROR] Need a right engine kind in bias layout.");
+            std::exit(-1);
+        }
+    }
+
+    dnnl::memory::format_tag get_onednn_scale_layout(dnnl::memory::data_type dt) {
+        if (this->kind == dnnl::engine::kind::cpu) {
+            return dnnl::memory::format_tag::ab;
+        } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::AB32a16b;
+            return dnnl::memory::format_tag::any;
+        } else {
+            printf("[XFT][ERROR] Need a right engine kind in scale layout.");
+            std::exit(-1);
+        }
+    }
+
+    dnnl::memory::format_tag get_onednn_shift_layout(dnnl::memory::data_type dt) {
+        if (this->kind == dnnl::engine::kind::cpu) {
+            return dnnl::memory::format_tag::ab;
+        } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::AB32a16b;
+            return dnnl::memory::format_tag::any;
+        } else {
+            printf("[XFT][ERROR] Need a right engine kind in shift layout.");
+            std::exit(-1);
+        }
+    }
+
     dnnl::memory::format_tag get_onednn_output_layout(dnnl::memory::data_type dt) {
         if (this->kind == dnnl::engine::kind::cpu) {
-            return dnnl::memory::format_tag::undef;
+            return dnnl::memory::format_tag::ab;
         } else if (this->kind == dnnl::engine::kind::gpu) {
             return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
@@ -1243,13 +1279,13 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tout, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1322,14 +1358,14 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
-            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f32));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1404,14 +1440,14 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
-            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f32));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1493,13 +1529,13 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tin, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1580,16 +1616,19 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
             auto scale_md = memory::desc(scale_dims,
                     std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tin, bfloat16_t> ? dt::bf16 : dt::undef),
-                    tag::ab);
+                    std::is_same_v<Tin, float>
+                            ? get_onednn_scale_layout(dt::f32)
+                            : (std::is_same_v<Tin, bfloat16_t> ? get_onednn_scale_layout(dt::bf16)
+                                                               : get_onednn_scale_layout(dt::undef)));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tout, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1615,7 +1654,10 @@ private:
         memory::dims scale_dims = {M, N};
         auto scale_md = memory::desc(scale_dims,
                 std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tin, bfloat16_t> ? dt::bf16 : dt::undef),
-                tag::ab);
+                std::is_same_v<Tin, float>
+                            ? get_onednn_scale_layout(dt::f32)
+                            : (std::is_same_v<Tin, bfloat16_t> ? get_onednn_scale_layout(dt::bf16)
+                                                               : get_onednn_scale_layout(dt::undef)));
         dnnl::memory scale_mem;
         if (C == res) {
             scale_mem = memory(scale_md, *engine);
@@ -1688,17 +1730,20 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::bf16, get_onednn_input_layout(dt::bf16));
             auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
-            auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
+            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f32));
             auto shift_md = memory::desc(shift_dims,
                     std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef),
-                    tag::ab);
+                    std::is_same_v<Tin, float>
+                            ? get_onednn_shift_layout(dt::f32)
+                            : (std::is_same_v<Tout, bfloat16_t> ? get_onednn_shift_layout(dt::bf16)
+                                                                : get_onednn_shift_layout(dt::undef)));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tout, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
+                output_md = memory::desc(output_dims, dt::f32, get_onednn_output_layout(dt::f32));
             } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt::bf16, get_onednn_output_layout(dt::bf16));
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1729,7 +1774,10 @@ private:
         memory::dims shift_dims = {M, N};
         auto shift_md = memory::desc(shift_dims,
                 std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef),
-                tag::ab);
+                std::is_same_v<Tin, float>
+                            ? get_onednn_shift_layout(dt::f32)
+                            : (std::is_same_v<Tout, bfloat16_t> ? get_onednn_shift_layout(dt::bf16)
+                                                                : get_onednn_shift_layout(dt::undef)));
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
@@ -1791,10 +1839,9 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
-            auto input_md = memory::desc(input_dims, dt::s8, tag::ab);
+            auto input_md = memory::desc(input_dims, dt::s8, get_onednn_input_layout(dt::s8));
             auto weight_md = memory::desc(weight_dims, dt::s8, get_onednn_weight_layout(dt::s8));
-            memory::desc output_md;
-            output_md = memory::desc(output_dims, dt::s32, tag::ab);
+            auto output_md = memory::desc(output_dims, dt::s32, get_onednn_output_layout(dt::s32));
 
             // Create primitive descriptor and primitive.
             matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
