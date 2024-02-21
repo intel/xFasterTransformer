@@ -38,11 +38,11 @@
 class MMHelper {
 public:
     MMHelper(xft::DeviceKind device_kind, int idx) {
-        if (device_kind == xft::DeviceKind::CPU) {
+        if (device_kind == xft::DeviceKind::iCPU) {
             kind = dnnl::engine::kind::cpu;
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
-        } else if (device_kind == xft::DeviceKind::GPU) {
+        } else if (device_kind == xft::DeviceKind::iGPU) {
             kind = dnnl::engine::kind::gpu;
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);

@@ -34,7 +34,7 @@ enum DataType {
 };
 
 enum DeviceKind {
-    CPU = 0,
-    GPU,
+    iCPU = 0,
+    iGPU,
 };
 } // namespace xft

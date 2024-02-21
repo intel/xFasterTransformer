@@ -22,7 +22,7 @@
 typedef int8_t s8;
 typedef uint8_t u8;
 
-typedef struct {
+typedef struct w8a8 {
     int8_t s8;
     operator int8_t() { return s8; }
 } w8a8_t;

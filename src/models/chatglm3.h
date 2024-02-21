@@ -17,10 +17,10 @@
 #include "chatglm2.h"
 
 // ChatGLM3 and ChatGLM2 have the same structure, so ChatGLM3 utilizes the implementation of ChatGLM2.
-template <typename WeiT, typename NormT = RmsNorm>
-class ChatGLM3 : public ChatGLM2<WeiT, NormT> {
+template <typename WeiT>
+class ChatGLM3 : public ChatGLM2<WeiT> {
 public:
-    ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT, NormT>(modelPath, "chatglm3") {}
+    ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT>(modelPath, "chatglm3") {}
 };
 
 template class ChatGLM3<float>;
