@@ -21,7 +21,11 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 find_package (Python COMPONENTS Interpreter Development)
-execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl
+execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --force-reinstall --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl
                         mkl-static==2024.0.0 mkl-include==2024.0.0
                 RESULT_VARIABLE EXIT_CODE
-                OUTPUT_QUIET)
+                )
+
+if(NOT ${EXIT_CODE} EQUAL 0)
+        message(STATUS "Dependency MKL installation failed. Please check the logs for more information.")
+endif()
