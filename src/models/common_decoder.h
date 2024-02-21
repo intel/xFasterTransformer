@@ -615,7 +615,6 @@ protected:
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
 
-            printf("Engine: %d:%d\n", Env::getEngineKind(), Env::getEngineIndex());
             if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0)
                 this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
             else
