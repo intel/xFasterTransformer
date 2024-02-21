@@ -614,7 +614,15 @@ protected:
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
-            this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, 0);
+
+            if (Env::getEngineKind() == xft::DeviceKind::iCPU)
+                this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, Env::getEngineIndex());
+            else if (Env::getEngineKind() == xft::DeviceKind::iGPU)
+                this->context->mmHelper = new MMHelper(xft::DeviceKind::iGPU, Env::getEngineIndex());
+            else{
+                printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
+                exit(-1);
+            }
         }
 
         return this->context.get();

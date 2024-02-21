@@ -17,6 +17,9 @@
 #include <cinttypes>
 #include <iostream>
 #include <mutex>
+#include <sstream>
+
+#include "dtype.h"
 
 class FunTimer {
 private:
@@ -45,6 +48,7 @@ public:
 };
 
 class Env {
+    // Verbose
 private:
     static int &verboseValue() {
         static int value = 0;
@@ -56,7 +60,10 @@ public:
         char *xft_verbose_value = getenv("XFT_VERBOSE");
         if (xft_verbose_value != NULL) {
             int value = atoi(xft_verbose_value);
-            verboseValue() = value;
+            if (value >= 0)
+                verboseValue() = value;
+            else
+                printf("[ERROR] XFT_VERBOSE value need to be greater than or equal to 0.\n");
         } else {
             verboseValue() = 0;
         }
@@ -69,7 +76,7 @@ public:
 
     static int getVerbose() { return verboseValue(); }
 
-// Pipeline Parallel
+    // Pipeline Parallel
 private:
     static int &pipelineStageValue() {
         static int value = 1;
@@ -84,6 +91,8 @@ public:
             int value = atoi(xft_pipeline_value);
             if (value >= 1)
                 pipelineStageValue() = value;
+            else
+                printf("[ERROR] XFT_PIPELINE_STAGES value need to be greater than 0.\n");
 #else
             printf("[WARNING] XFT_PIPELINE_STAGES need to build with WITH_PIPELINE_PARALLEL=ON.\n");
 #endif
@@ -93,6 +102,52 @@ public:
     }
 
     static int getPipelineStage() { return pipelineStageValue(); }
+
+    // Engine Kind and Index
+private:
+    static xft::DeviceKind &engineKindValue() {
+        static xft::DeviceKind value = xft::DeviceKind::iCPU;
+        return value;
+    }
+
+    static int &engineIndexValue() {
+        static int value = 0;
+        return value;
+    }
+
+public:
+    static void initEngineKindIndex() {
+        char *xft_engine_env = getenv("XFT_ENGINE");
+        if (xft_engine_env != NULL) {
+            std::string xft_engine_str(xft_engine_env);
+            std::stringstream ss(xft_engine_str);
+            std::string token;
+
+            if (std::getline(ss, token, ':')) {
+                if (token == "CPU") {
+                    engineKindValue() = xft::DeviceKind::iCPU;
+                    engineIndexValue() = 0;
+                    return;
+                } else if (token == "GPU")
+                    engineKindValue() = xft::DeviceKind::iGPU;
+                else
+                    printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
+            }
+            if (std::getline(ss, token, ':')) {
+                int value = std::stoi(token);
+                if (value >= 0)
+                    engineIndexValue() = value;
+                else
+                    printf("[ERROR] Undefined device index in XFT_ENGINE.\n");
+            }
+        } else {
+            engineKindValue() = xft::DeviceKind::iCPU;
+            engineIndexValue() = 0;
+        }
+    }
+
+    static xft::DeviceKind getEngineKind() { return engineKindValue(); }
+    static int getEngineIndex() { return engineIndexValue(); }
 };
 
 #define GEMMVERBOSE(api_func, compute_func)                \
