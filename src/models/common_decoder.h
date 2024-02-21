@@ -615,9 +615,9 @@ protected:
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
 
-            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0)
+            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
                 this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
-            else
+            else // assignment through the user
                 this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
         }
 
