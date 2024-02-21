@@ -132,13 +132,18 @@ public:
                     engineKindValue() = xft::DeviceKind::iGPU;
                 else
                     printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
+            } else {
+                printf("[ERROR] Wrong value: XFT_ENGINE.\n");
             }
+
             if (std::getline(ss, token, ':')) {
                 int value = std::stoi(token);
                 if (value >= 0)
                     engineIndexValue() = value;
                 else
                     printf("[ERROR] Undefined device index in XFT_ENGINE.\n");
+            } else {
+                engineIndexValue() = -1;
             }
         } else {
             engineKindValue() = xft::DeviceKind::iCPU;

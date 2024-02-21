@@ -615,14 +615,11 @@ protected:
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
 
-            if (Env::getEngineKind() == xft::DeviceKind::iCPU)
-                this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, Env::getEngineIndex());
-            else if (Env::getEngineKind() == xft::DeviceKind::iGPU)
-                this->context->mmHelper = new MMHelper(xft::DeviceKind::iGPU, Env::getEngineIndex());
-            else {
-                printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
-                exit(-1);
-            }
+            printf("Engine: %d:%d\n", Env::getEngineKind(), Env::getEngineIndex());
+            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0)
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
+            else
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
         }
 
         return this->context.get();
