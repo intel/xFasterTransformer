@@ -67,7 +67,7 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
 /*
 Pipeline parallel and tensor parallel introduction:
 
-  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGE = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
   2) TP sync by oneCCL(row_comm) or shared_memory
   3) PP sync by MPI MPI_COMM_WORLD
 
@@ -614,7 +614,11 @@ protected:
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
-            this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, 0);
+
+            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
+            else // assignment through the user
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
         }
 
         return this->context.get();
