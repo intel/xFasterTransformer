@@ -619,7 +619,7 @@ protected:
                 this->context->mmHelper = new MMHelper(xft::DeviceKind::iCPU, Env::getEngineIndex());
             else if (Env::getEngineKind() == xft::DeviceKind::iGPU)
                 this->context->mmHelper = new MMHelper(xft::DeviceKind::iGPU, Env::getEngineIndex());
-            else{
+            else {
                 printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
                 exit(-1);
             }
