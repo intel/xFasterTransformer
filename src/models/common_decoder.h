@@ -67,7 +67,7 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
 /*
 Pipeline parallel and tensor parallel introduction:
 
-  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGE = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
   2) TP sync by oneCCL(row_comm) or shared_memory
   3) PP sync by MPI MPI_COMM_WORLD
 

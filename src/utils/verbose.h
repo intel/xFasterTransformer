@@ -85,16 +85,16 @@ private:
 
 public:
     static void initPipelineStage() {
-        char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGES");
+        char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGE");
         if (xft_pipeline_value != NULL) {
 #ifdef PIPELINE_PARALLEL
             int value = atoi(xft_pipeline_value);
             if (value >= 1)
                 pipelineStageValue() = value;
             else
-                printf("[ERROR] XFT_PIPELINE_STAGES value need to be greater than 0.\n");
+                printf("[ERROR] XFT_PIPELINE_STAGE value need to be greater than 0.\n");
 #else
-            printf("[WARNING] XFT_PIPELINE_STAGES need to build with WITH_PIPELINE_PARALLEL=ON.\n");
+            printf("[WARNING] XFT_PIPELINE_STAGE need to build with WITH_PIPELINE_PARALLEL=ON.\n");
 #endif
         } else {
             pipelineStageValue() = 1;
