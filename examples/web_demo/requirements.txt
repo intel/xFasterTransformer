@@ -1,5 +1,5 @@
 -f https://download.pytorch.org/whl/torch_stable.html
-gradio==4.11.0
+gradio==4.19.2
 gradio_client==0.7.3
 sentencepiece==0.1.99
 torch==2.0.1+cpu
