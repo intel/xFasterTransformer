@@ -813,7 +813,7 @@ protected:
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
 
                     xft::copy(dstK, srcK, headSize);
-                    xft::copy(srcV, dstV, headSize);
+                    xft::copy(dstV, srcV, headSize);
                 }
             }
         }
