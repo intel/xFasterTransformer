@@ -31,6 +31,7 @@ enum DataType {
     w8a8_int8,
     w8a8_int4,
     w8a8_nf4,
+    unknown,
 };
 
 enum DeviceKind {

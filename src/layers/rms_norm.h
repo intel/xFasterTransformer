@@ -15,6 +15,7 @@
 #pragma once
 
 #include "bfloat16.h"
+#include "weight_util.h"
 
 namespace xft {
 
@@ -25,6 +26,7 @@ public:
     ~RmsNorm();
 
     void setWeight(const float *w, const float *, int cols);
+    void setWeight(const std::string &modelPath, const std::string &, int cols);
 
     // Input and output are in shape of (rows, normSize)
     void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
@@ -41,7 +43,7 @@ private:
     int normSize;
 
     // the scale weight
-    float *weight;
+    float *weight = nullptr;
 };
 
 } // namespace xft

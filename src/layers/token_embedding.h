@@ -38,6 +38,10 @@ public:
         }
     }
 
+    void setWeights(const std::string &weightPath) {
+        loadWeight(weightPath, embTable, vocabSize * hiddenSize);
+    }
+
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>
     void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
@@ -57,5 +61,5 @@ private:
     int vocabSize;
     int hiddenSize;
 
-    T *embTable;
+    T *embTable = nullptr;
 };

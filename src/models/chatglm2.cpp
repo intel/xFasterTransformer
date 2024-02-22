@@ -45,31 +45,12 @@ ChatGLM2<WeiT>::~ChatGLM2() {
 
 template <typename WeiT>
 void ChatGLM2<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
-    int vocabSize = embedding->getVocabSize();
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
-
-    embedding->setWeights(tokenEmb);
-
-    free(tokenEmb);
+    embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
 template <typename WeiT>
 void ChatGLM2<WeiT>::setFinalLnWeight(const std::string &modelPath) {
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *gamma = (float *)malloc(hiddenSize * sizeof(float));
-    float *beta = (float *)malloc(hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
-
-    finalLN.setWeight(gamma, beta, hiddenSize);
-
-    free(gamma);
-    free(beta);
+    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
 // Prepare attention_mask

@@ -45,7 +45,7 @@ public:
     // |                                         |
     // |                                         | splitSize(N)
     // |_________________________________________|
-    void setWeight(DecoderContext *ctx, const float *w, const float *b) {
+    void setWeight(DecoderContext *ctx, const float *w, const float *b = nullptr) {
         this->splitSize = outputSize / splits;
         this->splitOffset = this->splitSize * splitIdx;
 
@@ -111,5 +111,5 @@ private:
     hpj::Vector<float> scaleWeight; // if weight is int8
     hpj::Vector<float> zeroWeight; // if weight is int8
     hpj::Vector<float> sumWeight; // if weight is int8
-    float *bias;
+    float *bias = nullptr;
 };
