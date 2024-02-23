@@ -30,10 +30,10 @@ int QwenRotaryEmbedding::inv_freq_size = -1;
 
 // dim: equals to head size
 QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
+    this->dim = dim;
+    this->base_initial = base;
+    this->base = base;
     if (!initialized) {
-        this->dim = dim;
-        this->base_initial = base;
-        this->base = base;
         this->max_seq_len_cached = max_position_embeddings;
         this->inv_freq_size = (dim + 1) / 2;
         float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -156,12 +156,22 @@ void QwenRotaryEmbedding::forward(
     const int pastKeyLength = qkShape[6];
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
-    REQUIRES(seqLen + pastKeyLength < maxSupportedSeqLength, "process seq length must less than 32768.");
+    int kv_len = seqLen + pastKeyLength;
+    REQUIRES(kv_len < maxSupportedSeqLength, "process seq length must less than 32768.");
 
-    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    /*** In QWEN torch version, they acturally used seq_len+past_key_len as kv_len to calculate new base
+        kv_seq_len = hidden_states.size()[1]
+        if past_key_values[0] is not None:
+            # past key values[0][0] shape: bs * seq_len * head_num * dim
+            if self.use_cache_quantization:
+                kv_seq_len += past_key_values[0][0][0].shape[2]
+            else:
+                kv_seq_len += past_key_values[0][0].shape[1]
+
+    ***/
+    float new_base = getNewBaseValue(kv_len, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -178,7 +188,7 @@ void QwenRotaryEmbedding::forward(
         cur_emb_sin = std::get<1>(value);
     }
 
-    /*LOGN??
+    /*** LOGN in Torch
         if key_size > self.seq_length and self.use_logn_attn and not self.training:
             if self.use_cache_quantization:
                 seq_start = key[0].size(2) - query.size(1)
@@ -188,7 +198,7 @@ void QwenRotaryEmbedding::forward(
                 seq_end = key.size(1)
             logn_tensor = self.logn_tensor[:, seq_start:seq_end, :, :].type_as(query)
             query = query * logn_tensor.expand_as(query)
-*/
+    ***/
     float *q_scale = logn + pastKeyLength;
 #pragma omp parallel for collapse(3)
     for (int head = 0; head < heads; ++head) {
@@ -231,9 +241,10 @@ void QwenRotaryEmbedding::forward(
     const int pastKeyLength = qkShape[6];
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
-    REQUIRES(seqLen + pastKeyLength < maxSupportedSeqLength, "process seq length must less than 32768.");
+    int kv_len = seqLen + pastKeyLength;
+    REQUIRES(kv_len < maxSupportedSeqLength, "process seq length must less than 32768.");
 
-    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    float new_base = getNewBaseValue(kv_len, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
 
