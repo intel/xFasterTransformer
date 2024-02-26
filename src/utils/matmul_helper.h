@@ -33,7 +33,7 @@
 #include <map>
 #include <tuple>
 
-#define USE_AMX_M 8
+#define USE_AMX_M 1
 
 class MMHelper {
 public:
