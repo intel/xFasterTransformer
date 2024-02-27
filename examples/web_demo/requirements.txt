@@ -1,8 +1,6 @@
--f https://download.pytorch.org/whl/torch_stable.html
 gradio==4.19.2
-gradio_client==0.7.3
+gradio_client==0.10.1
 sentencepiece==0.1.99
-torch==2.0.1+cpu
 transformers==4.36.0
 transformers_stream_generator==0.0.4
 einops==0.7.0
