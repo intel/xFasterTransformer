@@ -27,8 +27,13 @@ struct TypeSelector {
 // Specialization for bfloat16_t
 template <>
 struct TypeSelector<bfloat16_t> {
-    using InType = bfloat16_t;
-    using ImType = bfloat16_t;
-    using OutType = bfloat16_t;
+    //todo(marvin):  Switch temporarily back to the original version
+    //to bypass the issues with Multi Query Attention and Group Query Attention.
+    // using InType = bfloat16_t;
+    // using ImType = bfloat16_t;
+    // using OutType = bfloat16_t;
+    using InType = float;
+    using ImType = float; // intermediate data type, default in float
+    using OutType = float;
     using KVCacheType = float16_t;
 };
