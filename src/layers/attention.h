@@ -123,7 +123,8 @@ public:
         hpj::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
-        ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
+        // ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
+        memcpy(qkvWeight.Data(), convertedqkvWeight.Data(), hiddenSize * responsibleCols * sizeof(WeiT));
 
         free(concatBuf);
         free(concatScale);

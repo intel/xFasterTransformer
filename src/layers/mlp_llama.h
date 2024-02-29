@@ -79,7 +79,8 @@ public:
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
-            ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
+            // ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
+            memcpy(catWeights.Data(), quantizedCatWeights.Data(), quantizedCatWeights.Rows() * quantizedCatWeights.Cols() * sizeof(WeiT));
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {

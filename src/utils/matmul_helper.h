@@ -28,6 +28,8 @@
 #include "uint4x2.h"
 #include "verbose.h"
 #include "xdnn.h"
+#include "gpu_util.h"
+#include "dnnl_debug.h"
 
 #include <cstring>
 #include <map>
@@ -389,9 +391,39 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+if (N > 30000) {
             GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute",
                     xdnn_sgemm_f32f16f32_compute(
                             transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+} else {
+            GEMMVERBOSE("onednn_sgemm_f32f16f32_compute",
+                    onednn_sgemm_f32f16f32_compute(
+                            transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+}
+            printf("A:\n");
+            for (int i = 0; i < 6; ++i) {
+                for (int j = 0; j < 6; ++j) {
+                    printf("%.6f ", A[i * lda + j]);
+                }
+                printf("\n");
+            }
+            printf("\n");
+            printf("B:\n");
+            for (int i = 0; i < 6; ++i) {
+                for (int j = 0; j < 6; ++j) {
+                    printf("%.6f ", float(packedB[i * N + j]));
+                }
+                printf("\n");
+            }
+            printf("\n");
+            printf("C:\n");
+            for (int i = 0; i < 6; ++i) {
+                for (int j = 0; j < 6; ++j) {
+                    printf("%.6f ", C[i * ldc + j]);
+                }
+                printf("\n");
+            }
+            printf("\n");
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute",
                     xdnn_hgemm_f32f16f32_compute(
@@ -1191,7 +1223,8 @@ private:
 
     dnnl::memory::format_tag get_onednn_weight_layout(dnnl::memory::data_type dt) {
         if (this->kind == dnnl::engine::kind::cpu) {
-            if (dt == dnnl::memory::data_type::bf16) {
+            if (dt == dnnl::memory::data_type::bf16 ||
+                dt == dnnl::memory::data_type::f16) {
                 return dnnl::memory::format_tag::BA16a64b2a;
             } else if (dt == dnnl::memory::data_type::s8) {
                 return dnnl::memory::format_tag::BA16a64b4a;
@@ -1218,6 +1251,77 @@ private:
             printf("[XFT][ERROR] Need a right engine kind in output layout.");
             std::exit(-1);
         }
+    }
+
+    void onednn_sgemm_f32f16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+            const float16_t *packedB, float beta, float *C, int ldc) {
+        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
+        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
+        using namespace dnnl;
+        using tag = memory::format_tag;
+        using dt = memory::data_type;
+
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+        auto it = matmul_hub.find(key);
+        if (it != matmul_hub.end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B) and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims output_dims = {M, N};
+
+            // Create memory descriptors and memory objects for src, weights, bias, and dst.
+            auto input_md = memory::desc(input_dims, dt::f16, get_onednn_input_layout(dt::f16));
+            auto weight_md = memory::desc(weight_dims, dt::f16, get_onednn_weight_layout(dt::f16));
+            auto output_md = memory::desc(output_dims, dt::f16, get_onednn_output_layout(dt::f16));
+
+            // Create primitive descriptor and primitive.
+            matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
+            matmul_prim = new matmul(*matmul_pd);
+
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            matmul_hub[key] = value;
+        }
+
+        // Repack and convert input data.
+        auto packed_input_mem = memory(matmul_pd->src_desc(), *engine);
+        auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine);
+        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine);
+
+        // Reorder input
+        auto input_md = memory::desc({M, K}, dt::f32, tag::ab);
+        auto input_mem = memory(input_md, *engine);
+        memcpy_cpu2gpu(input_mem, const_cast<float *>(A));
+        dnnl::reorder(input_mem, packed_input_mem).execute(*stream, input_mem, packed_input_mem);
+
+        // Reorder weight
+        auto weight_md = memory::desc({K, N}, dt::f16, tag::ab);
+        auto weight_mem = memory(weight_md, *engine);
+        memcpy_cpu2gpu(weight_mem, const_cast<float16_t *>(packedB));
+        dnnl::reorder(weight_mem, packed_weight_mem).execute(*stream, weight_mem, packed_weight_mem);
+
+        // Create the primitive args.
+        std::unordered_map<int, memory> matmul_args;
+        matmul_args.insert({DNNL_ARG_SRC, packed_input_mem});
+        matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
+        matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
+
+        // Executions
+        matmul_prim->execute(*stream, matmul_args);
+
+        // Reorder output
+        auto output_md = memory::desc({M, N}, dt::f32, tag::ab);
+        auto output_mem = memory(output_md, *engine);
+        dnnl::reorder(packed_output_mem, output_mem).execute(*stream, packed_output_mem, output_mem);
+        stream->wait();
+
+        memcpy_gpu2cpu(C, output_mem);
     }
 
     template <typename Tin, typename Tout>
