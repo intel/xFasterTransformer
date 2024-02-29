@@ -65,8 +65,8 @@ public:
         hpj::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
-        ctx->mmHelper->packWeight(true, quantizedWeight, weight);
-        // memcpy(weight.Data(), quantizedWeight.Data(), quantizedWeight.Rows() * quantizedWeight.Cols() * sizeof(WeiT));
+        // ctx->mmHelper->packWeight(true, quantizedWeight, weight);
+        ctx->mmHelper->transposeWeight(true, quantizedWeight, weight);
 
         // Copy Bias
         if (b) {

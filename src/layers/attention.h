@@ -124,7 +124,7 @@ public:
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
         // ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
-        memcpy(qkvWeight.Data(), convertedqkvWeight.Data(), hiddenSize * responsibleCols * sizeof(WeiT));
+        ctx->mmHelper->transposeWeight(trans, convertedqkvWeight, qkvWeight);
 
         free(concatBuf);
         free(concatScale);

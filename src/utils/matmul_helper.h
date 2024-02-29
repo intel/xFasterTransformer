@@ -29,7 +29,7 @@
 #include "verbose.h"
 #include "xdnn.h"
 #include "gpu_util.h"
-#include "dnnl_debug.h"
+#include "copy_util.h"
 
 #include <cstring>
 #include <map>
@@ -379,6 +379,20 @@ public:
         }
     }
 
+    template <typename WeiT>
+    void transposeWeight(bool trans, hpj::Matrix<WeiT> &src, hpj::Matrix<WeiT> &dst) {
+        if (trans == true) {
+#pragma omp parallel for
+            for (int i = 0; i < dst.Rows(); ++i) {
+                for (int j = 0; j < dst.Cols(); ++j) {
+                    dst(i, j) = src(j, i);
+                }
+            }
+        } else {
+            xft::copy_MT(dst.Data(), src.Data(), dst.Rows() * dst.Cols());
+        }
+    }
+
     template <typename InT, typename WeiT, typename OutT>
     void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
@@ -391,15 +405,12 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-if (N > 30000) {
-            GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute",
-                    xdnn_sgemm_f32f16f32_compute(
-                            transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
-} else {
+            // GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute",
+            //         xdnn_sgemm_f32f16f32_compute(
+            //                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute",
                     onednn_sgemm_f32f16f32_compute(
                             transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
-}
             printf("A:\n");
             for (int i = 0; i < 6; ++i) {
                 for (int j = 0; j < 6; ++j) {
