@@ -64,7 +64,8 @@ void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
 
 template <typename WeiT>
 void OptDecoder<WeiT>::setFinalLnWeight(const std::string &modelPath) {
-    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
+    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", modelPath + "/model.final_layernorm.bias.bin",
+            embedding->getHiddenSize());
 }
 
 template <typename WeiT>
