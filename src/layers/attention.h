@@ -63,6 +63,10 @@ public:
         }
     }
 
+    ~Attention() {
+        // if (qkvWeight.Data() != nullptr) sycl::free(qkvWeight.Data(), q);
+    }
+
     // The inerface is for PyTorch, thus the weights are already transposed
     // OriWeiT: float or int8_t
     template <typename OriWeiT>
@@ -79,7 +83,6 @@ public:
         int qResponsibleCols = (this->endQHead - this->startQHead) * headSize;
         int kvResponsibleCols = (this->endKVHead - this->startKVHead) * headSize;
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
-        qkvWeight.Resize(hiddenSize, responsibleCols);
 
         OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT));
         if (trans) {
@@ -123,7 +126,10 @@ public:
         hpj::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
+        // qkvWeight.Resize(hiddenSize, responsibleCols);
         // ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
+        WeiT *input_data = sycl::malloc_device<WeiT>(hiddenSize * responsibleCols, *ctx->mmHelper->gpu_queue);
+        qkvWeight.Assign(input_data, hiddenSize, responsibleCols, responsibleCols);
         ctx->mmHelper->transposeWeight(trans, convertedqkvWeight, qkvWeight);
 
         free(concatBuf);

@@ -58,14 +58,16 @@ public:
 
         int K = inputSize;
         int N = this->splitSize;
-        weight.Resize(K, N);
         scaleWeight.Resize(N);
         zeroWeight.Resize(N);
 
         hpj::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
+        // weight.Resize(K, N);
         // ctx->mmHelper->packWeight(true, quantizedWeight, weight);
+        WeiT *input_data = sycl::malloc_device<WeiT>(K * N, *ctx->mmHelper->gpu_queue);
+        weight.Assign(input_data, K, N, N);
         ctx->mmHelper->transposeWeight(true, quantizedWeight, weight);
 
         // Copy Bias

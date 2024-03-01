@@ -15,8 +15,10 @@
 #pragma once
 #include <immintrin.h>
 #include "bfloat16.h"
+#include "copy_util.h"
 #include "dtype.h"
 #include "float16.h"
+#include "gpu_util.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "oneapi/dnnl/dnnl.hpp"
@@ -28,12 +30,11 @@
 #include "uint4x2.h"
 #include "verbose.h"
 #include "xdnn.h"
-#include "gpu_util.h"
-#include "copy_util.h"
 
 #include <cstring>
 #include <map>
 #include <tuple>
+#include <CL/sycl.hpp>
 
 #define USE_AMX_M 8
 
@@ -48,6 +49,7 @@ public:
             kind = dnnl::engine::kind::gpu;
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
+            gpu_queue = new sycl::queue();
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -381,15 +383,24 @@ public:
 
     template <typename WeiT>
     void transposeWeight(bool trans, hpj::Matrix<WeiT> &src, hpj::Matrix<WeiT> &dst) {
-        if (trans == true) {
-#pragma omp parallel for
-            for (int i = 0; i < dst.Rows(); ++i) {
-                for (int j = 0; j < dst.Cols(); ++j) {
-                    dst(i, j) = src(j, i);
-                }
-            }
-        } else {
-            xft::copy_MT(dst.Data(), src.Data(), dst.Rows() * dst.Cols());
+        if constexpr (std::is_same_v<WeiT, float16_t>) {
+            int K = trans ? src.Cols() : src.Rows();
+            int N = trans ? src.Rows() : src.Cols();
+
+            // Reorder weight
+            using namespace dnnl;
+            using tag = memory::format_tag;
+            using dt = memory::data_type;
+            dnnl::engine engine(dnnl::engine::kind::cpu, 0);
+            dnnl::stream stream(engine);
+            auto weight_md = memory::desc({K, N}, dt::f16, trans ? tag::ba : tag::ab);
+            auto weight_mem = memory(weight_md, engine, src.Data());
+            auto packed_weight_md = memory::desc({K, N}, dt::f16, get_onednn_weight_layout(dt::f16));
+            auto packed_weight_mem = memory(packed_weight_md, engine);
+            dnnl::reorder(weight_mem, packed_weight_mem).execute(stream, weight_mem, packed_weight_mem);
+            stream.wait();
+            gpu_queue->memcpy(dst.Data(), packed_weight_mem.get_data_handle(), dst.Rows() * dst.Cols() * sizeof(WeiT))
+                    .wait();
         }
     }
 
@@ -409,32 +420,31 @@ public:
             //         xdnn_sgemm_f32f16f32_compute(
             //                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute",
-                    onednn_sgemm_f32f16f32_compute(
-                            transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
-            printf("A:\n");
-            for (int i = 0; i < 6; ++i) {
-                for (int j = 0; j < 6; ++j) {
-                    printf("%.6f ", A[i * lda + j]);
-                }
-                printf("\n");
-            }
-            printf("\n");
-            printf("B:\n");
-            for (int i = 0; i < 6; ++i) {
-                for (int j = 0; j < 6; ++j) {
-                    printf("%.6f ", float(packedB[i * N + j]));
-                }
-                printf("\n");
-            }
-            printf("\n");
-            printf("C:\n");
-            for (int i = 0; i < 6; ++i) {
-                for (int j = 0; j < 6; ++j) {
-                    printf("%.6f ", C[i * ldc + j]);
-                }
-                printf("\n");
-            }
-            printf("\n");
+                    onednn_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+            // printf("A:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", A[i * lda + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+            // printf("B:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", float(packedB[i * N + j]));
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+            // printf("C:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", C[i * ldc + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute",
                     xdnn_hgemm_f32f16f32_compute(
@@ -1198,6 +1208,8 @@ public:
         }
     }
 
+    sycl::queue *gpu_queue;
+
 private:
     dnnl::engine::kind kind;
     dnnl::engine *engine;
@@ -1224,6 +1236,7 @@ private:
         if (this->kind == dnnl::engine::kind::cpu) {
             return dnnl::memory::format_tag::undef;
         } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::ab;
             return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
         } else {
@@ -1234,8 +1247,7 @@ private:
 
     dnnl::memory::format_tag get_onednn_weight_layout(dnnl::memory::data_type dt) {
         if (this->kind == dnnl::engine::kind::cpu) {
-            if (dt == dnnl::memory::data_type::bf16 ||
-                dt == dnnl::memory::data_type::f16) {
+            if (dt == dnnl::memory::data_type::bf16 || dt == dnnl::memory::data_type::f16) {
                 return dnnl::memory::format_tag::BA16a64b2a;
             } else if (dt == dnnl::memory::data_type::s8) {
                 return dnnl::memory::format_tag::BA16a64b4a;
@@ -1244,6 +1256,7 @@ private:
                 std::exit(-1);
             }
         } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::ab;
             return dnnl::memory::format_tag::BA4b8a8b2a;
             // return dnnl::memory::format_tag::any;
         } else {
@@ -1256,6 +1269,7 @@ private:
         if (this->kind == dnnl::engine::kind::cpu) {
             return dnnl::memory::format_tag::undef;
         } else if (this->kind == dnnl::engine::kind::gpu) {
+            // return dnnl::memory::format_tag::ab;
             return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
         } else {
@@ -1302,7 +1316,7 @@ private:
 
         // Repack and convert input data.
         auto packed_input_mem = memory(matmul_pd->src_desc(), *engine);
-        auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine);
+        auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine);
 
         // Reorder input
@@ -1311,11 +1325,11 @@ private:
         memcpy_cpu2gpu(input_mem, const_cast<float *>(A));
         dnnl::reorder(input_mem, packed_input_mem).execute(*stream, input_mem, packed_input_mem);
 
-        // Reorder weight
-        auto weight_md = memory::desc({K, N}, dt::f16, tag::ab);
-        auto weight_mem = memory(weight_md, *engine);
-        memcpy_cpu2gpu(weight_mem, const_cast<float16_t *>(packedB));
-        dnnl::reorder(weight_mem, packed_weight_mem).execute(*stream, weight_mem, packed_weight_mem);
+        // // Reorder weight
+        // auto weight_md = memory::desc({K, N}, dt::f16, tag::ab);
+        // auto weight_mem = memory(weight_md, *engine);
+        // memcpy_cpu2gpu(weight_mem, const_cast<float16_t *>(packedB));
+        // dnnl::reorder(weight_mem, packed_weight_mem).execute(*stream, weight_mem, packed_weight_mem);
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
