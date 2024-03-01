@@ -1,0 +1,48 @@
+LLMs:
+  - chatglm:
+    base_url: https://huggingface.co/THUDM/
+    name:
+      - chatglm-6b
+      - chatglm2-6b
+      - chatglm3-6b
+
+  - qwen:
+    base_url: https://huggingface.co/Qwen/
+    name:
+      - Qwen-1_8B-Chat
+      - Qwen-7B-Chat
+      - Qwen-14B-Chat
+      - Qwen-72B-Chat
+      - Qwen1.5-0.5B-Chat
+      - Qwen1.5-1.8B-Chat
+      - Qwen1.5-4B-Chat
+      - Qwen1.5-7B-Chat
+      - Qwen1.5-14B-Chat
+      - Qwen1.5-72B-Chat
+
+  - opt:
+    base_url: https://huggingface.co/facebook/
+    name:
+      - opt-125m
+      - opt-350m
+      - opt-1.3b
+      - opt-2.7b
+      - opt-6.7b
+      - opt-13b
+      - opt-30b
+      - opt-66b
+
+  - llama:
+    base_url: https://huggingface.co/meta-llama/
+    name:
+      - Llama-2-7b-chat-hf
+      - Llama-2-13b-chat-hf
+      - Llama-2-70b-chat-hf
+
+  - baichuan:
+    base_url: https://huggingface.co/baichuan-inc/
+    name:
+    - Baichuan-7B
+    - Baichuan-13B-Chat
+    - Baichuan2-7B-Chat
+    - Baichuan2-13B-Chat
