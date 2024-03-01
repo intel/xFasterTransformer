@@ -21,3 +21,4 @@ from .opt_convert import OPTConvert
 from .baichuan_convert import BaichuanConvert
 from .qwen_convert import QwenConvert
 from .yarn_llama_convert import YaRNLlamaConvert
+from .gptneo_convert import GPTNeoConvert

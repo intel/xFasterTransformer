@@ -41,6 +41,7 @@ _import_structure = {
         "BaichuanConvert",
         "QwenConvert",
         "YaRNLlamaConvert",
+        "GPTNeoConvert",
     ],
 }
 
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
     from .tools import BaichuanConvert
     from .tools import QwenConvert
     from .tools import YaRNLlamaConvert
+    from .tools import GPTNeoConvert
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule
     # Source code url https://github.com/optuna/optuna/blob/master/optuna/integration/__init__.py
