@@ -34,7 +34,6 @@
 #include <map>
 #include <tuple>
 
-
 class MMHelper {
 public:
     MMHelper(xft::DeviceKind device_kind, int idx) {
@@ -51,7 +50,7 @@ public:
             std::exit(-1);
         }
 
-        AMXThresholdM=Env::getAMXThresholdM();
+        AMXThresholdM = Env::getAMXThresholdM();
     }
 
     ~MMHelper() {
