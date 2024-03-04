@@ -460,7 +460,7 @@ public:
 #ifdef AVX512_FP32_WEIGHT_ONLY_BF16
             GEMMVERBOSE("xdnn_sgemm_f32bf16f32_compute",
                     xdnn_sgemm_f32bf16f32_compute(
-                            transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc));
+                            transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             // TODO: xdnn impl?
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
@@ -1236,8 +1236,8 @@ private:
         if (this->kind == dnnl::engine::kind::cpu) {
             return dnnl::memory::format_tag::undef;
         } else if (this->kind == dnnl::engine::kind::gpu) {
-            // return dnnl::memory::format_tag::ab;
-            return dnnl::memory::format_tag::AB32a16b;
+            return dnnl::memory::format_tag::ab;
+            // return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
         } else {
             printf("[XFT][ERROR] Need a right engine kind in input layout.");
@@ -1257,8 +1257,9 @@ private:
             }
         } else if (this->kind == dnnl::engine::kind::gpu) {
             // return dnnl::memory::format_tag::ab;
-            return dnnl::memory::format_tag::BA4b8a8b2a;
+            // return dnnl::memory::format_tag::BA4b8a8b2a;
             // return dnnl::memory::format_tag::any;
+            return dnnl::memory::format_tag::ba;
         } else {
             printf("[XFT][ERROR] Need a right engine kind in weight layout.");
             std::exit(-1);
@@ -1269,8 +1270,8 @@ private:
         if (this->kind == dnnl::engine::kind::cpu) {
             return dnnl::memory::format_tag::undef;
         } else if (this->kind == dnnl::engine::kind::gpu) {
-            // return dnnl::memory::format_tag::ab;
-            return dnnl::memory::format_tag::AB32a16b;
+            return dnnl::memory::format_tag::ab;
+            // return dnnl::memory::format_tag::AB32a16b;
             // return dnnl::memory::format_tag::any;
         } else {
             printf("[XFT][ERROR] Need a right engine kind in output layout.");
@@ -1320,33 +1321,25 @@ private:
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine);
 
         // Reorder input
-        auto input_md = memory::desc({M, K}, dt::f32, tag::ab);
-        auto input_mem = memory(input_md, *engine);
-        memcpy_cpu2gpu(input_mem, const_cast<float *>(A));
-        dnnl::reorder(input_mem, packed_input_mem).execute(*stream, input_mem, packed_input_mem);
-
-        // // Reorder weight
-        // auto weight_md = memory::desc({K, N}, dt::f16, tag::ab);
-        // auto weight_mem = memory(weight_md, *engine);
-        // memcpy_cpu2gpu(weight_mem, const_cast<float16_t *>(packedB));
-        // dnnl::reorder(weight_mem, packed_weight_mem).execute(*stream, weight_mem, packed_weight_mem);
+        FunTimer t2;
+        float16_t A_buf[M * K];
+        float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+        gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t2.elapsed());
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, packed_input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
         matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
-
-        // Executions
         matmul_prim->execute(*stream, matmul_args);
 
         // Reorder output
-        auto output_md = memory::desc({M, N}, dt::f32, tag::ab);
-        auto output_mem = memory(output_md, *engine);
-        dnnl::reorder(packed_output_mem, output_mem).execute(*stream, packed_output_mem, output_mem);
-        stream->wait();
-
-        memcpy_gpu2cpu(C, output_mem);
+        FunTimer t3;
+        float16_t C_buf[M * N];
+        gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
     }
 
     template <typename Tin, typename Tout>
