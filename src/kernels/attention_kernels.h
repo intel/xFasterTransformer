@@ -150,6 +150,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
 #ifdef DEBUG
         if (b == 0 && i == 0) {
+            auto B = key + offsets[b] * kvStride + kvHeadIdx * headSize;
             printf("mnk=%d,%d,%d, ldabc=%d,%d,%d, A[0]=%f, B[0]=%f, packedB[0]=%f\n", m, n, k, lda, ldb, ldc,
                     (float)A[0], (float)B[0], (float)packedB[0]);
             printf("Q * Kᵀ, first head:\n");

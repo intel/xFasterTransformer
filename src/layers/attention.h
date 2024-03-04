@@ -641,7 +641,7 @@ protected:
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
-                        auto p = newC;
+                        auto p = output;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[ctx->attHeadSize - 3],
                                 p[ctx->attHeadSize - 2], p[ctx->attHeadSize - 1]);
                     }
