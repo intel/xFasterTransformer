@@ -50,8 +50,9 @@ public:
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
             gpu_queue = new sycl::queue();
-            packedA = sycl::malloc_device<float16_t>(18*4096, *gpu_queue);
+            packedA = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
             packedC = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
+            packedShift = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -63,6 +64,7 @@ public:
         if (stream) delete stream;
         sycl::free(packedA, *gpu_queue);
         sycl::free(packedC, *gpu_queue);
+        sycl::free(packedShift, *gpu_queue);
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -987,12 +989,36 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_residential",
-                    xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
-                            beta, C, ldc, bias, res, ldres));
-            // GEMMVERBOSE("onednn_sgemm_f32f16f32_compute_residential",
-            //         onednn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, packedB,
+            // GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_residential",
+            //         xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
             //                 beta, C, ldc, bias, res, ldres));
+            GEMMVERBOSE("onednn_sgemm_f32f16f32_compute_residential",
+                    onednn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, packedB,
+                            beta, C, ldc, bias, res, ldres));
+            // printf("A:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", A[i * lda + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+            // printf("B:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", float(packedB[i * N + j]));
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+            // printf("C:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", C[i * ldc + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_residential",
                     xdnn_hgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
@@ -1225,6 +1251,7 @@ private:
 
     float16_t *packedA;
     float16_t *packedC;
+    float16_t *packedShift;
 
     enum matmul_kinds {
         Basic = 0,
@@ -1402,8 +1429,8 @@ private:
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::f16, get_onednn_input_layout(dt::f16));
             auto weight_md = memory::desc(weight_dims, dt::f16, get_onednn_weight_layout(dt::f16));
-            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f32));
-            auto shift_md = memory::desc(shift_dims, dt::f32, get_onednn_shift_layout(dt::f32));
+            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f16));
+            auto shift_md = memory::desc(shift_dims, dt::f16, get_onednn_shift_layout(dt::f16));
             auto output_md = memory::desc(output_dims, dt::f16, get_onednn_output_layout(dt::f16));
 
             // Create primitive post-ops (residential): dst_tmp = dst_tmp + shift
@@ -1432,16 +1459,26 @@ private:
         auto packed_input_mem = memory(matmul_pd->src_desc(), *engine, packedA);
         auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
         memory bias_mem; if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
-        auto shift_md = memory::desc({M, N}, dt::f16, tag::ab);
-        auto shift_mem = memory(shift_md, *engine, const_cast<float *>(res));
+        auto shift_md = memory::desc({M, N}, dt::f16, get_onednn_shift_layout(dt::f16));
+        auto shift_mem = memory(shift_md, *engine, const_cast<float16_t *>(packedShift));
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
 
         // Reorder input
         FunTimer t2;
         float16_t A_buf[M * K];
-        float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+        // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+#pragma omp parallel for
+        for (int i = 0; i < M; ++i)
+            float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
         gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
         printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t2.elapsed());
+
+        // Reorder shift
+        FunTimer t3;
+        float16_t shift_buf[M * N];
+        float16_t::cvt_float_to_float16_MT(res, shift_buf, M * N);
+        gpu_queue->memcpy(shift_mem.get_data_handle(), shift_buf, M * N * sizeof(float16_t)).wait();
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1454,11 +1491,11 @@ private:
         stream->wait();
 
         // Reorder output
-        FunTimer t3;
+        FunTimer t4;
         float16_t C_buf[M * N];
         gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t4.elapsed());
     }
 
     template <typename Tin, typename Tout>

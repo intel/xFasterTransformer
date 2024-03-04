@@ -58,7 +58,6 @@ public:
         hpj::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
 
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
-        downWeight.Resize(it.second - it.first, hiddenSize);
 
         ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
                 gateWeightScale, gateWeightZero, gateWeightSum);
@@ -85,13 +84,17 @@ public:
             ctx->mmHelper->transposeWeight(trans, quantizedCatWeights, catWeights);
         }
         // Horizontally split the down weight
+        // downWeight.Resize(it.second - it.first, hiddenSize);
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
             ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, downWeight,
                     downWeightScale, downWeightZero, downWeightSum);
         } else {
             ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,
                     quantizedDownWeight, downWeightScale, downWeightZero, downWeightSum);
-            ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+            // ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+            WeiT *input_data = sycl::malloc_device<WeiT>((it.second - it.first) * hiddenSize, *ctx->mmHelper->gpu_queue);
+            downWeight.Assign(input_data, (it.second - it.first), hiddenSize, hiddenSize);
+            ctx->mmHelper->transposeWeight(trans, quantizedDownWeight, downWeight);
         }
 
 #ifdef DEBUG

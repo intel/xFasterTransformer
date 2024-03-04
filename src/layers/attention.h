@@ -161,7 +161,10 @@ public:
         ctx->mmHelper->convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, attnOutScale, attnOutZero,
                 this->startQHead * headSize, qResponsibleCols, false, convertedWeight, attnOutputWeightScale,
                 attnOutputWeightZero, attnOutputWeightSum, true);
-        ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
+        // ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
+        WeiT *attnOutputData = sycl::malloc_device<WeiT>(hiddenSize * hiddenSize, *ctx->mmHelper->gpu_queue);
+        attnOutputWeight.Assign(attnOutputData, hiddenSize, hiddenSize, hiddenSize);
+        ctx->mmHelper->transposeWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG
         dbg.debugPrint("attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
