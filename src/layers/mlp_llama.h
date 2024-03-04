@@ -74,8 +74,11 @@ public:
                     catWeightsSum);
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
-            catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
-            ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
+            // catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
+            // ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
+            WeiT *input_data = sycl::malloc_device<WeiT>(quantizedCatWeights.Rows() * quantizedCatWeights.Cols(), *ctx->mmHelper->gpu_queue);
+            catWeights.Assign(input_data, quantizedCatWeights.Rows(), quantizedCatWeights.Cols(), quantizedCatWeights.Cols());
+            ctx->mmHelper->transposeWeight(trans, quantizedCatWeights, catWeights);
         }
         // Horizontally split the down weight
         ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,

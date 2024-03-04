@@ -40,14 +40,14 @@ template <typename T>
 struct is_quantization_type {
     static const bool value = false;
 };
-template <>
-struct is_quantization_type<u8> {
-    static const bool value = true;
-};
-template <>
-struct is_quantization_type<s8> {
-    static const bool value = true;
-};
+// template <>
+// struct is_quantization_type<u8> {
+//     static const bool value = true;
+// };
+// template <>
+// struct is_quantization_type<s8> {
+//     static const bool value = true;
+// };
 
 template <typename T, bool _IS_QUANTIZED = is_quantization_type<T>::value>
 struct MatData {
