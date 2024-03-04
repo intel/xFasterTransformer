@@ -249,7 +249,8 @@ public:
     }
 
     uint64_t getScoreCapacity() {
-        return size3;
+        // Return real size instead of size3
+        return rawBufSize - size1 - size2;
     }
 
     ~DecoderContext() { free(this->rawBuffer); }

@@ -566,7 +566,8 @@ protected:
 
         // To get score buffer according to openmp thread ID or not (see below)
         float *scoreBuf = ctx->qkScores;
-        auto bufSizeRequired = ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen);
+        int scoreStride = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
+        auto bufSizeRequired = ctx->numThreads * mBlockSize * scoreStride;
         if (bufSizeRequired > ctx->getScoreCapacity()) {
             scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", bufSizeRequired * sizeof(float));
         }
@@ -589,11 +590,10 @@ protected:
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
                     int ldb = keyMatInfo.second;
-                    int strideC = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
-                    int ldc = strideC;
+                    int ldc = scoreStride;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
                     auto B = keyMatInfo.first;
-                    auto C = scoreBuf + omp_get_thread_num() * mBlockSize * strideC;
+                    auto C = scoreBuf + omp_get_thread_num() * mBlockSize * scoreStride;
 
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
@@ -605,8 +605,8 @@ protected:
                         dbg.debugPrint("Q * K, first head:\n");
                         auto p = ctx->qkScores;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
-                                p[2] * ctx->attFactor, p[strideC - 3] * ctx->attFactor, p[strideC - 2] * ctx->attFactor,
-                                p[strideC - 1] * ctx->attFactor);
+                                p[2] * ctx->attFactor, p[n - 3] * ctx->attFactor, p[n - 2] * ctx->attFactor,
+                                p[n - 1] * ctx->attFactor);
                     }
 #endif
 
@@ -636,7 +636,7 @@ protected:
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
                     this->gemm2(
-                            C, valueMat.first, output, m, headSize, keyLen, strideC, valueMat.second, result.Stride());
+                            C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second, result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
