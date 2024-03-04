@@ -42,7 +42,9 @@ public:
     operator float() const;
 
     static void cvt_float_to_float16(const float *src, float16_t *dst, int size);
+    static void cvt_float_to_float16_MT(const float *src, float16_t *dst, int size);
     static void cvt_float16_to_float(const float16_t *src, float *dst, int size);
+    static void cvt_float16_to_float_MT(const float16_t *src, float *dst, int size);
     static void float_add_float16(const float *src1, const float16_t *src2, float *dst, int size);
 
 private:
@@ -150,12 +152,63 @@ inline void float16_t::cvt_float_to_float16(const float *src, float16_t *dst, in
     }
 }
 
+inline void float16_t::cvt_float_to_float16_MT(const float *src, float16_t *dst, int size) {
+    // Round to nearest even mode
+    constexpr int rounding_mode = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC;
+
+    // Process 16 floats (AVX512 is a 512-bit SIMD register)
+    constexpr int kStep = 16;
+    int blockSize = size / kStep;
+    int remainder = size % kStep;
+
+    // Process blocks of 16 floats at a time
+#pragma omp parallel for
+    for (int i = 0; i < blockSize; ++i) {
+        // Load the input floats into a AVX512 register
+        __m512 input_vector = _mm512_loadu_ps(src + i * kStep);
+
+        // Convert the floats to float16_t using AVX512 intrinsics
+        __m256i output_vector = _mm512_cvtps_ph(input_vector, rounding_mode);
+
+        // Store the converted values in the output array
+        _mm256_mask_storeu_epi16(dst + i * kStep, 0xffff, output_vector);
+    }
+
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (kStep - remainder);
+        __m512 input_vector = _mm512_maskz_loadu_ps(mask, src + size - remainder);
+        __m256i output_vector = _mm512_cvtps_ph(input_vector, rounding_mode);
+        _mm256_mask_storeu_epi16(dst + size - remainder, mask, output_vector);
+    }
+}
+
 inline void float16_t::cvt_float16_to_float(const float16_t *src, float *dst, int size) {
     // Process 16 floats (AVX512 is a 512-bit SIMD register)
     constexpr int kStep = 16;
     int blockSize = size / kStep;
     int remainder = size % kStep;
 
+    for (int i = 0; i < blockSize; ++i) {
+        __m256i input_vector = _mm256_maskz_loadu_epi16(0xffff, src + i * kStep);
+        __m512 output_vector = _mm512_cvtph_ps(input_vector);
+        _mm512_storeu_ps(dst + i * kStep, output_vector);
+    }
+
+    if (remainder != 0) {
+        __mmask16 mask = 0xFFFF >> (kStep - remainder);
+        __m256i input_vector = _mm256_maskz_loadu_epi16(mask, src + size - remainder);
+        __m512 output_vector = _mm512_cvtph_ps(input_vector);
+        _mm512_mask_storeu_ps(dst + size - remainder, mask, output_vector);
+    }
+}
+
+inline void float16_t::cvt_float16_to_float_MT(const float16_t *src, float *dst, int size) {
+    // Process 16 floats (AVX512 is a 512-bit SIMD register)
+    constexpr int kStep = 16;
+    int blockSize = size / kStep;
+    int remainder = size % kStep;
+
+#pragma omp parallel for
     for (int i = 0; i < blockSize; ++i) {
         __m256i input_vector = _mm256_maskz_loadu_epi16(0xffff, src + i * kStep);
         __m512 output_vector = _mm512_cvtph_ps(input_vector);

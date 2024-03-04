@@ -60,17 +60,17 @@ public:
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
         downWeight.Resize(it.second - it.first, hiddenSize);
 
-        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
+        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
                 gateWeightScale, gateWeightZero, gateWeightSum);
-        MMHelper::convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight, upWeightScale,
-                upWeightZero, upWeightSum);
+        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight,
+                upWeightScale, upWeightZero, upWeightSum);
 
         setMLPOPTConfig();
         if (!enableCATMLP) {
             gateWeight.Resize(hiddenSize, it.second - it.first);
             upWeight.Resize(hiddenSize, it.second - it.first);
-            MMHelper::packWeight(trans, quantizedGateWeight, gateWeight);
-            MMHelper::packWeight(trans, quantizedUpWeight, upWeight);
+            ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
+            ctx->mmHelper->packWeight(trans, quantizedUpWeight, upWeight);
         } else {
             hpj::Matrix<WeiT> quantizedCatWeights;
             catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, gateWeightSum,
@@ -79,16 +79,16 @@ public:
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
-            MMHelper::packWeight(trans, quantizedCatWeights, catWeights);
+            ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
         }
         // Horizontally split the down weight
         if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
-            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, downWeight,
+            ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, downWeight,
                     downWeightScale, downWeightZero, downWeightSum);
         } else {
-            MMHelper::convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
-                    downWeightScale, downWeightZero, downWeightSum);
-            MMHelper::packWeight(trans, quantizedDownWeight, downWeight);
+            ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,
+                    quantizedDownWeight, downWeightScale, downWeightZero, downWeightSum);
+            ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
         }
 
 #ifdef DEBUG
@@ -140,7 +140,7 @@ public:
         if (!enableCATMLP) {
             hpj::Matrix<ImT> imBuffer(
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
-            gateProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
+            gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
             dbg.debugPrint("gateWeight:\n");
@@ -149,7 +149,7 @@ public:
             dbg.dumpMatrix(imBuffer);
 #endif
 
-            upProj(doLnBefore ? normBuffer : inBuffer, imBuffer);
+            upProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
             dbg.debugPrint("upWeight:\n");
@@ -157,7 +157,7 @@ public:
             dbg.debugPrint("up output:\n");
             dbg.dumpMatrix(imBuffer);
 #endif
-            downProj(imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+            downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
 
         } else {
             int M = normBuffer.Rows();
@@ -171,24 +171,24 @@ public:
                 ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
                 hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
 
-                catGateUpProj(doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
+                catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
 #ifdef DEBUG
                 dbg.debugPrint("gateUp output:\n");
                 dbg.dumpMatrix(siluBuf);
 #endif
-                downProj(siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
+                downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
             }
 
             // Use imBuffer as silu buffer
             else {
-                catGateUpProj(doLnBefore ? normBuffer : inBuffer, imBuffer, imBuffer);
+                catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, imBuffer);
 #ifdef DEBUG
                 dbg.debugPrint("catWeights:\n");
                 dbg.dumpMatrix(catWeights);
                 dbg.debugPrint("gateUp output:\n");
                 dbg.dumpMatrix(imBuffer);
 #endif
-                downProj(imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+                downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
             }
         }
 
@@ -203,7 +203,7 @@ public:
     }
 
 private:
-    void gateProj(hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
+    void gateProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
         TimeLine t("GateProj");
 
         assert(input.Rows() == output.Rows());
@@ -220,10 +220,10 @@ private:
         const float *sumB = gateWeightSum.Data();
         ImT *C = output.Data();
 
-        MMHelper::compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
     }
 
-    void upProj(hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
+    void upProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
         TimeLine t("UpProj");
 
         assert(input.Rows() == output.Rows());
@@ -240,10 +240,11 @@ private:
         const float *sumB = upWeightSum.Data();
         ImT *C = output.Data();
 
-        MMHelper::compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc);
+        ctx->mmHelper->compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc);
     }
 
-    void downProj(hpj::Matrix<ImT> &input, hpj::Matrix<OutT> &output, hpj::Matrix<InT> &residential, bool isMaster) {
+    void downProj(DecoderContext *ctx, hpj::Matrix<ImT> &input, hpj::Matrix<OutT> &output,
+            hpj::Matrix<InT> &residential, bool isMaster) {
         TimeLine t("DownProj");
 
         assert(input.Rows() == output.Rows());
@@ -270,7 +271,7 @@ private:
             //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, R, ldr, tmpBuf, ldt);
             // }
             {
-                MMHelper::compute_residential(
+                ctx->mmHelper->compute_residential(
                         false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
             }
         } else {
@@ -278,7 +279,7 @@ private:
             //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, nullptr, 0, tmpBuf, ldt);
             // }
             {
-                MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+                ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
             }
         }
     }
@@ -325,7 +326,7 @@ private:
     }
 
     template <typename T1, typename T2>
-    void catGateUpProj(hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
+    void catGateUpProj(DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
         TimeLine t("catGateUpProj");
 
         assert(input.Rows() == output.Rows());
@@ -342,7 +343,7 @@ private:
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        MMHelper::compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
 
         // Compute silu on the left half and then add it with the right half
         DecoderUtil::siluSum(output, siluBuf);

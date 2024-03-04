@@ -28,7 +28,7 @@ extern "C" int init(int *world_size, int *world_rank, int *world_color) {
     MPI_Comm_rank(MPI_COMM_WORLD, world_rank);
 
     // world_color = world_rank / tpSize = world_rank / (world_size / ppSize)
-    // like: world_color = 0~7 / (8 / 4), XFT_PIPELINE_STAGES = ppSize = 4; tpSize = 2
+    // like: world_color = 0~7 / (8 / 4), XFT_PIPELINE_STAGE = ppSize = 4; tpSize = 2
     //       world_rank = 0, 1,  ->  world_color = ppRank = 0, 0,  ->  tpRank = 0, 1;
     //                    2, 3,                             1, 1,               0, 1;
     //                    4, 5,                             2, 2,               0, 1;

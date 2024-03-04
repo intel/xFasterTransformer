@@ -28,6 +28,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
         - [Python](#python)
         - [C++](#c)
   - [Web Demo](#web-demo)
+  - [Serving](#serving)
   - [Benchmark](#benchmark)
   - [Support](#support)
   - [Q\&A](#qa)
@@ -282,6 +283,9 @@ LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
                                     --token_path=${TOKEN_PATH} \
                                     --model_path=${MODEL_PATH}
 ```
+
+## Serving
+[A example serving of MLServer](serving/mlserver/README.md) is provided which supports REST and gRPC interface and adaptive batching feature to group inference requests together on the fly.
 
 ## [Benchmark](benchmark/README.md)
 

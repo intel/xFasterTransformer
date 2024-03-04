@@ -18,10 +18,10 @@
 #include "INIReader.h"
 #include "chatglm2.h"
 
-template <typename WeiT, typename NormT>
-ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
-    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, float, float, float, true>,
-            ChatGLM2MLP<WeiT, float, float, float, NormT, true>>(modelPath, modelType) {
+template <typename WeiT>
+ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
+    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
+            ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
@@ -36,40 +36,21 @@ ChatGLM2<WeiT, NormT>::ChatGLM2(const std::string &modelPath, const std::string 
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT, typename NormT>
-ChatGLM2<WeiT, NormT>::~ChatGLM2() {
+template <typename WeiT>
+ChatGLM2<WeiT>::~ChatGLM2() {
     delete embedding;
 
     if (positionIds) { free(positionIds); }
 }
 
-template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::setEmbeddingWeights(const std::string &modelPath) {
-    int vocabSize = embedding->getVocabSize();
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
-
-    embedding->setWeights(tokenEmb);
-
-    free(tokenEmb);
+template <typename WeiT>
+void ChatGLM2<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+    embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *gamma = (float *)malloc(hiddenSize * sizeof(float));
-    float *beta = (float *)malloc(hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
-
-    finalLN.setWeight(gamma, beta, hiddenSize);
-
-    free(gamma);
-    free(beta);
+template <typename WeiT>
+void ChatGLM2<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
 // Prepare attention_mask
@@ -85,8 +66,8 @@ void ChatGLM2<WeiT, NormT>::setFinalLnWeight(const std::string &modelPath) {
 //     attention_mask = (attention_mask < 0.5).bool()
 //
 //     return attention_mask
-template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT>
+void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
     int sizeRequired = ctx->batchSize * seqLen * seqLen;
@@ -127,13 +108,13 @@ void ChatGLM2<WeiT, NormT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT>
+void ChatGLM2<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT, typename NormT>
-void ChatGLM2<WeiT, NormT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT>
+void ChatGLM2<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
@@ -147,8 +128,8 @@ void ChatGLM2<WeiT, NormT>::lastLayerNormForward(float *input, float *output, in
 // batch_size, seq_length = input_ids.shape
 // position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
 // return position_ids
-template <typename WeiT, typename NormT>
-int *ChatGLM2<WeiT, NormT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
+template <typename WeiT>
+int *ChatGLM2<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
     // Prepare buffer
     int sizeNeeded = (batchSize * seqLen + 63) / 64 * 64; // position_ids + block_position_ids
     if (posBufSize < sizeNeeded) {

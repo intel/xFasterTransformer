@@ -22,9 +22,9 @@
 #include "rotary_embedding_chatglm2.h"
 #include "token_embedding.h"
 
-template <typename WeiT, typename NormT = RmsNorm>
-class ChatGLM2 : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, NormT, float, float, float, true>,
-                         ChatGLM2MLP<WeiT, float, float, float, NormT, true>> {
+template <typename WeiT>
+class ChatGLM2 : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
+                         ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();
@@ -40,7 +40,7 @@ private:
 
 private:
     TokenEmbedding<float16_t> *embedding;
-    NormT finalLN;
+    RmsNorm finalLN;
 
     // Record last block positions
     std::vector<int> lastBlockPositions;

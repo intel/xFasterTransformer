@@ -14,6 +14,9 @@
 // ============================================================================
 #pragma once
 
+#include <string>
+#include "weight_util.h"
+
 namespace xft {
 
 // Layer normalization: only support the norm along last dimension
@@ -23,6 +26,7 @@ public:
     ~LayerNorm();
 
     void setWeight(const float *gamma, const float *beta, int cols);
+    void setWeight(const std::string &gammaPath, const std::string &betaPath, int cols);
 
     // input and output are in shape of (rows, normSize)
     // TODO: column-wise parallel
@@ -31,8 +35,8 @@ public:
 private:
     int normSize;
 
-    // the weights contains gamma and beta concated together
-    float *weights;
+    float *gamma = nullptr;
+    float *beta = nullptr;
 };
 
 } // namespace xft

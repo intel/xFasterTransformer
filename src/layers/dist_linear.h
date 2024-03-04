@@ -45,7 +45,7 @@ public:
     // |                                         |
     // |                                         | splitSize(N)
     // |_________________________________________|
-    void setWeight(const float *w, const float *b) {
+    void setWeight(DecoderContext *ctx, const float *w, const float *b = nullptr) {
         this->splitSize = outputSize / splits;
         this->splitOffset = this->splitSize * splitIdx;
 
@@ -63,9 +63,9 @@ public:
         zeroWeight.Resize(N);
 
         hpj::Matrix<WeiT> quantizedWeight;
-        MMHelper::convertWeight(
+        ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
-        MMHelper::packWeight(true, quantizedWeight, weight);
+        ctx->mmHelper->packWeight(true, quantizedWeight, weight);
 
         // Copy Bias
         if (b) {
@@ -76,14 +76,14 @@ public:
 
     // input is in the shape of (batchSize, inputSize)
     template <typename T1, typename T2>
-    void forward(const T1 *input, T2 *output, int batchSize) {
+    void forward(DecoderContext *ctx, const T1 *input, T2 *output, int batchSize) {
         TimeLine t("DistLinear.forward");
         if (bias) {
-            MMHelper::compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
+            ctx->mmHelper->compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
                     scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias);
 
         } else {
-            MMHelper::compute(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
+            ctx->mmHelper->compute(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
                     scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize);
         }
     }
@@ -111,5 +111,5 @@ private:
     hpj::Vector<float> scaleWeight; // if weight is int8
     hpj::Vector<float> zeroWeight; // if weight is int8
     hpj::Vector<float> sumWeight; // if weight is int8
-    float *bias;
+    float *bias = nullptr;
 };

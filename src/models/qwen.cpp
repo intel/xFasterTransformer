@@ -18,7 +18,7 @@
 
 template <typename WeiT>
 Qwen<WeiT>::Qwen(const std::string &modelPath)
-    : CommonDecoder<Attention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
+    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -37,29 +37,12 @@ Qwen<WeiT>::~Qwen() {
 
 template <typename WeiT>
 void Qwen<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
-    int vocabSize = embedding->getVocabSize();
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *tokenEmb = (float *)malloc(vocabSize * hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * hiddenSize, this->getDataType());
-
-    embedding->setWeights(tokenEmb);
-
-    free(tokenEmb);
+    embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
 template <typename WeiT>
 void Qwen<WeiT>::setFinalLnWeight(const std::string &modelPath) {
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *gamma = (float *)malloc(hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
-
-    finalLN.setWeight(gamma, nullptr, hiddenSize);
-
-    free(gamma);
+    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
 // Prepare attention_mask which is like:

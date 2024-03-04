@@ -17,35 +17,44 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "layernorm_kernels.h"
 #include "layer_norm.h"
+#include "layernorm_kernels.h"
 #include "timeline.h"
 
 namespace xft {
 
 // Layer normalization: only support the norm along last dimension
 LayerNorm::LayerNorm() {
-    weights = nullptr;
+    gamma = nullptr;
+    beta = nullptr;
     normSize = 0;
 }
 
 LayerNorm::~LayerNorm() {
-    if (weights) { free(weights); }
+    if (gamma) { free(gamma); }
+    if (beta) { free(beta); }
 }
 
 void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
     this->normSize = cols;
-    this->weights = (float *)aligned_alloc(64, 2 * cols * sizeof(float));
-    memcpy(weights, gamma, cols * sizeof(float));
-    memcpy(weights + cols, beta, cols * sizeof(float));
+    this->gamma = (float *)aligned_alloc(64, cols * sizeof(float));
+    this->beta = (float *)aligned_alloc(64, cols * sizeof(float));
+    memcpy(this->gamma, gamma, cols * sizeof(float));
+    memcpy(this->beta, beta, cols * sizeof(float));
+}
+
+void LayerNorm::setWeight(const std::string &gammaPath, const std::string &betaPath, int cols) {
+    this->normSize = cols;
+    loadWeight(gammaPath, this->gamma, cols);
+    if (betaPath != "") loadWeight(betaPath, this->beta, cols);
 }
 
 // input and output are in shape of (rows, normSize)
 // TODO: column-wise parallel
 void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("LayerNorm.forward");
-    const float *pgamma = weights;
-    const float *pbeta = weights + normSize;
+    const float *pgamma = gamma;
+    const float *pbeta = beta;
     invokeLayerNorm(output, input, pgamma, pbeta, rows, normSize, iStride, oStride);
 }
 

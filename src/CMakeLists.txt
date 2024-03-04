@@ -24,7 +24,7 @@ add_subdirectory(comm_helper)
 
 add_library(xfastertransformer_static STATIC)
 
-set(SRC_LIB_LIST "utils" "layers" "kernels" "models" "searchers")
+set(SRC_LIB_LIST "utils" "layers" "kernels" "models" "searchers" "stdc++fs")
 
 target_link_libraries(xfastertransformer_static
                       ${SRC_LIB_LIST}

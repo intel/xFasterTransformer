@@ -53,8 +53,8 @@ void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
     float *tokenEmb = (float *)malloc(vocabSize * embeddingSize * sizeof(float));
     float *posEmb = (float *)malloc(maxPos * hiddenSize * sizeof(float));
 
-    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * embeddingSize, this->getDataType());
-    loadWeight(modelPath + "/model.wpe.bin", posEmb, maxPos * hiddenSize, this->getDataType());
+    loadWeight(modelPath + "/model.wte.bin", tokenEmb, vocabSize * embeddingSize);
+    loadWeight(modelPath + "/model.wpe.bin", posEmb, maxPos * hiddenSize);
 
     embedding->setWeights(tokenEmb, posEmb);
 
@@ -64,17 +64,8 @@ void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
 
 template <typename WeiT>
 void OptDecoder<WeiT>::setFinalLnWeight(const std::string &modelPath) {
-    int hiddenSize = embedding->getHiddenSize();
-
-    float *gamma = (float *)malloc(hiddenSize * sizeof(float));
-    float *beta = (float *)malloc(hiddenSize * sizeof(float));
-
-    loadWeight(modelPath + "/model.final_layernorm.weight.bin", gamma, hiddenSize, this->getDataType());
-    loadWeight(modelPath + "/model.final_layernorm.bias.bin", beta, hiddenSize, this->getDataType());
-
-    finalLN.setWeight(gamma, beta, hiddenSize);
-    free(gamma);
-    free(beta);
+    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", modelPath + "/model.final_layernorm.bias.bin",
+            embedding->getHiddenSize());
 }
 
 template <typename WeiT>

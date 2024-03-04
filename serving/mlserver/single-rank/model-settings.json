@@ -1,0 +1,22 @@
+{
+    "name": "xft-model",
+    "implementation": "xft_server.xFTModel",
+    "max_batch_size": 1,
+    "max_batch_time": 0,
+    "parameters": {
+        "extra": {
+            "model_path": "/data/llama-2-7b-chat-cpu",
+            "token_path": "/data/llama-2-7b-chat-hf",
+            "dtype": "fp16",
+            "output_length": 512,
+            "generate_config": {
+                "num_beams": 1,
+                "do_sample": false,
+                "temperature": 1.0,
+                "top_p": 1.0,
+                "top_k": 50,
+                "repetition_penalty": 1.0
+            }
+        }
+    }
+}

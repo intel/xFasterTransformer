@@ -1,0 +1,13 @@
+{
+    "name": "xft-model",
+    "implementation": "xft_server.xFTModel",
+    "max_batch_size": 1,
+    "max_batch_time": 0,
+    "parameters": {
+        "extra": {
+            "token_path": "/data/llama-2-7b-chat-hf",
+            "xft_grpc_server_ip": "localhost",
+            "xft_grpc_server_port": "50051"
+        }
+    }
+}

@@ -38,6 +38,11 @@ void RmsNorm::setWeight(const float *w, const float *, int cols) {
     memcpy(weight, w, cols * sizeof(float));
 }
 
+void RmsNorm::setWeight(const std::string &modelPath, const std::string &, int cols) {
+    this->normSize = cols;
+    loadWeight(modelPath, weight, cols);
+}
+
 // input and output are in shape of (rows, normSize)
 void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");

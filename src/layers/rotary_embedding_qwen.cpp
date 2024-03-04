@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,17 +20,20 @@
 static std::unordered_map<float, std::tuple<float *, float *>> embCosSin;
 static float *cur_emb_cos = nullptr;
 static float *cur_emb_sin = nullptr;
+static float *logn = nullptr;
+const int maxSupportedSeqLength = 32768;
 
 bool QwenRotaryEmbedding::initialized = false;
+bool QwenRotaryEmbedding::logn_initialized = false;
 int QwenRotaryEmbedding::max_seq_len_cached = -1;
 int QwenRotaryEmbedding::inv_freq_size = -1;
 
 // dim: equals to head size
 QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
+    this->dim = dim;
+    this->base_initial = base;
+    this->base = base;
     if (!initialized) {
-        this->dim = dim;
-        this->base_initial = base;
-        this->base = base;
         this->max_seq_len_cached = max_position_embeddings;
         this->inv_freq_size = (dim + 1) / 2;
         float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -53,6 +56,30 @@ QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_e
 };
 
 QwenRotaryEmbedding::~QwenRotaryEmbedding() {}
+
+void QwenRotaryEmbedding::init_logn(const int max_seq_length) {
+    if (!logn_initialized) {
+        logn_initialized = true;
+        /*LOGN
+        logn_list = [
+            math.log(i, self.seq_length) if i > self.seq_length else 1
+            for i in range(1, 32768)
+        ]
+        */
+        REQUIRES(max_seq_length > 0 && max_seq_length < maxSupportedSeqLength,
+                "seq_length in config.ini is incorrect, please re-conv the model with the latest convert tools");
+        logn = (float *)malloc(maxSupportedSeqLength * sizeof(float));
+#pragma omp parallel for
+        for (size_t i = 0; i < max_seq_length; i++) {
+            logn[i] = 1.0;
+        }
+        float log_base = log(max_seq_length);
+#pragma omp parallel for
+        for (size_t i = max_seq_length; i < maxSupportedSeqLength; i++) {
+            logn[i] = log(i + 1) / log_base;
+        }
+    }
+}
 
 float QwenRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max_seq_length) {
     if (max_seq_length <= 0) { return (float)1.0; }
@@ -126,13 +153,25 @@ void QwenRotaryEmbedding::forward(
     const int qHeads = qkShape[2];
     const int kHeads = qkShape[4];
     const int maxSeqLength = qkShape[5];
+    const int pastKeyLength = qkShape[6];
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
+    int kv_len = seqLen + pastKeyLength;
+    REQUIRES(kv_len < maxSupportedSeqLength, "process seq length must less than 32768.");
 
-    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    /*** In QWEN torch version, they acturally used seq_len+past_key_len as kv_len to calculate new base
+        kv_seq_len = hidden_states.size()[1]
+        if past_key_values[0] is not None:
+            # past key values[0][0] shape: bs * seq_len * head_num * dim
+            if self.use_cache_quantization:
+                kv_seq_len += past_key_values[0][0][0].shape[2]
+            else:
+                kv_seq_len += past_key_values[0][0].shape[1]
+
+    ***/
+    float new_base = getNewBaseValue(kv_len, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
-
         auto it = embCosSin.find(new_base);
         if (it == embCosSin.end()) {
             float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
@@ -149,12 +188,18 @@ void QwenRotaryEmbedding::forward(
         cur_emb_sin = std::get<1>(value);
     }
 
-    // for (size_t i = 0; i < emb_size; i++) {
-    //     emb[i] = x[i] * emb_cos[position_ids[i % cached_size / dim]][i % dim];
-    //     int offset = (i % dim + this->inv_freq_size) % dim;
-    //     float sign = ((offset < this->inv_freq_size) * 1) + ((offset >= this->inv_freq_size) * -1);
-    //     emb[i] += x[(i - i % dim) + offset] * sign * emb_sin[position_ids[i % cached_size / dim]][i % dim];
-    // }
+    /*** LOGN in Torch
+        if key_size > self.seq_length and self.use_logn_attn and not self.training:
+            if self.use_cache_quantization:
+                seq_start = key[0].size(2) - query.size(1)
+                seq_end = key[0].size(2)
+            else:
+                seq_start = key.size(1) - query.size(1)
+                seq_end = key.size(1)
+            logn_tensor = self.logn_tensor[:, seq_start:seq_end, :, :].type_as(query)
+            query = query * logn_tensor.expand_as(query)
+    ***/
+    float *q_scale = logn + pastKeyLength;
 #pragma omp parallel for collapse(3)
     for (int head = 0; head < heads; ++head) {
         for (int bs = 0; bs < batchSize; ++bs) {
@@ -169,8 +214,8 @@ void QwenRotaryEmbedding::forward(
                 for (int i = 0; i < half; ++i) {
                     if (head < qHeads) {
                         auto q1 = q[i];
-                        q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
-                        q[i + half] = q[i + half] * pcos[i + half] + q1 * psin[i + half];
+                        q[i] = (q[i] * pcos[i] - q[i + half] * psin[i]) * q_scale[seq];
+                        q[i + half] = (q[i + half] * pcos[i + half] + q1 * psin[i + half]) * q_scale[seq];
                     }
                     if (head < kHeads) {
                         auto k1 = k[i];
@@ -193,10 +238,13 @@ void QwenRotaryEmbedding::forward(
     const int qHeads = qkShape[2];
     const int kHeads = qkShape[4];
     const int maxSeqLength = qkShape[5];
+    const int pastKeyLength = qkShape[6];
     const int heads = std::max(qHeads, kHeads);
     const int half = this->inv_freq_size;
+    int kv_len = seqLen + pastKeyLength;
+    REQUIRES(kv_len < maxSupportedSeqLength, "process seq length must less than 32768.");
 
-    float new_base = getNewBaseValue(seqLen, maxSeqLength);
+    float new_base = getNewBaseValue(kv_len, maxSeqLength);
     if (std::abs(new_base - this->base) > 1e-5) {
         this->base = new_base;
 
@@ -216,6 +264,7 @@ void QwenRotaryEmbedding::forward(
         cur_emb_sin = std::get<1>(value);
     }
 
+    float *q_scale = logn + pastKeyLength;
 #pragma omp parallel for collapse(3)
     for (int head = 0; head < heads; ++head) {
         for (int bs = 0; bs < batchSize; ++bs) {
@@ -226,6 +275,8 @@ void QwenRotaryEmbedding::forward(
 
                 bfloat16_t *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
                 bfloat16_t *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
+
+                __m512 pScale = _mm512_set1_ps(q_scale[seq]);
 
                 // Process chunks of 16 elements at a time
                 for (int i = 0; i < half; i += 16) {
@@ -238,13 +289,15 @@ void QwenRotaryEmbedding::forward(
                     __m512 pSinHalfVec = _mm512_maskz_loadu_ps(mask, &psin[i + half]);
 
                     // Compute something like:
-                    // q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
-                    // q[i + half] = q[i + half] * pcos[i + half] + q[i] * psin[i + half];
+                    // q[i] = ( q[i] * pcos[i] - q[i + half] * psin[i] ) * logN;
+                    // q[i + half] = ( q[i + half] * pcos[i + half] + q[i] * psin[i + half] ) * logN;
                     if (head < qHeads) {
                         __m512 qVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &q[i]));
                         __m512 qHalfVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &q[i + half]));
-                        __m512 qNew = _mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec));
-                        __m512 qHalfNew = _mm512_fmadd_ps(qHalfVec, pCosHalfVec, _mm512_mul_ps(qVec, pSinHalfVec));
+                        __m512 qNew = _mm512_mul_ps(
+                                _mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec)), pScale);
+                        __m512 qHalfNew = _mm512_mul_ps(
+                                _mm512_fmadd_ps(qHalfVec, pCosHalfVec, _mm512_mul_ps(qVec, pSinHalfVec)), pScale);
                         _mm256_mask_storeu_epi16(&q[i], mask, bfloat16_t::cvt_fp32_to_bf16(qNew));
                         _mm256_mask_storeu_epi16(&q[i + half], mask, bfloat16_t::cvt_fp32_to_bf16(qHalfNew));
                     }

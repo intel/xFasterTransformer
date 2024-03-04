@@ -16,11 +16,24 @@
 cmake_minimum_required(VERSION 3.15.1)
 project(xfastertransformer LANGUAGES C CXX)
 
-# Get gcc version
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpfullversion
-                OUTPUT_VARIABLE GCC_VERSION
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-message(STATUS "Notice: GCC version: ${GCC_VERSION}")
+# Enable GPU
+option(WITH_GPU "Build with GPU" OFF)
+if(WITH_GPU)
+    message(STATUS "Notice: Building with GPU.")
+    add_definitions(-DGPU=true)
+    # Get compiler version
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+                    OUTPUT_VARIABLE ICPX_VERSION
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    message(STATUS "Notice: ICPX version: ${ICPX_VERSION}")
+else()
+    message(STATUS "Notice: Building with CPU.")
+    # Get compiler version
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpfullversion
+                    OUTPUT_VARIABLE GCC_VERSION
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    message(STATUS "Notice: GCC version: ${GCC_VERSION}")
+endif()
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -29,6 +42,9 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -fopenmp -mavx512f -mavx512bw -mavx512vl -fPIC -D_GLIBCXX_USE_CXX11_ABI=0")
+if(WITH_GPU)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl -fsycl-device-code-split=per_kernel -lOpenCL")
+endif()
 
 # GCC>=10.1 should support avx512bf16, but need to double check as some versions have issues
 if(GCC_VERSION VERSION_GREATER_EQUAL "10.1")

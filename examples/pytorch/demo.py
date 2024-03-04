@@ -105,6 +105,9 @@ def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[st
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
 
+def build_inputs_llama(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
+    inputs = tokenizer([f"[INST] {query.strip()} [/INST]"], return_tensors="pt",padding=padding).input_ids
+    return inputs
 
 def build_inputs_qwen(
     tokenizer: PreTrainedTokenizer,
@@ -216,7 +219,7 @@ if __name__ == "__main__":
     streamer = None
     stop_words_ids = None
     if model.rank == 0 and args.streaming and args.num_beams == 1:
-        streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=False)
+        streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=args.chat)
 
     if model.rank == 0:
         # Master
@@ -230,9 +233,11 @@ if __name__ == "__main__":
                 input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
             elif "baichuan" in args.model_path.lower():
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)
-            elif "qwen" in args.model_path.lower() and "chat" in args.model_path.lower():
+            elif "qwen" in args.model_path.lower() and ("chat" in args.model_path.lower() or args.chat):
                 input_ids = build_inputs_qwen(tokenizer, input_prompt, args.padding)
                 stop_words_ids = get_stop_words_ids_qwen("chatml", tokenizer)
+            elif args.chat and "llama" in args.model_path.lower():
+                input_ids = build_inputs_llama(tokenizer, input_prompt, args.padding)
             else:
                 input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
             print("=" * 50)

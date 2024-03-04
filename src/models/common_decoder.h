@@ -67,7 +67,7 @@ struct MlpTypeExtractor<ChatGLM2MLP<WeiT, InT, ImT, OutT, NORM_CLS, true>> {
 /*
 Pipeline parallel and tensor parallel introduction:
 
-  1) MPI_Instances = 16,XFT_PIPELINE_STAGES = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
+  1) MPI_Instances = 16,XFT_PIPELINE_STAGE = 4  =>  ctx->ppSize = 4, ctx->tpSize = 4
   2) TP sync by oneCCL(row_comm) or shared_memory
   3) PP sync by MPI MPI_COMM_WORLD
 
@@ -161,8 +161,6 @@ public:
 
         std::string configPath = modelPath + "/config.ini";
         INIReader reader = INIReader(configPath);
-        wType = getWeightType(configPath, modelType);
-
         const int attHeadNum = reader.GetInteger(modelType, "head_num");
         // Use the same head number for the default multi-head attention
         const int kvHeadNum = reader.GetInteger(modelType, "kv_head_num", attHeadNum);
@@ -204,6 +202,7 @@ public:
         const int quantWbits = reader.GetInteger(modelType, "quant_wbits", 8);
         const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
 
+        // DataType dt = getWeightType(configPath, modelType);
         DataType dt = DataType::fp32;
         if (quantDecoderWeights) {
             REQUIRES(quantWbits == 8, "Only int8 quantization is supported.");
@@ -244,7 +243,7 @@ public:
         int workers = messenger.getSize();
         int rank = messenger.getRank();
         this->predictor = new DistLinear<LinearWeiT>(hiddenSize, vocabSize, rank, workers);
-        this->setPredictorWeight(modelPath);
+        this->setPredictorWeight(ctx, modelPath);
 
         // KVCache Manager
         this->kvCacheMgr.reset(new KVCacheManager<KVCacheT>(layers));
@@ -436,9 +435,9 @@ public:
         // Predictor
         float *finalOut = (float *)outBuf;
         if (!logitsAll)
-            this->predictor->forward(lnOut, finalOut, batchSize);
+            this->predictor->forward(ctx, lnOut, finalOut, batchSize);
         else
-            this->predictor->forward(lnOut, finalOut, batchSize * seqLen);
+            this->predictor->forward(ctx, lnOut, finalOut, batchSize * seqLen);
 
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
@@ -558,8 +557,6 @@ public:
 
     int getRank() { return messenger.getRank(); }
 
-    WDataType getDataType() { return wType; }
-
     int getEndId() { return endId; }
 
     int getInitSeqLen() { return initSeqLen; }
@@ -614,6 +611,11 @@ protected:
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr));
+
+            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
+            else // assignment through the user
+                this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
         }
 
         return this->context.get();
@@ -674,37 +676,37 @@ protected:
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx)
                             + ".attention.query_key_value.qweight.0.bin",
-                    qkvWeight, hiddenSize * qkvSize, WDataType::INT8);
+                    qkvWeight, hiddenSize * qkvSize, DataType::int8);
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.zeros.0.bin",
-                    qkvZeros, qkvSize, WDataType::FP32);
+                    qkvZeros, qkvSize, DataType::fp32);
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.scales.0.bin",
-                    qkvScales, qkvSize, WDataType::FP32);
+                    qkvScales, qkvSize, DataType::fp32);
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.qweight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize, WDataType::INT8);
+                    attnOutWeight, hiddenSize * hiddenSize, DataType::int8);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.zeros.0.bin",
-                    attnOutZeros, hiddenSize, WDataType::FP32);
+                    attnOutZeros, hiddenSize, DataType::fp32);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.scales.0.bin",
-                    attnOutScales, hiddenSize, WDataType::FP32);
+                    attnOutScales, hiddenSize, DataType::fp32);
 
             // Stardard 2 layer MLP
             if (fileExists(
                         modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.qweight.0.bin")) {
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.qweight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, WDataType::INT8);
+                        fc1Weight, hiddenSize * imSize * mlpFactor, DataType::int8);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.zeros.0.bin",
-                        fc1Zeros, imSize * mlpFactor, WDataType::FP32);
+                        fc1Zeros, imSize * mlpFactor, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.scales.0.bin",
-                        fc1Scales, imSize * mlpFactor, WDataType::FP32);
+                        fc1Scales, imSize * mlpFactor, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.qweight.0.bin",
-                        fc2Weight, hiddenSize * imSize, WDataType::INT8);
+                        fc2Weight, hiddenSize * imSize, DataType::int8);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.zeros.0.bin",
-                        fc2Zeros, hiddenSize, WDataType::FP32);
+                        fc2Zeros, hiddenSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.scales.0.bin",
-                        fc2Scales, hiddenSize, WDataType::FP32);
+                        fc2Scales, hiddenSize, DataType::fp32);
             }
             // gate, up, down weights for Llama like model
             else {
@@ -713,71 +715,71 @@ protected:
                 fc3Scales = (float *)ALLOC(hiddenSize * sizeof(float), 64);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.qweight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, WDataType::INT8);
+                        fc1Weight, hiddenSize * imSize * mlpFactor, DataType::int8);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.zeros.0.bin",
-                        fc1Zeros, imSize * mlpFactor, WDataType::FP32);
+                        fc1Zeros, imSize * mlpFactor, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.scales.0.bin",
-                        fc1Scales, imSize * mlpFactor, WDataType::FP32);
+                        fc1Scales, imSize * mlpFactor, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.qweight.0.bin",
-                        fc2Weight, hiddenSize * imSize, WDataType::INT8);
+                        fc2Weight, hiddenSize * imSize, DataType::int8);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.zeros.0.bin",
-                        fc2Zeros, imSize, WDataType::FP32);
+                        fc2Zeros, imSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.scales.0.bin",
-                        fc2Scales, imSize, WDataType::FP32);
+                        fc2Scales, imSize, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.qweight.0.bin",
-                        fc3Weight, hiddenSize * imSize, WDataType::INT8);
+                        fc3Weight, hiddenSize * imSize, DataType::int8);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.zeros.0.bin",
-                        fc3Zeros, hiddenSize, WDataType::FP32);
+                        fc3Zeros, hiddenSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.scales.0.bin",
-                        fc3Scales, hiddenSize, WDataType::FP32);
+                        fc3Scales, hiddenSize, DataType::fp32);
             }
 
         } else if constexpr (std::is_same_v<OriWeiT, float>) {
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.weight.0.bin",
-                    qkvWeight, hiddenSize * qkvSize, getDataType());
+                    qkvWeight, hiddenSize * qkvSize);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.weight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize, getDataType());
+                    attnOutWeight, hiddenSize * hiddenSize);
 
             // Stardard 2 layer MLP
             if (fileExists(
                         modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.weight.0.bin")) {
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.weight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, getDataType());
+                        fc1Weight, hiddenSize * imSize * mlpFactor);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.weight.0.bin",
-                        fc2Weight, hiddenSize * imSize, getDataType());
+                        fc2Weight, hiddenSize * imSize);
             }
             // gate, up, down weights for Llama like model
             else {
                 fc3Weight = (OriWeiT *)ALLOC(hiddenSize * imSize * sizeof(OriWeiT), 64);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.weight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, getDataType());
+                        fc1Weight, hiddenSize * imSize * mlpFactor);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.weight.0.bin",
-                        fc2Weight, hiddenSize * imSize, getDataType());
+                        fc2Weight, hiddenSize * imSize);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.weight.0.bin",
-                        fc3Weight, hiddenSize * imSize, getDataType());
+                        fc3Weight, hiddenSize * imSize);
             }
         }
 
         loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".input_layernorm.weight.bin", ln1Gamma,
-                hiddenSize, getDataType());
+                hiddenSize);
         loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".post_attention_layernorm.weight.bin",
-                ln2Gamma, hiddenSize, getDataType());
+                ln2Gamma, hiddenSize);
 
-#define READ_OPTIONAL(filename, addr, size, errmsg)                             \
-    {                                                                           \
-        int ret = loadWeight((filename), (addr), (size), getDataType(), false); \
-        if (ret == 0) {                                                         \
-            free(addr);                                                         \
-            addr = nullptr;                                                     \
-        } else {                                                                \
-            if (ret != (size)) {                                                \
-                printf("%s\n", (errmsg));                                       \
-                exit(-1);                                                       \
-            }                                                                   \
-        }                                                                       \
+#define READ_OPTIONAL(filename, addr, size, errmsg)                                 \
+    {                                                                               \
+        int ret = loadWeight((filename), (addr), (size), DataType::unknown, false); \
+        if (ret == 0) {                                                             \
+            free(addr);                                                             \
+            addr = nullptr;                                                         \
+        } else {                                                                    \
+            if (ret != (size)) {                                                    \
+                printf("%s\n", (errmsg));                                           \
+                exit(-1);                                                           \
+            }                                                                       \
+        }                                                                           \
     }
 
         // The bias is optional
@@ -825,16 +827,16 @@ protected:
         free(ln2Beta);
     }
 
-    void setPredictorWeight(const std::string &modelPath) {
+    void setPredictorWeight(DecoderContext *ctx, const std::string &modelPath) {
         int inputSize = predictor->getInputSize();
         int outputSize = predictor->getOutputSize();
 
         float *weight = (float *)malloc(inputSize * outputSize * sizeof(float));
         float *bias = nullptr;
 
-        loadWeight(modelPath + "/model.lm_head.weight.bin", weight, inputSize * outputSize, this->getDataType());
+        loadWeight(modelPath + "/model.lm_head.weight.bin", weight, inputSize * outputSize);
 
-        predictor->setWeight(weight, bias);
+        predictor->setWeight(ctx, weight, bias);
 
         free(weight);
     }
@@ -948,8 +950,6 @@ private:
 
     int startId;
     int endId;
-
-    WDataType wType;
 
 #ifdef DEBUG
     Debugger dbg;

@@ -52,6 +52,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
     Env::initVerbose();
     Env::initPipelineStage();
+    Env::initEngineKindIndex();
     TimeLine::init();
 }
 
@@ -377,12 +378,12 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
         }
     } else if (modeltype == "chatglm2") {
         switch (datatype) {
-            case xft::DataType::fp16: setDecoder(new ChatGLM2<float16_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::bf16: setDecoder(new ChatGLM2<bfloat16_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::int8: setDecoder(new ChatGLM2<int8_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::w8a8: setDecoder(new ChatGLM2<w8a8_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::int4: setDecoder(new ChatGLM2<uint4x2_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::nf4: setDecoder(new ChatGLM2<nf4x2_t, RmsNorm>(modelPath)); break;
+            case xft::DataType::fp16: setDecoder(new ChatGLM2<float16_t>(modelPath)); break;
+            case xft::DataType::bf16: setDecoder(new ChatGLM2<bfloat16_t>(modelPath)); break;
+            case xft::DataType::int8: setDecoder(new ChatGLM2<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new ChatGLM2<w8a8_t>(modelPath)); break;
+            case xft::DataType::int4: setDecoder(new ChatGLM2<uint4x2_t>(modelPath)); break;
+            case xft::DataType::nf4: setDecoder(new ChatGLM2<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
                 setDecoder(new HybridModel<ChatGLM2, bfloat16_t, float16_t>(modelPath));
                 break;
@@ -399,12 +400,12 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
         }
     } else if (modeltype == "chatglm3") {
         switch (datatype) {
-            case xft::DataType::fp16: setDecoder(new ChatGLM3<float16_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::bf16: setDecoder(new ChatGLM3<bfloat16_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::int8: setDecoder(new ChatGLM3<int8_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::w8a8: setDecoder(new ChatGLM3<w8a8_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::int4: setDecoder(new ChatGLM3<uint4x2_t, RmsNorm>(modelPath)); break;
-            case xft::DataType::nf4: setDecoder(new ChatGLM3<nf4x2_t, RmsNorm>(modelPath)); break;
+            case xft::DataType::fp16: setDecoder(new ChatGLM3<float16_t>(modelPath)); break;
+            case xft::DataType::bf16: setDecoder(new ChatGLM3<bfloat16_t>(modelPath)); break;
+            case xft::DataType::int8: setDecoder(new ChatGLM3<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new ChatGLM3<w8a8_t>(modelPath)); break;
+            case xft::DataType::int4: setDecoder(new ChatGLM3<uint4x2_t>(modelPath)); break;
+            case xft::DataType::nf4: setDecoder(new ChatGLM3<nf4x2_t>(modelPath)); break;
             case xft::DataType::bf16_fp16:
                 setDecoder(new HybridModel<ChatGLM3, bfloat16_t, float16_t>(modelPath));
                 break;

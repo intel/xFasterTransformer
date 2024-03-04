@@ -32,5 +32,8 @@ else()
     target_link_libraries(example PRIVATE xfastertransformer_static)
 endif()
 target_link_libraries(example PRIVATE sentencepiece -lstdc++fs)
+if(WITH_GPU)
+    target_link_libraries(example PRIVATE -fsycl -fsycl-device-code-split=per_kernel -lOpenCL)
+endif()
 
 add_dependencies(example cmdline sentencepiece_lib)
