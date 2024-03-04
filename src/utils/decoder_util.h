@@ -28,6 +28,9 @@
 #include "transformer_ctx.h"
 #include "xdnn.h"
 
+int getFlashThresh();
+bool enableCATMLP();
+
 class DecoderUtil {
 public:
 #if __AVX512F__
@@ -423,21 +426,6 @@ public:
         return std::make_pair(maxVal, sum);
     }
 
-    template <typename T, typename Tt>
-    static void arrayCpy(T *dst, const Tt *src, int n) {
-#pragma omp simd
-        for (int i = 0; i < n; i++) {
-            dst[i] = static_cast<T>(src[i]);
-        }
-    }
-
-    template <typename T>
-    static void single_thread_cvt2bf16_inplace(T *buf, int m, int n, int stride) {
-        if (std::is_same_v<T, float>)
-            for (int i = 0; i < m; ++i)
-                bfloat16_t::cvt_float_to_bfloat16(buf + i * stride, (bfloat16_t *)buf + i * stride, n);
-    }
-
     // compute silu on the left half and then add it with the right half
     template <typename T1, typename T2>
     static void siluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
@@ -495,20 +483,22 @@ public:
     }
 
     // need to do for res.
-    static void softmaxTile(float *AB, float *sum, float *max, float *preSum, float *preMax, float refac,
+    template <typename ImT>
+    static void softmaxTile(float *AB, ImT *ABout, float *sum, float *max, float *preSum, float *preMax, float refac,
             const float *attnMask, int m, int k, int attnMskStride) {
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vrefac = _mm512_set1_ps(refac);
         for (int i = 0; i < m; ++i) {
             float *buf = AB + i * k;
+            ImT *obuf = ABout + i * k;
             const float *attnMsk = attnMask + i * attnMskStride;
             // max val for avoiding inf and nan
             __m512 vmax = _mm512_set1_ps(maxVal);
             for (int off = 0; off < k; off += 16) {
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-                __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
-                __m512 vmask = _mm512_maskz_loadu_ps(mask, attnMsk + off);
+                __m512 vx = xft::load_avx512(mask, buf + off);
+                __m512 vmask = xft::load_avx512(mask, attnMsk + off);
 
                 vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vrefac + vmask);
             }
@@ -526,11 +516,11 @@ public:
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
 
-                __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
-                __m512 vmask = _mm512_maskz_loadu_ps(mask, attnMsk + off);
+                __m512 vx = xft::load_avx512(mask, buf + off);
+                __m512 vmask = xft::load_avx512(mask, attnMsk + off);
                 vx = BertUtil::vexp(vx * vrefac + vmask - vmax);
 
-                _mm512_mask_storeu_ps(buf + off, mask, vx);
+                xft::store_avx512(obuf + off, mask, vx);
 
                 vsum = _mm512_mask_add_ps(vsum, mask, vsum, vx);
             }
@@ -545,29 +535,30 @@ public:
                 int remain = k - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
 
-                __m512 vx = _mm512_maskz_loadu_ps(mask, buf + off);
+                __m512 vx = xft::load_avx512(mask, obuf + off);
                 vx = vx * vrsum;
 
-                _mm512_mask_storeu_ps(buf + off, mask, vx);
+                xft::store_avx512(obuf + off, mask, vx);
             }
         }
     }
 
-    static void updateOutTile(float *output, const float *expABC, float *preSum, float *sum, float *preMax, float *max,
+    template <typename T>
+    static void updateOutTile(T *output, const float *expABC, float *preSum, float *sum, float *preMax, float *max,
             int m, int n, int stride) {
         for (int i = 0; i < m; ++i) {
             const float *buf = expABC + i * n;
-            float *outbuf = output + i * stride;
+            T *outbuf = output + i * stride;
             __m512 merr = _mm512_set1_ps(preMax[i] - max[i]);
             merr = BertUtil::vexp(merr);
             __m512 vfac = _mm512_set1_ps(preSum[i] / sum[i]);
             for (int off = 0; off < n; off += 16) {
                 int remain = n - off;
                 __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-                __m512 vout = _mm512_maskz_loadu_ps(mask, outbuf + off);
+                __m512 vout = xft::load_avx512(mask, (const T *)outbuf + off);
                 __m512 vabc = _mm512_maskz_loadu_ps(mask, buf + off);
                 __m512 vupt = vout * merr * vfac + vabc;
-                _mm512_mask_storeu_ps(outbuf + off, mask, vupt);
+                xft::store_avx512(outbuf + off, mask, vupt);
             }
             preSum[i] = sum[i];
             preMax[i] = max[i];
@@ -578,14 +569,14 @@ public:
     // sum += sum(exp(A[i]))
     // output = output * preSum / sum + (exp(A) / sum) x B
     // preSum = sum
-    template <typename T>
+    template <typename T, typename ImT>
     static void incrementalTileAttention(const T *A, const T *B, const T *C, const float *attnMask, int m, int n, int k,
             int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float refac, float *AB,
-            float *expABC, float *output, int qStride, int kStride, int vStride, int stride) {
+            float *expABC, ImT *output, int qStride, int kStride, int vStride, int stride) {
         sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
-        softmaxTile(AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
+        // TODO:optimize
+	softmaxTile(AB, (T *)AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
 
-        single_thread_cvt2bf16_inplace(AB, m, k, k);
         sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
     }
