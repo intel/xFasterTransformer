@@ -408,6 +408,104 @@ protected:
                 [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
     }
 
+    int getMBlockSize(int inputSeqLen, int headSize, int minVal = 6) {
+        // Special case
+        if (inputSeqLen == 1) { return 1; }
+
+        const int l2CacheSize = 2 * 1024 * 1024; // TODO: get it dynamically
+        const int qkvSize = inputSeqLen * headSize;
+        const int scoreSize = inputSeqLen * inputSeqLen;
+
+        // As we do the split along M dimension, so to make sure:
+        // All data visited in BMM1 (Q * K -> Score) and BMM2 (Score * V -> output) are in L2
+        // (qSize / splits) + kSize + (scoreSize / splits) + vSize + (outSize / splits) <= cacheSize
+        int capacity = l2CacheSize / sizeof(ImT);
+        int splits = 1;
+        if (capacity <= 2 * qkvSize) { // Always cannot cache accessed data
+            splits = 1;
+        } else {
+            splits = std::ceil(1.0f * (2 * qkvSize + scoreSize) / (capacity - 2 * qkvSize));
+        }
+        if (splits <= 0) { splits = 1; }
+        int mBlockSize = (inputSeqLen + splits - 1) / splits;
+        if (mBlockSize <= 0) {
+            mBlockSize = inputSeqLen > minVal ? minVal : inputSeqLen;
+        } else if (mBlockSize > inputSeqLen) {
+            mBlockSize = inputSeqLen;
+        }
+
+        return mBlockSize;
+    }
+
+    // Copy all keys and values to KV cache
+    template <typename KVCacheT>
+    void copyKVCache(DecoderContext *ctx, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int pastSeqLen) {
+        int batchSize = ctx->batchSize;
+        int headSize = ctx->attHeadSize;
+
+#pragma omp parallel for collapse(3)
+        for (int b = 0; b < batchSize; ++b) {
+            for (int h = 0; h < (this->endKVHead - this->startKVHead); ++h) {
+                // Copy current key/value to cached keys/values
+                // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
+                // Be noted: for group attention, the key/value is less than query
+                for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
+                    auto srcK = key.Row(b * ctx->inputSeqLen + seq) + h * headSize;
+                    auto dstK = presentKey.getSequence(pastSeqLen + seq, b, h);
+
+                    auto srcV = value.Row(b * ctx->inputSeqLen + seq) + h * headSize;
+                    auto dstV = presentValue.getSequence(pastSeqLen + seq, b, h);
+
+                    xft::copy(dstK, srcK, headSize);
+                    xft::copy(dstV, srcV, headSize);
+                }
+            }
+        }
+    }
+
+    // Copy one head from key or value to K cache or V cache
+    // bdx: batch index; hdx: head index
+    template <typename KVCacheT>
+    void copyKVCache(DecoderContext *ctx, hpj::Matrix<ImT> &kv, KVCacheTensor<KVCacheT> &presentKV, int pastSeqLen,
+            int bdx, int hdx) {
+        for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
+            auto src = kv.Row(bdx * ctx->inputSeqLen + seq) + hdx * ctx->attHeadSize;
+            auto dst = presentKV.getSequence(pastSeqLen + seq, bdx, hdx);
+            xft::copy(dst, src, ctx->attHeadSize);
+        }
+    }
+
+    // query: M * headSize, key: N * headSize, score: M * N
+    // ldq: leading dimension of query; ldk: leading dimension of key; lds: LD of score
+    template <typename T1, typename T2, typename T3>
+    void gemm1(T1 *query, T2 *key, T3 *score, int M, int N, int headSize, int ldq, int ldk, int lds) {
+        auto A = query;
+        auto B = key;
+        auto C = score;
+        const int K = headSize;
+        small_gemm_transb(A, B, C, M, N, K, ldq, ldk, lds);
+    }
+
+    // Softmax between 2 BMM
+    template <typename T1, typename T2>
+    void softmax(DecoderContext *ctx, T1 *score, const T2 *mask, int rows, int cols, int lds, int startSeq) {
+        const int keyLen = cols;
+        for (int seq = 0; seq < rows; ++seq) {
+            DecoderUtil::computeSoftmax(ctx, score + seq * lds, mask + (seq + startSeq) * keyLen, keyLen);
+        }
+    }
+
+    // score: M * K(keyLen), value: K * headSize, output: M * headSize
+    template <typename T1, typename T2, typename T3>
+    void gemm2(T1 *score, T2 *value, T3 *output, int M, int headSize, int K, int lds, int ldv, int ldo) {
+        auto A = score;
+        auto B = value;
+        auto C = output;
+        const int N = headSize;
+        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);        
+    }
+
     // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
     void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
@@ -416,6 +514,7 @@ protected:
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
         int batchSize = ctx->batchSize;
+        int headSize = ctx->attHeadSize;
         int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         // If M_dimension/input_seq_len is big (1K, 2K, etc), need to split it to make sure the intermediate result in cache
@@ -423,33 +522,14 @@ protected:
         // WARN: reserve field in context is used to make it effective for all layers, do not change it in other places
         int &mBlockSize = ctx->reserved1;
         if (layerId % (ctx->layers / ctx->ppSize) == 0) {
-            // TODO: if pastSeqLen > 0 and inputSeqLen large.
             if (pastSeqLen == 0) {
-                const int l2CacheSize = 2 * 1024 * 1024; // TODO: get it dynamically
-                const int sizeA = ctx->inputSeqLen * ctx->attHeadSize;
-                const int sizeB = ctx->inputSeqLen * ctx->attHeadSize;
-                const int sizeC = ctx->inputSeqLen * ctx->inputSeqLen;
-
-                // As we do the split along M dimension, so to make sure:
-                // (sizeA / splits) + sizeB + (sizeC / splits) <= cacheSize
-                int splits = std::ceil(1.0f * (sizeA + sizeC) / (l2CacheSize / sizeof(float) - sizeB));
-                mBlockSize = (ctx->inputSeqLen + splits - 1) / splits;
-                if (mBlockSize <= 0) {
-                    mBlockSize = ctx->inputSeqLen > 6 ? 6 : ctx->inputSeqLen;
-                } else if (mBlockSize > ctx->inputSeqLen) {
-                    mBlockSize = ctx->inputSeqLen;
-                }
-            } else {
+                mBlockSize = getMBlockSize(ctx->inputSeqLen, ctx->attHeadSize);
+            }
+            // When pastSeqLen > 0, whether for generation or verification, input seq length is small
+            else {
                 mBlockSize = ctx->inputSeqLen;
             }
         }
-
-        // How many blocks in M dimension
-        int mBlockNum = (ctx->inputSeqLen + mBlockSize - 1) / mBlockSize;
-
-        // To get score buffer according to openmp thread ID or not (see below)
-        int scoreBufSize = batchSize * responsibleHeads * ctx->inputSeqLen * ctx->inputSeqLen;
-        bool scoreBufByThread = (ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen) <= scoreBufSize);
 
         // If total tasks are too small (compared to total thread number), need to shard the head
         bool shardHead = (ctx->inputSeqLen == 1) && (ctx->numThreads >= batchSize * responsibleHeads * 2);
@@ -460,30 +540,35 @@ protected:
         // (3) When head is sharded, also multiple tasks per copy
         bool kvCopied = false;
         if (ctx->kvHeadNum < ctx->attHeadNum || mBlockSize != ctx->inputSeqLen || shardHead) {
-#pragma omp parallel for collapse(3)
-            for (int b = 0; b < batchSize; ++b) {
-                for (int i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
-                    // Copy current key/value to cached keys/values
-                    // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
-                    // Be noted: for group attention, the key/value is less than query
-                    for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
-                        auto srcK = key.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
-                        auto dstK = presentKey.getSequence(pastSeqLen + seq, b, i);
-
-                        auto srcV = value.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
-                        auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
-
-                        xft::copy(dstK, srcK, ctx->attHeadSize);
-                        xft::copy(dstV, srcV, ctx->attHeadSize);
-                    }
-                }
-            }
+            copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
             kvCopied = true;
         }
 
-        // Seperate impl. when head is sharded
-        if (shardHead) {
+        if (!shardHead) {
+            return slimAttention(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen, mBlockSize, kvCopied);
+        } else { // Seperate impl. when head is sharded
             return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
+        }
+    }
+
+    template <typename KVCacheT>
+    void slimAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+            const float *attnMask, int pastSeqLen, int mBlockSize, bool kvCopied) {
+        // How many heads this task should do
+        int responsibleHeads = this->endQHead - this->startQHead;
+        int batchSize = ctx->batchSize;
+        int headSize = ctx->attHeadSize;
+        int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
+
+        // How many blocks in M dimension
+        int mBlockNum = (ctx->inputSeqLen + mBlockSize - 1) / mBlockSize;
+
+        // To get score buffer according to openmp thread ID or not (see below)
+        float *scoreBuf = ctx->qkScores;
+        auto bufSizeRequired = ctx->numThreads * mBlockSize * (pastSeqLen + ctx->inputSeqLen);
+        if (bufSizeRequired > ctx->getScoreCapacity()) {
+            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", bufSizeRequired * sizeof(float));
         }
 
 #pragma omp parallel for collapse(3)
@@ -495,14 +580,7 @@ protected:
                             = startSeq + mBlockSize < ctx->inputSeqLen ? startSeq + mBlockSize : ctx->inputSeqLen;
 
                     // Copy current key to cached keys
-                    // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
-                    if (!kvCopied) {
-                        for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
-                            auto src = key.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
-                            auto dst = presentKey.getSequence(pastSeqLen + seq, b, i);
-                            xft::copy(dst, src, ctx->attHeadSize);
-                        }
-                    }
+                    if (!kvCopied) { copyKVCache(ctx, key, presentKey, pastSeqLen, b, i); }
 
                     // Q * K
                     auto keyMatInfo = presentKey.getHead(b, i / groupNum);
@@ -511,23 +589,16 @@ protected:
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
                     int ldb = keyMatInfo.second;
-                    // TODO: optimize padding for prefix sharing
                     int strideC = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
                     int ldc = strideC;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
                     auto B = keyMatInfo.first;
-                    // Some special case, maximum required buffer size: max_thread_num * (mBlockSize * strideC)
-                    // = bs * heads * mBlockNum * (mBlockSize * strideC)
-                    // = bs * heads * (~seqLen) * seqLen, may be bigger than bs * heads * seqLen * seqLen
-                    auto C = scoreBufByThread ? ctx->qkScores + omp_get_thread_num() * mBlockSize * strideC
-                                              : ctx->qkScores + (b * responsibleHeads + i) * ctx->inputSeqLen * strideC
-                                    + startSeq * strideC;
+                    auto C = scoreBuf + omp_get_thread_num() * mBlockSize * strideC;
 
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
 
-                    small_gemm_transb(getMask(attnMask, b, i, queryLen, keyLen) + startSeq * keyLen, A, B, C, m, n, k,
-                            lda, ldb, ldc);
+                    this->gemm1(A, B, C, m, n, headSize, lda, ldb, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -540,16 +611,7 @@ protected:
 #endif
 
                     // Softmax(Q * K)
-                    if (pastSeqLen == 0)
-                        for (int seq = 0; seq < endSeq - startSeq; ++seq) {
-                            DecoderUtil::softmaxSkipMask(ctx, C + seq * strideC,
-                                    getMask(attnMask, b, i, queryLen, keyLen) + (seq + startSeq) * keyLen, keyLen);
-                        }
-                    else
-                        for (int seq = 0; seq < endSeq - startSeq; ++seq) {
-                            DecoderUtil::computeSoftmax(ctx, C + seq * strideC,
-                                    getMask(attnMask, b, i, queryLen, keyLen) + (seq + startSeq) * keyLen, keyLen);
-                        }
+                    this->softmax(ctx, C, getMask(attnMask, b, i, queryLen, keyLen), m, n, ldc, startSeq);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -571,16 +633,10 @@ protected:
                     }
 
                     // Softmax * V
-                    auto valueMatInfo = presentValue.getHead(b, i / groupNum);
-                    std::swap(k, n);
-                    lda = strideC;
-                    ldb = valueMatInfo.second;
-                    ldc = result.Stride();
-                    auto newA = C;
-                    B = valueMatInfo.first;
-                    auto newC = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-
-                    xft::small_gemm(newA, B, newC, m, n, k, lda, ldb, ldc);
+                    auto valueMat = presentValue.getHead(b, i / groupNum);
+                    auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
+                    this->gemm2(
+                            C, valueMat.first, output, m, headSize, keyLen, strideC, valueMat.second, result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {

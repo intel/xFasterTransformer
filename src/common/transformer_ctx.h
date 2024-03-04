@@ -113,6 +113,11 @@ private:
     float *rawBuffer;
     uint64_t rawBufSize; // how many floats
 
+    // Detail buffer capacity
+    uint64_t size1;
+    uint64_t size2;
+    uint64_t size3;
+
 public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
@@ -222,9 +227,9 @@ public:
                                               : (uint64_t)batchSize * responsibleHead * inputSeqLen * inputSeqLen;
         uint64_t tmpBufSize = (uint64_t)batchSize * inputSeqLen * hiddenStride;
 
-        uint64_t size1 = normSize;
-        uint64_t size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
-        uint64_t size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
+        size1 = normSize;
+        size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
+        size3 = tmpBufSize < scoreBufSize ? scoreBufSize : tmpBufSize;
 
         uint64_t total = size1 + size2 + size3;
         if (total > this->rawBufSize) {
@@ -241,6 +246,10 @@ public:
         tmpBuf.Assign(this->qkScores, batchSize * inputSeqLen, hiddenSize, hiddenStride);
         imOut.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, imCols, imStride);
         qkvMatMul.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, qkvCols, qkvStride);
+    }
+
+    uint64_t getScoreCapacity() {
+        return size3;
     }
 
     ~DecoderContext() { free(this->rawBuffer); }

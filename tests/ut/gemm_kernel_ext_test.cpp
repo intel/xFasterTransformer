@@ -111,6 +111,11 @@ static void test_small_kernel() {
     test_small_gemm_tranb(4, 1, 128);
     test_small_gemm_tranb(5, 1, 128);
     test_small_gemm_tranb(6, 1, 128);
+
+    for (int n = 1; n <= 1024; ++n) {
+        test_small_gemm_tranb(1, n, 128);
+        test_small_gemm_tranb(1, n, 256);
+    }
 }
 
 static void test_bigger_kernel() {
