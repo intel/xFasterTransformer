@@ -139,7 +139,8 @@ void invokeAttention(DataType dt, void *__restrict__ output, const void *__restr
                     scale, kcache, vcache, block_tables, block_nums, slot_mapping);
         } else { // prefill phase
             selfAttention((bfloat16_t *)output, (bfloat16_t *)query, (bfloat16_t *)key, (bfloat16_t *)value, qHeadNum,
-                    kvHeadNum, headSize, q_stride, kv_stride, batch_size, token_lens, scale, threadNum,
+                    kvHeadNum, headSize, qHeadNum * headSize, q_stride, kv_stride, batch_size, token_lens, scale,
+                    threadNum,
                     [&](int b, int headIdx, int seqIdex) {
                         // TODO: debug and fix
                         return (bfloat16_t *)kcache + slot_mapping[b] * kvHeadNum * headSize + headIdx * headSize;

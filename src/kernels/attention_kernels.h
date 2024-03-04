@@ -33,8 +33,8 @@ namespace xft {
 // Self attention while KV cache copy is separated
 template <bool fusedPack, typename Lambda1, typename Lambda2>
 void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
-        int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
-        int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
+        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
     constexpr int mBlockSize = 32;
 
     int totalTokenSize = 0; // total token size
@@ -178,7 +178,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
         // Softmax(Q * Kᵀ) * V
         std::swap(k, n);
         lda = ldc;
-        ldc = qHeadNum * headSize;
+        ldc = oStride;
         A = C;
         C = (bfloat16_t *)output + (offsets[b] + startSeq) * ldc + i * headSize;
 
@@ -209,8 +209,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
 template <typename Lambda1, typename Lambda2>
 void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
-        int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
-        int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
+        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
 #ifdef DEBUG
     printf("Q[0]=%f, K[0]=%f, V[0]=%f\n", (float)query[0], (float)key[0], (float)value[0]);
     printf("kvHeadNum=%d, headSize=%d, qStride=%d, kvStride=%d, batchSize=%d\n", kvHeadNum, headSize, qStride, kvStride,
@@ -324,7 +324,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
                 // Softmax(Q * Kᵀ) * V
                 std::swap(k, n);
                 lda = ldc;
-                ldc = qHeadNum * headSize;
+                ldc = oStride;
                 A = C;
                 C = (bfloat16_t *)output + (offsets[b] + startSeq) * ldc + i * headSize;
 
@@ -346,8 +346,8 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
 
 template <typename Lambda1, typename Lambda2>
 void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
-        int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
-        int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
+        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
     // Revise threadNum if not set
     if (unlikely(threadNum <= 0)) {
 #pragma omp parallel
@@ -361,11 +361,11 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
 
     // TODO: .9f is the estimation, change it when have more data
     if (kvHeadNum == qHeadNum && efficiency > .9f) {
-        selfAttention_FusedCopy(output, query, key, value, qHeadNum, kvHeadNum, headSize, qStride, kvStride, batchSize,
-                tokenSizes, scale, threadNum, getKCache, getVCache);
-    } else {
-        selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, qStride, kvStride,
+        selfAttention_FusedCopy(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride, kvStride,
                 batchSize, tokenSizes, scale, threadNum, getKCache, getVCache);
+    } else {
+        selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
+                kvStride, batchSize, tokenSizes, scale, threadNum, getKCache, getVCache);
     }
 }
 

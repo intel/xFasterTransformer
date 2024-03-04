@@ -402,8 +402,8 @@ protected:
 
         xft::selfAttention(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
-                ctx->attHeadSize, query.Stride(), key.Stride(), ctx->batchSize, tokenSizes, ctx->attFactor,
-                ctx->numThreads,
+                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), ctx->batchSize, tokenSizes,
+                ctx->attFactor, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return presentKey.getSequence(seqIdx, b, headIdx); },
                 [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
     }
