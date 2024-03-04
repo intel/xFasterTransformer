@@ -50,6 +50,8 @@ public:
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
             gpu_queue = new sycl::queue();
+            packedA = sycl::malloc_device<float16_t>(18*4096, *gpu_queue);
+            packedC = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -59,6 +61,8 @@ public:
     ~MMHelper() {
         if (engine) delete engine;
         if (stream) delete stream;
+        sycl::free(packedA, *gpu_queue);
+        sycl::free(packedC, *gpu_queue);
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -986,6 +990,9 @@ public:
             GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_residential",
                     xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
                             beta, C, ldc, bias, res, ldres));
+            // GEMMVERBOSE("onednn_sgemm_f32f16f32_compute_residential",
+            //         onednn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, packedB,
+            //                 beta, C, ldc, bias, res, ldres));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_residential",
                     xdnn_hgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
@@ -1216,6 +1223,9 @@ private:
     dnnl::stream *stream;
     std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> matmul_hub;
 
+    float16_t *packedA;
+    float16_t *packedC;
+
     enum matmul_kinds {
         Basic = 0,
         BiasAdd,
@@ -1262,6 +1272,28 @@ private:
             return dnnl::memory::format_tag::ba;
         } else {
             printf("[XFT][ERROR] Need a right engine kind in weight layout.");
+            std::exit(-1);
+        }
+    }
+
+    dnnl::memory::format_tag get_onednn_bias_layout(dnnl::memory::data_type dt) {
+        if (this->kind == dnnl::engine::kind::cpu) {
+            return dnnl::memory::format_tag::undef;
+        } else if (this->kind == dnnl::engine::kind::gpu) {
+            return dnnl::memory::format_tag::ab;
+        } else {
+            printf("[XFT][ERROR] Need a right engine kind in bias layout.");
+            std::exit(-1);
+        }
+    }
+
+    dnnl::memory::format_tag get_onednn_shift_layout(dnnl::memory::data_type dt) {
+        if (this->kind == dnnl::engine::kind::cpu) {
+            return dnnl::memory::format_tag::undef;
+        } else if (this->kind == dnnl::engine::kind::gpu) {
+            return dnnl::memory::format_tag::ab;
+        } else {
+            printf("[XFT][ERROR] Need a right engine kind in shift layout.");
             std::exit(-1);
         }
     }
@@ -1316,9 +1348,9 @@ private:
         }
 
         // Repack and convert input data.
-        auto packed_input_mem = memory(matmul_pd->src_desc(), *engine);
+        auto packed_input_mem = memory(matmul_pd->src_desc(), *engine, packedA);
         auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
-        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine);
+        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
 
         // Reorder input
         FunTimer t2;
@@ -1333,6 +1365,93 @@ private:
         matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
         matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
         matmul_prim->execute(*stream, matmul_args);
+        stream->wait();
+
+        // Reorder output
+        FunTimer t3;
+        float16_t C_buf[M * N];
+        gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
+    }
+
+    void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
+            const float16_t *packedB, float beta, float *C, int ldc, const float *bias, const float *res,
+            int ldres) {
+        TimeLine t("onednn_sgemm_f32f16f32_compute_residential");
+        TimeLine t1("onednn_sgemm_f32f16f32_compute_residential.create_primitive");
+        using namespace dnnl;
+        using tag = memory::format_tag;
+        using dt = memory::data_type;
+
+        matmul::primitive_desc *matmul_pd;
+        matmul *matmul_prim;
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+        auto it = matmul_hub.find(key);
+        if (it != matmul_hub.end()) {
+            matmul_pd = std::get<0>(it->second);
+            matmul_prim = std::get<1>(it->second);
+        } else {
+            // Source (A), weights (B), and destination (C) matrix dimensions.
+            memory::dims input_dims = {M, K};
+            memory::dims weight_dims = {K, N};
+            memory::dims bias_dims = {1, N};
+            memory::dims shift_dims = {M, N};
+            memory::dims output_dims = {M, N};
+
+            // Create primitive descriptor.
+            auto input_md = memory::desc(input_dims, dt::f16, get_onednn_input_layout(dt::f16));
+            auto weight_md = memory::desc(weight_dims, dt::f16, get_onednn_weight_layout(dt::f16));
+            auto bias_md = memory::desc(bias_dims, dt::f32, get_onednn_bias_layout(dt::f32));
+            auto shift_md = memory::desc(shift_dims, dt::f32, get_onednn_shift_layout(dt::f32));
+            auto output_md = memory::desc(output_dims, dt::f16, get_onednn_output_layout(dt::f16));
+
+            // Create primitive post-ops (residential): dst_tmp = dst_tmp + shift
+            post_ops matmul_ops;
+            matmul_ops.append_binary(algorithm::binary_add, shift_md);
+            primitive_attr matmul_attr;
+            matmul_attr.set_post_ops(matmul_ops);
+
+            if (bias != nullptr) {
+                // Create primitive descriptor and primitive.
+                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, bias_md, output_md, matmul_attr);
+                matmul_prim = new matmul(*matmul_pd);
+            } else {
+                // Create primitive descriptor and primitive.
+                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                matmul_prim = new matmul(*matmul_pd);
+            }
+
+            // Cache primitive_desc and matmul
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
+            matmul_hub[key] = value;
+        }
+
+        // Repack and convert input data.
+        auto packed_input_mem = memory(matmul_pd->src_desc(), *engine, packedA);
+        auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
+        memory bias_mem; if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
+        auto shift_md = memory::desc({M, N}, dt::f16, tag::ab);
+        auto shift_mem = memory(shift_md, *engine, const_cast<float *>(res));
+        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
+
+        // Reorder input
+        FunTimer t2;
+        float16_t A_buf[M * K];
+        float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+        gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t2.elapsed());
+
+        // Create the primitive args.
+        std::unordered_map<int, memory> matmul_args;
+        matmul_args.insert({DNNL_ARG_SRC, packed_input_mem});
+        matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
+        if (bias != nullptr) { matmul_args.insert({DNNL_ARG_BIAS, bias_mem}); }
+        matmul_args.insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, shift_mem});
+        matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
+        matmul_prim->execute(*stream, matmul_args);
+        stream->wait();
 
         // Reorder output
         FunTimer t3;
