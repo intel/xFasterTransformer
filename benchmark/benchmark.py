@@ -185,12 +185,12 @@ if __name__ == "__main__":
 
         print("\n")
         print("=" * 50 + args.model_name + " Final Performance" + "=" * 50)
-        print(f"Inference Avg Latency:\t{np.mean(total_times):.2f} s")
+        print(f"Inference Avg Latency:\t{np.mean(total_times):.2f} ms")
         print(f"First token Avg Latency:\t{np.mean(first_token_times):.2f} ms")
         print(f"Next token Max Latency:\t{np.max(next_token_times):.2f} ms")
         print(f"Next token Min Latency:\t{np.min(next_token_times):.2f} ms")
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
-        print(f"Next token Avg Latency:\t{np.max(next_token_times):.2f} ms")
+        print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
         print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s")
     else:
