@@ -308,18 +308,16 @@ public:
         // For multiple nodes inference, not the whole result buffer
         hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
-        // TODO: refine the logic (and support large inputSeqLen when pastSeqLen > 0)
-        if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
-            if (pastSeqLen == 0) {
+        if (pastSeqLen == 0) {
+            if (ctx->inputSeqLen >= getFlashThresh()) {
+                flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
+            } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
                 selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
             } else {
                 fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
             }
         } else {
-            if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
-                flashAttention(
-                        ctx, qkvGroupMatMul, outBuffer, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
-            else { fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen); }
+            fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
         }
         t4.release();
 
@@ -809,11 +807,15 @@ protected:
         } // end for b
     }
 
-    template <typename KVCacheT, typename AttnT = bfloat16_t>
-    void flashAttention(DecoderContext *ctx, hpj::Matrix<float> &qkvMatMul, hpj::Matrix<float> &tmpBuf,
-            hpj::Matrix<float> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
-            const float *attnMask, int pastSeqLen) {
-
+    template <typename KVCacheT>
+    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
+            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
+            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
+        using AttnT = bfloat16_t;
+#else
+        using AttnT = float;
+#endif
         // How many heads this task should do
         int batchSize = ctx->batchSize;
         int respQHeads = this->endQHead - this->startQHead;
@@ -828,31 +830,41 @@ protected:
 
         // TODO: kv dtype conversion for prefixSharing
         AttnT *k, *v;
-        if constexpr (std::is_same_v<AttnT, bfloat16_t>) {
+        int kvStride;
+        if constexpr (!std::is_same_v<AttnT, ImT>) {
+            //Timer tmc(true, "convert KV matrix into bf16");
+            kvStride = kvCols * 2;
+            AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
+                "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
 #pragma omp parallel for collapse(3)
             for (uint64_t b = 0; b < batchSize; ++b)
                 for (uint64_t seq = 0; seq < srcLen; ++seq)
-                    for (uint64_t i = qCols; i < qkvCols; i += headSize) {
-                        const float *srcPtr = qkvMatMul.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
-                        bfloat16_t *dstPtr
-                                = (bfloat16_t *)tmpBuf.Data() + b * srcLen * kvCols * 2 + seq * kvCols * 2 + i - qCols;
-                        bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                    for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
+                        const ImT *srcPtr = key.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
+                        AttnT *dstPtr
+                                = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
+                        if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
+                                bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                        } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
+                                bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                        } else {
+                            printf("Not supported Type in Flash Attention yet\n");
+                            exit(-1);
+                        }
                     }
 
-            k = (AttnT *)tmpBuf.Data();
-            v = (AttnT *)tmpBuf.Data() + kvCols;
+            k = kvBuf;
+            v = kvBuf + kvCols;
         } else {
-            k = qkvMatMul.Data() + respQHeads * headSize;
-            v = qkvMatMul.Data() + (respQHeads + respKVHeads) * headSize;
+            kvStride = qkvCols;
+            k = key.Data();
+            v = value.Data();
         }
 
-        float *query = qkvMatMul.Data();
         // [batch, src, head, headsize]
-        scaledDpAttention<AttnT>(query, k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads, respKVHeads,
-                headSize, result.Data(), qkvCols, kvCols * 2, ctx->hiddenSize);
+        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads, respKVHeads,
+                headSize, result.Data(), qkvCols, kvStride, result.Stride());
 
-        float *key = qkvMatMul.Data() + respQHeads * headSize;
-        float *value = qkvMatMul.Data() + (respQHeads + respKVHeads) * headSize;
         // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
         // When M dimension is split, also multiple tasks per copy, so do copy seperately
 #pragma omp parallel for collapse(3)
@@ -862,10 +874,10 @@ protected:
                 // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
                 // Be noted: for group attention, the key/value is less than query
                 for (uint64_t seq = 0; seq < tgtLen; ++seq) {
-                    auto srcK = key + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
+                    auto srcK = key.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
                     auto dstK = presentKey.getSequence(pastSeqLen + seq, b, i);
 
-                    auto srcV = value + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
+                    auto srcV = value.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
 
                     xft::copy(dstK, srcK, headSize);
@@ -877,8 +889,8 @@ protected:
 
     // scaled dot-product attention: bmm1 + softmax + bmm2
     template <typename AttnT>
-    void scaledDpAttention(const float *query, const AttnT *key, const AttnT *value, const float *attnMask, float scale,
-            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, float *output,
+    void scaledDpAttention(const ImT *query, const AttnT *key, const AttnT *value, const float *attnMask, float scale,
+            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output,
             int qStride, int kvStride, int stride) {
         // output = trans(softmax(query * trans(key)) * value)
         int nth = omp_get_max_threads();
@@ -916,7 +928,7 @@ protected:
         }
 
 #pragma omp parallel for collapse(3)
-        for (int i = 0; i < batchSize; ++i) {
+        for (uint64_t i = 0; i < batchSize; ++i) {
             for (int j = 0; j < numQHead; ++j) {
                 for (int m = 0; m < srcLen; m += srcBlk) {
                     int tid = omp_get_thread_num();
@@ -924,9 +936,9 @@ protected:
                     int qRealBlk = std::min(srcBlk, srcLen - m);
                     uint64_t srcOff = i * srcLen * qStride + j * headSize;
                     uint64_t outOff = i * srcLen * stride + j * headSize;
-                    const float *qbuf = query + srcOff + m * qStride;
+                    const ImT *qbuf = query + srcOff + m * qStride;
                     AttnT *q = (AttnT *)qArr[tid];
-                    float *out = output + outOff + m * stride;
+                    ImT *out = output + outOff + m * stride;
 
                     // reset out
                     for (int ii = 0; ii < qRealBlk; ++ii) {
