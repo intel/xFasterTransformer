@@ -250,6 +250,8 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
         }
     }
 
+    if (msgerSize > 1) { messenger.broadcast(nextTokens.data(), nextTokens.size()); }
+
     if (eosTokenId != -1) {
         for (int batchId = 0; batchId < batchSize; ++batchId) {
             if (doneBatch[batchId] == 0) {
