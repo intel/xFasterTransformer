@@ -46,10 +46,12 @@ public:
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
         } else if (device_kind == xft::DeviceKind::iGPU) {
+            gpu_index = idx;
             kind = dnnl::engine::kind::gpu;
             engine = new dnnl::engine(kind, idx);
             stream = new dnnl::stream(*engine);
-            gpu_queue = new sycl::queue();
+            auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+            gpu_queue = new sycl::queue(devices[engine->get_count(kind) + idx]);
             packedA = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
             packedC = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
             packedShift = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
@@ -441,6 +443,13 @@ public:
             //         printf("%.6f ", float(packedB[i * N + j]));
             //     }
             //     printf("\n");
+            // }
+            // printf("\n");
+            // printf("B:\n");
+            // float16_t B_buf[6];
+            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6);
+            // for (int j = 0; j < 6; ++j) {
+            //     printf("%.6f ", float(B_buf[j]));
             // }
             // printf("\n");
             // printf("C:\n");
@@ -1244,6 +1253,7 @@ public:
     sycl::queue *gpu_queue;
 
 private:
+    int gpu_index;
     dnnl::engine::kind kind;
     dnnl::engine *engine;
     dnnl::stream *stream;
@@ -1384,7 +1394,7 @@ private:
         float16_t A_buf[M * K];
         float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
         gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t2.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1399,7 +1409,7 @@ private:
         float16_t C_buf[M * N];
         gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
     }
 
     void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
@@ -1471,14 +1481,14 @@ private:
         for (int i = 0; i < M; ++i)
             float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
         gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t2.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
 
         // Reorder shift
         FunTimer t3;
         float16_t shift_buf[M * N];
         float16_t::cvt_float_to_float16_MT(res, shift_buf, M * N);
         gpu_queue->memcpy(shift_mem.get_data_handle(), shift_buf, M * N * sizeof(float16_t)).wait();
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t3.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1495,7 +1505,7 @@ private:
         float16_t C_buf[M * N];
         gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-        printf("xft_verbose,exec,gpu,%s,%.6lf\n", "memcpy", t4.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t4.elapsed());
     }
 
     template <typename Tin, typename Tout>
