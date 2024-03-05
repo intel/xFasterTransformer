@@ -305,23 +305,23 @@ public:
             inputBuffer.Assign(tmp, rows, cols, stride);
         }
 
+        // For multiple nodes inference, not the whole result buffer
+        hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+
         // TODO: refine the logic (and support large inputSeqLen when pastSeqLen > 0)
         if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
             if (pastSeqLen == 0) {
-                selfAttentionBF16(ctx, query, key, value, imBuffer, presentKey, presentValue);
+                selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
             } else {
-                fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
+                fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
             }
         } else {
             if (ctx->inputSeqLen >= 1024 && pastSeqLen == 0)
                 flashAttention(
-                        ctx, qkvGroupMatMul, outBuffer, imBuffer, presentKey, presentValue, attnMask, pastSeqLen);
-            else { fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen); }
+                        ctx, qkvGroupMatMul, outBuffer, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
+            else { fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen); }
         }
         t4.release();
-
-        // For multiple nodes inference, not the whole result buffer
-        hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, imBuffer.Stride());
 
 #ifdef DEBUG
         dbg.debugPrint("attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
