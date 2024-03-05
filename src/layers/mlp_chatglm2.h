@@ -38,7 +38,8 @@ public:
         auto range = SplitUtil::getTaskRange(intermediateSize, ctx->numSplit, ctx->splitIdx);
         int colSplit = range.second - range.first;
 
-        if (!enableCATMLP()) {
+        setMLPOPTConfig();
+        if (!enableCATMLP) {
             OriWeiT *gateW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             OriWeiT *upW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             if (trans) {
@@ -92,9 +93,14 @@ public:
             }
         }
         // Horizontally split the down weight
-        ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
-                convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
-        ctx->mmHelper->packWeight(trans, convertedDownWeight, this->downWeight);
+        if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+            ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    this->downWeight, this->downWeightScale, this->downWeightZero, this->gateWeightSum);
+        } else {
+            ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
+                    convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
+            ctx->mmHelper->packWeight(trans, convertedDownWeight, this->downWeight);
+        }
 #ifdef DEBUG
         this->dbg.debugPrint("convertedGateWeight [%d, %d](%d):\n", convertedGateWeight.Rows(),
                 convertedGateWeight.Cols(), convertedGateWeight.Stride());

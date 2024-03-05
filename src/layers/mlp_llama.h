@@ -23,6 +23,9 @@
 #include "singleton.h"
 #include "timeline.h"
 
+extern bool enableCATMLP;
+extern bool enableCBLASMLP;
+void setMLPOPTConfig();
 // C++ implementation for the python code in modeling_llama.py:
 // residual = hidden_states
 // hidden_states = self.post_attention_layernorm(hidden_states)
@@ -62,7 +65,8 @@ public:
         ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight,
                 upWeightScale, upWeightZero, upWeightSum);
 
-        if (!enableCATMLP()) {
+        setMLPOPTConfig();
+        if (!enableCATMLP) {
             gateWeight.Resize(hiddenSize, it.second - it.first);
             upWeight.Resize(hiddenSize, it.second - it.first);
             ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
@@ -78,9 +82,14 @@ public:
             ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
         }
         // Horizontally split the down weight
-        ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,
-                quantizedDownWeight, downWeightScale, downWeightZero, downWeightSum);
-        ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+        if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+            ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, downWeight,
+                    downWeightScale, downWeightZero, downWeightSum);
+        } else {
+            ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,
+                    quantizedDownWeight, downWeightScale, downWeightZero, downWeightSum);
+            ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+        }
 
 #ifdef DEBUG
         dbg.debugPrint("quantizedGateWeight:\n");
@@ -128,7 +137,7 @@ public:
         dbg.dumpMatrix(normBuffer);
 #endif
 
-        if (!enableCATMLP()) {
+        if (!enableCATMLP) {
             hpj::Matrix<ImT> imBuffer(
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
@@ -156,19 +165,31 @@ public:
             hpj::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
 
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
-            const int cols = N / 2;
-            auto bufSize = M * cols * sizeof(ImT);
-            ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
-            hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
+            if constexpr (std::is_same_v<ImT, bfloat16_t>) {
+                const int cols = N / 2;
+                auto bufSize = M * cols * sizeof(ImT);
+                ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
+                hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
 
-            catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
+                catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
 #ifdef DEBUG
-            dbg.debugPrint("catWeights:\n");
-            dbg.dumpMatrix(catWeights);
-            dbg.debugPrint("gateUp output:\n");
-            dbg.dumpMatrix(siluBuf);
+                dbg.debugPrint("gateUp output:\n");
+                dbg.dumpMatrix(siluBuf);
 #endif
-            downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
+                downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
+            }
+
+            // Use imBuffer as silu buffer
+            else {
+                catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, imBuffer);
+#ifdef DEBUG
+                dbg.debugPrint("catWeights:\n");
+                dbg.dumpMatrix(catWeights);
+                dbg.debugPrint("gateUp output:\n");
+                dbg.dumpMatrix(imBuffer);
+#endif
+                downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+            }
         }
 
 #ifdef DEBUG
@@ -227,7 +248,7 @@ private:
         TimeLine t("DownProj");
 
         assert(input.Rows() == output.Rows());
-        if (!enableCATMLP())
+        if (!enableCATMLP)
             assert(input.Cols() == downWeight.Rows());
         else
             assert(input.Cols() == 2 * downWeight.Rows());
@@ -245,10 +266,62 @@ private:
         const InT *R = residential.Data();
 
         if (isMaster) {
-            ctx->mmHelper->compute_residential(
-                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
+            // TODO: enable below code (currently disabled as hard to get tmpBuf from pre-alloced memory)
+            // if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+            //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, R, ldr, tmpBuf, ldt);
+            // }
+            {
+                ctx->mmHelper->compute_residential(
+                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
+            }
         } else {
-            ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            // if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {
+            //     computeProjBF16(A, B, C, M, N, K, lda, ldc, ldc, nullptr, 0, tmpBuf, ldt);
+            // }
+            {
+                ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            }
+        }
+    }
+
+    // C = (R == nullptr ? A * B : A * B + R)
+    // T: temporary buffer if C is not in float
+    void computeProjBF16(const ImT *A, const WeiT *B, OutT *C, int M, int N, int K, int lda, int ldb, int ldc,
+            const InT *R, int ldr, float *T, int ldt) {
+        int alpha = 1.0;
+        int beta = 0.0;
+
+        // MKL needs float as output, use T (temporary buffer) as output if C is not in float
+        float *D = std::is_same_v<OutT, float> ? (float *)C : T;
+        int ldd = std::is_same_v<OutT, float> ? ldc : ldt;
+
+        REQUIRES(D != nullptr, "Incorrect parameter in computeProjBF16.");
+
+        if (R != nullptr) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < M; ++i) {
+                xft::copy(D + i * ldd, R + i * ldr, N);
+            }
+            beta = 1.0;
+        }
+
+        int ldaH = lda * sizeof(ImT) / sizeof(bfloat16_t); // stride in bf16
+        if constexpr (std::is_same_v<ImT, float>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < M; ++i) {
+                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)A + i * ldaH, K);
+            }
+        }
+
+        cblas_gemm_bf16bf16f32(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, alpha, (const MKL_BF16 *)(A), ldaH,
+                (const MKL_BF16 *)(B), ldb, beta, D, ldd);
+
+        // Convert result from float to OutT
+        if constexpr (!std::is_same_v<OutT, float>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < M; ++i) {
+                xft::copy(C + i * ldc, D + i * ldd, N);
+            }
         }
     }
 
