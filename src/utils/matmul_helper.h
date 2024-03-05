@@ -16,7 +16,6 @@
 #include <immintrin.h>
 #include "bfloat16.h"
 #include "dtype.h"
-#include "environment.h"
 #include "float16.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
@@ -34,6 +33,8 @@
 #include <map>
 #include <tuple>
 
+#define USE_AMX_M 8
+
 class MMHelper {
 public:
     MMHelper(xft::DeviceKind device_kind, int idx) {
@@ -49,8 +50,6 @@ public:
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
         }
-
-        AMXThresholdM = Env::getAMXThresholdM();
     }
 
     ~MMHelper() {
@@ -415,7 +414,7 @@ public:
                 GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute",
                         onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute",
                             onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
                 } else {
@@ -523,7 +522,7 @@ public:
                         onednn_amx_sgemm_f32bf16f32_compute_biasadd(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_biasadd",
                             onednn_amx_sgemm_f32bf16f32_compute_biasadd(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
@@ -627,7 +626,7 @@ public:
                     xdnn_sgemm_f32bf16f32_compute_biasadd_relu(
                             transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc, bias));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-            if (M > AMXThresholdM) {
+            if (M > USE_AMX_M) {
                 GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu",
                         onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
@@ -735,7 +734,7 @@ public:
                         onednn_amx_sgemm_f32bf16f32_compute_silu(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_silu",
                             onednn_amx_sgemm_f32bf16f32_compute_silu(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
@@ -845,7 +844,7 @@ public:
                         onednn_amx_sgemm_f32bf16f32_compute_resmul(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres));
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_resmul",
                             onednn_amx_sgemm_f32bf16f32_compute_resmul(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, res, ldres));
@@ -957,7 +956,7 @@ public:
                         onednn_amx_sgemm_f32bf16f32_compute_residential(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres));
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_residential",
                             onednn_amx_sgemm_f32bf16f32_compute_residential(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres));
@@ -1078,7 +1077,7 @@ public:
                 onednn_amx_sgemm_f32bf16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
-                if (M > AMXThresholdM) {
+                if (M > USE_AMX_M) {
                     TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                     for (int i = 0; i < M; ++i) {
@@ -1161,8 +1160,6 @@ private:
     dnnl::engine *engine;
     dnnl::stream *stream;
     std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> matmul_hub;
-
-    int AMXThresholdM;
 
     enum matmul_kinds {
         Basic = 0,
