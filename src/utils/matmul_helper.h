@@ -414,7 +414,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, bool postOp = false) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE(
@@ -428,7 +428,7 @@ public:
             //         xdnn_sgemm_f32f16f32_compute(
             //                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute",
-                    onednn_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+                    onednn_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, postOp));
             // printf("A:\n");
             // for (int i = 0; i < 6; ++i) {
             //     for (int j = 0; j < 6; ++j) {
@@ -1020,6 +1020,13 @@ public:
             //     printf("\n");
             // }
             // printf("\n");
+            // printf("B:\n");
+            // float16_t B_buf[6];
+            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6);
+            // for (int j = 0; j < 6; ++j) {
+            //     printf("%.6f ", float(B_buf[j]));
+            // }
+            // printf("\n");
             // printf("C:\n");
             // for (int i = 0; i < 6; ++i) {
             //     for (int j = 0; j < 6; ++j) {
@@ -1250,6 +1257,24 @@ public:
         }
     }
 
+    inline void sycl_sigmoid_mul(int M, int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
+        gpu_queue->submit([&](sycl::handler &h) {
+            h.parallel_for(M, [=](auto i) {
+                for (int j = 0; j < N; ++j) {
+                    dst[i * ldd + j] = (sycl::half)src0[i * lds0 + j] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i * lds0 + j])) * src1[i * lds1 + j];
+                }
+            });
+        }).wait();
+    }
+
+    inline void sycl_sigmoid_mul_M1(int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
+        gpu_queue->submit([&](sycl::handler &h) {
+            h.parallel_for(N, [=](auto i) {
+                dst[i] = (sycl::half)src0[i] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i])) * src1[i];
+            });
+        }).wait();
+    }
+
     sycl::queue *gpu_queue;
 
 private:
@@ -1349,7 +1374,7 @@ private:
     }
 
     void onednn_sgemm_f32f16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const float16_t *packedB, float beta, float *C, int ldc) {
+            const float16_t *packedB, float beta, float *C, int ldc, bool postOp = false) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
@@ -1403,6 +1428,13 @@ private:
         matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        if (postOp == true) {
+            if (M > 1)
+                sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+            else if (M == 1)
+                sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+        }
 
         // Reorder output
         FunTimer t3;

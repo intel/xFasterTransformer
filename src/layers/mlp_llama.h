@@ -349,10 +349,10 @@ private:
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, true);
 
         // Compute silu on the left half and then add it with the right half
-        DecoderUtil::siluSum(output, siluBuf);
+        // DecoderUtil::siluSum(output, siluBuf);
     }
 
     void catGateUpWeights(hpj::Matrix<WeiT> &gateWeight, hpj::Matrix<WeiT> &upWeight,
