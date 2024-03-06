@@ -119,12 +119,13 @@ private:
     uint64_t size3;
 
 public:
-    DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
+    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
             int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
             int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
+        , attHeadSize(_headSize)
         , intermediateSize(_imSize)
         , attHeadNum(_attHeadNum)
         , kvHeadNum(_kvHeadNum)
@@ -142,7 +143,6 @@ public:
         , tpRank(_splitIdx)
         , epsilon(epsilon) {
         if (attHeadNum != 0) {
-            this->attHeadSize = hiddenSize / attHeadNum;
             this->attFactor = 1 / sqrtf(attHeadSize);
         }
 
@@ -210,7 +210,8 @@ public:
         int vCols = kCols;
         int qkvCols = qCols + kCols + vCols;
         int qkvStride = (qkvCols % 512 == 0 ? qkvCols + pad : qkvCols); // stride for the concated QKV
-        int mlpFactor = (this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
+        // What a rubbish design here?
+        int mlpFactor = (this->actType == GELU || this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
         auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
         int imCols = range.second - range.first;
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output

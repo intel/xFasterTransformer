@@ -174,7 +174,7 @@ public:
         const int maxPositions = reader.GetInteger(modelType, "model_max_length", maxPosEmbed);
         // Seq length in Qwen model, if none, please ignore
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
-        const int hiddenSize = attHeadNum * size_per_head;
+        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * size_per_head);
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
@@ -217,8 +217,8 @@ public:
         actBuffers.reset(new hpj::Matrix<float>());
 
         // Context
-        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
+        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
+                epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {
@@ -589,9 +589,9 @@ protected:
         return file.good();
     }
 
-    DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
-            const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
+    DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int headSize, const int attHeadNum,
+            const int kvHeadNum, const int imSize, const std::string &act, const float epsilon, int vocabSize,
+            int embeddingSize, int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
         int ppSize = Env::getPipelineStage();
@@ -608,9 +608,9 @@ protected:
                 exit(-1);
             }
         } else {
-            this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
-                    ropeParamsPtr));
+            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
+                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize,
+                    ppRank, ropeParamsPtr));
 
             if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
                 this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
@@ -627,11 +627,12 @@ protected:
         const int hiddenSize = getContext()->hiddenSize;
         const int imSize = getContext()->intermediateSize;
         const int kvHeadNum = getContext()->kvHeadNum;
+        const int attHeadNum = getContext()->attHeadNum;
         const int attHeadSize = getContext()->attHeadSize;
         const int mlpFactor = (getContext()->actType == DecoderContext::SWIGLU) ? 2 : 1;
-        int qSize = hiddenSize;
+        int qSize = attHeadSize * attHeadNum;
         int kvSize = attHeadSize * kvHeadNum;
-        int qkvSize = qSize + kvSize + kvSize;
+        int qkvSize = qSize + 2 * kvSize;
 
 #define ALLOC(size, alignment) aligned_alloc((alignment), (size))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
@@ -639,7 +640,7 @@ protected:
         float *qkvZeros = nullptr;
         float *qkvBias = (float *)ALLOC(qkvSize * sizeof(float), 64);
 
-        OriWeiT *attnOutWeight = (OriWeiT *)ALLOC(hiddenSize * hiddenSize * sizeof(OriWeiT), 64);
+        OriWeiT *attnOutWeight = (OriWeiT *)ALLOC(qSize * hiddenSize * sizeof(OriWeiT), 64);
         float *attnOutScales = nullptr;
         float *attnOutZeros = nullptr;
         float *attnOutBias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
@@ -685,7 +686,7 @@ protected:
                     qkvScales, qkvSize, DataType::fp32);
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.qweight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize, DataType::int8);
+                    attnOutWeight, qSize * hiddenSize, DataType::int8);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.zeros.0.bin",
                     attnOutZeros, hiddenSize, DataType::fp32);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.scales.0.bin",
@@ -741,7 +742,7 @@ protected:
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.weight.0.bin",
                     qkvWeight, hiddenSize * qkvSize);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.weight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize);
+                    attnOutWeight, qSize * hiddenSize);
 
             // Stardard 2 layer MLP
             if (fileExists(

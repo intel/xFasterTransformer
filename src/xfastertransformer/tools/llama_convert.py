@@ -19,7 +19,7 @@ import numpy as np
 import os
 import torch
 
-from transformers import LlamaForCausalLM
+from transformers import AutoModelForCausalLM
 
 from .convert import BaseModelConvert
 
@@ -95,7 +95,7 @@ class LlamaConvert(BaseModelConvert):
             os.makedirs(output_dir)
 
         # load the model
-        model = LlamaForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             input_dir,
             load_in_8bit=False,
             torch_dtype=torch.float16,
@@ -107,28 +107,36 @@ class LlamaConvert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        config["llama"] = {}
+        sec_name = hf_config["model_type"]
+        config[sec_name] = {}
         has_post_decoder_layernorm = True
         try:
-            config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
-            num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
-            num_key_value_heads = config["llama"]["kv_head_num"] = str(
+            config[sec_name]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config[sec_name]["head_num"] = str(hf_config["num_attention_heads"])
+            num_key_value_heads = config[sec_name]["kv_head_num"] = str(
                 hf_config.get("num_key_value_heads", num_attention_heads)
             )
 
             hidden_size = hf_config["hidden_size"]
-            config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
-            config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
-            config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
-            config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
-            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
-            config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = "silu"
-            config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
-            config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
-            config["llama"]["start_id"] = str(hf_config["bos_token_id"])
-            config["llama"]["end_id"] = str(hf_config["eos_token_id"])
-            config["llama"]["weight_data_type"] = dtype
+            config[sec_name]["hidden_size"] = str(hidden_size)
+            if "gemma" in sec_name:
+                config[sec_name]["size_per_head"] = str(hf_config["head_dim"])
+            else:
+                config[sec_name]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config[sec_name]["inter_size"] = str(hf_config["intermediate_size"])
+            config[sec_name]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config[sec_name]["num_layer"] = str(hf_config["num_hidden_layers"])
+            config[sec_name]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
+            config[sec_name]["layernorm_type"] = "pre_layernorm"
+            config[sec_name]["activation_type"] = str(hf_config["hidden_act"])
+            config[sec_name]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config[sec_name]["vocab_size"] = str(hf_config["vocab_size"])
+            config[sec_name]["start_id"] = str(hf_config["bos_token_id"])
+            config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
+            pad_token_id = hf_config.get("pad_token_id")
+            if pad_token_id is not None:
+                config[sec_name]["pad_id"] = str(pad_token_id)
+            config[sec_name]["weight_data_type"] = dtype
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
@@ -157,7 +165,7 @@ class LlamaConvert(BaseModelConvert):
         state_dict = model.state_dict()
         model_named_parameters = dict()
         for name, param in state_dict.items():
-            print(name)
+            print(f"name = {name}")
             # merge QKV
             if "self_attn.q_proj.weight" in name:
                 k_name = name.replace("q_proj", "k_proj")
@@ -165,9 +173,9 @@ class LlamaConvert(BaseModelConvert):
                 qkv = torch.cat(
                     (param.permute(1, 0), state_dict[k_name].permute(1, 0), state_dict[v_name].permute(1, 0)), dim=1
                 )
-                model_named_parameters[
-                    name.replace("self_attn.q_proj.weight", "attention.query_key_value.weight")
-                ] = qkv
+                model_named_parameters[name.replace("self_attn.q_proj.weight", "attention.query_key_value.weight")] = (
+                    qkv
+                )
             # for merged weights, skip
             elif "self_attn.k_proj.weight" in name or "self_attn.v_proj.weight" in name:
                 continue
@@ -175,6 +183,11 @@ class LlamaConvert(BaseModelConvert):
                 model_named_parameters[name] = param
             elif "lm_head" in name:
                 model_named_parameters[name] = param
+            elif "layernorm" in name:
+                if  "gemma" in sec_name:
+                    model_named_parameters[name] = param + 1
+                else:
+                    model_named_parameters[name] = param
             else:
                 model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
 

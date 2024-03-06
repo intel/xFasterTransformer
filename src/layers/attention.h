@@ -151,13 +151,13 @@ public:
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
         hpj::Matrix<WeiT> convertedWeight;
-        ctx->mmHelper->convertWeight(trans, hiddenSize, hiddenSize, attnOutWeight, attnOutScale, attnOutZero,
-                this->startQHead * headSize, qResponsibleCols, false, convertedWeight, attnOutputWeightScale,
-                attnOutputWeightZero, attnOutputWeightSum, true);
+        ctx->mmHelper->convertWeight(trans, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, attnOutWeight, attnOutScale,
+                attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedWeight,
+                attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
         ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
 
 #ifdef DEBUG
-        dbg.debugPrint("attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
+        dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
                 convertedWeight.Stride());
         dbg.dumpMatrix(convertedWeight);
         dbg.debugPrint("attention output packed weight: [%d, %d] (%d)\n", attnOutputWeight.Rows(),
@@ -206,8 +206,10 @@ public:
             bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
 
         auto hiddenSize = ctx->hiddenSize;
+        auto attSize = ctx->attHeadNum * ctx->attHeadSize;
         hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
         hpj::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        hpj::Matrix<ImT> MHABuffer(imBuf, ctx->batchSize * inputSeqLen, attSize, attSize);
         hpj::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
 
         float epsilon = ctx->epsilon;
@@ -258,11 +260,11 @@ public:
         hpj::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
 #ifdef DEBUG
-        dbg.debugPrint("Q:\n");
+        dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
-        dbg.debugPrint("K:\n");
+        dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
         dbg.dumpMatrix(key);
-        dbg.debugPrint("V:\n");
+        dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
         dbg.dumpMatrix(value);
 #endif
 
@@ -286,9 +288,9 @@ public:
         t3.release();
 
 #ifdef DEBUG
-        dbg.debugPrint("Q after post op:\n");
+        dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
-        dbg.debugPrint("K after post op:\n");
+        dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
         dbg.dumpMatrix(key);
 #endif
 
@@ -305,24 +307,24 @@ public:
             inputBuffer.Assign(tmp, rows, cols, stride);
         }
 
-        // For multiple nodes inference, not the whole result buffer
-        hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
-
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen >= getFlashThresh()) {
-                flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
+                flashAttention(ctx, query, key, value, MHABuffer, presentKey, presentValue, attnMask, pastSeqLen);
             } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
-                selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
+                selfAttentionBF16(ctx, query, key, value, MHABuffer, presentKey, presentValue);
             } else {
-                fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
+                fusedAttention(ctx, query, key, value, MHABuffer, presentKey, presentValue, attnMask, pastSeqLen);
             }
         } else {
-            fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
+            fusedAttention(ctx, query, key, value, MHABuffer, presentKey, presentValue, attnMask, pastSeqLen);
         }
         t4.release();
 
+        // For multiple nodes inference, not the whole result buffer
+        hpj::Matrix<ImT> attnSplit(MHABuffer.Data(), MHABuffer.Rows(), qCols, MHABuffer.Stride());
+
 #ifdef DEBUG
-        dbg.debugPrint("attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
+        dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
 #endif
@@ -365,7 +367,8 @@ public:
         t5.release();
 
 #ifdef DEBUG
-        dbg.debugPrint("attention output/projection:\n");
+        dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
+                outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
 #endif
 

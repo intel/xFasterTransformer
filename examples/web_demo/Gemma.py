@@ -25,12 +25,12 @@ from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-t", "--token_path", type=str, default="/data/models/Yi-6B-Chat", help="Path to token file")
-parser.add_argument("-m", "--model_path", type=str, default="/data/models/Yi-6B-Chat-xft", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-t", "--token_path", type=str, default="/data/models/gemma-2b-it", help="Path to token file")
+parser.add_argument("-m", "--model_path", type=str, default="/data/models/gemma-2b-it-xft", help="Path to model file")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="bf16", help="Data type")
 
 
-class YiDemo(ChatDemo):
+class GemmaDemo(ChatDemo):
     # Refer to https://github.com/facebookresearch/llama/blob/main/llama/generation.py
     def create_chat_input_token(self, query, history):
         if history is None:
@@ -46,30 +46,22 @@ class YiDemo(ChatDemo):
             if user_msg:
                 messages.append({"role": "user", "content": user_msg})
             if model_msg:
-                messages.append({"role": "assistant", "content": model_msg})
+                messages.append({"role": "model", "content": model_msg})
 
-        model_inputs = self.tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt"
-        ).to("cpu")
+        prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        model_inputs = self.tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt").to("cpu")
         return model_inputs
 
     def html_func(self):
         gr.HTML("""<h1 align="center">xFasterTransformer</h1>""")
-        gr.HTML("""<h1 align="center">Yi</h1>""")
+        gr.HTML("""<h1 align="center">Gemma</h1>""")
 
     def config(self):
-        return {
-            "eos_token_id": 7,
-            "pad_token_id": 0,
-            "do_sample": True,
-            "temperature": 0.6,
-            "top_p": 0.8,
-            "stop_words_ids": [[2], [6], [7], [8]],
-        }
+        return {"stop_words_ids": [[2], [6], [7], [8]]}
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    demo = YiDemo(args.token_path, args.model_path, dtype=args.dtype)
+    demo = GemmaDemo(args.token_path, args.model_path, dtype=args.dtype)
 
     demo.launch(False)

@@ -13,13 +13,14 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <cmath>
 #include "float16.h"
 #include "transformer_ctx.h"
 
 template <typename T>
-class TokenEmbedding {
+class GemmaTokenEmbedding {
 public:
-    TokenEmbedding(DecoderContext *ctx) {
+    GemmaTokenEmbedding(DecoderContext *ctx) {
         this->vocabSize = ctx->vocabSize;
         this->hiddenSize = ctx->hiddenSize;
     }
@@ -43,10 +44,27 @@ public:
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>
     void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
+        __m512 vdim = _mm512_set1_ps(std::sqrt(this->hiddenSize));
+        constexpr int kStep = 16;
+        int blockSize = hiddenSize / kStep;
+        int remainder = hiddenSize % kStep;
+
 #pragma omp parallel for
         for (int i = 0; i < batchSize * seqLen; ++i) {
             int id = tokenIds[i];
-            xft::copy(output + i * hiddenSize, embTable + id * hiddenSize, hiddenSize);
+            auto src = this->embTable + id * hiddenSize;
+            auto dst = output + i * hiddenSize;
+            for (int j = 0; j < blockSize; ++j) {
+                __m512 v = load_avx512(0xffff, src + j * kStep);
+                // normalized as https://github.com/huggingface/transformers/blob/2a9b1f80c45cab19b542bc7cc004937d39d6f6fb/src/transformers/models/gemma/modeling_gemma.py#L880-L882
+                store_avx512(dst + j * kStep, 0xffff, _mm512_mul_ps(v, vdim));
+            }
+
+            if (remainder != 0) {
+                __mmask16 mask = 0xFFFF >> (kStep - remainder);
+                __m512 v = load_avx512(mask, src + hiddenSize - remainder);
+                store_avx512(dst + hiddenSize - remainder, mask, _mm512_mul_ps(v, vdim));
+            }
         }
     }
 
