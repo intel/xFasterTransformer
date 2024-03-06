@@ -32,21 +32,26 @@
 
 namespace xft {
 
-#define SHM_NAME "xft_shm_buffer"
-#define MAX_SHM_SIZE (8 * 1024 * 5120 * 4)
-#define SHM_BLOCK_SIZE (16 * 5120)
-#define MAX_SHM_BLOCK_COUNT   2048
+#define SHM_NAME                "xft_shm_buffer"
+#define MAX_RANK_NUMBER         16
+#define MAX_SHM_SIZE            (1024 * 5120 * 8 * 4)
 
 struct ShmContext {
-    const char *name;
-    int fp;
-    int pid_fd[2];
-    int *state;
-    uint8_t *blockState;
-    void *address;
-    size_t nstates;
-    size_t nblocks;
-    size_t nbytes;
+    // current rank info
+    char name[64];                  // shared memory file name
+    int rank_idx;                   // index of current rank
+    int pid_fd[2];                  // 0 - pid; 1 - shared memory fd
+
+    // global shm info
+    int nrank;                      // number of total ranks
+    void *shm_ptr[MAX_RANK_NUMBER]; // shared memory addr per rank
+
+    // per rank data in shared memory
+    int     *all_pids;              // 2 per rank, handles: 0 - pid; 1 - shared memory fd; valid in rank 0
+    int     *state;                 // 1, state per rank, 
+                                    //          0-idle, 1-op start, 2-data prepared, 
+                                    //          3-segment reduce-add finished, 4-rank update finished
+    void    *address;               // MAX_SHM_SIZE, raw data addr
 };
 
 static inline int memfd_create(const char *name, unsigned int flags) {
@@ -54,70 +59,15 @@ static inline int memfd_create(const char *name, unsigned int flags) {
 }
 
 inline void wait_state_until(const ShmContext *ctx, const int index, int state) {
-    volatile int *state_ptr = ctx->state + index;
+    volatile int *state_ptr = (int*)(ctx->shm_ptr[index]) + MAX_RANK_NUMBER * 2;
     while (*state_ptr != state)
-        ;
-}
-
-inline void wait_block_until(const ShmContext *ctx, const int index, uint8_t state) {
-    volatile uint8_t *state_ptr = ctx->blockState + index;
-    while (*state_ptr != state)
-        ;
-}
-
-inline void connect_shm(ShmContext *ctx) {
-    char fd_path[64];
-    snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", ctx->pid_fd[0], ctx->pid_fd[1]);
-    ctx->fp = open(fd_path, O_RDWR);
-    if (ctx->fp == -1) {
-        perror("Bad file descriptor.");
-        exit(-1);
-    }
-
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
-
-    // Map the shared memory into the address space of the process
-    void *shm_ptr = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fp, 0);
-    if (shm_ptr == MAP_FAILED) {
-        perror("shm mmap failed.");
-        exit(-1);
-    }
-    ctx->state = (int *)shm_ptr;
-    ctx->blockState = (uint8_t *)((int *)shm_ptr + ctx->nstates);
-    ctx->address = (void *)((uint8_t *)ctx->blockState + ctx->nblocks * ctx->nstates);
-}
-
-inline void create_shm(ShmContext *ctx) {
-    ctx->fp = memfd_create(ctx->name, MFD_CLOEXEC);
-
-    if (ctx->fp == -1) {
-        perror("shm open failed.");
-        exit(-1);
-    }
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
-    // Truncate the shared memory to the desired size
-    if (ftruncate(ctx->fp, total_size) == -1) {
-        perror("shm ftruncate failed.");
-        exit(-1);
-    }
-
-    // Map the shared memory into the address space of the process
-    void *shm_ptr = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fp, 0);
-    if (shm_ptr == MAP_FAILED) {
-        perror("shm mmap failed.");
-        exit(-1);
-    }
-    ctx->pid_fd[0] = getpid();
-    ctx->pid_fd[1] = ctx->fp;
-    ctx->state = (int *)shm_ptr;
-    ctx->blockState = (uint8_t *)((int *)shm_ptr + ctx->nstates);
-    ctx->address = (void *)((uint8_t *)ctx->blockState + ctx->nblocks * ctx->nstates);
+        ; //sched_yield();
 }
 
 inline void close_shm(ShmContext *ctx) {
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes;
-    if (ctx->fp != -1) {
-        munmap(ctx->address, total_size);
+    const int total_size = sizeof(int) * (MAX_RANK_NUMBER * 2  + 1) + MAX_SHM_SIZE;
+    if (ctx->pid_fd[1] != -1) {
+        munmap(ctx->shm_ptr[ctx->rank_idx], total_size);
         shm_unlink(ctx->name);
     }
 }
