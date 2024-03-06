@@ -987,7 +987,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_residential(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, const float *bias,
-            const InT *res, int ldres) {
+            const InT *res, int ldres, bool copyC2G = true, bool copyG2C = true) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_residential",
@@ -1003,7 +1003,7 @@ public:
             //                 beta, C, ldc, bias, res, ldres));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute_residential",
                     onednn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, packedB,
-                            beta, C, ldc, bias, res, ldres));
+                            beta, C, ldc, bias, res, ldres, copyC2G, copyG2C));
             // printf("A:\n");
             // for (int i = 0; i < 6; ++i) {
             //     for (int j = 0; j < 6; ++j) {
@@ -1275,6 +1275,16 @@ public:
         }).wait();
     }
 
+    inline void sycl_memcopy_lines(int M, int N, const float16_t *src, int lds, float16_t *dst, int ldd) {
+        gpu_queue->submit([&](sycl::handler &h) {
+            h.parallel_for(M, [=](auto i) {
+                for (int j = 0; j < N; ++j) {
+                    dst[i * ldd + j] = src[i * lds + j];
+                }
+            });
+        }).wait();
+    }
+
     sycl::queue *gpu_queue;
 
 private:
@@ -1434,19 +1444,19 @@ private:
                 sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
             else if (M == 1)
                 sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+        } else {
+            // Reorder output
+            FunTimer t3;
+            float16_t C_buf[M * N];
+            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
         }
-
-        // Reorder output
-        FunTimer t3;
-        float16_t C_buf[M * N];
-        gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-        float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
     }
 
     void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const float16_t *packedB, float beta, float *C, int ldc, const float *bias, const float *res,
-            int ldres) {
+            int ldres, bool copyC2G = true, bool copyG2C = true) {
         TimeLine t("onednn_sgemm_f32f16f32_compute_residential");
         TimeLine t1("onednn_sgemm_f32f16f32_compute_residential.create_primitive");
         using namespace dnnl;
@@ -1505,15 +1515,22 @@ private:
         auto shift_mem = memory(shift_md, *engine, const_cast<float16_t *>(packedShift));
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
 
-        // Reorder input
-        FunTimer t2;
-        float16_t A_buf[M * K];
-        // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
-#pragma omp parallel for
-        for (int i = 0; i < M; ++i)
-            float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
-        gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        if (copyC2G == true) {
+            // Reorder input
+            FunTimer t2;
+            float16_t A_buf[M * K];
+            // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+    #pragma omp parallel for
+            for (int i = 0; i < M; ++i)
+                float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
+            gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        } else {
+            if (M > 1)
+                sycl_memcopy_lines(M, K, packedC, 2 * K, packedA, K);
+            else
+                gpu_queue->memcpy(packedA, packedC, M * K * sizeof(float16_t)).wait();
+        }
 
         // Reorder shift
         FunTimer t3;
