@@ -108,6 +108,11 @@ docker run -it \
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
+For GPU version, xft needs ABI=1 from [torch==2.0.1+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.0.1%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=fbe35a5c60aef0c4b5463caab10ba905bdfa07d6d16b7be5d510225c966a0b46) in [torch-whl-list](https://download.pytorch.org/whl/torch/) due to DPC++ need ABI=1.
+  ```bash
+  pip install https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.0.1%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=fbe35a5c60aef0c4b5463caab10ba905bdfa07d6d16b7be5d510225c966a0b46`
+  ```
+
 ##### How to build
 - Using 'CMake'
   ```bash
