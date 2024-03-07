@@ -20,8 +20,13 @@
 
 template <typename WeiT>
 ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
-    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
-            ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>>(modelPath, modelType) {
+    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                            typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+            ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
+            typename TypeSelector<WeiT>::KVCacheType>(modelPath, modelType) {
+    // : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
+    //         ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
@@ -110,6 +115,11 @@ void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
 
 template <typename WeiT>
 void ChatGLM2<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+    embedding->forward(ids, output, batchSize, seqLen);
+}
+
+template <typename WeiT>
+void ChatGLM2<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 

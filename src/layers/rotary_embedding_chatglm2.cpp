@@ -86,35 +86,35 @@ void ChatGLM2RotaryEmbedding::glm2CalEmb() {
 //     x_out2 = x_out2.flatten(3)
 //     return torch.cat((x_out2, x_pass), dim=-1)
 
-void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
-        int hidden_size_per_attention_head, const int *position_ids) {
-    int dim = inv_freq_size * 2;
-    REQUIRES(dim == hidden_size_per_attention_head, "Incorrect shape, last dimention is not the head size.");
+// void ChatGLM2RotaryEmbedding::forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
+//         int hidden_size_per_attention_head, const int *position_ids) {
+//     int dim = inv_freq_size * 2;
+//     REQUIRES(dim == hidden_size_per_attention_head, "Incorrect shape, last dimention is not the head size.");
 
-    const int half = inv_freq_size;
+//     const int half = inv_freq_size;
 
-#pragma omp parallel for
-    for (int head = 0; head < qk_size / hidden_size_per_attention_head; ++head) {
-        int off = head * dim;
-        for (int bs = 0; bs < batch_size; ++bs) {
-            for (int seq = 0; seq < seq_len; ++seq) {
-                float *p1 = buf + off;
+// #pragma omp parallel for
+//     for (int head = 0; head < qk_size / hidden_size_per_attention_head; ++head) {
+//         int off = head * dim;
+//         for (int bs = 0; bs < batch_size; ++bs) {
+//             for (int seq = 0; seq < seq_len; ++seq) {
+//                 float *p1 = buf + off;
 
-                int pos = position_ids[seq];
-                float *pcos = emb_cos + pos * dim;
-                float *psin = emb_sin + pos * dim;
+//                 int pos = position_ids[seq];
+//                 float *pcos = emb_cos + pos * dim;
+//                 float *psin = emb_sin + pos * dim;
 
-#pragma omp simd
-                for (int i = 0; i < half; i += 2) {
-                    auto t1 = p1[i];
-                    p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
-                    p1[i + 1] = p1[i + 1] * pcos[i] + t1 * psin[i];
-                }
-                off += bufStride;
-            }
-        }
-    }
-}
+// #pragma omp simd
+//                 for (int i = 0; i < half; i += 2) {
+//                     auto t1 = p1[i];
+//                     p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
+//                     p1[i + 1] = p1[i + 1] * pcos[i] + t1 * psin[i];
+//                 }
+//                 off += bufStride;
+//             }
+//         }
+//     }
+// }
 
 void ChatGLM2RotaryEmbedding::forward(
         float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {
@@ -122,7 +122,7 @@ void ChatGLM2RotaryEmbedding::forward(
     REQUIRES(dim == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
     const int batch_size = qk_shape[0];
     const int seq_len = qk_shape[1];
-    const int head_num = qk_shape[2] +  qk_shape[4];
+    const int head_num = qk_shape[2] + qk_shape[4];
     const int half = inv_freq_size;
 
 #pragma omp parallel for
@@ -137,7 +137,7 @@ void ChatGLM2RotaryEmbedding::forward(
                 float *psin = emb_sin + pos * dim;
 
 #pragma omp simd
-                for (int i = 0; i < half; i += 2) {
+                for (int i = 0; i < dim; i += 2) {
                     auto t1 = p1[i];
                     p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
                     p1[i + 1] = p1[i + 1] * pcos[i] + t1 * psin[i];
@@ -148,3 +148,45 @@ void ChatGLM2RotaryEmbedding::forward(
     }
 }
 
+void ChatGLM2RotaryEmbedding::forward(
+        bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {
+    int dim = inv_freq_size * 2;
+    REQUIRES(dim == qk_shape[3], "Incorrect shape, last dimention is not the head size.");
+    const int batch_size = qk_shape[0];
+    const int seq_len = qk_shape[1];
+    const int head_num = qk_shape[2] + qk_shape[4];
+    const int half = inv_freq_size;
+
+#pragma omp parallel for 
+    for (int head = 0; head < head_num; ++head) {
+        int off = head * dim;
+        for (int bs = 0; bs < batch_size; ++bs) {
+            for (int seq = 0; seq < seq_len; ++seq) {
+                bfloat16_t *p1 = query + off;
+
+                int pos = position_ids[seq];
+                float *pcos = emb_cos + pos * dim;
+                float *psin = emb_sin + pos * dim;
+                for (int i = 0; i < dim; i += 16) {
+                    int remain = dim - i;
+                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                    __mmask16 wmask = 0xAAAA;
+
+                    __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
+                    __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
+
+                    // Compute something like:
+                    //  p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
+                    //  p1[i + 1] = p1[i + 1] * pcos[i] + p1[i] * psin[i];
+                    __m512 qVec0 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &p1[i]));
+                    __m512 qVec1 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &p1[i+1]));
+                    __m512 qNew0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
+                    __m512 qNew1 = _mm512_fmadd_ps(qVec1, pCosVec, _mm512_mul_ps(qVec0, pSinVec));
+                    _mm256_mask_storeu_epi16(&p1[i], wmask, bfloat16_t::cvt_fp32_to_bf16(qNew0));
+                    _mm256_mask_storeu_epi16(&p1[i + 1], wmask, bfloat16_t::cvt_fp32_to_bf16(qNew1));
+                }
+                off += qStride;
+            }
+        }
+    }
+}
