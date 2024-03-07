@@ -41,7 +41,8 @@ class xFTModel(MLModel):
         self._model = xfastertransformer.AutoModel.from_pretrained(self.model_path, dtype=self.dtype)
 
         # Llama doesn't have padding ID.
-        self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
+        if self._tokenizer.pad_token_id is None:
+            self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
         return True
 
     def create_chat_input_token(self, query):

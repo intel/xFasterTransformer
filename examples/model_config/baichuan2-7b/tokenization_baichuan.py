@@ -72,6 +72,13 @@ class BaichuanTokenizer(PreTrainedTokenizer):
         eos_token = AddedToken(eos_token, lstrip=False, rstrip=False) if isinstance(eos_token, str) else eos_token
         unk_token = AddedToken(unk_token, lstrip=False, rstrip=False) if isinstance(unk_token, str) else unk_token
         pad_token = AddedToken(pad_token, lstrip=False, rstrip=False) if isinstance(pad_token, str) else pad_token
+        
+        self.vocab_file = vocab_file
+        self.add_bos_token = add_bos_token
+        self.add_eos_token = add_eos_token
+        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
+        self.sp_model.Load(vocab_file)        
+        
         super().__init__(
             bos_token=bos_token,
             eos_token=eos_token,
@@ -83,11 +90,6 @@ class BaichuanTokenizer(PreTrainedTokenizer):
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
             **kwargs,
         )
-        self.vocab_file = vocab_file
-        self.add_bos_token = add_bos_token
-        self.add_eos_token = add_eos_token
-        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
-        self.sp_model.Load(vocab_file)
 
     def __getstate__(self):
         state = self.__dict__.copy()

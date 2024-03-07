@@ -272,6 +272,124 @@ void small_gemm_transb_6x4(const TA *A, const TB *B, float *C, int K, int lda, i
     pC[3] = _mm512_reduce_add_ps(vc[23]);
 }
 
+// For the case like M = 1, K = 128/256
+template <typename TA, typename TB, int K>
+void small_gemm_transb_1xn_fixk(const TA *A, const TB *B, float *C, int N, int lda, int ldb, int ldc) {
+    constexpr int vecs = (K + 15) / 16; // vector size in AVX512
+    constexpr __mmask16 mask = (K % 16 == 0 ? 0xffff : (1 << (K % 16)) - 1); // mask for last vector
+    constexpr int BC = 8; // how many elements computed together
+
+    __m512 va[vecs];
+
+    // Load A
+    compile_time_for<vecs>::op([&](auto idx) {
+        if constexpr (idx == vecs - 1) {
+            va[idx] = xft::load_avx512(mask, A + idx * 16);
+        } else {
+            va[idx] = xft::load_avx512(0xffff, A + idx * 16);
+        }
+    });
+
+    // Each loop compute 'BC' elements in C
+    int i = 0;
+    for (; i + BC - 1 < N; i += BC) {
+        const TB *pB = B + i * ldb;
+
+        __m512 vc[BC];
+        compile_time_for<BC>::op([&](auto idx) {
+            vc[idx] = _mm512_set1_ps(0);
+        });
+
+        for (int j = 0; j < vecs; ++j) {
+            __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
+            compile_time_for<BC>::op([&](auto idx) {
+                __m512 vb = xft::load_avx512(m, pB + idx * ldb + j * 16);
+                vc[idx] = _mm512_fmadd_ps(va[j], vb, vc[idx]);
+            });
+        }
+
+        // Store to C
+        compile_time_for<BC>::op([&](auto idx) {
+            C[i + idx] = _mm512_reduce_add_ps(vc[idx]);
+        });
+    }
+
+    // Remain elements
+    for (; i < N; ++i) {
+        const TB *pB = B + i * ldb;
+        __m512 vc = _mm512_set1_ps(0);
+        
+        for (int j = 0; j < vecs; ++j) {
+            __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
+            __m512 vb = xft::load_avx512(m, pB + j * 16);
+            vc = _mm512_fmadd_ps(va[j], vb, vc);
+        }
+
+        C[i] = _mm512_reduce_add_ps(vc);
+    }
+}
+
+// For the case like M = 1
+template <typename TA, typename TB>
+void small_gemm_transb_1xn_dynk(const TA *A, const TB *B, float *C, int N, int K, int lda, int ldb, int ldc) {
+    int vecs = (K + 15) / 16; // vector size in AVX512
+    __mmask16 mask = (K % 16 == 0 ? 0xffff : (1 << (K % 16)) - 1); // mask for last vector
+    constexpr int BC = 16; // how many elements computed together
+
+    // Each loop compute 'BC' elements in C
+    int i = 0;
+    for (; i + BC - 1 < N; i += BC) {
+        const TA *pA = A + i * ldb;
+        const TB *pB = B + i * ldb;
+
+        __m512 vc[BC];
+        compile_time_for<BC>::op([&](auto idx) {
+            vc[idx] = _mm512_set1_ps(0);
+        });
+
+        for (int j = 0; j < vecs; ++j) {
+            __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
+            __m512 va = xft::load_avx512(m, pA + j * 16);
+            compile_time_for<BC>::op([&](auto idx) {
+                __m512 vb = xft::load_avx512(m, pB + idx * ldb + j * 16);
+                vc[idx] = _mm512_fmadd_ps(va, vb, vc[idx]);
+            });
+        }
+
+        // Store to C
+        compile_time_for<BC>::op([&](auto idx) {
+            C[i + idx] = _mm512_reduce_add_ps(vc[idx]);
+        });
+    }
+
+    // Remain elements
+    for (; i < N; ++i) {
+        const TA *pA = A + i * ldb;
+        const TB *pB = B + i * ldb;
+        __m512 vc = _mm512_set1_ps(0);
+        
+        for (int j = 0; j < vecs; ++j) {
+            __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
+            __m512 va = xft::load_avx512(m, pA + j * 16);
+            __m512 vb = xft::load_avx512(m, pB + j * 16);
+            vc = _mm512_fmadd_ps(va, vb, vc);
+        }
+
+        C[i] = _mm512_reduce_add_ps(vc);
+    }
+}
+
+template <typename TA, typename TB>
+void small_gemm_transb_1xn(const TA *A, const TB *B, float *C, int N, int K, int lda, int ldb, int ldc) {
+    if (K == 128) {
+        small_gemm_transb_1xn_fixk<TA, TB, 128>(A, B, C, N, lda, ldb, ldc);
+    } else if (K == 256) {
+        small_gemm_transb_1xn_fixk<TA, TB, 256>(A, B, C, N, lda, ldb, ldc);
+    } else {
+        small_gemm_transb_1xn_dynk(A, B, C, N, K, lda, ldb, ldc);
+    }
+}
+
 // M is a fixed small number
 template <typename TA, typename TB, int M>
 void small_gemm_transb(const TA *A, const TB *B, float *C, int N, int K, int lda, int ldb, int ldc) {
@@ -307,6 +425,11 @@ void small_gemm_transb(const TA *A, const TB *B, float *C, int M, int N, int K, 
     int i = 0;
     constexpr int MB = 6;
 
+    // Special case for M = 1
+    if (M == 1) {
+        return small_gemm_transb_1xn(A, B, C, N, K, lda, ldb, ldc);
+    }
+
     for (i = 0; i + MB - 1 < M; i += MB) {
         const TA *pA = A + i * lda;
         small_gemm_transb<TA, TB, MB>(pA, B, C + i * ldc, N, K, lda, ldb, ldc);
@@ -318,10 +441,10 @@ void small_gemm_transb(const TA *A, const TB *B, float *C, int M, int N, int K, 
         const int remain = M - i;
 
         switch (remain) {
-            case 2: small_gemm_transb<TA, TB, 2>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
-            case 4: small_gemm_transb<TA, TB, 4>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
             case 1: small_gemm_transb<TA, TB, 1>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 2: small_gemm_transb<TA, TB, 2>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
             case 3: small_gemm_transb<TA, TB, 3>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
+            case 4: small_gemm_transb<TA, TB, 4>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
             case 5: small_gemm_transb<TA, TB, 5>(pA, B, C + i * ldc, N, K, lda, ldb, ldc); break;
         }
     }
@@ -417,6 +540,10 @@ void small_gemm_transb(const float *A, const float *B, float *C, int M, int N, i
 
 void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
     small_gemm_transb<float, float16_t>(A, B, C, M, N, K, lda, ldb, ldc);
+}
+
+void small_gemm_transb(const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+    small_gemm_transb<bfloat16_t, float16_t>(A, B, C, M, N, K, lda, ldb, ldc);
 }
 
 void small_gemm_transb(const float *attnMask, const float *A, const float *B, float *C, int M, int N, int K, int lda,
