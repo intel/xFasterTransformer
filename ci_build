@@ -60,8 +60,9 @@ model() {
         ;;
     *)
         Info "model simple test..."
-        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/llama*/ \
-            $workspace_dir/examples/model_config/chatglm*/)
+        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/llama-2-7b/ \
+            $workspace_dir/examples/model_config/chatglm2-6b/ \
+            $workspace_dir/examples/model_config/qwen-7b/)
         DTYPE_LIST=('fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8')
         ;;
     esac
@@ -77,8 +78,11 @@ model() {
         esac
 
         for DTYPE in ${DTYPE_LIST[@]}; do
-            # always run one socket
-            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0
+            export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-0}
+            # short prompt:
+            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0 -in 32 -out 32
+            #  long prompt:
+            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0 -in 2016 -out 32
         done
     done
     popd
