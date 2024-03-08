@@ -43,7 +43,7 @@ public:
             bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
 private:
-    void llamaCalEmb();
+    void llamaCalEmb(const float *inv_freq, const int max_position_embeddings);
 
 private:
     static bool initialized;
