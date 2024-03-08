@@ -309,7 +309,7 @@ public:
         hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
         if (pastSeqLen == 0) {
-            if (ctx->inputSeqLen >= getFlashThresh()) {
+            if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
             } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
                 selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
