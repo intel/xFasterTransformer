@@ -1284,6 +1284,56 @@ public:
             });
         }).wait();
     }
+    
+    void rmsnorm_kernel(sycl::half *o, sycl::half *x, sycl::half *weight, int size,
+                        int elementsPerThread, const sycl::nd_item<3> &item_ct1,
+                        float &shared_ss, const int max_work_group_size) {
+        float ss = 0.0f;
+        for (int i = 0; i < elementsPerThread; i++) {
+            int index = item_ct1.get_local_id(2) + i * max_work_group_size;
+            if (index < size)
+            {
+                float val = (float)x[index];
+                ss += val * val;
+            }
+        }
+
+        ss = sycl::reduce_over_group(item_ct1.get_group(), ss, sycl::plus<>());
+
+        if (item_ct1.get_local_id(2) == 0) {
+            ss /= size;
+            ss += 1e-5f;
+            ss = 1.0f / sycl::sqrt(ss);
+            shared_ss = ss;
+        }
+
+        item_ct1.barrier();
+        ss = shared_ss;
+
+        for (int i = 0; i < elementsPerThread; i++) {
+            int index = item_ct1.get_local_id(2) + i * max_work_group_size;
+            if (index < size) {
+                float val = (float)x[index];
+                val *= ss * (float)weight[index];
+                o[index] = (sycl::half)val;
+            }
+        }
+    }
+
+    inline void rmsnorm(float16_t *o, float16_t *x, float16_t *weight, int size) {
+        int max_work_group_size = 512;
+        int elementsPerThread = (size - 1) / max_work_group_size + 1;
+        gpu_queue->submit([&](sycl::handler &cgh) {
+            sycl::local_accessor<float, 0> shared_ss_acc_ct1(cgh);
+
+            cgh.parallel_for(
+                    sycl::nd_range(sycl::range(1, 1, max_work_group_size), sycl::range(1, 1, max_work_group_size)),
+                    [=](sycl::nd_item<3> item_ct1) {
+                        rmsnorm_kernel((sycl::half *)o, (sycl::half *)x, (sycl::half *)weight, size,
+                                elementsPerThread, item_ct1, shared_ss_acc_ct1, max_work_group_size);
+                    });
+        });
+    }
 
     sycl::queue *gpu_queue;
 
