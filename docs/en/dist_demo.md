@@ -273,7 +273,7 @@ IP_C=172.31.0.100
 IP_D=172.31.0.102
 
 # enable it if testing at a cloud environment
-export is_ali_cloud=1
+export XFT_CLOUD_ENV=1
 
 # sync manual
 # scp -r $workspace_dir/* $IP_B:$workspace_dir/
@@ -340,7 +340,7 @@ $ cd /mnt/xFasterTransformer/distributed/
 #   1. ############# HW configuration #############
 #        a. 修改IFACE为指定网卡;
 #        b. 修改IP_A/IP_B/IP_C/...;
-#        c. 如果在云上测试则: export is_ali_cloud=1;
+#        c. 如果在云上测试则: export XFT_CLOUD_ENV=1;
 #        d. TCP or eRDMA 二选一: 打开# enable TCP/eRDMA 注释;
 #   2. ############# XFT configuration #############
 #        a. XFT_COMM_TIME=1: 打印单次allreduce时间日志;

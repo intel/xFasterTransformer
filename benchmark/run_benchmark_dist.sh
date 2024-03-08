@@ -251,10 +251,10 @@ Info "Checkpoint(device IP): IP address set successfully."
 # The mapping method for CPU IDs in the cloud server environment is different,
 # for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
 # to a single physical core. In this mapping relationship,
-# you can set the 'is_ali_cloud' variable to '1' to bind to the correct physical core.
-export is_ali_cloud=0
-Warning "Checkpoint(is_ali_cloud): Please set the 'is_ali_cloud' variable to '1' if testing at a cloud environment.
-        Current is_ali_cloud=${is_ali_cloud}." $0:$LINENO
+# you can set the 'XFT_CLOUD_ENV' variable to '1' to bind to the correct physical core.
+export XFT_CLOUD_ENV=0
+Warning "Checkpoint(XFT_CLOUD_ENV): Please set the 'XFT_CLOUD_ENV' variable to '1' if testing at a cloud environment.
+        Current XFT_CLOUD_ENV=${XFT_CLOUD_ENV}." $0:$LINENO
 
 # sync manual
 # scp -r $workspace_dir/* $IP_B:$workspace_dir/
