@@ -25,6 +25,7 @@ import json
 import numpy as np
 
 import argparse
+import configparser
 
 
 def boolean_string(string):
@@ -54,15 +55,15 @@ DTYPE_LIST = [
 parser = argparse.ArgumentParser()
 parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
 parser.add_argument("--model_path", type=str, default="/data/chatglm-6b/cpu", help="Path to model file")
-parser.add_argument("--model_name", type=str, default="Model", help="Model name")
-parser.add_argument("--prompt_path", type=str, default="./prompt_pool.json", help="Path to model file")
-parser.add_argument("--token_in", type=str, default=32, help="Input Token Len")
+parser.add_argument("--model_name", type=str, default=None, help="Model name")
+parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
+parser.add_argument("--token_in", type=str, default="32", help="Input Token Len")
 parser.add_argument("--token_out", type=int, default=32, help="Output Token Len, MaxLen=IN+OUT")
 parser.add_argument("--beam_width", type=int, default=1, help="Beam Search Width")
 parser.add_argument("--input_prompt", type=str, default=None, help="Input Prompt")
 parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
-parser.add_argument("--iteration", type=int, default=10, help=" Benchmakr Iterations")
-parser.add_argument("--warmup", type=int, default=2, help="Warm up Iterations")
+parser.add_argument("--iteration", type=int, default=3, help=" Benchmakr Iterations")
+parser.add_argument("--warmup", type=int, default=1, help="Warm up Iterations")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
@@ -96,9 +97,19 @@ else:
 import xfastertransformer
 
 if __name__ == "__main__":
+    model_path_suffix = "-xft"
     args = parser.parse_args()
     with open(args.prompt_path, "r") as json_file:
         prompt_pool = json.load(json_file)
+
+    if not args.model_name:
+        args.model_name = os.path.basename(os.path.dirname(args.model_path))
+
+    # todo(marvin): How to better specify the path?
+    if os.environ.get("XFT_FAKE_MODEL", "0") == "0":
+        _config = configparser.ConfigParser()
+        _config.read(os.path.join(args.model_path, "config.ini"))
+        args.model_path = _config[_config.sections()[0]]["model_name"].rstrip(os.path.sep) + model_path_suffix
 
     if "chatglm" in args.model_name.lower():
         model_prompt = prompt_pool["chatglm"]
@@ -125,6 +136,7 @@ if __name__ == "__main__":
     if model.rank == 0:
         # input prompt
         print("======start=======")
+        print("[INFO] input argparse = ", args)
         if args.input_prompt is not None:
             input_prompt = args.input_prompt
         elif args.token_in in model_prompt:
@@ -170,14 +182,18 @@ if __name__ == "__main__":
             first_token_times.append(first_token_time)
             # remaining tokens
             cost_list = []
+            token_list = [next_tokens.view(-1).tolist()[0]]
             while not model.is_done():
                 start_time = time.perf_counter()
                 next_tokens = model.forward()
                 next_time = time.perf_counter() - start_time
                 cost_list.append(next_time)
+                token_list.append(next_tokens.view(-1).tolist()[0])
             generated_ids = model.finalize()
             total_times.append(first_token_time + sum(cost_list))
             next_token_times += cost_list
+            response = tokenizer.decode(token_list, skip_special_tokens=True)
+            print(f"    Response: {response}")
 
         total_times = list(map(lambda x: x * 1000, total_times))
         first_token_times = list(map(lambda x: x * 1000, first_token_times))
@@ -193,6 +209,7 @@ if __name__ == "__main__":
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
         print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s")
+        print("=" * 120, "\n" * 3)
     else:
         for i in range(args.warmup + args.iteration):
             model.generate()

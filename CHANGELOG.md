@@ -1,5 +1,34 @@
 # CHANGELOG
 
+# [Version v1.4.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.4.0)
+v1.4.0 - Fully BF16 support in Llama for better performance and serving framework support.
+
+## Functionality
+- Introduce pure BF16 support to Llama series models, now can use fully BF16 data type to to utilize AMX more effectively when deploying Llama models.
+- Add MLServer serving framework support and demo in `serving` directory.
+- GCC for compiling release binary files has been updated from GCC 8.5 to GCC 12.
+- Introduce pipeline parallel feature for distributing deployment. Enabled by `cmake .. -DWITH_PIPELINE_PARALLEL=ON` in compilation and use `XFT_PIPELINE_STAGE` Marco to define pipeline parallel stages num.
+- Deprecate convert tool scripts in `tools` directory and it recommended to using `Convert` in xfastertransformer python wheel.
+- Support loading int8 data weights directly from local files.
+
+## Performance
+- Update xDNN to release `v1.4.4`.
+- Accelerate model weights loading by optimizing cast operation after loading and gain up to 50% speed up.
+- Optimize BF16 performance using AMX instruction when batchsize <= 8, and add `XFT_USE_AMX_M` to set threshold of M using AMX instead of AVX512, default `1`.
+
+## Demo & Benchmark
+- Update dependency `transformers` requirement from `4.30.0` to `4.36.0` for high risk CVE Vulnerabilities.
+- Add distributed inference benchmark script which support deployment across platfrom.
+- Add single node platform support in benchmark script.
+- Add Yi model web demo.
+- Enhance the command-line chat mode in pytorch demo.py, using `--chat true` to enable.
+
+## BUG fix
+- Fix calculation issue in Qwen models and enhance LogN support for long token sequence.
+- Fix unsync issue in multi-rank model when `do_sample` is enabled.
+- Fix Baichuan models calculation and convert issue.
+- Fix repetition penalties not taking effect on other batches.
+
 # [Version v1.3.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.3.1)
 v1.3.1
 ## BUG fix
