@@ -1285,54 +1285,49 @@ public:
         }).wait();
     }
     
-    void rmsnorm_kernel(sycl::half *o, sycl::half *x, sycl::half *weight, int size,
-                        int elementsPerThread, const sycl::nd_item<3> &item_ct1,
-                        float &shared_ss, const int max_work_group_size) {
+    void rmsnorm_kernel(sycl::half *o, sycl::half *x, sycl::half *weight, int cols,
+                        int elementsPerThread, const sycl::nd_item<2> &item_ct1, float &shared_ss_acc_ct1, int max_work_group_size) {
+        int row = item_ct1.get_global_id(0);
+        int col = item_ct1.get_global_id(1);
         float ss = 0.0f;
         for (int i = 0; i < elementsPerThread; i++) {
-            int index = item_ct1.get_local_id(2) + i * max_work_group_size;
-            if (index < size)
-            {
-                float val = (float)x[index];
+            int index_col = col + i * max_work_group_size;
+            if (index_col < cols) {
+                float val = (float)x[row * cols + index_col];
                 ss += val * val;
             }
         }
 
         ss = sycl::reduce_over_group(item_ct1.get_group(), ss, sycl::plus<>());
 
-        if (item_ct1.get_local_id(2) == 0) {
-            ss /= size;
+        if (item_ct1.get_local_id(1) == 0) {
+            ss /= cols;
             ss += 1e-5f;
             ss = 1.0f / sycl::sqrt(ss);
-            shared_ss = ss;
+            shared_ss_acc_ct1 = ss;
         }
 
-        item_ct1.barrier();
-        ss = shared_ss;
+        item_ct1.barrier(sycl::access::fence_space::local_space);
 
-        for (int i = 0; i < elementsPerThread; i++) {
-            int index = item_ct1.get_local_id(2) + i * max_work_group_size;
-            if (index < size) {
-                float val = (float)x[index];
-                val *= ss * (float)weight[index];
-                o[index] = (sycl::half)val;
-            }
+        ss = shared_ss_acc_ct1;
+
+        for (int i = 0; i < cols; i++) {
+            float val = (float)x[row * cols + col];
+            val *= ss * (float)weight[row * cols + col];
+            o[row * cols + col] = (sycl::half)val;
         }
     }
 
-    inline void rmsnorm(float16_t *o, float16_t *x, float16_t *weight, int size) {
+    inline void rmsnorm(float16_t *device_data_o, float16_t *device_data_x, float16_t *device_data_weight, int rows, int cols) {
         int max_work_group_size = 512;
-        int elementsPerThread = (size - 1) / max_work_group_size + 1;
-        gpu_queue->submit([&](sycl::handler &cgh) {
+        int elementsPerThread = (cols - 1) / max_work_group_size + 1;
+        gpu_queue.submit([&](sycl::handler &cgh) {
             sycl::local_accessor<float, 0> shared_ss_acc_ct1(cgh);
-
-            cgh.parallel_for(
-                    sycl::nd_range(sycl::range(1, 1, max_work_group_size), sycl::range(1, 1, max_work_group_size)),
-                    [=](sycl::nd_item<3> item_ct1) {
-                        rmsnorm_kernel((sycl::half *)o, (sycl::half *)x, (sycl::half *)weight, size,
-                                elementsPerThread, item_ct1, shared_ss_acc_ct1, max_work_group_size);
+            cgh.parallel_for(nd_range<2>(range<2>(rows, cols), range<2>(1, cols)), [=](sycl::nd_item<2> item_ct1) {
+                        rmsnorm_kernel((sycl::half *)device_data_o, (sycl::half *)device_data_x, (sycl::half *)device_data_weight, cols
+                        ,elementsPerThread, item_ct1 , shared_ss_acc_ct1, max_work_group_size);
                     });
-        });
+        }).wait();
     }
 
     sycl::queue *gpu_queue;
