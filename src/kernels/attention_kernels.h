@@ -358,7 +358,7 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
         }
     }
 
-    float efficiency = (batchSize * qHeadNum) / (std::ceil(batchSize * qHeadNum / threadNum) * threadNum);
+    float efficiency = (batchSize * qHeadNum) / (std::ceil(1.0f * batchSize * qHeadNum / threadNum) * threadNum);
 
     // TODO: .9f is the estimation, change it when have more data
     if (kvHeadNum == qHeadNum && efficiency > .9f) {
