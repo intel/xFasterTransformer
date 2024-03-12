@@ -97,9 +97,6 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
             int i = taskIdx % kvHeadNum; // kv head index
             int s = gSeqIdx - offsets[b]; // seq index inside the batch
 
-            bfloat16_t *packedB = packBuf + (b * kvHeadNum + i) * (kPackSize + vPackSize);
-            bfloat16_t *packedV = packedB + kPackSize;
-
             auto B = key + offsets[b] * kvStride + i * headSize;
             auto dst = getKCache(b, i, s);
             xft::copy(dst, B + s * kvStride, headSize);
