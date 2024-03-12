@@ -54,6 +54,8 @@ public:
             int expandFactor = ctx->attHeadNum / ctx->kvHeadNum;
             this->startKVHead = startQHead / expandFactor;
             this->endKVHead = (this->endQHead - 1) / expandFactor + 1;
+
+            qkpo.init(ctx->mmHelper, ctx->attHeadSize);
         }
 
         // Unexpected case
@@ -291,7 +293,10 @@ public:
             } else {
                 std::iota(posIds.begin(), posIds.end(), pastSeqLen);
             }
-            qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
+            // qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
+            if constexpr (std::is_same_v<ImT, float>) {
+                ctx->mmHelper->computeRotaryPositionEmbedding(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
+            }
         }
         t3.release();
 

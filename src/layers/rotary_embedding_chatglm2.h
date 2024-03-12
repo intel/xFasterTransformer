@@ -17,6 +17,8 @@
 #include <cstring>
 #include <iostream>
 
+#include "matmul_helper.h"
+
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
         int max_len = 10;
@@ -34,6 +36,8 @@ public:
     ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings = 32768, const float base = 10000.0);
 
     ~ChatGLM2RotaryEmbedding() {}
+
+    void init(MMHelper *mm, const int max_position_embeddings = 32768);
 
     void forward(float *buf, int bufStride, int batch_size, int seq_len, int qk_size,
             int hidden_size_per_attention_head, const int *position_ids);

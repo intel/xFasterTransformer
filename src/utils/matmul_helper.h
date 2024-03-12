@@ -14,6 +14,7 @@
 // ============================================================================
 #pragma once
 #include <immintrin.h>
+#include "bert_util.h"
 #include "bfloat16.h"
 #include "copy_util.h"
 #include "dtype.h"
@@ -52,9 +53,9 @@ public:
             stream = new dnnl::stream(*engine);
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             gpu_queue = new sycl::queue(devices[engine->get_count(kind) + idx]);
-            packedA = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
-            packedC = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
-            packedShift = sycl::malloc_device<float16_t>(18*32000, *gpu_queue);
+            packedA = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
+            packedC = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
+            packedShift = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -414,7 +415,8 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, bool postOp = false) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc,
+            bool postOp = false, bool copyC2G = true, bool copyG2C = true) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE(
@@ -428,7 +430,8 @@ public:
             //         xdnn_sgemm_f32f16f32_compute(
             //                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute",
-                    onednn_sgemm_f32f16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, postOp));
+                    onednn_sgemm_f32f16f32_compute(
+                            transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, postOp, copyC2G, copyG2C));
             // printf("A:\n");
             // for (int i = 0; i < 6; ++i) {
             //     for (int j = 0; j < 6; ++j) {
@@ -1002,8 +1005,8 @@ public:
             //         xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
             //                 beta, C, ldc, bias, res, ldres));
             GEMMVERBOSE("onednn_sgemm_f32f16f32_compute_residential",
-                    onednn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, packedB,
-                            beta, C, ldc, bias, res, ldres, copyC2G, copyG2C));
+                    onednn_sgemm_f32f16f32_compute_residential(
+                            transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres, copyC2G, copyG2C));
             // printf("A:\n");
             // for (int i = 0; i < 6; ++i) {
             //     for (int j = 0; j < 6; ++j) {
@@ -1257,35 +1260,79 @@ public:
         }
     }
 
-    inline void sycl_sigmoid_mul(int M, int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
-        gpu_queue->submit([&](sycl::handler &h) {
-            h.parallel_for(M, [=](auto i) {
-                for (int j = 0; j < N; ++j) {
-                    dst[i * ldd + j] = (sycl::half)src0[i * lds0 + j] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i * lds0 + j])) * src1[i * lds1 + j];
-                }
-            });
-        }).wait();
+    inline void rope_kernel(sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
+            const int kHeads, const int head_size, const int half, float16_t *query, float16_t *key, int qStride,
+            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds, const sycl::stream &out) {
+        size_t bs = item.get_global_id(0);
+        size_t seq = item.get_global_id(1);
+        size_t head = item.get_global_id(2);
+        size_t seqLen = item.get_global_range(1);
+
+        int pos = positionIds[seq];
+        const float *pcos = embCos + pos * half;
+        const float *psin = embSin + pos * half;
+
+        float16_t *q = query + bs * seqLen * qStride + seq * qStride + head * head_size;
+        float16_t *k = key + bs * seqLen * kStride + seq * kStride + head * head_size;
+
+        for (int i = 0; i < half; ++i) {
+            if (head < qHeads) {
+                auto q1 = q[i];
+                q[i] = q1 * pcos[i] - q[i + half] * psin[i];
+                q[i + half] = q[i + half] * pcos[i] + q1 * psin[i];
+            }
+            if (head < kHeads) {
+                auto k1 = k[i];
+                k[i] = k1 * pcos[i] - k[i + half] * psin[i];
+                k[i + half] = k[i + half] * pcos[i] + k1 * psin[i];
+            }
+        }
     }
 
-    inline void sycl_sigmoid_mul_M1(int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
-        gpu_queue->submit([&](sycl::handler &h) {
-            h.parallel_for(N, [=](auto i) {
-                dst[i] = (sycl::half)src0[i] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i])) * src1[i];
-            });
-        }).wait();
-    }
+    void computeRotaryPositionEmbedding(
+            float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+        const int batchSize = qkShape[0];
+        const int seqLen = qkShape[1];
+        const int qHeads = qkShape[2];
+        const int kHeads = qkShape[4];
+        const int head_num = std::max(qHeads, kHeads);
+        const int head_size = qkShape[3];
+        const int half_head_size = (head_size + 1) / 2;
+        using namespace sycl;
 
-    inline void sycl_memcopy_lines(int M, int N, const float16_t *src, int lds, float16_t *dst, int ldd) {
-        gpu_queue->submit([&](sycl::handler &h) {
-            h.parallel_for(M, [=](auto i) {
-                for (int j = 0; j < N; ++j) {
-                    dst[i * ldd + j] = src[i * lds + j];
-                }
-            });
-        }).wait();
+        // Reorder input
+        float16_t *packedA_buf = packedA;
+        float *embCos = emb_cos;
+        float *embSin = emb_sin;
+        float16_t A_buf[batchSize * seqLen * 3 * head_num * head_size];
+        float16_t::cvt_float_to_float16_MT(query, A_buf, batchSize * seqLen * 3 * head_num * head_size);
+        gpu_queue->memcpy(packedA_buf, A_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+
+        buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
+        gpu_queue
+                ->submit([&](handler &cgh) {
+                    auto out = sycl::stream(1024, 768, cgh);
+                    accessor position(positionIdsBuf, cgh, sycl::read_only);
+                    range<3> globalSize(batchSize, seqLen, head_num);
+                    range<3> workGroupSize(batchSize, seqLen, head_num);
+
+                    cgh.parallel_for<class kernel_rope>(
+                            nd_range(globalSize, workGroupSize), [=, this](nd_item<3> item) {
+                                rope_kernel(item, embCos, embSin, qHeads, kHeads, head_size, half_head_size,
+                                        packedA_buf, packedA_buf + head_num * head_size, qStride, kStride, position,
+                                        out);
+                            });
+                })
+                .wait();
+
+        // Reorder output
+        gpu_queue->memcpy(A_buf, packedA, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(A_buf, query, batchSize * seqLen * 3 * head_num * head_size);
     }
 
     sycl::queue *gpu_queue;
+    float *emb_cos;
+    float *emb_sin;
 
 private:
     int gpu_index;
@@ -1383,8 +1430,60 @@ private:
         }
     }
 
+    inline void sycl_sigmoid_mul(
+            int M, int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
+        gpu_queue
+                ->submit([&](sycl::handler &h) {
+                    h.parallel_for(M, [=](auto i) {
+                        for (int j = 0; j < N; ++j) {
+                            dst[i * ldd + j] = (sycl::half)src0[i * lds0 + j]
+                                    / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i * lds0 + j]))
+                                    * src1[i * lds1 + j];
+                        }
+                    });
+                })
+                .wait();
+    }
+
+    inline void sycl_sigmoid_mul_M1(
+            int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
+        gpu_queue
+                ->submit([&](sycl::handler &h) {
+                    h.parallel_for(N, [=](auto i) {
+                        dst[i] = (sycl::half)src0[i] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i]))
+                                * src1[i];
+                    });
+                })
+                .wait();
+    }
+
+    inline void sycl_memcopy_lines(int M, int N, const float16_t *src, int lds, float16_t *dst, int ldd) {
+        gpu_queue
+                ->submit([&](sycl::handler &h) {
+                    h.parallel_for(M, [=](auto i) {
+                        for (int j = 0; j < N; ++j) {
+                            dst[i * ldd + j] = src[i * lds + j];
+                        }
+                    });
+                })
+                .wait();
+    }
+
+    inline void sycl_convert_fp16_to_fp32(int M, int N, const float16_t *src, int lds, float *dst, int ldd) {
+        gpu_queue
+                ->submit([&](sycl::handler &h) {
+                    h.parallel_for(M, [=](auto i) {
+                        for (int j = 0; j < N; ++j) {
+                            dst[i * ldd + j] = (float)src[i * lds + j];
+                        }
+                    });
+                })
+                .wait();
+    }
+
     void onednn_sgemm_f32f16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const float16_t *packedB, float beta, float *C, int ldc, bool postOp = false) {
+            const float16_t *packedB, float beta, float *C, int ldc, bool postOp = false, bool copyC2G = true,
+            bool copyG2C = true) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
@@ -1445,17 +1544,19 @@ private:
             else if (M == 1)
                 sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
         } else {
-            // Reorder output
-            FunTimer t3;
-            float16_t C_buf[M * N];
-            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
+            if (copyG2C == true) {
+                // Reorder output
+                FunTimer t3;
+                float16_t C_buf[M * N];
+                gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+                float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+                // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
+            }
         }
     }
 
-    void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
-            const float16_t *packedB, float beta, float *C, int ldc, const float *bias, const float *res,
+    void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A,
+            int lda, const float16_t *packedB, float beta, float *C, int ldc, const float *bias, const float *res,
             int ldres, bool copyC2G = true, bool copyG2C = true) {
         TimeLine t("onednn_sgemm_f32f16f32_compute_residential");
         TimeLine t1("onednn_sgemm_f32f16f32_compute_residential.create_primitive");
@@ -1510,7 +1611,8 @@ private:
         // Repack and convert input data.
         auto packed_input_mem = memory(matmul_pd->src_desc(), *engine, packedA);
         auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
-        memory bias_mem; if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
+        memory bias_mem;
+        if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
         auto shift_md = memory::desc({M, N}, dt::f16, get_onednn_shift_layout(dt::f16));
         auto shift_mem = memory(shift_md, *engine, const_cast<float16_t *>(packedShift));
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
@@ -1520,7 +1622,7 @@ private:
             FunTimer t2;
             float16_t A_buf[M * K];
             // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
-    #pragma omp parallel for
+#pragma omp parallel for
             for (int i = 0; i < M; ++i)
                 float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
             gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();

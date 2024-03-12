@@ -17,6 +17,8 @@
 #include "compile_util.h"
 #include "float16.h"
 
+#include <CL/sycl.hpp>
+
 static int max_seq_len_cached = -1;
 static int inv_freq_size = -1;
 static float *inv_freq;
@@ -72,6 +74,13 @@ void RotaryEmbedding2D::prepareEmbedding() {
             psin[j + inv_freq_size] = sin_tmp;
         }
     }
+}
+
+void RotaryEmbedding2D::init(MMHelper *mm, const int max_position_embeddings) {
+    mm->emb_cos = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
+    mm->emb_sin = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
+    mm->gpu_queue->memcpy(mm->emb_cos, emb_cos, max_position_embeddings * inv_freq_size * sizeof(float));
+    mm->gpu_queue->memcpy(mm->emb_sin, emb_sin, max_position_embeddings * inv_freq_size * sizeof(float));
 }
 
 // FOR PYTHON CODE LIKE BELOW:

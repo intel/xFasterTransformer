@@ -19,6 +19,8 @@
 #include <iostream>
 #include "transformer_ctx.h"
 
+#include "matmul_helper.h"
+
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
         int max_len = 10;
@@ -37,6 +39,8 @@ public:
             const int dim, const int maxPosEmbed = 2048, const RopeParams *ropeParamsPtr = nullptr);
 
     ~LlamaYaRNScaledRotaryEmbedding() {}
+
+    void init(MMHelper *mm, const int maxPosEmbed = 2048);
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 

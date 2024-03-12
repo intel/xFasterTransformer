@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 #include "bfloat16.h"
+#include "matmul_helper.h"
 
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
@@ -38,6 +39,8 @@ public:
     QwenRotaryEmbedding(const int dim, const int max_position_embeddings = 2048, const float base = 10000);
 
     ~QwenRotaryEmbedding();
+
+    void init(MMHelper *mm, const int max_position_embeddings = 2048);
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 

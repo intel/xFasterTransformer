@@ -16,6 +16,8 @@
 
 #include "compile_util.h"
 
+#include <CL/sycl.hpp>
+
 // unordered_map<base, tuple<emb_cos, emb_sin>>
 static std::unordered_map<float, std::tuple<float *, float *>> embCosSin;
 static float *cur_emb_cos = nullptr;
@@ -114,6 +116,13 @@ void QwenRotaryEmbedding::QwenCalEmb(
             psin[j + this->inv_freq_size] = sin_tmp;
         }
     }
+}
+
+void QwenRotaryEmbedding::init(MMHelper *mm, const int max_position_embeddings) {
+    mm->emb_cos = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
+    mm->emb_sin = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
+    mm->gpu_queue->memcpy(mm->emb_cos, cur_emb_cos, max_position_embeddings * inv_freq_size * sizeof(float));
+    mm->gpu_queue->memcpy(mm->emb_sin, cur_emb_sin, max_position_embeddings * inv_freq_size * sizeof(float));
 }
 
 // def rotate_half(x):

@@ -39,6 +39,7 @@ using namespace xft;
 
 struct QKPO_Dummy {
     QKPO_Dummy(int dim, int maxPos) {}
+    void init(MMHelper *mm, const int max_position_embeddings = 2048) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
 };
 

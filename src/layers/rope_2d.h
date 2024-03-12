@@ -18,12 +18,16 @@
 #include <iostream>
 using namespace std;
 
+#include "matmul_helper.h"
+
 // 2D rotary embedding for ChatGLM
 class RotaryEmbedding2D {
 public:
     RotaryEmbedding2D(const int dim, const int max_position_embeddings = 2048, const float base = 10000);
 
     ~RotaryEmbedding2D() {}
+
+    void init(MMHelper *mm, const int max_position_embeddings = 2048);
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *positions);
 

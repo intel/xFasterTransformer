@@ -16,6 +16,8 @@
 
 #include "compile_util.h"
 
+#include <CL/sycl.hpp>
+
 static int maxSeqLenCached = -1;
 static int invFreqSize = -1;
 static float *invFreq;
@@ -107,6 +109,13 @@ void LlamaYaRNScaledRotaryEmbedding::yarnLlamaCalEmb(float scale, float attnFact
             psin[j + invFreqSize] = sinTmp;
         }
     }
+}
+
+void LlamaYaRNScaledRotaryEmbedding::init(MMHelper *mm, const int maxPosEmbed) {
+    mm->emb_cos = sycl::malloc_device<float>(maxPosEmbed * invFreqSize, *mm->gpu_queue);
+    mm->emb_sin = sycl::malloc_device<float>(maxPosEmbed * invFreqSize, *mm->gpu_queue);
+    mm->gpu_queue->memcpy(mm->emb_cos, embCos, maxPosEmbed * invFreqSize * sizeof(float));
+    mm->gpu_queue->memcpy(mm->emb_sin, embSin, maxPosEmbed * invFreqSize * sizeof(float));
 }
 
 // def rotate_half(x):
