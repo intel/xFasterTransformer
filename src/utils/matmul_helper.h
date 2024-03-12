@@ -1301,12 +1301,12 @@ public:
         using namespace sycl;
 
         // Reorder input
-        float16_t *packedA_buf = packedA;
+        float16_t *packedA_buf = packedC;
         float *embCos = emb_cos;
         float *embSin = emb_sin;
         float16_t A_buf[batchSize * seqLen * 3 * head_num * head_size];
-        float16_t::cvt_float_to_float16_MT(query, A_buf, batchSize * seqLen * 3 * head_num * head_size);
-        gpu_queue->memcpy(packedA_buf, A_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        // float16_t::cvt_float_to_float16_MT(query, A_buf, batchSize * seqLen * 3 * head_num * head_size);
+        // gpu_queue->memcpy(packedA_buf, A_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
 
         buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
         gpu_queue
@@ -1314,7 +1314,7 @@ public:
                     auto out = sycl::stream(1024, 768, cgh);
                     accessor position(positionIdsBuf, cgh, sycl::read_only);
                     range<3> globalSize(batchSize, seqLen, head_num);
-                    range<3> workGroupSize(batchSize, seqLen, head_num);
+                    range<3> workGroupSize(1, 1, 1);
 
                     cgh.parallel_for<class kernel_rope>(
                             nd_range(globalSize, workGroupSize), [=, this](nd_item<3> item) {
@@ -1326,7 +1326,7 @@ public:
                 .wait();
 
         // Reorder output
-        gpu_queue->memcpy(A_buf, packedA, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        gpu_queue->memcpy(A_buf, packedA_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(A_buf, query, batchSize * seqLen * 3 * head_num * head_size);
     }
 
