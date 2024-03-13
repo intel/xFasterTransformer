@@ -189,6 +189,8 @@ public:
 
         // LayerNorm
         this->norm.setWeight(gamma1, beta1, hiddenSize);
+        rmsNormWeight = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
+        ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight, gamma1, hiddenSize * sizeof(float));
     }
 
 #ifdef DEBUG
@@ -242,8 +244,27 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
-                    imBuffer.Stride(), epsilon);
+            // printf("input:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", inputBuffer.Data()[i * inputBuffer.Stride() + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+            // norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+            //         imBuffer.Stride(), epsilon);
+            if constexpr (std::is_same_v<ImT, float>) {
+                ctx->mmHelper->computeRMSNorm(imBuffer.Data(), inputBuffer.Data(), rmsNormWeight, inputBuffer.Rows(), inputBuffer.Cols());
+            }
+            // printf("norm:\n");
+            // for (int i = 0; i < 6; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", imBuffer.Data()[i * imBuffer.Stride() + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
         }
 #ifdef DEBUG
         dbg.debugPrint("layer norm:\n");
@@ -982,6 +1003,8 @@ protected:
     hpj::Vector<float> attnOutputWeightZero; // if weight is int8
     hpj::Vector<float> attnOutputWeightSum; // if weight is int8
     hpj::Vector<float> attnOutputBias;
+
+    float *rmsNormWeight;
 
     // Query/Key post op
     QKPO_CLS qkpo;

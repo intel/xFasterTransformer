@@ -114,8 +114,8 @@ void LlamaYaRNScaledRotaryEmbedding::yarnLlamaCalEmb(float scale, float attnFact
 void LlamaYaRNScaledRotaryEmbedding::init(MMHelper *mm, const int maxPosEmbed) {
     mm->emb_cos = sycl::malloc_device<float>(maxPosEmbed * invFreqSize, *mm->gpu_queue);
     mm->emb_sin = sycl::malloc_device<float>(maxPosEmbed * invFreqSize, *mm->gpu_queue);
-    mm->gpu_queue->memcpy(mm->emb_cos, embCos, maxPosEmbed * invFreqSize * sizeof(float));
-    mm->gpu_queue->memcpy(mm->emb_sin, embSin, maxPosEmbed * invFreqSize * sizeof(float));
+    mm->gpu_queue->memcpy(mm->emb_cos, embCos, maxPosEmbed * invFreqSize * sizeof(float)).wait();
+    mm->gpu_queue->memcpy(mm->emb_sin, embSin, maxPosEmbed * invFreqSize * sizeof(float)).wait();
 }
 
 // def rotate_half(x):

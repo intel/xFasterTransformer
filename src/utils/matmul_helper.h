@@ -1262,7 +1262,7 @@ public:
 
     inline void rope_kernel(sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
             const int kHeads, const int head_size, const int half, float16_t *query, float16_t *key, int qStride,
-            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds, const sycl::stream &out) {
+            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
         size_t bs = item.get_global_id(0);
         size_t seq = item.get_global_id(1);
         size_t head = item.get_global_id(2);
@@ -1311,7 +1311,6 @@ public:
         buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
         gpu_queue
                 ->submit([&](handler &cgh) {
-                    auto out = sycl::stream(1024, 768, cgh);
                     accessor position(positionIdsBuf, cgh, sycl::read_only);
                     range<3> globalSize(batchSize, seqLen, head_num);
                     range<3> workGroupSize(1, 1, 1);
@@ -1319,8 +1318,7 @@ public:
                     cgh.parallel_for<class kernel_rope>(
                             nd_range(globalSize, workGroupSize), [=, this](nd_item<3> item) {
                                 rope_kernel(item, embCos, embSin, qHeads, kHeads, head_size, half_head_size,
-                                        packedA_buf, packedA_buf + head_num * head_size, qStride, kStride, position,
-                                        out);
+                                        packedA_buf, packedA_buf + head_num * head_size, qStride, kStride, position);
                             });
                 })
                 .wait();
@@ -1330,31 +1328,43 @@ public:
         float16_t::cvt_float16_to_float_MT(A_buf, query, batchSize * seqLen * 3 * head_num * head_size);
     }
 
-    inline void rmsnorm(float16_t *device_data_o, float16_t *device_data_x, float16_t *device_data_weight, int rows, int cols) {
+    void computeRMSNorm(float *output, const float *input, const float *weight, int rows, int cols) {
+        float16_t A_buf[rows * cols];
+        float16_t::cvt_float_to_float16_MT(input, A_buf, rows * cols);
+        float16_t *packedA_buf = packedA;
+        gpu_queue->memcpy(packedA_buf, A_buf, rows * cols * sizeof(float16_t)).wait();
+        rmsnorm_kernel(packedA_buf, packedA_buf, weight, rows, cols, cols, cols);
+        gpu_queue->memcpy(A_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(A_buf, output, rows * cols);
+    }
+
+    void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x, const float *device_data_weight, int rows, int cols,
+            int iStride, int oStride) {
         int max_work_group_size = 512;
         int elementsPerThread = (cols - 1) / max_work_group_size + 1;
-        gpu_queue.submit([&](sycl::handler &cgh) {
-            cgh.parallel_for(nd_range<1>(range<1>(rows), range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
-                    int row = item_ct1.get_global_id(0);
-                    float ss = 0.0f;
-                    for (int i = 0; i < cols; i++) {
-                        float val = (float)device_data_x[row*cols+i];
-                        ss += val * val;
-                    }
-                    ss = sycl::reduce_over_group(item_ct1.get_group(), ss, sycl::plus<>());
-                    ss /= cols;
-                    ss += 1e-5f;
-                    ss = 1.0f / sycl::sqrt(ss);
-                    item_ct1.barrier(sycl::access::fence_space::local_space);
+        gpu_queue
+                ->submit([&](sycl::handler &cgh) {
+                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(rows), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+                        int row = item_ct1.get_global_id(0);
+                        float ss = 0.0f;
+                        for (int i = 0; i < cols; i++) {
+                            float val = (float)device_data_x[row * iStride + i];
+                            ss += val * val;
+                        }
+                        ss = sycl::reduce_over_group(item_ct1.get_group(), ss, sycl::plus<>());
+                        ss /= cols;
+                        ss += 1e-5f;
+                        ss = 1.0f / sycl::sqrt(ss);
+                        item_ct1.barrier(sycl::access::fence_space::local_space);
 
-                    for (int i = 0; i < cols; i++) {
-                        float val = (float)device_data_x[row*cols+i];
-                        val *= ss * (float)device_data_weight[row*cols+i];
-                        device_data_o[row*cols+i] = (sycl::half)val;
-                    }
-                }
-            ); 
-        }).wait();
+                        for (int i = 0; i < cols; i++) {
+                            float val = (float)device_data_x[row * iStride + i];
+                            val *= ss * device_data_weight[i];
+                            device_data_o[row * oStride + i] = (sycl::half)val;
+                        }
+                    });
+                })
+                .wait();
     }
 
     sycl::queue *gpu_queue;

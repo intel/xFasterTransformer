@@ -121,8 +121,8 @@ void QwenRotaryEmbedding::QwenCalEmb(
 void QwenRotaryEmbedding::init(MMHelper *mm, const int max_position_embeddings) {
     mm->emb_cos = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
     mm->emb_sin = sycl::malloc_device<float>(max_position_embeddings * inv_freq_size, *mm->gpu_queue);
-    mm->gpu_queue->memcpy(mm->emb_cos, cur_emb_cos, max_position_embeddings * inv_freq_size * sizeof(float));
-    mm->gpu_queue->memcpy(mm->emb_sin, cur_emb_sin, max_position_embeddings * inv_freq_size * sizeof(float));
+    mm->gpu_queue->memcpy(mm->emb_cos, cur_emb_cos, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
+    mm->gpu_queue->memcpy(mm->emb_sin, cur_emb_sin, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
 }
 
 // def rotate_half(x):
