@@ -189,8 +189,8 @@ public:
 
         // LayerNorm
         this->norm.setWeight(gamma1, beta1, hiddenSize);
-        rmsNormWeight = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
-        ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight, gamma1, hiddenSize * sizeof(float));
+        rmsNormWeight1 = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
+        ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight1, gamma1, hiddenSize * sizeof(float)).wait();
     }
 
 #ifdef DEBUG
@@ -255,7 +255,7 @@ public:
             // norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
             //         imBuffer.Stride(), epsilon);
             if constexpr (std::is_same_v<ImT, float>) {
-                ctx->mmHelper->computeRMSNorm(imBuffer.Data(), inputBuffer.Data(), rmsNormWeight, inputBuffer.Rows(), inputBuffer.Cols());
+                ctx->mmHelper->computeRMSNorm(imBuffer.Data(), inputBuffer.Data(), rmsNormWeight1, inputBuffer.Rows(), inputBuffer.Cols());
             }
             // printf("norm:\n");
             // for (int i = 0; i < 6; ++i) {
@@ -278,7 +278,7 @@ public:
         if (qkvBias.Size() == 0) {
             ctx->mmHelper->compute(false, imBuffer.Rows(), qkvWeight.Cols(), imBuffer.Cols(), 1.0f, imBuffer.Data(),
                     imBuffer.Stride(), qkvWeight.Data(), qkvWeightScale.Data(), qkvWeightZero.Data(),
-                    qkvWeightSum.Data(), 0.0f, qkvGroupMatMul.Data(), qkvGroupMatMul.Stride(), false, true, false);
+                    qkvWeightSum.Data(), 0.0f, qkvGroupMatMul.Data(), qkvGroupMatMul.Stride(), false, false, false);
         } else {
             ctx->mmHelper->compute_bias(false, imBuffer.Rows(), qkvWeight.Cols(), imBuffer.Cols(), 1.0f,
                     imBuffer.Data(), imBuffer.Stride(), qkvWeight.Data(), qkvWeightScale.Data(), qkvWeightZero.Data(),
@@ -289,6 +289,15 @@ public:
         hpj::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
         hpj::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
         hpj::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
+
+        // printf("qkvMatMul:\n");
+        // for (int i = 0; i < 6; ++i) {
+        //     for (int j = 0; j < 6; ++j) {
+        //         printf("%.6f ", query.Data()[i * query.Stride() + j]);
+        //     }
+        //     printf("\n");
+        // }
+        // printf("\n");
 
 #ifdef DEBUG
         dbg.debugPrint("Q:\n");
@@ -320,6 +329,15 @@ public:
             }
         }
         t3.release();
+
+        // printf("query:\n");
+        // for (int i = 0; i < 6; ++i) {
+        //     for (int j = 0; j < 6; ++j) {
+        //         printf("%.6f ", query.Data()[i * query.Stride() + j]);
+        //     }
+        //     printf("\n");
+        // }
+        // printf("\n");
 
 #ifdef DEBUG
         dbg.debugPrint("Q after post op:\n");
@@ -365,6 +383,15 @@ public:
         dbg.dumpMatrix(attnSplit);
 #endif
 
+        // printf("attention:\n");
+        // for (int i = 0; i < 6; ++i) {
+        //     for (int j = 0; j < 6; ++j) {
+        //         printf("%.6f ", attnSplit.Data()[i * attnSplit.Stride() + j]);
+        //     }
+        //     printf("\n");
+        // }
+        // printf("\n");
+
         TimeLine t5("Output");
         // Output/projection in attention, only add the input in the first split
         if (ctx->splitIdx == 0) {
@@ -378,7 +405,7 @@ public:
                 ctx->mmHelper->compute_residential(false, attnSplit.Rows(), attnOutputWeight.Cols(), attnSplit.Cols(),
                         1.0f, attnSplit.Data(), attnSplit.Stride(), attnOutputWeight.Data(),
                         attnOutputWeightScale.Data(), attnOutputWeightZero.Data(), attnOutputWeightSum.Data(), 0.0f,
-                        outBuffer.Data(), outBuffer.Stride(), pbias, inputBuffer.Data(), inputBuffer.Stride());
+                        outBuffer.Data(), outBuffer.Stride(), pbias, inputBuffer.Data(), inputBuffer.Stride(), true, false);
             } else {
                 float *pbias = attnOutputBias.Data();
                 if (attnOutputBias.Size() == 0) { pbias = nullptr; }
@@ -401,6 +428,15 @@ public:
             }
         }
         t5.release();
+
+        // printf("project:\n");
+        // for (int i = 0; i < 6; ++i) {
+        //     for (int j = 0; j < 6; ++j) {
+        //         printf("%.6f ", outBuffer.Data()[i * outBuffer.Stride() + j]);
+        //     }
+        //     printf("\n");
+        // }
+        // printf("\n");
 
 #ifdef DEBUG
         dbg.debugPrint("attention output/projection:\n");
@@ -1004,7 +1040,7 @@ protected:
     hpj::Vector<float> attnOutputWeightSum; // if weight is int8
     hpj::Vector<float> attnOutputBias;
 
-    float *rmsNormWeight;
+    float *rmsNormWeight1;
 
     // Query/Key post op
     QKPO_CLS qkpo;

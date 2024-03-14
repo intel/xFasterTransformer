@@ -311,6 +311,13 @@ public:
         this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
         this->accSeqLen += seqLen;
 
+        if constexpr (std::is_same_v<AttnInT, float>) {
+            // printf("embedding gpu\n");
+            float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
+            float16_t::cvt_float_to_float16_MT(embBuf, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize);
+            ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+        }
+
 #ifdef DEBUG
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");

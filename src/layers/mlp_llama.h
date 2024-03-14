@@ -112,6 +112,8 @@ public:
         if (normW) {
             normWeight.Resize(hiddenSize);
             memcpy(normWeight.Data(), normW, sizeof(float) * hiddenSize);
+            rmsNormWeight2 = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
+            ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight2, normW, hiddenSize * sizeof(float)).wait();
         }
     }
 
@@ -134,8 +136,11 @@ public:
                 (ImT *)ctx->normBuf.Data(), ctx->normBuf.Rows(), ctx->normBuf.Cols(), ctx->normBuf.Stride());
 
         if (doLnBefore == true) {
-            xft::rmsNorm(normBuffer.Data(), inBuffer.Data(), normWeight.Data(), M, hiddenSize, inBuffer.Stride(),
-                    normBuffer.Stride(), 1e-6);
+            // xft::rmsNorm(normBuffer.Data(), inBuffer.Data(), normWeight.Data(), M, hiddenSize, inBuffer.Stride(),
+            //         normBuffer.Stride(), 1e-6);
+            if constexpr (std::is_same_v<ImT, float>) {
+                ctx->mmHelper->computeRMSNorm(normBuffer.Data(), inBuffer.Data(), rmsNormWeight2, inBuffer.Rows(), inBuffer.Cols());
+            }
         }
 
 #ifdef DEBUG
@@ -187,6 +192,16 @@ public:
 
             // Use imBuffer as silu buffer
             else {
+
+                // printf("normBuffer:\n");
+                // for (int i = 0; i < 6; ++i) {
+                //     for (int j = 0; j < 6; ++j) {
+                //         printf("%.6f ", normBuffer.Data()[i * normBuffer.Stride() + j]);
+                //     }
+                //     printf("\n");
+                // }
+                // printf("\n");
+
                 catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, imBuffer);
 #ifdef DEBUG
                 dbg.debugPrint("catWeights:\n");
@@ -194,7 +209,26 @@ public:
                 dbg.debugPrint("gateUp output:\n");
                 dbg.dumpMatrix(imBuffer);
 #endif
+
+                // printf("silu:\n");
+                // for (int i = 0; i < 6; ++i) {
+                //     for (int j = 0; j < 6; ++j) {
+                //         printf("%.6f ", imBuffer.Data()[i * imBuffer.Stride() + j]);
+                //     }
+                //     printf("\n");
+                // }
+                // printf("\n");
+
                 downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+
+                // printf("down:\n");
+                // for (int i = 0; i < 6; ++i) {
+                //     for (int j = 0; j < 6; ++j) {
+                //         printf("%.6f ", outBuffer.Data()[i * outBuffer.Stride() + j]);
+                //     }
+                //     printf("\n");
+                // }
+                // printf("\n");
             }
         }
 
@@ -349,7 +383,7 @@ private:
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, true);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, true, false, false);
 
         // Compute silu on the left half and then add it with the right half
         // DecoderUtil::siluSum(output, siluBuf);
@@ -411,6 +445,7 @@ protected:
 
     // LlamaRMSNorm param
     hpj::Vector<float> normWeight;
+    float *rmsNormWeight2;
 
 #ifdef DEBUG
     Debugger dbg;

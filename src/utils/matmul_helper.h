@@ -53,9 +53,9 @@ public:
             stream = new dnnl::stream(*engine);
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             gpu_queue = new sycl::queue(devices[engine->get_count(kind) + idx]);
+            packedI = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
             packedA = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
             packedC = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
-            packedShift = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -65,9 +65,9 @@ public:
     ~MMHelper() {
         if (engine) delete engine;
         if (stream) delete stream;
+        sycl::free(packedI, *gpu_queue);
         sycl::free(packedA, *gpu_queue);
         sycl::free(packedC, *gpu_queue);
-        sycl::free(packedShift, *gpu_queue);
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -450,7 +450,7 @@ public:
             // printf("\n");
             // printf("B:\n");
             // float16_t B_buf[6];
-            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6);
+            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6).wait();
             // for (int j = 0; j < 6; ++j) {
             //     printf("%.6f ", float(B_buf[j]));
             // }
@@ -1025,7 +1025,7 @@ public:
             // printf("\n");
             // printf("B:\n");
             // float16_t B_buf[6];
-            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6);
+            // gpu_queue->memcpy(B_buf, packedB, sizeof(float16_t) * 6).wait();
             // for (int j = 0; j < 6; ++j) {
             //     printf("%.6f ", float(B_buf[j]));
             // }
@@ -1301,12 +1301,12 @@ public:
         using namespace sycl;
 
         // Reorder input
-        float16_t *packedA_buf = packedC;
+        float16_t *packedC_buf = packedC;
         float *embCos = emb_cos;
         float *embSin = emb_sin;
-        float16_t A_buf[batchSize * seqLen * 3 * head_num * head_size];
-        // float16_t::cvt_float_to_float16_MT(query, A_buf, batchSize * seqLen * 3 * head_num * head_size);
-        // gpu_queue->memcpy(packedA_buf, A_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        float16_t C_buf[batchSize * seqLen * 3 * head_num * head_size];
+        // float16_t::cvt_float_to_float16_MT(query, C_buf, batchSize * seqLen * 3 * head_num * head_size);
+        // gpu_queue->memcpy(packedC_buf, C_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
 
         buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
         gpu_queue
@@ -1318,24 +1318,25 @@ public:
                     cgh.parallel_for<class kernel_rope>(
                             nd_range(globalSize, workGroupSize), [=, this](nd_item<3> item) {
                                 rope_kernel(item, embCos, embSin, qHeads, kHeads, head_size, half_head_size,
-                                        packedA_buf, packedA_buf + head_num * head_size, qStride, kStride, position);
+                                        packedC_buf, packedC_buf + head_num * head_size, qStride, kStride, position);
                             });
                 })
                 .wait();
 
         // Reorder output
-        gpu_queue->memcpy(A_buf, packedA_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
-        float16_t::cvt_float16_to_float_MT(A_buf, query, batchSize * seqLen * 3 * head_num * head_size);
+        gpu_queue->memcpy(C_buf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(C_buf, query, batchSize * seqLen * 3 * head_num * head_size);
     }
 
     void computeRMSNorm(float *output, const float *input, const float *weight, int rows, int cols) {
-        float16_t A_buf[rows * cols];
-        float16_t::cvt_float_to_float16_MT(input, A_buf, rows * cols);
+        // float16_t I_buf[rows * cols];
+        // float16_t::cvt_float_to_float16_MT(input, I_buf, rows * cols);
+        float16_t *packedI_buf = packedI;
         float16_t *packedA_buf = packedA;
-        gpu_queue->memcpy(packedA_buf, A_buf, rows * cols * sizeof(float16_t)).wait();
-        rmsnorm_kernel(packedA_buf, packedA_buf, weight, rows, cols, cols, cols);
-        gpu_queue->memcpy(A_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
-        float16_t::cvt_float16_to_float_MT(A_buf, output, rows * cols);
+        // gpu_queue->memcpy(packedI_buf, I_buf, rows * cols * sizeof(float16_t)).wait();
+        rmsnorm_kernel(packedA_buf, packedI_buf, weight, rows, cols, cols, cols);
+        // gpu_queue->memcpy(I_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
+        // float16_t::cvt_float16_to_float_MT(I_buf, output, rows * cols);
     }
 
     void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x, const float *device_data_weight, int rows, int cols,
@@ -1371,16 +1372,16 @@ public:
     float *emb_cos;
     float *emb_sin;
 
+    float16_t *packedI;
+    float16_t *packedA;
+    float16_t *packedC;
+
 private:
     int gpu_index;
     dnnl::engine::kind kind;
     dnnl::engine *engine;
     dnnl::stream *stream;
     std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> matmul_hub;
-
-    float16_t *packedA;
-    float16_t *packedC;
-    float16_t *packedShift;
 
     enum matmul_kinds {
         Basic = 0,
@@ -1560,12 +1561,14 @@ private:
         auto packed_weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<float16_t *>(packedB));
         auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
 
-        // Reorder input
-        FunTimer t2;
-        float16_t A_buf[M * K];
-        float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
-        gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        if (copyC2G == true) {
+            // Reorder input
+            FunTimer t2;
+            float16_t A_buf[M * K];
+            float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
+            gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1580,15 +1583,15 @@ private:
                 sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
             else if (M == 1)
                 sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
-        } else {
-            if (copyG2C == true) {
-                // Reorder output
-                FunTimer t3;
-                float16_t C_buf[M * N];
-                gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-                float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-                // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
-            }
+        }
+
+        if (copyG2C == true) {
+            // Reorder output
+            FunTimer t3;
+            float16_t C_buf[M * N];
+            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
         }
     }
 
@@ -1651,8 +1654,8 @@ private:
         memory bias_mem;
         if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
         auto shift_md = memory::desc({M, N}, dt::f16, get_onednn_shift_layout(dt::f16));
-        auto shift_mem = memory(shift_md, *engine, const_cast<float16_t *>(packedShift));
-        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedC);
+        auto shift_mem = memory(shift_md, *engine, const_cast<float16_t *>(packedI));
+        auto packed_output_mem = memory(matmul_pd->dst_desc(), *engine, packedI);
 
         if (copyC2G == true) {
             // Reorder input
@@ -1664,19 +1667,19 @@ private:
                 float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
             gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+
+            // // Reorder shift
+            // FunTimer t3;
+            // float16_t shift_buf[M * N];
+            // float16_t::cvt_float_to_float16_MT(res, shift_buf, M * N);
+            // gpu_queue->memcpy(shift_mem.get_data_handle(), shift_buf, M * N * sizeof(float16_t)).wait();
+            // // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
         } else {
             if (M > 1)
                 sycl_memcopy_lines(M, K, packedC, 2 * K, packedA, K);
             else
                 gpu_queue->memcpy(packedA, packedC, M * K * sizeof(float16_t)).wait();
         }
-
-        // Reorder shift
-        FunTimer t3;
-        float16_t shift_buf[M * N];
-        float16_t::cvt_float_to_float16_MT(res, shift_buf, M * N);
-        gpu_queue->memcpy(shift_mem.get_data_handle(), shift_buf, M * N * sizeof(float16_t)).wait();
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1688,12 +1691,14 @@ private:
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
 
-        // Reorder output
-        FunTimer t4;
-        float16_t C_buf[M * N];
-        gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-        float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t4.elapsed());
+        if (copyG2C == true) {
+            // Reorder output
+            FunTimer t4;
+            float16_t C_buf[M * N];
+            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t4.elapsed());
+        }
     }
 
     template <typename Tin, typename Tout>
