@@ -388,11 +388,6 @@ protected:
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
 
-        if (responsibleKVHeads != responsibleQHeads) {
-            printf("Error: encounter the case not supported in selfAttentionBF16.\n");
-            exit(-1);
-        }
-
         int tokenSizes[ctx->batchSize];
         for (int i = 0; i < ctx->batchSize; ++i) {
             tokenSizes[i] = ctx->inputSeqLen;

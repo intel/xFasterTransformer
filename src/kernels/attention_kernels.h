@@ -40,12 +40,13 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
     int totalTokenSize = 0; // total token size
     int maxTokenSize = 0; // max token size of all inputs
     int offsets[batchSize]; // offset for each input
-    int blkEndIndex[batchSize]; // total blocks for each input
+    int blkEndIndex[batchSize]; // end block index for each input
     for (int i = 0; i < batchSize; ++i) {
         offsets[i] = (i == 0 ? 0 : offsets[i - 1] + tokenSizes[i]);
         auto curBlks = (tokenSizes[i] + mBlockSize - 1) / mBlockSize;
         blkEndIndex[i] = (i == 0 ? curBlks : blkEndIndex[i - 1] + curBlks);
         if (tokenSizes[i] > maxTokenSize) { maxTokenSize = tokenSizes[i]; }
+        totalTokenSize += tokenSizes[i];
     }
 
     const int kPackSize = xdnn_small_amx_sgemm_bf16bf16bf16_packb_size(maxTokenSize, headSize, 32, 32);
@@ -59,36 +60,51 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
             = (bfloat16_t *)SimpleMemPool::instance().getBuffer("kv_packing", totalPackSize * sizeof(bfloat16_t));
 
     // Copy key/value to cache and pack them
+    // If packing is not fused into computing, then pack it here
+    if constexpr (!fusedPack) { 
 #pragma omp parallel for collapse(2)
-    for (int b = 0; b < batchSize; ++b) {
-        for (int i = 0; i < kvHeadNum; ++i) {
-            const int tokens = tokenSizes[b];
+        for (int b = 0; b < batchSize; ++b) {
+            for (int i = 0; i < kvHeadNum; ++i) {
+                const int tokens = tokenSizes[b];
 
-            bfloat16_t *packedB = packBuf + (b * kvHeadNum + i) * (kPackSize + vPackSize);
-            bfloat16_t *packedV = packedB + kPackSize;
+                bfloat16_t *packedB = packBuf + (b * kvHeadNum + i) * (kPackSize + vPackSize);
+                bfloat16_t *packedV = packedB + kPackSize;
 
-            auto B = key + offsets[b] * kvStride + i * headSize;
-            for (int s = 0; s < tokens; ++s) {
-                auto dst = getKCache(b, i, s);
-                xft::copy(dst, B + s * kvStride, headSize);
-            }
+                auto B = key + offsets[b] * kvStride + i * headSize;
+                for (int s = 0; s < tokens; ++s) {
+                    auto dst = getKCache(b, i, s);
+                    xft::copy(dst, B + s * kvStride, headSize);
+                }
 
-            if constexpr (!fusedPack) {
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         true, tokens, headSize, (XDNN_BF16 *)B, kvStride, (XDNN_BF16 *)packedB, kPackSize);
-            }
 
-            auto V = value + offsets[b] * kvStride + i * headSize;
-            for (int s = 0; s < tokens; ++s) {
-                auto dst = getVCache(b, i, s);
-                xft::copy(dst, V + s * kvStride, headSize);
-            }
+                auto V = value + offsets[b] * kvStride + i * headSize;
+                for (int s = 0; s < tokens; ++s) {
+                    auto dst = getVCache(b, i, s);
+                    xft::copy(dst, V + s * kvStride, headSize);
+                }
 
-            if constexpr (!fusedPack) {
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         false, headSize, tokens, (XDNN_BF16 *)V, kvStride, (XDNN_BF16 *)packedV, vPackSize);
             }
         }
+    } else { // just copy
+        parallel_for(kvHeadNum * totalTokenSize, [&](int taskIdx) {
+            auto gSeqIdx = taskIdx / kvHeadNum; // global seq index
+            auto it = std::upper_bound(offsets, offsets + batchSize, gSeqIdx);
+            int b = (it == offsets ? 0 : std::distance(offsets, --it)); // batch index
+            int i = taskIdx % kvHeadNum; // kv head index
+            int s = gSeqIdx - offsets[b]; // seq index inside the batch
+
+            auto B = key + offsets[b] * kvStride + i * headSize;
+            auto dst = getKCache(b, i, s);
+            xft::copy(dst, B + s * kvStride, headSize);
+
+            auto V = value + offsets[b] * kvStride + i * headSize;
+            dst = getVCache(b, i, s);
+            xft::copy(dst, V + s * kvStride, headSize);
+        });
     }
 
     // Prepare score buffer
