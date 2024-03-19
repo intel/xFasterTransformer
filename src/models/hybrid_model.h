@@ -15,7 +15,9 @@
 #pragma once
 #include <vector>
 #include "abstract_decoder.h"
+#include "messenger.h"
 #include "numa_allocator.h"
+#include "transformer_ctx.h"
 #include <type_traits>
 
 template <template <typename> class Model, typename FirstTokenDtype, typename NextTokenDtype>
