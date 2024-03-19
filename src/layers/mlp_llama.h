@@ -112,8 +112,12 @@ public:
         if (normW) {
             normWeight.Resize(hiddenSize);
             memcpy(normWeight.Data(), normW, sizeof(float) * hiddenSize);
-            rmsNormWeight2 = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
-            ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight2, normW, hiddenSize * sizeof(float)).wait();
+            if constexpr (std::is_same_v<WeiT, float16_t>) {
+                float16_t normWeight_buf[hiddenSize];
+                float16_t::cvt_float_to_float16_MT(normW, normWeight_buf, hiddenSize);
+                rmsNormWeight2 = sycl::malloc_device<sycl::half>(hiddenSize, *ctx->mmHelper->gpu_queue);
+                ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight2, normWeight_buf, hiddenSize * sizeof(float16_t)).wait();
+            }
         }
     }
 
@@ -445,7 +449,7 @@ protected:
 
     // LlamaRMSNorm param
     hpj::Vector<float> normWeight;
-    float *rmsNormWeight2;
+    sycl::half *rmsNormWeight2;
 
 #ifdef DEBUG
     Debugger dbg;

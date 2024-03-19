@@ -189,8 +189,12 @@ public:
 
         // LayerNorm
         this->norm.setWeight(gamma1, beta1, hiddenSize);
-        rmsNormWeight1 = sycl::malloc_device<float>(hiddenSize, *ctx->mmHelper->gpu_queue);
-        ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight1, gamma1, hiddenSize * sizeof(float)).wait();
+        if constexpr (std::is_same_v<WeiT, float16_t>) {
+            float16_t gamma1_buf[hiddenSize];
+            float16_t::cvt_float_to_float16_MT(gamma1, gamma1_buf, hiddenSize);
+            rmsNormWeight1 = sycl::malloc_device<sycl::half>(hiddenSize, *ctx->mmHelper->gpu_queue);
+            ctx->mmHelper->gpu_queue->memcpy(rmsNormWeight1, gamma1_buf, hiddenSize * sizeof(WeiT)).wait();
+        }
     }
 
 #ifdef DEBUG
@@ -352,6 +356,7 @@ public:
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
         TimeLine t4("MHA");
+        // FunTimer ft4;
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -373,6 +378,7 @@ public:
             else { fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen); }
         }
         t4.release();
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", ctx->mmHelper->gpu_index, "attention", ft4.elapsed());
 
         // For multiple nodes inference, not the whole result buffer
         hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, imBuffer.Stride());
@@ -1040,7 +1046,7 @@ protected:
     hpj::Vector<float> attnOutputWeightSum; // if weight is int8
     hpj::Vector<float> attnOutputBias;
 
-    float *rmsNormWeight1;
+    sycl::half *rmsNormWeight1;
 
     // Query/Key post op
     QKPO_CLS qkpo;

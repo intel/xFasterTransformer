@@ -36,6 +36,8 @@
 #include <map>
 #include <tuple>
 #include <CL/sycl.hpp>
+#include <dpct/device.hpp>
+#include "gpu_layernorm_kernels.h"
 
 #define USE_AMX_M 8
 
@@ -1294,23 +1296,29 @@ public:
                             });
                 })
                 .wait();
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rope", t.elapsed());
 
         // Reorder output
+        // FunTimer t2;
         gpu_queue->memcpy(C_buf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, query, batchSize * seqLen * 3 * head_num * head_size);
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rope", t.elapsed());
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
     }
 
-    void computeRMSNorm(float *output, const float *input, const float *weight, int rows, int cols) {
+    void computeRMSNorm(float *output, const float *input, const sycl::half *weight, int rows, int cols) {
         // FunTimer t;
         // float16_t I_buf[rows * cols];
         // float16_t::cvt_float_to_float16_MT(input, I_buf, rows * cols);
-        float16_t *packedI_buf = packedI;
-        float16_t *packedA_buf = packedA;
+        sycl::half *packedI_buf = (sycl::half *)packedI;
+        sycl::half *packedA_buf = (sycl::half *)packedA;
         // gpu_queue->memcpy(packedI_buf, I_buf, rows * cols * sizeof(float16_t)).wait();
-        rmsnorm_kernel(packedA_buf, packedI_buf, weight, rows, cols, cols, cols);
+        // rmsnorm_kernel(packedA_buf, packedI_buf, weight, rows, cols, cols, cols);
         // gpu_queue->memcpy(I_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
         // float16_t::cvt_float16_to_float_MT(I_buf, output, rows * cols);
+        const float layernorm_eps = 1e-06;
+        fastertransformer::invokeGeneralT5LayerNorm(packedA_buf, packedI_buf, weight,
+                              (const sycl::half*) nullptr, layernorm_eps,
+                              rows, cols, gpu_queue);
         // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rmsnorm", t.elapsed());
     }
 
@@ -1749,7 +1757,7 @@ private:
 
         if (copyC2G == true) {
             // Reorder input
-            FunTimer t2;
+            // FunTimer t2;
             float16_t A_buf[M * K];
             float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
             gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
@@ -1765,15 +1773,17 @@ private:
         stream->wait();
 
         if (postOp == true) {
+            // FunTimer t3;
             if (M > 1)
                 sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
             else if (M == 1)
                 sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "sycl_sigmoid_mul", t3.elapsed());
         }
 
         if (copyG2C == true) {
             // Reorder output
-            FunTimer t3;
+            // FunTimer t3;
             float16_t C_buf[M * N];
             gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
             float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
@@ -1845,7 +1855,7 @@ private:
 
         if (copyC2G == true) {
             // Reorder input
-            FunTimer t2;
+            // FunTimer t2;
             float16_t A_buf[M * K];
             // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
 #pragma omp parallel for
@@ -1879,7 +1889,7 @@ private:
 
         if (copyG2C == true) {
             // Reorder output
-            FunTimer t4;
+            // FunTimer t4;
             float16_t C_buf[M * N];
             gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
             float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
