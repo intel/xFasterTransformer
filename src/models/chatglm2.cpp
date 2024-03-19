@@ -16,6 +16,7 @@
 #include <limits>
 
 #include "INIReader.h"
+#include "allocator.h"
 #include "chatglm2.h"
 
 template <typename WeiT>
@@ -135,7 +136,7 @@ int *ChatGLM2<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int ste
     if (posBufSize < sizeNeeded) {
         if (positionIds) { free(positionIds); }
         posBufSize = sizeNeeded + 8; // whatever, a little bigger
-        positionIds = (int *)aligned_alloc(64, posBufSize * sizeof(int));
+        positionIds = (int *)xft::alloc(posBufSize * sizeof(int));
     }
     if (step == 0) {
         lastBlockPositions.clear();

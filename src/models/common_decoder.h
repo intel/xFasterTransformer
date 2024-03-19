@@ -633,7 +633,7 @@ protected:
         int kvSize = attHeadSize * kvHeadNum;
         int qkvSize = qSize + kvSize + kvSize;
 
-#define ALLOC(size, alignment) aligned_alloc((alignment), (size))
+#define ALLOC(size, alignment) xft::alloc((size), (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;
@@ -876,7 +876,7 @@ protected:
     float *getAttnMask(int sizeRequired) {
         if (this->maskSize < sizeRequired) {
             if (this->attnMask) free(this->attnMask);
-            this->attnMask = (float *)aligned_alloc(64, sizeRequired * sizeof(float));
+            this->attnMask = (float *)xft::alloc(sizeRequired * sizeof(float));
             this->maskSize = sizeRequired;
         }
         return this->attnMask;

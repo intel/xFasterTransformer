@@ -20,6 +20,7 @@
 #include <cstring>
 #include <string>
 
+#include "allocator.h"
 #include "my_types.h"
 #include "split_util.h"
 
@@ -160,7 +161,7 @@ public:
         }
 
         this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
-        this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
         memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
 
         if (act == "relu") {
@@ -236,7 +237,7 @@ public:
             this->rawBufSize = total;
             free(this->rawBuffer);
 
-            this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
             memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
         }
 

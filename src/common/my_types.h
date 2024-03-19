@@ -19,6 +19,8 @@
 #include <cstdlib>
 #include <new>
 
+#include "allocator.h"
+
 typedef int8_t s8;
 typedef uint8_t u8;
 
@@ -150,13 +152,13 @@ struct MatData<T, true> {
         if ((this->qscheme == per_channel_symmetric || this->qscheme == per_channel_affine)
                 && this->qparam.per_c.alloc_size < rows) {
             if (this->qparam.per_c.scales) { free(this->qparam.per_c.scales); }
-            this->qparam.per_c.scales = (float *)aligned_alloc(64, sizeof(float) * rows);
+            this->qparam.per_c.scales = (float *)xft::alloc(sizeof(float) * rows);
             if (this->qparam.per_c.scales == NULL) { throw std::bad_alloc(); }
             this->qparam.per_c.alloc_size = rows;
             // For per_channel_affine, need to check buffer for zero point
             if (this->qscheme == per_channel_affine) {
                 if (this->qparam.per_c.zps) { free(this->qparam.per_c.zps); }
-                this->qparam.per_c.zps = (int32_t *)aligned_alloc(64, sizeof(int32_t) * rows);
+                this->qparam.per_c.zps = (int32_t *)xft::alloc(sizeof(int32_t) * rows);
                 if (this->qparam.per_c.zps == NULL) { throw std::bad_alloc(); }
             }
         }

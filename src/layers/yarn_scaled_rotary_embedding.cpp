@@ -14,6 +14,7 @@
 // ============================================================================
 #include "yarn_scaled_rotary_embedding.h"
 
+#include "allocator.h"
 #include "compile_util.h"
 
 static int maxSeqLenCached = -1;
@@ -88,8 +89,8 @@ void LlamaYaRNScaledRotaryEmbedding::yarnLlamaCalEmb(float scale, float attnFact
         mscale = 0.1 * std::log(scale) + 1.0;
     mscale *= attnFactor;
 
-    embCos = (float *)aligned_alloc(64, maxSeqLenCached * (invFreqSize * 2) * sizeof(float));
-    embSin = (float *)aligned_alloc(64, maxSeqLenCached * (invFreqSize * 2) * sizeof(float));
+    embCos = (float *)xft::alloc(maxSeqLenCached * (invFreqSize * 2) * sizeof(float));
+    embSin = (float *)xft::alloc(maxSeqLenCached * (invFreqSize * 2) * sizeof(float));
 
 #pragma omp parallel for
     for (size_t i = 0; i < maxSeqLenCached; i++) {

@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include "allocator.h"
 #include "float16.h"
 #include "transformer_ctx.h"
 
@@ -26,7 +27,7 @@ public:
 
     void setWeights(float *tokenEmb) {
         int size = vocabSize * hiddenSize;
-        embTable = (T *)aligned_alloc(64, size * sizeof(T));
+        embTable = (T *)xft::alloc(size * sizeof(T));
 
         if constexpr (std::is_same_v<T, float>) {
             memcpy(embTable, tokenEmb, size * sizeof(T));

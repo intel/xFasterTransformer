@@ -14,6 +14,7 @@
 // ============================================================================
 #pragma once
 #include <immintrin.h>
+#include "allocator.h"
 #include "bfloat16.h"
 #include "dtype.h"
 #include "environment.h"
@@ -1852,7 +1853,7 @@ private:
 
 #define ALLOC(DATATYPE, VALUE, SIZE)                  \
     std::unique_ptr<DATATYPE, decltype(&free)> VALUE( \
-            static_cast<DATATYPE *>(aligned_alloc(64, SIZE * sizeof(DATATYPE))), &free)
+            static_cast<DATATYPE *>(xft::alloc(SIZE * sizeof(DATATYPE))), &free)
         ALLOC(int8_t, quantizedA, M * K);
         ALLOC(float, scaleA, M);
         ALLOC(float, zeroA, M);
