@@ -1260,35 +1260,6 @@ public:
         }
     }
 
-    inline void rope_kernel(sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
-            const int kHeads, const int head_size, const int half, float16_t *query, float16_t *key, int qStride,
-            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
-        size_t bs = item.get_global_id(0);
-        size_t seq = item.get_global_id(1);
-        size_t head = item.get_global_id(2);
-        size_t seqLen = item.get_global_range(1);
-
-        int pos = positionIds[seq];
-        const float *pcos = embCos + pos * half;
-        const float *psin = embSin + pos * half;
-
-        float16_t *q = query + bs * seqLen * qStride + seq * qStride + head * head_size;
-        float16_t *k = key + bs * seqLen * kStride + seq * kStride + head * head_size;
-
-        for (int i = 0; i < half; ++i) {
-            if (head < qHeads) {
-                auto q1 = q[i];
-                q[i] = q1 * pcos[i] - q[i + half] * psin[i];
-                q[i + half] = q[i + half] * pcos[i] + q1 * psin[i];
-            }
-            if (head < kHeads) {
-                auto k1 = k[i];
-                k[i] = k1 * pcos[i] - k[i + half] * psin[i];
-                k[i + half] = k[i + half] * pcos[i] + k1 * psin[i];
-            }
-        }
-    }
-
     void computeRotaryPositionEmbedding(
             float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
         const int batchSize = qkShape[0];
@@ -1299,6 +1270,7 @@ public:
         const int head_size = qkShape[3];
         const int half_head_size = (head_size + 1) / 2;
         using namespace sycl;
+        // FunTimer t;
 
         // Reorder input
         float16_t *packedC_buf = packedC;
@@ -1326,9 +1298,11 @@ public:
         // Reorder output
         gpu_queue->memcpy(C_buf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, query, batchSize * seqLen * 3 * head_num * head_size);
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rope", t.elapsed());
     }
 
     void computeRMSNorm(float *output, const float *input, const float *weight, int rows, int cols) {
+        // FunTimer t;
         // float16_t I_buf[rows * cols];
         // float16_t::cvt_float_to_float16_MT(input, I_buf, rows * cols);
         float16_t *packedI_buf = packedI;
@@ -1337,35 +1311,7 @@ public:
         rmsnorm_kernel(packedA_buf, packedI_buf, weight, rows, cols, cols, cols);
         // gpu_queue->memcpy(I_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
         // float16_t::cvt_float16_to_float_MT(I_buf, output, rows * cols);
-    }
-
-    void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x, const float *device_data_weight, int rows, int cols,
-            int iStride, int oStride) {
-        int max_work_group_size = 512;
-        int elementsPerThread = (cols - 1) / max_work_group_size + 1;
-        gpu_queue
-                ->submit([&](sycl::handler &cgh) {
-                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(rows), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
-                        int row = item_ct1.get_global_id(0);
-                        float ss = 0.0f;
-                        for (int i = 0; i < cols; i++) {
-                            float val = (float)device_data_x[row * iStride + i];
-                            ss += val * val;
-                        }
-                        ss = sycl::reduce_over_group(item_ct1.get_group(), ss, sycl::plus<>());
-                        ss /= cols;
-                        ss += 1e-5f;
-                        ss = 1.0f / sycl::sqrt(ss);
-                        item_ct1.barrier(sycl::access::fence_space::local_space);
-
-                        for (int i = 0; i < cols; i++) {
-                            float val = (float)device_data_x[row * iStride + i];
-                            val *= ss * device_data_weight[i];
-                            device_data_o[row * oStride + i] = (sycl::half)val;
-                        }
-                    });
-                })
-                .wait();
+        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rmsnorm", t.elapsed());
     }
 
     sycl::queue *gpu_queue;
@@ -1517,6 +1463,246 @@ private:
                     });
                 })
                 .wait();
+    }
+
+    inline void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x, const float *device_data_weight, int rows, int cols,
+            int iStride, int oStride) {
+        int max_work_group_size = 512;
+        int elementsPerThread = (cols - 1) / max_work_group_size + 1;
+        sycl::buffer<float> part_sum(sycl::range<1>(rows * 512));
+        std::vector<float> sum_var(rows, 0.0f);
+        sycl::buffer<float> sum_var_buf(sum_var);
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     int idx_col = item_ct1.get_global_id(0);
+        //                     float ss = 0.0f;
+        //                     for (int i = 0; i < elementsPerThread; i++) {
+        //                         float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+        //                         ss += val * val;
+        //                     }
+        //                     part_sum_data[row * 512 + idx_col] = ss;
+        //                 }
+        //             });
+        //         }).wait();
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(32), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     int idx_col = item_ct1.get_global_id(0);
+        //                     float ss = 0.0f;
+        //                     for (int i = 0; i < 16; i++) {
+        //                         ss += part_sum_data[row * 512 + idx_col + 32 * i];
+        //                     }
+        //                     part_sum_data[row * 512 + idx_col] = ss;
+        //                 }
+        //             });
+        //         }).wait();
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(8), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     int idx_col = item_ct1.get_global_id(0);
+        //                     float ss = 0.0f;
+        //                     for (int i = 0; i < 4; i++) {
+        //                         ss += part_sum_data[row * 512 + idx_col + 8 * i];
+        //                     }
+        //                     part_sum_data[row * 512 + idx_col] = ss;
+        //                 }
+        //             });
+        //         }).wait();
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+        //             sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(1), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     float ss = part_sum_data[row * 512 + 0] + part_sum_data[row * 512 + 1] + part_sum_data[row * 512 + 2] + part_sum_data[row * 512 + 3] +
+        //                                part_sum_data[row * 512 + 4] + part_sum_data[row * 512 + 5] + part_sum_data[row * 512 + 6] + part_sum_data[row * 512 + 7];
+        //                     ss /= cols;
+        //                     ss += 1e-5f;
+        //                     ss = 1.0f / sycl::sqrt(ss);
+        //                     accessorVar[row] = ss;
+        //                 }
+        //             });
+        //         }).wait();
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+        //             sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(1), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     float ss = 0.0f;
+        //                     for (int i = 0; i < 512; i++) {
+        //                         ss += part_sum_data[row * 512 + i];
+        //                     }
+        //                     ss /= cols;
+        //                     ss += 1e-5f;
+        //                     ss = 1.0f / sycl::sqrt(ss);
+        //                     accessorVar[row] = ss;
+        //                 }
+        //             });
+        //         }).wait();
+
+        gpu_queue
+                ->submit([&](sycl::handler &cgh) {
+                    auto out = sycl::stream(10240, 7680, cgh);
+                    auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+                    sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
+                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+                        for (int row = 0; row < rows; ++row) {
+                            int idx_col = item_ct1.get_global_id(0);
+                            float ss = 0.0f;
+                            for (int i = 0; i < elementsPerThread; i++) {
+                                float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+                                ss += val * val;
+                            }
+                            part_sum_data[row * 512 + idx_col] = ss;
+
+                            item_ct1.barrier(sycl::access::fence_space::global_space);
+                            sycl::atomic_fence(sycl::memory_order::seq_cst, sycl::memory_scope::device);
+
+                            if (idx_col == 0) {
+                                float sss = 0.0f;
+                                for (int i = 0; i < 512; i++) {
+                                    sss += part_sum_data[row * 512 + i];
+                                }
+                                sss /= cols;
+                                sss += 1e-5f;
+                                sss = 1.0f / sycl::sqrt(sss);
+                                accessorVar[row] = sss;
+                            }
+                        }
+                    });
+                }).wait();
+
+        gpu_queue
+                ->submit([&](sycl::handler &cgh) {
+                    auto out = sycl::stream(10240, 7680, cgh);
+                    auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
+                    sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
+                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+                        for (int row = 0; row < rows; ++row) {
+                            int idx_col = item_ct1.get_global_id(0);
+                            float ss = accessorVar[row];
+
+                            // if (idx_col == 0) {
+                            //     out << "cols: " << cols << sycl::endl;
+                            //     out << "elementsPerThread: " << elementsPerThread << sycl::endl;
+                            //     out << "row * iStride + idx_col * elementsPerThread: " << row * iStride + idx_col * elementsPerThread << sycl::endl;
+                            //     out << "ss[" << row << "]: " << ss << sycl::endl;
+                            //     out << "device_data_x[" << row << "]: " << device_data_x[row * iStride + idx_col * elementsPerThread] << sycl::endl;
+                            //     out << "device_data_weight[" << row << "]: " << device_data_weight[idx_col * elementsPerThread] << sycl::endl;
+                            // }
+
+                            for (int i = 0; i < elementsPerThread; i++) {
+                                float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+                                val *= ss * device_data_weight[idx_col * elementsPerThread + i];
+                                device_data_o[row * oStride + idx_col * elementsPerThread + i] = (sycl::half)val;
+                            }
+
+                            // if (idx_col == 0) {
+                            //     out << "device_data_o[" << row << "]: " << device_data_o[row * oStride + idx_col * elementsPerThread] << sycl::endl;
+                            // }
+                        }
+                    });
+                }).wait();
+
+        // gpu_queue
+        //         ->submit([&](sycl::handler &cgh) {
+        //             auto out = sycl::stream(10240, 7680, cgh);
+        //             auto part_sum_data = part_sum.get_access<sycl::access::mode::atomic>(cgh);
+        //             sycl::local_accessor<float, 0> shared_ss(cgh);
+        //             cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
+        //                 for (int row = 0; row < rows; ++row) {
+        //                     int idx_col = item_ct1.get_global_id(0);
+        //                     part_sum_data[idx_col] = 0.0f;
+        //                     for (int i = 0; i < elementsPerThread; i++) {
+        //                         float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+        //                         part_sum_data[idx_col] += val * val;
+        //                     }
+        //                     item_ct1.barrier(sycl::access::fence_space::global_space);
+        //                     // part_sum_data[idx_col]  = sycl::reduce_over_group(item_ct1.get_group(), part_sum_data[idx_col] , sycl::plus<float>());
+        //                     for(unsigned int s = 1; s < 512; s *= 2) {
+        //                         if (idx_col % (2 * s) == 0) {
+        //                             part_sum_data[idx_col] += part_sum_data[idx_col + s];
+        //                         }
+        //                         item_ct1.barrier(sycl::access::fence_space::global_space);
+        //                     }
+        //                     if (idx_col == 0) {
+        //                             part_sum_data[idx_col] /= cols;
+        //                             part_sum_data[idx_col] += 1e-5f;
+        //                             part_sum_data[idx_col] = 1.0f / sycl::sqrt(part_sum_data[idx_col]);
+        //                             shared_ss = part_sum_data[idx_col];
+        //                     }
+        //                     item_ct1.barrier(sycl::access::fence_space::global_space);
+
+        //                     float ss = shared_ss;
+        //                     if (idx_col == 0) {
+        //                         out << "cols: " << cols << sycl::endl;
+        //                         out << "elementsPerThread: " << elementsPerThread << sycl::endl;
+        //                         out << "row * iStride + idx_col * elementsPerThread: " << row * iStride + idx_col * elementsPerThread << sycl::endl;
+        //                         out << "ss[" << row << "]: " << ss << sycl::endl;
+        //                         out << "device_data_x[" << row << "]: " << device_data_x[row * iStride + idx_col * elementsPerThread] << sycl::endl;
+        //                         out << "device_data_weight[" << row << "]: " << device_data_weight[idx_col * elementsPerThread] << sycl::endl;
+        //                     }
+
+        //                     for (int i = 0; i < elementsPerThread; i++) {
+        //                         float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+        //                         val *= ss * device_data_weight[idx_col * elementsPerThread + i];
+        //                         device_data_o[row * oStride + idx_col * elementsPerThread + i] = (sycl::half)val;
+        //                     }
+        //                     if (idx_col == 0) {
+        //                         out << "device_data_o[" << row << "]: " << device_data_o[row * oStride + idx_col * elementsPerThread] << sycl::endl;
+        //                     }
+        //                     item_ct1.barrier(sycl::access::fence_space::global_space);
+        //                 }
+        //             });
+        //         })
+        //         .wait();
+    }
+
+    inline void rope_kernel(sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
+            const int kHeads, const int head_size, const int half, float16_t *query, float16_t *key, int qStride,
+            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
+        size_t bs = item.get_global_id(0);
+        size_t seq = item.get_global_id(1);
+        size_t head = item.get_global_id(2);
+        size_t seqLen = item.get_global_range(1);
+
+        int pos = positionIds[seq];
+        const float *pcos = embCos + pos * half;
+        const float *psin = embSin + pos * half;
+
+        float16_t *q = query + bs * seqLen * qStride + seq * qStride + head * head_size;
+        float16_t *k = key + bs * seqLen * kStride + seq * kStride + head * head_size;
+
+        for (int i = 0; i < half; ++i) {
+            if (head < qHeads) {
+                auto q1 = q[i];
+                q[i] = q1 * pcos[i] - q[i + half] * psin[i];
+                q[i + half] = q[i + half] * pcos[i] + q1 * psin[i];
+            }
+            if (head < kHeads) {
+                auto k1 = k[i];
+                k[i] = k1 * pcos[i] - k[i + half] * psin[i];
+                k[i + half] = k[i + half] * pcos[i] + k1 * psin[i];
+            }
+        }
     }
 
     void onednn_sgemm_f32f16f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,

@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #include <immintrin.h>
+#include <stdio.h>
 
 #include "bfloat16.h"
 #include "dtype.h"
@@ -78,6 +79,13 @@ void rmsNorm(Tout *output, const Tin *input, const float *weight, int rows, int 
             __m512 vy = vx * vvar * vw;
             xft::store_avx512(py + col, mask, vy);
         }
+
+        // if (r == 0) {
+        //     printf("px[0]: %.6f\n", px[0]);
+        //     printf("var: %.6f\n", var);
+        //     printf("weight: %.6f\n", weight[0]);
+        //     printf("py[0]: %.6f\n", py[0]);
+        // }
     } // end for rows
 }
 
