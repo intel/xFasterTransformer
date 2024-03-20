@@ -64,7 +64,7 @@ public:
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    // OriWeiT: float or int8_t
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
@@ -81,31 +81,37 @@ public:
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
         qkvWeight.Resize(hiddenSize, responsibleCols);
 
-        OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT));
+        constexpr int sizeFactor = std::is_same_v<OriWeiT, uint4x2_t> ? 2 : 1;
+
+        OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT) / sizeFactor);
         if (trans) {
-            memcpy(concatBuf, queryWeight + this->startQHead * headSize * hiddenSize,
-                    hiddenSize * qResponsibleCols * sizeof(OriWeiT));
-            memcpy(concatBuf + hiddenSize * qResponsibleCols, keyWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
-            memcpy(concatBuf + hiddenSize * (qResponsibleCols + kvResponsibleCols),
-                    valueWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
+            memcpy(concatBuf, queryWeight + this->startQHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * qResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+            memcpy(concatBuf + hiddenSize * qResponsibleCols / sizeFactor,
+                    keyWeight + this->startKVHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+            memcpy(concatBuf + hiddenSize * (qResponsibleCols + kvResponsibleCols) / sizeFactor,
+                    valueWeight + this->startKVHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
         } else {
             int qkvStride = (ctx->attHeadNum + ctx->kvHeadNum + ctx->kvHeadNum) * ctx->attHeadSize;
 #pragma omp parallel for
             for (int i = 0; i < hiddenSize; ++i) {
-                memcpy(concatBuf + i * responsibleCols, queryWeight + i * qkvStride + this->startQHead * headSize,
-                        qResponsibleCols * sizeof(OriWeiT));
-                memcpy(concatBuf + i * responsibleCols + qResponsibleCols,
-                        keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
-                memcpy(concatBuf + i * responsibleCols + qResponsibleCols + kvResponsibleCols,
-                        valueWeight + i * qkvStride + this->startKVHead * headSize,
-                        kvResponsibleCols * sizeof(OriWeiT));
+                memcpy(concatBuf + i * responsibleCols / sizeFactor,
+                        queryWeight + i * qkvStride / sizeFactor + this->startQHead * headSize / sizeFactor,
+                        qResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+                memcpy(concatBuf + i * responsibleCols / sizeFactor + qResponsibleCols / sizeFactor,
+                        keyWeight + i * qkvStride / sizeFactor + this->startKVHead * headSize / sizeFactor,
+                        kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+                memcpy(concatBuf + i * responsibleCols / sizeFactor + qResponsibleCols / sizeFactor
+                                + kvResponsibleCols / sizeFactor,
+                        valueWeight + i * qkvStride / sizeFactor + this->startKVHead * headSize / sizeFactor,
+                        kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
             }
         }
         float *concatScale = nullptr;
         float *concatZero = nullptr;
-        if constexpr (std::is_same_v<OriWeiT, int8_t>) {
+        if constexpr (std::is_same_v<OriWeiT, int8_t> || std::is_same_v<OriWeiT, uint4x2_t>) {
             concatScale = (float *)malloc(responsibleCols * sizeof(float));
             concatZero = (float *)malloc(responsibleCols * sizeof(float));
             memcpy(concatScale, queryScale + this->startQHead * headSize, qResponsibleCols * sizeof(float));

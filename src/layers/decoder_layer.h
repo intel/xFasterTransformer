@@ -73,7 +73,7 @@ public:
 
     int getLayerId() { return layerIdx; }
 
-    // OriWeiT: float or int8_t
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,

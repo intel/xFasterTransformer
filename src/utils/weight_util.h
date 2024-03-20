@@ -159,6 +159,8 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         std::filesystem::path folderPath = pathObj.parent_path();
         w_type = getWeightType(folderPath.append("config.ini").string());
     }
+    //1 uint4x2 stores 2 uint4 value, so load size is halfed.
+    if constexpr (std::is_same_v<T, uint4x2_t>) { size = size / 2; }
     if (!ptr) { ptr = (T *)aligned_alloc(64, size * sizeof(T)); }
     int file_size = 0;
     switch (w_type) {
@@ -166,6 +168,7 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         case DataType::fp16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
         case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
         case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
+        case DataType::int4: file_size = loadWeightWithConvert<T, uint4x2_t>(ptr, size, filename, required); break;
         default: printf("Not support loading %s with DataType=%d", filename, w_type);
     }
     return file_size;
@@ -186,4 +189,5 @@ template int loadWeightWithConvert<uint4x2_t, float16_t>(uint4x2_t *, int, const
 template int loadWeightWithConvert<nf4x2_t, float16_t>(nf4x2_t *, int, const std::string &, bool);
 
 template int loadWeightWithConvert<int8_t, int8_t>(int8_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<uint4x2_t, uint4x2_t>(uint4x2_t *, int, const std::string &, bool);
 } // namespace xft
