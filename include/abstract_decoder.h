@@ -14,9 +14,10 @@
 // ============================================================================
 #pragma once
 #include <tuple>
+#include <cstdint>
 
-#include "messenger.h"
-#include "transformer_ctx.h"
+class DecoderContext;
+class Messenger;
 
 class AbstractDecoder {
 public:
