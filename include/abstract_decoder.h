@@ -42,6 +42,8 @@ public:
 
     virtual Messenger &getMessenger() = 0;
 
+    virtual bool isMaster() = 0;
+
     virtual int getRank() = 0;
 
     virtual int getEndId() = 0;

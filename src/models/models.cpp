@@ -158,6 +158,10 @@ void Model::createSearcher(SearcherConfig &config_) {
     }
 }
 
+bool Model::isMaster() {
+    return decoder->isMaster();
+}
+
 int Model::getRank() {
     return decoder->getRank();
 }

@@ -75,6 +75,8 @@ public:
 
     Messenger &getMessenger() { return firstModel->getMessenger(); }
 
+    bool isMaster() { return firstModel->isMaster(); }
+
     int getRank() { return firstModel->getRank(); }
 
     int getEndId() { return firstModel->getEndId(); }
