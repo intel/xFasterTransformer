@@ -316,7 +316,7 @@ private:
             // }
             {
                 ctx->mmHelper->compute_residential(
-                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr, false, true);
+                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr, false, false);
             }
         } else {
             // if (enableCBLASMLP && std::is_same_v<WeiT, bfloat16_t>) {

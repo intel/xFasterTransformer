@@ -35,9 +35,9 @@
 #include <cstring>
 #include <map>
 #include <tuple>
+#include "gpu_layernorm_kernels.h"
 #include <CL/sycl.hpp>
 #include <dpct/device.hpp>
-#include "gpu_layernorm_kernels.h"
 
 #define USE_AMX_M 8
 
@@ -1281,6 +1281,8 @@ public:
         float16_t C_buf[batchSize * seqLen * 3 * head_num * head_size];
         // float16_t::cvt_float_to_float16_MT(query, C_buf, batchSize * seqLen * 3 * head_num * head_size);
         // gpu_queue->memcpy(packedC_buf, C_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        // std::cout << "GPU"<< gpu_index << " rope:" <<std::endl;
+        // print(batchSize * seqLen, 6, qStride, (float16_t *)packedC_buf, "packedC");
 
         buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
         gpu_queue
@@ -1303,6 +1305,29 @@ public:
         gpu_queue->memcpy(C_buf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
         float16_t::cvt_float16_to_float_MT(C_buf, query, batchSize * seqLen * 3 * head_num * head_size);
         // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+
+        // print(batchSize * seqLen, 6, qStride, (float16_t *)packedC_buf, "packedC");
+    }
+
+    void print(int rows, int cols, int stride, float16_t *buf, std::string buf_name) {
+        std::cout << buf_name.c_str() << ":" << std::endl;
+        gpu_queue
+                ->submit([&](sycl::handler &cgh) {
+                    auto out = sycl::stream(1024, 768, cgh);
+                    cgh.parallel_for(sycl::nd_range<1>(1, 1), [=](sycl::nd_item<1> item) {
+                        int idx_col = item.get_global_id(0);
+                        if (idx_col == 0) {
+                            for (int row = 0; row < rows; ++row) {
+                                for (int col = 0; col < cols; ++col) {
+                                    out << buf[row * stride + col] << ", ";
+                                }
+                                out << sycl::endl;
+                            }
+                            out << sycl::endl;
+                        }
+                    });
+                })
+                .wait();
     }
 
     void computeRMSNorm(float *output, const float *input, const sycl::half *weight, int rows, int cols) {
@@ -1316,10 +1341,12 @@ public:
         // gpu_queue->memcpy(I_buf, packedA_buf, rows * cols * sizeof(float16_t)).wait();
         // float16_t::cvt_float16_to_float_MT(I_buf, output, rows * cols);
         const float layernorm_eps = 1e-06;
-        fastertransformer::invokeGeneralT5LayerNorm(packedA_buf, packedI_buf, weight,
-                              (const sycl::half*) nullptr, layernorm_eps,
-                              rows, cols, gpu_queue);
+        fastertransformer::invokeGeneralT5LayerNorm(
+                packedA_buf, packedI_buf, weight, (const sycl::half *)nullptr, layernorm_eps, rows, cols, gpu_queue);
         // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rmsnorm", t.elapsed());
+        // std::cout << "GPU"<< gpu_index << "rms_norm:" <<std::endl;
+        // print(rows, 6, cols, (float16_t *)packedI_buf, "packedI");
+        // print(rows, 6, cols, (float16_t *)packedA_buf, "packedA");
     }
 
     sycl::queue *gpu_queue;
@@ -1473,8 +1500,8 @@ private:
                 .wait();
     }
 
-    inline void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x, const float *device_data_weight, int rows, int cols,
-            int iStride, int oStride) {
+    inline void rmsnorm_kernel(float16_t *device_data_o, const float16_t *device_data_x,
+            const float *device_data_weight, int rows, int cols, int iStride, int oStride) {
         int max_work_group_size = 512;
         int elementsPerThread = (cols - 1) / max_work_group_size + 1;
         sycl::buffer<float> part_sum(sycl::range<1>(rows * 512));
@@ -1571,64 +1598,71 @@ private:
                     auto out = sycl::stream(10240, 7680, cgh);
                     auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
                     sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
-                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
-                        for (int row = 0; row < rows; ++row) {
-                            int idx_col = item_ct1.get_global_id(0);
-                            float ss = 0.0f;
-                            for (int i = 0; i < elementsPerThread; i++) {
-                                float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
-                                ss += val * val;
-                            }
-                            part_sum_data[row * 512 + idx_col] = ss;
+                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)),
+                            [=](sycl::nd_item<1> item_ct1) {
+                                for (int row = 0; row < rows; ++row) {
+                                    int idx_col = item_ct1.get_global_id(0);
+                                    float ss = 0.0f;
+                                    for (int i = 0; i < elementsPerThread; i++) {
+                                        float val
+                                                = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+                                        ss += val * val;
+                                    }
+                                    part_sum_data[row * 512 + idx_col] = ss;
 
-                            item_ct1.barrier(sycl::access::fence_space::global_space);
-                            sycl::atomic_fence(sycl::memory_order::seq_cst, sycl::memory_scope::device);
+                                    item_ct1.barrier(sycl::access::fence_space::global_space);
+                                    sycl::atomic_fence(sycl::memory_order::seq_cst, sycl::memory_scope::device);
 
-                            if (idx_col == 0) {
-                                float sss = 0.0f;
-                                for (int i = 0; i < 512; i++) {
-                                    sss += part_sum_data[row * 512 + i];
+                                    if (idx_col == 0) {
+                                        float sss = 0.0f;
+                                        for (int i = 0; i < 512; i++) {
+                                            sss += part_sum_data[row * 512 + i];
+                                        }
+                                        sss /= cols;
+                                        sss += 1e-5f;
+                                        sss = 1.0f / sycl::sqrt(sss);
+                                        accessorVar[row] = sss;
+                                    }
                                 }
-                                sss /= cols;
-                                sss += 1e-5f;
-                                sss = 1.0f / sycl::sqrt(sss);
-                                accessorVar[row] = sss;
-                            }
-                        }
-                    });
-                }).wait();
+                            });
+                })
+                .wait();
 
         gpu_queue
                 ->submit([&](sycl::handler &cgh) {
                     auto out = sycl::stream(10240, 7680, cgh);
                     auto part_sum_data = part_sum.get_access<sycl::access::mode::read_write>(cgh);
                     sycl::accessor accessorVar(sum_var_buf, cgh, sycl::read_write);
-                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)), [=](sycl::nd_item<1> item_ct1) {
-                        for (int row = 0; row < rows; ++row) {
-                            int idx_col = item_ct1.get_global_id(0);
-                            float ss = accessorVar[row];
+                    cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(max_work_group_size), sycl::range<1>(1)),
+                            [=](sycl::nd_item<1> item_ct1) {
+                                for (int row = 0; row < rows; ++row) {
+                                    int idx_col = item_ct1.get_global_id(0);
+                                    float ss = accessorVar[row];
 
-                            // if (idx_col == 0) {
-                            //     out << "cols: " << cols << sycl::endl;
-                            //     out << "elementsPerThread: " << elementsPerThread << sycl::endl;
-                            //     out << "row * iStride + idx_col * elementsPerThread: " << row * iStride + idx_col * elementsPerThread << sycl::endl;
-                            //     out << "ss[" << row << "]: " << ss << sycl::endl;
-                            //     out << "device_data_x[" << row << "]: " << device_data_x[row * iStride + idx_col * elementsPerThread] << sycl::endl;
-                            //     out << "device_data_weight[" << row << "]: " << device_data_weight[idx_col * elementsPerThread] << sycl::endl;
-                            // }
+                                    // if (idx_col == 0) {
+                                    //     out << "cols: " << cols << sycl::endl;
+                                    //     out << "elementsPerThread: " << elementsPerThread << sycl::endl;
+                                    //     out << "row * iStride + idx_col * elementsPerThread: " << row * iStride + idx_col * elementsPerThread << sycl::endl;
+                                    //     out << "ss[" << row << "]: " << ss << sycl::endl;
+                                    //     out << "device_data_x[" << row << "]: " << device_data_x[row * iStride + idx_col * elementsPerThread] << sycl::endl;
+                                    //     out << "device_data_weight[" << row << "]: " << device_data_weight[idx_col * elementsPerThread] << sycl::endl;
+                                    // }
 
-                            for (int i = 0; i < elementsPerThread; i++) {
-                                float val = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
-                                val *= ss * device_data_weight[idx_col * elementsPerThread + i];
-                                device_data_o[row * oStride + idx_col * elementsPerThread + i] = (sycl::half)val;
-                            }
+                                    for (int i = 0; i < elementsPerThread; i++) {
+                                        float val
+                                                = (float)device_data_x[row * iStride + idx_col * elementsPerThread + i];
+                                        val *= ss * device_data_weight[idx_col * elementsPerThread + i];
+                                        device_data_o[row * oStride + idx_col * elementsPerThread + i]
+                                                = (sycl::half)val;
+                                    }
 
-                            // if (idx_col == 0) {
-                            //     out << "device_data_o[" << row << "]: " << device_data_o[row * oStride + idx_col * elementsPerThread] << sycl::endl;
-                            // }
-                        }
-                    });
-                }).wait();
+                                    // if (idx_col == 0) {
+                                    //     out << "device_data_o[" << row << "]: " << device_data_o[row * oStride + idx_col * elementsPerThread] << sycl::endl;
+                                    // }
+                                }
+                            });
+                })
+                .wait();
 
         // gpu_queue
         //         ->submit([&](sycl::handler &cgh) {
@@ -1789,6 +1823,10 @@ private:
             float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
         }
+
+        // std::cout << "GPU"<< gpu_index << "gemm:" << std::endl;
+        // print(M, 6, K, (float16_t *)packedA, "packedA");
+        // print(M, 6, N, (float16_t *)packedC, "packedC");
     }
 
     void onednn_sgemm_f32f16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const float *A,
@@ -1895,6 +1933,10 @@ private:
             float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t4.elapsed());
         }
+
+        // std::cout << "GPU"<< gpu_index << "gemm_res:" << std::endl;
+        // print(M, 6, K, (float16_t *)packedA, "packedA");
+        // print(M, 6, N, (float16_t *)packedI, "packedI");
     }
 
     template <typename Tin, typename Tout>

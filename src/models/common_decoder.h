@@ -343,6 +343,21 @@ public:
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+
+            // printf("MPI Buf Recv:\n");
+            // for (int i = 0; i < batchSize * inputSeqLen; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", embBuf[i * ctx->hiddenSize + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+
+            if constexpr (std::is_same_v<AttnInT, float>) {
+                float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
+                float16_t::cvt_float_to_float16_MT(embBuf, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize);
+                ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+            }
         }
 #endif
 
@@ -402,6 +417,21 @@ public:
 #ifdef PIPELINE_PARALLEL
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
+            if constexpr (std::is_same_v<AttnInT, float>) {
+                float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
+                ctx->mmHelper->gpu_queue->memcpy(embBuf2, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+                float16_t::cvt_float16_to_float_MT(embBuf2, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+            }
+
+            // printf("MPI Buf Send:\n");
+            // for (int i = 0; i < batchSize * inputSeqLen; ++i) {
+            //     for (int j = 0; j < 6; ++j) {
+            //         printf("%.6f ", embBuf[i * ctx->hiddenSize + j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\n");
+
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * ctx->hiddenSize;
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
@@ -410,6 +440,21 @@ public:
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 #endif
+
+        if constexpr (std::is_same_v<AttnInT, float>) {
+            float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
+            ctx->mmHelper->gpu_queue->memcpy(embBuf2, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(embBuf2, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+        }
+
+        // printf("embBuf:\n");
+        // for (int i = 0; i < batchSize * inputSeqLen; ++i) {
+        //     for (int j = 0; j < 6; ++j) {
+        //         printf("%.6f ", embBuf[i * ctx->hiddenSize + j]);
+        //     }
+        //     printf("\n");
+        // }
+        // printf("\n");
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
