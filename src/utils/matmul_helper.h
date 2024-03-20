@@ -1809,9 +1809,9 @@ private:
         if (postOp == true) {
             // FunTimer t3;
             if (M > 1)
-                sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+                sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
             else if (M == 1)
-                sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedC, ldc);
+                sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "sycl_sigmoid_mul", t3.elapsed());
         }
 
@@ -1908,11 +1908,6 @@ private:
             // float16_t::cvt_float_to_float16_MT(res, shift_buf, M * N);
             // gpu_queue->memcpy(shift_mem.get_data_handle(), shift_buf, M * N * sizeof(float16_t)).wait();
             // // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
-        } else {
-            if (M > 1)
-                sycl_memcopy_lines(M, K, packedC, 2 * K, packedA, K);
-            else
-                gpu_queue->memcpy(packedA, packedC, M * K * sizeof(float16_t)).wait();
         }
 
         // Create the primitive args.
