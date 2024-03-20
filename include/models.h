@@ -42,6 +42,8 @@ public:
 
     void createSearcher(SearcherConfig &config_);
 
+    bool isMaster();
+
     int getRank();
 
     int getBatchSize() { return batchSize; }

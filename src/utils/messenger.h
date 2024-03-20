@@ -93,7 +93,7 @@ public:
         return instance;
     }
 
-    bool isMaster() { return rank == 0; }
+    bool isMaster() { return rank == 0 && color == 0; }
 
     int getRank() { return rank; }
 

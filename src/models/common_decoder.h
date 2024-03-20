@@ -564,6 +564,8 @@ public:
 
     Messenger &getMessenger() { return messenger; }
 
+    bool isMaster() { return messenger.isMaster(); }
+
     int getRank() { return messenger.getRank(); }
 
     int getEndId() { return endId; }
