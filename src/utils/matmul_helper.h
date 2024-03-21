@@ -58,6 +58,7 @@ public:
             packedI = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
             packedA = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
             packedC = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
+            HostBuf = sycl::malloc_host<float16_t>(18 * 32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -70,6 +71,7 @@ public:
         sycl::free(packedI, *gpu_queue);
         sycl::free(packedA, *gpu_queue);
         sycl::free(packedC, *gpu_queue);
+        sycl::free(HostBuf, *gpu_queue);
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -1278,7 +1280,7 @@ public:
         float16_t *packedC_buf = packedC;
         float *embCos = emb_cos;
         float *embSin = emb_sin;
-        float16_t C_buf[batchSize * seqLen * 3 * head_num * head_size];
+        // float16_t C_buf[batchSize * seqLen * 3 * head_num * head_size];
         // float16_t::cvt_float_to_float16_MT(query, C_buf, batchSize * seqLen * 3 * head_num * head_size);
         // gpu_queue->memcpy(packedC_buf, C_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
         // std::cout << "GPU"<< gpu_index << " rope:" <<std::endl;
@@ -1302,8 +1304,8 @@ public:
 
         // Reorder output
         // FunTimer t2;
-        gpu_queue->memcpy(C_buf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
-        float16_t::cvt_float16_to_float_MT(C_buf, query, batchSize * seqLen * 3 * head_num * head_size);
+        gpu_queue->memcpy(HostBuf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        float16_t::cvt_float16_to_float_MT(HostBuf, query, batchSize * seqLen * 3 * head_num * head_size);
         // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
 
         // print(batchSize * seqLen, 6, qStride, (float16_t *)packedC_buf, "packedC");
@@ -1356,6 +1358,7 @@ public:
     float16_t *packedI;
     float16_t *packedA;
     float16_t *packedC;
+    float16_t *HostBuf; // Pinned Memory
 
 private:
     int gpu_index;
@@ -1792,9 +1795,8 @@ private:
         if (copyC2G == true) {
             // Reorder input
             // FunTimer t2;
-            float16_t A_buf[M * K];
-            float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
-            gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+            float16_t::cvt_float_to_float16_MT(A, HostBuf, M * K);
+            gpu_queue->memcpy(packed_input_mem.get_data_handle(), HostBuf, M * K * sizeof(float16_t)).wait();
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
         }
 
@@ -1818,9 +1820,8 @@ private:
         if (copyG2C == true) {
             // Reorder output
             // FunTimer t3;
-            float16_t C_buf[M * N];
-            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+            gpu_queue->memcpy(HostBuf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(HostBuf, C, M * N);
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t3.elapsed());
         }
 
@@ -1894,12 +1895,11 @@ private:
         if (copyC2G == true) {
             // Reorder input
             // FunTimer t2;
-            float16_t A_buf[M * K];
             // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
 #pragma omp parallel for
             for (int i = 0; i < M; ++i)
-                float16_t::cvt_float_to_float16(A + i * lda, A_buf + i * K, K);
-            gpu_queue->memcpy(packed_input_mem.get_data_handle(), A_buf, M * K * sizeof(float16_t)).wait();
+                float16_t::cvt_float_to_float16(A + i * lda, HostBuf + i * K, K);
+            gpu_queue->memcpy(packed_input_mem.get_data_handle(), HostBuf, M * K * sizeof(float16_t)).wait();
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
 
             // // Reorder shift
@@ -1923,9 +1923,8 @@ private:
         if (copyG2C == true) {
             // Reorder output
             // FunTimer t4;
-            float16_t C_buf[M * N];
-            gpu_queue->memcpy(C_buf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
-            float16_t::cvt_float16_to_float_MT(C_buf, C, M * N);
+            gpu_queue->memcpy(HostBuf, packed_output_mem.get_data_handle(), M * N * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(HostBuf, C, M * N);
             // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t4.elapsed());
         }
 

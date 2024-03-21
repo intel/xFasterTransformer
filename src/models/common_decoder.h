@@ -313,9 +313,8 @@ public:
 
         if constexpr (std::is_same_v<AttnInT, float>) {
             // printf("embedding gpu\n");
-            float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
-            float16_t::cvt_float_to_float16_MT(embBuf, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize);
-            ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+            float16_t::cvt_float_to_float16_MT(embBuf, ctx->mmHelper->HostBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+            ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, ctx->mmHelper->HostBuf, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
         }
 
 #ifdef DEBUG
@@ -354,9 +353,8 @@ public:
             // printf("\n");
 
             if constexpr (std::is_same_v<AttnInT, float>) {
-                float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
-                float16_t::cvt_float_to_float16_MT(embBuf, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize);
-                ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, embBuf2, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+                float16_t::cvt_float_to_float16_MT(embBuf, ctx->mmHelper->HostBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+                ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->packedI, ctx->mmHelper->HostBuf, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
             }
         }
 #endif
@@ -418,9 +416,8 @@ public:
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
             if constexpr (std::is_same_v<AttnInT, float>) {
-                float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
-                ctx->mmHelper->gpu_queue->memcpy(embBuf2, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
-                float16_t::cvt_float16_to_float_MT(embBuf2, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+                ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->HostBuf, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+                float16_t::cvt_float16_to_float_MT(ctx->mmHelper->HostBuf, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
             }
 
             // printf("MPI Buf Send:\n");
@@ -442,9 +439,8 @@ public:
 #endif
 
         if constexpr (std::is_same_v<AttnInT, float>) {
-            float16_t embBuf2[batchSize * inputSeqLen * ctx->hiddenSize];
-            ctx->mmHelper->gpu_queue->memcpy(embBuf2, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
-            float16_t::cvt_float16_to_float_MT(embBuf2, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
+            ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->HostBuf, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
+            float16_t::cvt_float16_to_float_MT(ctx->mmHelper->HostBuf, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
         }
 
         // printf("embBuf:\n");
