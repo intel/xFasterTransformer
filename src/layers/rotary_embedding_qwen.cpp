@@ -57,7 +57,7 @@ QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_e
 
 QwenRotaryEmbedding::~QwenRotaryEmbedding() {}
 
-void QwenRotaryEmbedding::init_logn(const int max_seq_length) {
+void QwenRotaryEmbedding::init_logn(int max_seq_length) {
     if (!logn_initialized) {
         logn_initialized = true;
         /*LOGN
@@ -66,8 +66,11 @@ void QwenRotaryEmbedding::init_logn(const int max_seq_length) {
             for i in range(1, 32768)
         ]
         */
-        REQUIRES(max_seq_length > 0 && max_seq_length < maxSupportedSeqLength,
+        REQUIRES(max_seq_length > 0,
                 "seq_length in config.ini is incorrect, please re-conv the model with the latest convert tools");
+        if (max_seq_length > maxSupportedSeqLength) {
+            max_seq_length = maxSupportedSeqLength;
+	}
         logn = (float *)malloc(maxSupportedSeqLength * sizeof(float));
 #pragma omp parallel for
         for (size_t i = 0; i < max_seq_length; i++) {

@@ -166,7 +166,7 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         case DataType::fp16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
         case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
         case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
-        default: printf("Not support loading %s with DataType=%d", filename, w_type);
+        default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
     }
     return file_size;
 }
