@@ -57,7 +57,8 @@ QwenRotaryEmbedding::QwenRotaryEmbedding(const int dim, const int max_position_e
 
 QwenRotaryEmbedding::~QwenRotaryEmbedding() {}
 
-void QwenRotaryEmbedding::init_logn(int max_seq_length) {
+void QwenRotaryEmbedding::init_logn(int max_seq_length, bool use_logn, bool use_ntk_scale) {
+    this->use_ntk = use_ntk_scale;
     if (!logn_initialized) {
         logn_initialized = true;
         /*LOGN
@@ -66,13 +67,18 @@ void QwenRotaryEmbedding::init_logn(int max_seq_length) {
             for i in range(1, 32768)
         ]
         */
-        REQUIRES(max_seq_length > 0,
-                "seq_length in config.ini is incorrect, please re-conv the model with the latest convert tools");
-        if (max_seq_length > maxSupportedSeqLength) {
-            printf("QWEN: max_seq_length > maxSupportedSeqLength, we will reduce max_seq_length to %d\n", maxSupportedSeqLength);
+        if (use_logn) {
+            REQUIRES(max_seq_length > 0,
+                    "seq_length in config.ini is incorrect, please re-conv the model with the latest convert tools");
+            if (max_seq_length > maxSupportedSeqLength) {
+                printf("QWEN: max_seq_length > maxSupportedSeqLength, we will reduce max_seq_length to %d\n",
+                        maxSupportedSeqLength);
+                max_seq_length = maxSupportedSeqLength;
+            }
+        } else {
             max_seq_length = maxSupportedSeqLength;
-	}
-        logn = (float *)malloc(maxSupportedSeqLength * sizeof(float));
+        }
+        logn = (float *)malloc(maxSupportedSeqLength * 2 * sizeof(float));
 #pragma omp parallel for
         for (size_t i = 0; i < max_seq_length; i++) {
             logn[i] = 1.0;
@@ -86,7 +92,7 @@ void QwenRotaryEmbedding::init_logn(int max_seq_length) {
 }
 
 float QwenRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max_seq_length) {
-    if (max_seq_length <= 0) { return (float)1.0; }
+    if (max_seq_length <= 0 || !use_ntk) { return (float)1.0; }
 
     float context_value = log((float)true_seq_len / (float)max_seq_length) / log(2.0) + 1;
     float ntk_alpha = pow((float)2.0, ceil(context_value)) - 1;

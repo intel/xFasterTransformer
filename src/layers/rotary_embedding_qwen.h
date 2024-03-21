@@ -44,7 +44,7 @@ public:
     void forward(
             bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
-    void init_logn(int max_length = 2048);
+    void init_logn(int max_length = 2048, bool use_logn = true, bool use_ntk = true);
 
 private:
     float getNewBaseValue(const int true_seq_len, const int max_seq_length = -1);
@@ -58,4 +58,5 @@ private:
     int dim = 0;
     float base_initial = 10000.0;
     float base = 10000.0;
+    bool use_ntk = true;
 };

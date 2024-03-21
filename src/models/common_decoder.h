@@ -174,6 +174,9 @@ public:
         const int maxPositions = reader.GetInteger(modelType, "model_max_length", maxPosEmbed);
         // Seq length in Qwen model, if none, please ignore
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
+        const bool useLogN = reader.GetInteger(modelType, "use_logn_attn", true);
+        const bool useNTK = reader.GetInteger(modelType, "use_dynamic_ntk", true);
+
         const int hiddenSize = attHeadNum * size_per_head;
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
@@ -218,7 +221,7 @@ public:
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, ropeParamsPtr);
+                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK, ropeParamsPtr);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {
@@ -591,7 +594,7 @@ protected:
 
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed, int maxSeqLength, RopeParams *ropeParamsPtr) {
+            int maxPositions, int maxPosEmbed, int maxSeqLength, bool useLogN, bool useNTK, RopeParams *ropeParamsPtr) {
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
         int ppSize = Env::getPipelineStage();
@@ -610,7 +613,7 @@ protected:
         } else {
             this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
-                    ropeParamsPtr));
+                    ropeParamsPtr, useLogN, useNTK));
 
             if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
                 this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);

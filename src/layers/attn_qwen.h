@@ -23,6 +23,6 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS = RmsNorm>
 class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
 public:
     QwenAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
-        this->qkpo.init_logn(ctx->maxSeqLength);
+        this->qkpo.init_logn(ctx->maxSeqLength, ctx->useLogN, ctx->useNTK);
     }
 };
