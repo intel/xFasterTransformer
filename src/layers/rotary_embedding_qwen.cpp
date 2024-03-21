@@ -69,6 +69,7 @@ void QwenRotaryEmbedding::init_logn(int max_seq_length) {
         REQUIRES(max_seq_length > 0,
                 "seq_length in config.ini is incorrect, please re-conv the model with the latest convert tools");
         if (max_seq_length > maxSupportedSeqLength) {
+            printf("QWEN: max_seq_length > maxSupportedSeqLength, we will reduce max_seq_length to %d\n", maxSupportedSeqLength);
             max_seq_length = maxSupportedSeqLength;
 	}
         logn = (float *)malloc(maxSupportedSeqLength * sizeof(float));
