@@ -1290,12 +1290,12 @@ public:
         gpu_queue
                 ->submit([&](handler &cgh) {
                     accessor position(positionIdsBuf, cgh, sycl::read_only);
-                    range<3> globalSize(batchSize, seqLen, head_num);
+                    range<3> globalSize(batchSize * seqLen, head_num, half_head_size);
                     range<3> workGroupSize(1, 1, 1);
 
                     cgh.parallel_for<class kernel_rope>(
                             nd_range(globalSize, workGroupSize), [=, this](nd_item<3> item) {
-                                rope_kernel(item, embCos, embSin, qHeads, kHeads, head_size, half_head_size,
+                                rope_kernel(item, embCos, embSin, qHeads, kHeads, seqLen, head_size, half_head_size,
                                         packedC_buf, packedC_buf + head_num * head_size, qStride, kStride, position);
                             });
                 })
@@ -1304,7 +1304,8 @@ public:
 
         // Reorder output
         // FunTimer t2;
-        gpu_queue->memcpy(HostBuf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t)).wait();
+        gpu_queue->memcpy(HostBuf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t))
+                .wait();
         float16_t::cvt_float16_to_float_MT(HostBuf, query, batchSize * seqLen * 3 * head_num * head_size);
         // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
 
@@ -1722,31 +1723,28 @@ private:
     }
 
     inline void rope_kernel(sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
-            const int kHeads, const int head_size, const int half, float16_t *query, float16_t *key, int qStride,
-            int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
-        size_t bs = item.get_global_id(0);
-        size_t seq = item.get_global_id(1);
-        size_t head = item.get_global_id(2);
-        size_t seqLen = item.get_global_range(1);
+            const int kHeads, const int seq_size, const int head_size, const int half, float16_t *query, float16_t *key,
+            int qStride, int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
+        size_t idx_bs_seq = item.get_global_id(0);
+        size_t idx_head_num = item.get_global_id(1);
+        size_t idx_half_head_dim = item.get_global_id(2);
 
-        int pos = positionIds[seq];
-        const float *pcos = embCos + pos * half;
-        const float *psin = embSin + pos * half;
+        size_t pos = positionIds[idx_bs_seq % seq_size];
+        const sycl::half cos = (sycl::half)embCos[pos * half + idx_half_head_dim];
+        const sycl::half sin = (sycl::half)embSin[pos * half + idx_half_head_dim];
 
-        float16_t *q = query + bs * seqLen * qStride + seq * qStride + head * head_size;
-        float16_t *k = key + bs * seqLen * kStride + seq * kStride + head * head_size;
+        sycl::half *q = (sycl::half *)query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
+        sycl::half *k = (sycl::half *)key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
 
-        for (int i = 0; i < half; ++i) {
-            if (head < qHeads) {
-                auto q1 = q[i];
-                q[i] = q1 * pcos[i] - q[i + half] * psin[i];
-                q[i + half] = q[i + half] * pcos[i] + q1 * psin[i];
-            }
-            if (head < kHeads) {
-                auto k1 = k[i];
-                k[i] = k1 * pcos[i] - k[i + half] * psin[i];
-                k[i + half] = k[i + half] * pcos[i] + k1 * psin[i];
-            }
+        if (idx_head_num < qHeads) {
+            auto q1 = q[0];
+            q[0] = q1 * cos - q[half] * sin;
+            q[half] = q[half] * cos + q1 * sin;
+        }
+        if (idx_head_num < kHeads) {
+            auto k1 = k[0];
+            k[0] = k1 * cos - k[half] * sin;
+            k[half] = k[half] * cos + k1 * sin;
         }
     }
 
