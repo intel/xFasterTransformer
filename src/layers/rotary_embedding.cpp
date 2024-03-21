@@ -17,41 +17,48 @@
 #include "allocator.h"
 #include "compile_util.h"
 
-static int inv_freq_size = -1;
-static float *emb_cos = nullptr;
-static float *emb_sin = nullptr;
+LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
+    const std::string inv_freq_str = "inv_freq";
+    const std::string emb_cos_str = "emb_cos";
+    const std::string emb_sin_str = "emb_sin";
 
-bool LlamaRotaryEmbedding::initialized = false;
+    // dim: equals to head size
+    ctx->GetAttr("size_per_head", &this->dim);
+    ctx->GetAttr("max_pos_seq_len", &this->max_position_embeddings, 2048);
+    ctx->GetAttr("rope_theta", &this->base, 10000);
+    ctx->GetAttr("rope_type", &this->rope_type, std::to_string(-1));
 
-// dim: equals to head size
-LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
-    if (!initialized) {
-        initialized = true;
+    if (this->rope_type == "linear") 
+        ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
 
-        inv_freq_size = (dim + 1) / 2;
-        float *inv_freq = (float *)malloc(inv_freq_size * sizeof(float));
+    inv_freq_size = (dim + 1) / 2;
+
+    emb_cos = ctx->getBuffer<float>(emb_cos_str, max_position_embeddings * inv_freq_size);
+    emb_sin = ctx->getBuffer<float>(emb_sin_str, max_position_embeddings * inv_freq_size);
+
+    if (!ctx->cached(inv_freq_str)) {
+        inv_freq = ctx->getBuffer<float>(inv_freq_str, inv_freq_size);
         for (size_t i = 0; i < inv_freq_size; i++) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
-
         llamaCalEmb(inv_freq, max_position_embeddings);
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
     }
-};
+}
+
+// This API is deprecated, will delete after all rotary embed code refactor.
+LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {}
 
 void LlamaRotaryEmbedding::llamaCalEmb(const float *inv_freq, const int max_position_embeddings) {
-    emb_cos = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
-    emb_sin = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
-
 #pragma omp parallel for
     for (size_t i = 0; i < max_position_embeddings; i++) {
         float *pcos = emb_cos + i * inv_freq_size;
         float *psin = emb_sin + i * inv_freq_size;
 
         for (size_t j = 0; j < inv_freq_size; j++) {
-            float tmp = i * inv_freq[j];
+            float tmp = i * inv_freq[j] / this->scaling_factor;
             float cos_tmp = std::cos(tmp);
             float sin_tmp = std::sin(tmp);
 

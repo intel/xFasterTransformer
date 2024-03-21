@@ -123,7 +123,14 @@ class LlamaConvert(BaseModelConvert):
             config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
             config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
             config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = "silu"
+            config["llama"]["activation_type"] = str(hf_config["hidden_act"])
+            config["llama"]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
+            try:
+                config["llama"]["scaling_factor"] = str(hf_config["rope_scaling"]["factor"])
+                config["llama"]["rope_type"] = str(hf_config["rope_scaling"]["type"])
+            except Exception as e:
+                config["llama"]["scaling_factor"] = 1.0
+                config["llama"]["rope_type"] = "null"
             config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
             config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
             config["llama"]["start_id"] = str(hf_config["bos_token_id"])

@@ -34,6 +34,7 @@ _import_structure = {
     "automodel": ["AutoModel"],
     "tools": [
         "LlamaConvert",
+        "DeepseekConvert",
         "ChatGLMConvert",
         "ChatGLM2Convert",
         "ChatGLM3Convert",
@@ -46,6 +47,7 @@ _import_structure = {
 
 if TYPE_CHECKING:
     from .tools import LlamaConvert
+    from .tools import DeepseekConvert
     from .tools import ChatGLMConvert
     from .tools import ChatGLM2Convert
     from .tools import ChatGLM3Convert

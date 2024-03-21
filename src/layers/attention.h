@@ -29,6 +29,8 @@
 #include "transformer_ctx.h"
 #include "transformer_util.h"
 
+#include "rotary_embedding.h"
+
 /**
  * WeiT: weight data type
  * InT: input data type
@@ -44,6 +46,12 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
 class Attention {
 public:
     Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
+
+        //todo(marvin): clear this code after all rotary_emb refactor
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {
+            qkpo = LlamaRotaryEmbedding(ctx);
+        }
+
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
@@ -496,7 +504,7 @@ protected:
         auto B = value;
         auto C = output;
         const int N = headSize;
-        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);        
+        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
     }
 
     // Note: the result here is still the intermediate result from the whole attention scope
@@ -538,7 +546,8 @@ protected:
         }
 
         if (!shardHead) {
-            return slimAttention(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen, mBlockSize, kvCopied);
+            return slimAttention(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen,
+                    mBlockSize, kvCopied);
         } else { // Seperate impl. when head is sharded
             return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
         }
@@ -628,8 +637,8 @@ protected:
                     // Softmax * V
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-                    this->gemm2(
-                            C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second, result.Stride());
+                    this->gemm2(C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second,
+                            result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -803,9 +812,9 @@ protected:
     }
 
     template <typename KVCacheT>
-    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
-            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+            const float *attnMask, int pastSeqLen) {
 #if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
         using AttnT = bfloat16_t;
 #else
@@ -830,18 +839,17 @@ protected:
             //Timer tmc(true, "convert KV matrix into bf16");
             kvStride = kvCols * 2;
             AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
-                "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
+                    "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
 #pragma omp parallel for collapse(3)
             for (uint64_t b = 0; b < batchSize; ++b)
                 for (uint64_t seq = 0; seq < srcLen; ++seq)
                     for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
                         const ImT *srcPtr = key.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
-                        AttnT *dstPtr
-                                = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
+                        AttnT *dstPtr = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
                         if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
-                                bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                            bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                         } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
-                                bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                            bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
                         } else {
                             printf("Not supported Type in Flash Attention yet\n");
                             exit(-1);
@@ -857,8 +865,8 @@ protected:
         }
 
         // [batch, src, head, headsize]
-        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads, respKVHeads,
-                headSize, result.Data(), qkvCols, kvStride, result.Stride());
+        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
+                respKVHeads, headSize, result.Data(), qkvCols, kvStride, result.Stride());
 
         // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
         // When M dimension is split, also multiple tasks per copy, so do copy seperately
@@ -885,8 +893,8 @@ protected:
     // scaled dot-product attention: bmm1 + softmax + bmm2
     template <typename AttnT>
     void scaledDpAttention(const ImT *query, const AttnT *key, const AttnT *value, const float *attnMask, float scale,
-            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output,
-            int qStride, int kvStride, int stride) {
+            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output, int qStride,
+            int kvStride, int stride) {
         // output = trans(softmax(query * trans(key)) * value)
         int nth = omp_get_max_threads();
         // closest value of power of 2
