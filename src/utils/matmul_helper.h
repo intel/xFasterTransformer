@@ -55,10 +55,10 @@ public:
             stream = new dnnl::stream(*engine);
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             gpu_queue = new sycl::queue(devices[engine->get_count(kind) + idx]);
-            packedI = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
-            packedA = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
-            packedC = sycl::malloc_device<float16_t>(18 * 32000, *gpu_queue);
-            HostBuf = sycl::malloc_host<float16_t>(18 * 32000, *gpu_queue);
+            packedI = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
+            packedA = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
+            packedC = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
+            HostBuf = sycl::malloc_host<float16_t>(2050 * 32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
