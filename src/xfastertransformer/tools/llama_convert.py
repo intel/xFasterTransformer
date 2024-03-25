@@ -210,3 +210,246 @@ class LlamaConvert(BaseModelConvert):
                 pool.starmap_async(self.split_and_convert_process, starmap_args)
         pool.close()
         pool.join()
+
+class LlamaGPTQConvert(BaseModelConvert):
+    """
+    Convert auto-gptq generated 4 bits or 8 bits Llama model.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def split_and_convert_process(self, i, output_dir, factor, key, val, num_attention_heads, num_key_value_heads):
+        def save_val(val, key, tp_num=None):
+            if key.startswith("model."):
+                path = os.path.join(output_dir, key)
+            else:
+                path = os.path.join(output_dir, "model." + key)
+
+            if tp_num is not None:
+                path += "." + str(tp_num)
+            path += ".bin"
+
+            val.tofile(path)
+
+        if (
+            "input_layernorm.weight" in key
+            or "input_layernorm.bias" in key
+            or "attention.dense.bias" in key
+            or "post_attention_layernorm.weight" in key
+            or "post_attention_layernorm.bias" in key
+            or "mlp.dense_4h_to_h.bias" in key
+            or "final_layernorm.weight" in key
+            or "final_layernorm.bias" in key
+        ):
+            # shared weights, only need to convert the weights of rank 0
+            if i == 0:
+                save_val(val, key)
+
+        elif "mlp.gate_proj" in key or "mlp.up_proj" in key or "mlp.down_proj" in key:
+            split_vals = np.split(val, factor, axis=0)
+            for j in range(factor):
+                save_val(split_vals[j], key, i * factor + j)
+
+        elif "attention.query_key_value" in key:
+            qkvcols = val.shape[-1]
+            head_size = int(qkvcols / (int(num_attention_heads) + int(num_key_value_heads) * 2))
+            qcol = int(num_attention_heads) * head_size
+            kcol = int(num_key_value_heads) * head_size
+            vcol = int(num_key_value_heads) * head_size
+            qkv = np.split(val, [qcol, (qcol + kcol)], axis=-1)
+            q = qkv[0]
+            k = qkv[1]
+            v = qkv[2]
+            q_split_vals = np.split(q, factor, axis=-1)
+            k_split_vals = np.split(k, factor, axis=-1)
+            v_split_vals = np.split(v, factor, axis=-1)
+            for j in range(factor):
+                val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
+                save_val(val, key, i * factor + j)
+
+        elif "attention.dense" in key:
+            split_vals = np.split(val, factor, axis=0)
+            for j in range(factor):
+                save_val(split_vals[j], key, i * factor + j)
+
+        else:
+            print("[ERROR] cannot find key '{}'".format(key))
+
+    def split_and_convert(self, input_dir, output_dir, dtype, processes):
+        # create directory if not exist
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # load the model
+        from auto_gptq import AutoGPTQForCausalLM
+        model = AutoGPTQForCausalLM.from_quantized(
+            input_dir,
+            inject_fused_attention=True,
+            low_cpu_mem_usage=True,
+            device_map="auto",
+        )
+
+        hf_config = vars(model.config)
+        quantize_config = vars(model.quantize_config)
+
+        # save parameters to config file
+        config = configparser.ConfigParser()
+        config["llama"] = {}
+        has_post_decoder_layernorm = True
+        try:
+            config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
+            num_key_value_heads = config["llama"]["kv_head_num"] = str(
+                hf_config.get("num_key_value_heads", num_attention_heads)
+            )
+
+            hidden_size = hf_config["hidden_size"]
+            config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
+            config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
+            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
+            config["llama"]["layernorm_type"] = "pre_layernorm"
+            config["llama"]["activation_type"] = "silu"
+            config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
+            config["llama"]["start_id"] = str(hf_config["bos_token_id"])
+            config["llama"]["end_id"] = str(hf_config["eos_token_id"])
+            config["llama"]["weight_data_type"] = dtype
+
+            config["llama"]["quant_decoder_weights"] = str(True)
+            self.wbits = quantize_config["bits"]
+            assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"
+            config["llama"]["quant_wbits"] = str(self.wbits)
+            assert quantize_config["group_size"] == -1, "Only column wise quantization is supported."
+            config["llama"]["quant_groupsize"] = str(quantize_config["group_size"])
+            #config["llama"]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
+
+            with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
+                config.write(configfile)
+        except Exception as e:
+            print("Fail to save the config in config.ini.", str(e))
+
+        hf_model_name_pattern = [
+            "input_layernorm.weight",
+            "self_attn.qkv_proj.qweight",
+            "self_attn.qkv_proj.qzeros",
+            "self_attn.qkv_proj.scales",
+            "self_attn.o_proj.qweight",
+            "self_attn.o_proj.qzeros",
+            "self_attn.o_proj.scales",
+            "post_attention_layernorm.weight",
+            "mlp.gate_proj.qweight",
+            "mlp.gate_proj.qzeros",
+            "mlp.gate_proj.scales",
+            "mlp.up_proj.qweight",
+            "mlp.up_proj.qzeros",
+            "mlp.up_proj.scales",
+            "mlp.down_proj.qweight",
+            "mlp.down_proj.qzeros",
+            "mlp.down_proj.scales",
+        ]
+
+        ft_model_name_pattern = [
+            "input_layernorm.weight",
+            "attention.query_key_value.qweight",
+            "attention.query_key_value.zeros",
+            "attention.query_key_value.scales",
+            "attention.dense.qweight",
+            "attention.dense.zeros",
+            "attention.dense.scales",
+            "post_attention_layernorm.weight",
+            "mlp.gate_proj.qweight",
+            "mlp.gate_proj.zeros",
+            "mlp.gate_proj.scales",
+            "mlp.up_proj.qweight",
+            "mlp.up_proj.zeros",
+            "mlp.up_proj.scales",
+            "mlp.down_proj.qweight",
+            "mlp.down_proj.zeros",
+            "mlp.down_proj.scales",
+        ]
+
+        state_dict = model.state_dict()
+        model_named_parameters = dict()
+        for name, param in state_dict.items():
+            if name.startswith("model."):
+                name = name[6:]
+            wf = torch.tensor(list(range(0, 32, self.wbits)), dtype=torch.int32).unsqueeze(0)
+
+            print(name)
+
+            if "embed" in name:
+                model_named_parameters[name] = param
+            elif "lm_head" in name:
+                model_named_parameters[name] = param
+            elif "scales" in name:
+                model_named_parameters[name] = param.float()
+            elif "qzeros" in name:
+                qzeros = param
+                qzeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.wbits),
+                        wf.unsqueeze(0)).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qzeros = qzeros + 1
+                qzeros = torch.bitwise_and(qzeros, (2 ** self.wbits) - 1)
+                if self.wbits == 8:
+                    qzeros = qzeros - 2 ** (self.wbits - 1) # uint to int
+                qzeros = torch.flatten(qzeros).float()
+                scales = state_dict["model." + name.replace("qzeros", "scales")].float()
+                zeros = - scales * qzeros
+                model_named_parameters[name] = zeros
+            elif "qweight" in name:
+                # qweight is not transposed
+                qweight = param
+                qweight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // self.wbits, -1),
+                        wf.unsqueeze(-1)).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qweight = torch.bitwise_and(qweight, (2 ** self.wbits) - 1)
+                qweight = qweight.reshape(-1, qweight.shape[2])
+                if self.wbits == 8:
+                    qweight = qweight - 128 # uint8 to int8
+                else:
+                    # pack 2 uint4 to 1 int8
+                    qweight = qweight.view(torch.int16)
+                    qweight = qweight.bitwise_or(qweight.bitwise_right_shift(4))
+                    qweight = torch.bitwise_and(qweight, 255)
+                model_named_parameters[name] = qweight.to(torch.int8)
+            else:
+                model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
+
+        pool = multiprocessing.Pool(processes)
+        for name, param in model_named_parameters.items():
+            if name == "model.embed_tokens.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(os.path.join(output_dir, "model.wte.bin"))
+            elif name == "model.norm.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(
+                    os.path.join(output_dir, "model.final_layernorm.weight.bin")
+                )
+            elif name == "lm_head.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(
+                    os.path.join(output_dir, "model.lm_head.weight.bin")
+                )
+            else:
+                starmap_args = []
+                dtype = self.dtype
+                if "qweight" in name:
+                    dtype = np.int8
+                if "qzero" in name or "scales" in name:
+                    dtype = np.float32
+                for i in range(len(hf_model_name_pattern)):
+                    if hf_model_name_pattern[i] in name:
+                        factor = 1
+                        new_name = name.replace(hf_model_name_pattern[i], ft_model_name_pattern[i])
+                        starmap_args.append(
+                            (
+                                0,
+                                output_dir,
+                                factor,
+                                new_name,
+                                param.detach().cpu().numpy().astype(dtype),
+                                num_attention_heads,
+                                num_key_value_heads,
+                            )
+                        )
+                pool.starmap_async(self.split_and_convert_process, starmap_args)
+        pool.close()
+        pool.join()
