@@ -148,6 +148,8 @@ class QwenConvert(BaseModelConvert):
             config["qwen"]["end_id"] = str(gen_config.eos_token_id)
             config["qwen"]["pad_id"] = str(gen_config.pad_token_id)
             config["qwen"]["weight_data_type"] = dtype
+            config["qwen"]["use_logn_attn"] = str(hf_config["use_logn_attn"])
+            config["qwen"]["use_dynamic_ntk"] = str(hf_config["use_dynamic_ntk"])
             with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
