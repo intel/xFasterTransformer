@@ -40,7 +40,7 @@ public:
 
     LlamaMLP(DecoderContext *ctx) {}
 
-    // OriWeiT: float or int8_t
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
             const float * /*unused*/, const OriWeiT *upW, const float *upS, const float *upZ, const float * /*unused*/,

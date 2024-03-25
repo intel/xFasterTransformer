@@ -223,6 +223,22 @@ public:
             }
         }
 
+        // UINT4 -> UINT4
+        else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, uint4x2_t>) {
+            int size = trans ? rowSize : colSize;
+            int offset = trans ? rowOffset : colOffset;
+            scaleWeight.Resize(size);
+            zeroWeight.Resize(size);
+            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride() / 2;
+                const OriWeiT *src = weight + (rowOffset + i) * cols / 2 + colOffset / 2;
+                memcpy(dst, src, colSize * sizeof(WeiT) / 2);
+            }
+        }
+
         else {
             printf("%s:%d: Do not support this kind of weights datatype convertion.\n", __FILE__, __LINE__);
             exit(-1);
