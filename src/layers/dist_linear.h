@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include "allocator.h"
 #include "float16.h"
 #include "matmul_helper.h"
 #include "timeline.h"
@@ -69,7 +70,7 @@ public:
 
         // Copy Bias
         if (b) {
-            bias = (float *)aligned_alloc(64, N * sizeof(float));
+            bias = (float *)xft::alloc(N * sizeof(float));
             memcpy(bias, b + splitOffset, N * sizeof(float));
         }
     }

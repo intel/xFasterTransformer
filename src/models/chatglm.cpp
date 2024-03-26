@@ -16,6 +16,7 @@
 #include <limits>
 
 #include "INIReader.h"
+#include "allocator.h"
 #include "chatglm.h"
 
 template <typename WeiT>
@@ -145,7 +146,7 @@ int *ChatGLM<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int step
         if (posBufSize < sizeNeeded) {
             if (positionIds) { free(positionIds); }
             posBufSize = sizeNeeded + 8; // whatever, a little bigger
-            positionIds = (int *)aligned_alloc(64, posBufSize * sizeof(int));
+            positionIds = (int *)xft::alloc(posBufSize * sizeof(int));
         }
 
         // position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)

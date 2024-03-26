@@ -14,6 +14,7 @@
 // ============================================================================
 #include "alibi_embedding.h"
 #include <cmath>
+#include "allocator.h"
 #include "compile_util.h"
 
 AlibiEmbedding::AlibiEmbedding(const int headNum, const int seqLen) {
@@ -38,7 +39,7 @@ void AlibiEmbedding::alibiGetBias(const int headIdx, const int seqLen, float *bi
 }
 
 void AlibiEmbedding::alibiGetRelativePos(const int seqLen) {
-    posMatrix = (int *)aligned_alloc(64, seqLen * seqLen * sizeof(int));
+    posMatrix = (int *)xft::alloc(seqLen * seqLen * sizeof(int));
     for (int i = 0; i < seqLen; i++) {
         for (int j = 0; j < seqLen; j++) {
             posMatrix[i * seqLen + j] = j - i;
@@ -47,7 +48,7 @@ void AlibiEmbedding::alibiGetRelativePos(const int seqLen) {
 }
 
 void AlibiEmbedding::alibiGetSlope(const int headNum) {
-    slopeM = (float *)aligned_alloc(64, headNum * sizeof(float));
+    slopeM = (float *)xft::alloc(headNum * sizeof(float));
     float x = std::pow(2, 8);
     x = std::pow(x, 1.0 / headNum);
     for (int i = 0; i < headNum; i++) {

@@ -14,6 +14,7 @@
 // ============================================================================
 #include "rotary_embedding.h"
 
+#include "allocator.h"
 #include "compile_util.h"
 
 static int inv_freq_size = -1;
@@ -41,8 +42,8 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position
 };
 
 void LlamaRotaryEmbedding::llamaCalEmb(const float *inv_freq, const int max_position_embeddings) {
-    emb_cos = (float *)aligned_alloc(64, max_position_embeddings * inv_freq_size * sizeof(float));
-    emb_sin = (float *)aligned_alloc(64, max_position_embeddings * inv_freq_size * sizeof(float));
+    emb_cos = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
+    emb_sin = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
 
 #pragma omp parallel for
     for (size_t i = 0; i < max_position_embeddings; i++) {

@@ -14,6 +14,7 @@
 // ============================================================================
 #include "rotary_embedding_qwen.h"
 
+#include "allocator.h"
 #include "compile_util.h"
 
 // unordered_map<base, tuple<emb_cos, emb_sin>>
@@ -103,8 +104,8 @@ float QwenRotaryEmbedding::getNewBaseValue(const int true_seq_len, const int max
 
 void QwenRotaryEmbedding::QwenCalEmb(
         float *inv_freq, float base, std::unordered_map<float, std::tuple<float *, float *>> &embCosSin) {
-    float *emb_cos = (float *)aligned_alloc(64, this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
-    float *emb_sin = (float *)aligned_alloc(64, this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
+    float *emb_cos = (float *)xft::alloc(this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
+    float *emb_sin = (float *)xft::alloc(this->max_seq_len_cached * (this->inv_freq_size * 2) * sizeof(float));
 
     embCosSin[base] = std::make_tuple(emb_cos, emb_sin);
 

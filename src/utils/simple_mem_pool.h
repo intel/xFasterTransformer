@@ -20,6 +20,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "allocator.h"
+
 class SimpleMemPool {
 private:
     std::unordered_map<std::string, std::pair<void *, size_t>> memoryMap;
@@ -53,7 +55,7 @@ public:
         }
 
         // Allocate new aligned buffer
-        void *buffer = aligned_alloc(alignment, size);
+        void *buffer = xft::alloc(size, alignment);
         if (buffer == nullptr) {
             // Allocation failed
             std::cerr << "Memory allocation failed for buffer: " << name << std::endl;
