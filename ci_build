@@ -38,6 +38,10 @@ ut() {
     Info "Running UT function with arguments: $@"
     for file in ./*; do
         if [ -x "$file" ]; then
+            if [[ "$file" != *_test ]]; then
+                Warning "$file is not ending with '_test', skip current loop."
+                continue
+            fi
             Info "Running UT: $file"
             ./$file
             if [ $? -ne 0 ]; then
@@ -110,4 +114,3 @@ if [ "$#" -ge 1 ]; then
 else
     Info "Usage: ci_build function_name [function_arguments...]"
 fi
-
