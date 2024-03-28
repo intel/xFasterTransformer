@@ -211,10 +211,14 @@ class LlamaConvert(BaseModelConvert):
         pool.close()
         pool.join()
 
-    def split_and_convert_gptq(self, input_dir, output_dir, dtype, processes):
+    def split_and_convert_quantized_model(self, input_dir, output_dir, dtype, processes, quantization):
         """
-        Convert auto-gptq generated 4 bits or 8 bits Llama model.
+        Convert auto-gptq quantized 4 bits or 8 bits Llama model.
         """
+
+        if quantization != "gptq":
+            print(f"[ERROR] Quantization method {quantization} is not supported.")
+            return
 
         # create directory if not exist
         if not os.path.exists(output_dir):

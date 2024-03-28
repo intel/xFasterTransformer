@@ -42,7 +42,7 @@ class BaseModelConvert:
     def __init__(self):
         self.dtype = np.float32
 
-    def __call__(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, use_gptq=False):
+    def __call__(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, quantization=None):
         self.convert(input_dir, output_dir, dtype, processes)
 
     def get_weight_data_type(self, dtype: str):
@@ -53,16 +53,16 @@ class BaseModelConvert:
         else:
             raise Exception(f"{self.__class__.__name__} don't support convert weight to {dtype}.")
 
-    def convert(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, use_gptq=False):
+    def convert(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, quantization=None):
         self.dtype = self.get_weight_data_type(dtype)
         if output_dir is None:
             input_dir = input_dir.rstrip(os.path.sep)
             output_dir = os.path.join(os.path.dirname(input_dir), os.path.basename(input_dir) + "-xft")
         try:
-            if use_gptq:
-                self.split_and_convert_gptq(input_dir, output_dir, dtype, processes)
-            else:
+            if quantization is None:
                 self.split_and_convert(input_dir, output_dir, dtype, processes)
+            else:
+                self.split_and_convert_quantized_model(input_dir, output_dir, dtype, processes, quantization)
         except Exception as e:
             traceback.print_exc()
             check_transformers_version_compatibility(input_dir)
@@ -70,5 +70,5 @@ class BaseModelConvert:
     def split_and_convert(self, input_dir, output_dir, dtype, processes):
         pass
 
-    def split_and_convert_gptq(self, input_dir, output_dir, dtype, processes):
-        print(f"[ERROR] {self.__class__.__name__} does not support use_gptq=True.")
+    def split_and_convert_quantized_model(self, input_dir, output_dir, dtype, processes, quantization):
+        print(f"[ERROR] {self.__class__.__name__} does not support converting quantized model.")
