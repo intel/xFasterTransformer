@@ -100,6 +100,7 @@ public:
     // From some example code of oneCCL, inplace reducing is supported
     // Only float is used now
     void reduceAdd(float *sendBuf, float *recvBuf, size_t count) {
+        if (!check()) return;
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM

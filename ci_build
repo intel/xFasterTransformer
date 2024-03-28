@@ -33,18 +33,32 @@ build() {
 }
 
 ut() {
+    fail_targets=()
     pushd $workspace_dir/build/ut/
     Info "Running UT function with arguments: $@"
     for file in ./*; do
         if [ -x "$file" ]; then
+            if [[ "$file" != *_test ]]; then
+                Warning "$file is not ending with '_test', skip current loop."
+                continue
+            fi
             Info "Running UT: $file"
             ./$file
             if [ $? -ne 0 ]; then
-                Warning "Error: $file execution failed"
+                fail_targets+=("$file")
             fi
+            echo
         fi
     done
     popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+=" $element"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
 }
 
 model() {
