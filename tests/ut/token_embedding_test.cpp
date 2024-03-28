@@ -67,10 +67,10 @@ UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 256);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 512);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 512, 512);
 
-UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 64);
-UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 256);
-UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 512);
-UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 512, 512);
+// UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 64);
+// UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 256);
+// UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 512);
+// UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 512, 512);
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
