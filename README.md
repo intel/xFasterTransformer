@@ -142,13 +142,13 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     
     Supported model convert list:
     - LlamaConvert
-    - DeepseekConvert
     - ChatGLMConvert
     - ChatGLM2Convert
     - ChatGLM3Convert
     - OPTConvert
     - BaichuanConvert
     - QwenConvert
+    - DeepseekConvert
 
 ## API usage
 For more details, please see API document and [examples](examples/README.md).

@@ -34,7 +34,6 @@ _import_structure = {
     "automodel": ["AutoModel"],
     "tools": [
         "LlamaConvert",
-        "DeepseekConvert",
         "ChatGLMConvert",
         "ChatGLM2Convert",
         "ChatGLM3Convert",
@@ -42,6 +41,7 @@ _import_structure = {
         "BaichuanConvert",
         "QwenConvert",
         "YaRNLlamaConvert",
+        "DeepseekConvert",
     ],
 }
 
