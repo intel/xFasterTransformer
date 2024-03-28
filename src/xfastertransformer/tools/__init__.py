@@ -14,7 +14,6 @@
 # ============================================================================
 
 from .llama_convert import LlamaConvert
-from .llama_convert import LlamaGPTQConvert
 from .chatglm_convert import ChatGLMConvert
 from .chatglm2_convert import ChatGLM2Convert
 from .chatglm3_convert import ChatGLM3Convert

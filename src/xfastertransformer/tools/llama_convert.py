@@ -59,12 +59,12 @@ class LlamaConvert(BaseModelConvert):
             if i == 0:
                 save_val(val, key)
 
-        elif "mlp.gate_proj.weight" in key or "mlp.up_proj.weight" in key or "mlp.down_proj.weight" in key:
+        elif "mlp.gate_proj" in key or "mlp.up_proj" in key or "mlp.down_proj" in key:
             split_vals = np.split(val, factor, axis=0)
             for j in range(factor):
                 save_val(split_vals[j], key, i * factor + j)
 
-        elif "attention.query_key_value.weight" in key:
+        elif "attention.query_key_value" in key:
             qkvcols = val.shape[-1]
             head_size = int(qkvcols / (int(num_attention_heads) + int(num_key_value_heads) * 2))
             qcol = int(num_attention_heads) * head_size
@@ -81,7 +81,7 @@ class LlamaConvert(BaseModelConvert):
                 val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
                 save_val(val, key, i * factor + j)
 
-        elif "attention.dense.weight" in key:
+        elif "attention.dense" in key:
             split_vals = np.split(val, factor, axis=0)
             for j in range(factor):
                 save_val(split_vals[j], key, i * factor + j)
@@ -211,72 +211,11 @@ class LlamaConvert(BaseModelConvert):
         pool.close()
         pool.join()
 
-class LlamaGPTQConvert(BaseModelConvert):
-    """
-    Convert auto-gptq generated 4 bits or 8 bits Llama model.
-    """
+    def split_and_convert_gptq(self, input_dir, output_dir, dtype, processes):
+        """
+        Convert auto-gptq generated 4 bits or 8 bits Llama model.
+        """
 
-    def __init__(self):
-        super().__init__()
-
-    def split_and_convert_process(self, i, output_dir, factor, key, val, num_attention_heads, num_key_value_heads):
-        def save_val(val, key, tp_num=None):
-            if key.startswith("model."):
-                path = os.path.join(output_dir, key)
-            else:
-                path = os.path.join(output_dir, "model." + key)
-
-            if tp_num is not None:
-                path += "." + str(tp_num)
-            path += ".bin"
-
-            val.tofile(path)
-
-        if (
-            "input_layernorm.weight" in key
-            or "input_layernorm.bias" in key
-            or "attention.dense.bias" in key
-            or "post_attention_layernorm.weight" in key
-            or "post_attention_layernorm.bias" in key
-            or "mlp.dense_4h_to_h.bias" in key
-            or "final_layernorm.weight" in key
-            or "final_layernorm.bias" in key
-        ):
-            # shared weights, only need to convert the weights of rank 0
-            if i == 0:
-                save_val(val, key)
-
-        elif "mlp.gate_proj" in key or "mlp.up_proj" in key or "mlp.down_proj" in key:
-            split_vals = np.split(val, factor, axis=0)
-            for j in range(factor):
-                save_val(split_vals[j], key, i * factor + j)
-
-        elif "attention.query_key_value" in key:
-            qkvcols = val.shape[-1]
-            head_size = int(qkvcols / (int(num_attention_heads) + int(num_key_value_heads) * 2))
-            qcol = int(num_attention_heads) * head_size
-            kcol = int(num_key_value_heads) * head_size
-            vcol = int(num_key_value_heads) * head_size
-            qkv = np.split(val, [qcol, (qcol + kcol)], axis=-1)
-            q = qkv[0]
-            k = qkv[1]
-            v = qkv[2]
-            q_split_vals = np.split(q, factor, axis=-1)
-            k_split_vals = np.split(k, factor, axis=-1)
-            v_split_vals = np.split(v, factor, axis=-1)
-            for j in range(factor):
-                val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
-                save_val(val, key, i * factor + j)
-
-        elif "attention.dense" in key:
-            split_vals = np.split(val, factor, axis=0)
-            for j in range(factor):
-                save_val(split_vals[j], key, i * factor + j)
-
-        else:
-            print("[ERROR] cannot find key '{}'".format(key))
-
-    def split_and_convert(self, input_dir, output_dir, dtype, processes):
         # create directory if not exist
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
