@@ -119,6 +119,8 @@ if __name__ == "__main__":
         model_prompt = prompt_pool["chatglm3"]
     if "llama" in args.model_name.lower():
         model_prompt = prompt_pool["llama"]
+    if "deepseek" in args.model_name.lower():
+        model_prompt = prompt_pool["llama"]
     if "baichuan" in args.model_name.lower():
         model_prompt = prompt_pool["baichuan"]
     if "baichuan2" in args.model_name.lower():
@@ -208,7 +210,9 @@ if __name__ == "__main__":
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
         print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
-        print(f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s")
+        print(
+            f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s"
+        )
         print("=" * 120, "\n" * 3)
     else:
         for i in range(args.warmup + args.iteration):

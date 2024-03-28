@@ -223,6 +223,8 @@ public:
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK, ropeParamsPtr);
 
+        ctx->ResetConfigReader(configPath);
+
         // Decoder
         if (layers % ctx->ppSize != 0) {
             std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)."

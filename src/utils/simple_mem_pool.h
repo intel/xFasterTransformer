@@ -39,6 +39,12 @@ public:
         return memManager;
     }
 
+    bool cached(const std::string &name) {
+        auto it = memoryMap.find(name);
+        if (it != memoryMap.end()) return true;
+        return false;
+    }
+
     // Allocate or reallocate memory buffer based on name and size
     void *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
         auto it = memoryMap.find(name);
@@ -58,7 +64,7 @@ public:
         void *buffer = xft::alloc(size, alignment);
         if (buffer == nullptr) {
             // Allocation failed
-            std::cerr << "Memory allocation failed for buffer: " << name << std::endl;
+            std::cerr << "Memory allocation failed for buffer:" << name << " size:" << size << std::endl;
             exit(-1);
         }
 

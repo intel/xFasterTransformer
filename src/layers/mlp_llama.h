@@ -151,13 +151,13 @@ public:
             downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
 
         } else {
-            int M = normBuffer.Rows();
-            int N = catWeights.Cols();
+            auto M = normBuffer.Rows();
+            auto N = catWeights.Cols();
             hpj::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
 
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
             const int cols = N / 2;
-            auto bufSize = M * cols * sizeof(ImT);
+            auto bufSize = sizeof(ImT) * M * cols;
             ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
             hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
 

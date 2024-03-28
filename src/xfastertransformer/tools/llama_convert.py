@@ -123,7 +123,17 @@ class LlamaConvert(BaseModelConvert):
             config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
             config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
             config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = "silu"
+            config["llama"]["activation_type"] = str(hf_config["hidden_act"])
+            config["llama"]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
+
+            rope_scaling = hf_config.get("rope_scaling", None)
+            if rope_scaling:
+                config["llama"]["scaling_factor"] = str(rope_scaling.get("factor", 1.0))
+                config["llama"]["rope_type"] = str(rope_scaling.get("type", "null"))
+            else:
+                config["llama"]["scaling_factor"] = str(1.0)
+                config["llama"]["rope_type"] = str("null")
+
             config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
             config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
             config["llama"]["start_id"] = str(hf_config["bos_token_id"])
@@ -133,7 +143,6 @@ class LlamaConvert(BaseModelConvert):
                 config.write(configfile)
         except Exception as e:
             print("Fail to save the config in config.ini.", str(e))
-
         hf_model_name_pattern = [
             "input_layernorm.weight",
             "attention.query_key_value.weight",
