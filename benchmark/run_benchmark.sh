@@ -145,6 +145,18 @@ if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"
 fi
 
+if [[ ${model_name} == *"baichuan"* ]]; then
+    export FLASH_ATTN_THRESHOLD=1000
+fi
+
+if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
+    export ENABLE_KV_TRANS=1
+fi
+
+if [[ ${input_tokens} -ge 2048 ]]; then
+    export ENABLE_SKIP_MASK=1
+fi
+
 sockets_num=$(lscpu | grep "Socket(s)" | awk -F ':' '{print $2}')
 cores_per_socket=$(lscpu | grep "Core(s) per socket" | awk -F ':' '{print $2}')
 numa_nodes=$(lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}')
