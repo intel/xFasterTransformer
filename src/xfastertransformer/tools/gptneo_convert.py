@@ -117,11 +117,11 @@ class GPTNeoConvert(BaseModelConvert):
             )
 
             hidden_size = hf_config["hidden_size"]
-            inter_size = hf_config.get("intermediate_size", "null2")
-            print("inter size:" inter_size)
+            inter_size = hf_config.get("intermediate_size", None) 
+            inter_size = hidden_size*4 if inter_size == None else inter_size
 
             config["gpt"]["size_per_head"] = str(hidden_size // hf_config["num_heads"])
-            config["gpt"]["inter_size"] = str(hf_config.get("intermediate_size", 4*hidden_size))
+            config["gpt"]["inter_size"] = str(inter_size)
             config["gpt"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
             config["gpt"]["num_layer"] = str(hf_config["num_layers"])
             config["gpt"]["layernorm_eps"] = str(hf_config.get("layer_norm_epsilon", 1e-5))
@@ -192,9 +192,9 @@ class GPTNeoConvert(BaseModelConvert):
         pool = multiprocessing.Pool(processes)
         for name, param in model_named_parameters.items():
             if name == "transformer.wte.weight":
-                param.detach().cpu().numpy().astype(self.dtype).tofile(os.path.join(output_dir, "model.wte.bin"))
+                param.detach().cpu().numpy().astype(self.dtype).transpose().tofile(os.path.join(output_dir, "model.wte.bin"))
             elif name == "transformer.wpe.weight":
-                param.detach().cpu().numpy().astype(self.dtype).tofile(os.path.join(output_dir, "model.wpe.bin"))
+                param.detach().cpu().numpy().astype(self.dtype).transpose().tofile(os.path.join(output_dir, "model.wpe.bin"))
             elif name == "transformer.ln_f.weight":
                 param.detach().cpu().numpy().astype(self.dtype).tofile(
                     os.path.join(output_dir, "model.final_layernorm.weight.bin")
