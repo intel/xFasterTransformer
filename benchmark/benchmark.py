@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,20 @@ import numpy as np
 import argparse
 import configparser
 
+import csv
+
+
+def check_and_update_csv(file_path: str, data: dict):
+    file_exists = os.path.exists(file_path)
+
+    with open(file_path, mode="a" if file_exists else "w", newline="") as csvfile:
+        fieldnames = data.keys()
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(data)
+
 
 def boolean_string(string):
     low_string = string.lower()
@@ -53,10 +67,7 @@ DTYPE_LIST = [
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm-6b/cpu", help="Path to model file")
 parser.add_argument("--model_name", type=str, default=None, help="Model name")
-parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
 parser.add_argument("--token_in", type=str, default="32", help="Input Token Len")
 parser.add_argument("--token_out", type=int, default=32, help="Output Token Len, MaxLen=IN+OUT")
 parser.add_argument("--beam_width", type=int, default=1, help="Beam Search Width")
@@ -65,8 +76,12 @@ parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
 parser.add_argument("--iteration", type=int, default=3, help=" Benchmakr Iterations")
 parser.add_argument("--warmup", type=int, default=1, help="Warm up Iterations")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
+parser.add_argument("--model_path", type=str, default="/data/chatglm-6b/cpu", help="Path to model file")
+parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+parser.add_argument("--csv", type=str, default="", help="Path to csv file")
 
 
 def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tuple[str, str]] = []):
@@ -105,11 +120,16 @@ if __name__ == "__main__":
     if not args.model_name:
         args.model_name = os.path.basename(os.path.dirname(args.model_path))
 
-    # todo(marvin): How to better specify the path?
-    if os.environ.get("XFT_FAKE_MODEL", "0") == "0":
+    # if enabled the XFT_FAKE_MODEL = 1, will try to load real weight from config.ini:model_name
+    if os.environ.get("XFT_FAKE_MODEL", "1") == "1":
         _config = configparser.ConfigParser()
         _config.read(os.path.join(args.model_path, "config.ini"))
-        args.model_path = _config[_config.sections()[0]]["model_name"].rstrip(os.path.sep) + model_path_suffix
+        _weight_path = _config[_config.sections()[0]]["model_name"].rstrip(os.path.sep) + model_path_suffix
+        if os.path.exists(_weight_path):
+            print(f"The folder '{_weight_path}' exists. Loading real weight!")
+            args.model_path = _weight_path
+        else:
+            print(f"The folder '{_weight_path}' does not exist. Using fake weight!")
 
     if "chatglm" in args.model_name.lower():
         model_prompt = prompt_pool["chatglm"]
@@ -214,6 +234,21 @@ if __name__ == "__main__":
             f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s"
         )
         print("=" * 120, "\n" * 3)
+
+        if args.csv != "":
+            rst = {
+                "infer_avg_latency (ms)": np.mean(total_times),
+                "1st_avg_latency (ms)": np.mean(first_token_times),
+                "2nd_max_latency (ms)": np.max(next_token_times),
+                "2nd_min_latency (ms)": np.min(next_token_times),
+                "2nd_P90_latency (ms)": np.percentile(next_token_times, 90),
+                "2nd_avg_latency (ms)": np.mean(next_token_times),
+                "throughput_wo_1st (tokens/s)": 1000 / np.percentile(next_token_times, 90) * args.batch_size,
+                **vars(args),
+            }
+            # print(rst)
+            check_and_update_csv(args.csv, rst)
+
     else:
         for i in range(args.warmup + args.iteration):
             model.generate()
