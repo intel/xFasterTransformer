@@ -129,7 +129,7 @@ public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
             int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
-            int numThreads = 0, bool _useLogN = true, bool _useNTK = true)
+            bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
