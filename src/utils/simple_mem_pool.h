@@ -20,6 +20,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "allocator.h"
+
 class SimpleMemPool {
 private:
     std::unordered_map<std::string, std::pair<void *, size_t>> memoryMap;
@@ -35,6 +37,12 @@ public:
     static SimpleMemPool &instance() {
         static SimpleMemPool memManager;
         return memManager;
+    }
+
+    bool cached(const std::string &name) {
+        auto it = memoryMap.find(name);
+        if (it != memoryMap.end()) return true;
+        return false;
     }
 
     // Allocate or reallocate memory buffer based on name and size
@@ -53,10 +61,10 @@ public:
         }
 
         // Allocate new aligned buffer
-        void *buffer = aligned_alloc(alignment, size);
+        void *buffer = xft::alloc(size, alignment);
         if (buffer == nullptr) {
             // Allocation failed
-            std::cerr << "Memory allocation failed for buffer: " << name << std::endl;
+            std::cerr << "Memory allocation failed for buffer:" << name << " size:" << size << std::endl;
             exit(-1);
         }
 

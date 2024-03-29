@@ -14,6 +14,7 @@
 // ============================================================================
 #include "rotary_embedding_chatglm2.h"
 
+#include "allocator.h"
 #include "compile_util.h"
 
 static int max_seq_len_cached = -1;
@@ -45,8 +46,8 @@ ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(const int dim, const int max_po
 };
 
 void ChatGLM2RotaryEmbedding::glm2CalEmb() {
-    emb_cos = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
-    emb_sin = (float *)aligned_alloc(64, max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
+    emb_cos = (float *)xft::alloc(max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
+    emb_sin = (float *)xft::alloc(max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
 
 #pragma omp parallel for
     for (size_t i = 0; i < max_seq_len_cached; i++) {

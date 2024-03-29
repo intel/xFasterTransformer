@@ -170,7 +170,7 @@ private:
     inline void startEvent(const std::string &name) {
         tagName = name;
         pid = getpid();
-        pid = pthread_self();
+        tid = pthread_self();
         traceEvent["ph"] = "X";
         traceEvent["cat"] = "cat";
         traceEvent["name"] = tagName.c_str();

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "allocator.h"
 #include "bfloat16.h"
 #include "float16.h"
 
@@ -169,7 +170,7 @@ void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, 
         KVCacheT *values = valueTensor.getData() + initSeqLen * batchSize * cols;
 
         // Temporary buffer used for reorder
-        KVCacheT *extraKeyBuf = (KVCacheT *)aligned_alloc(64, 2 * (batchSize - 1) * cols * sizeof(KVCacheT));
+        KVCacheT *extraKeyBuf = (KVCacheT *)xft::alloc(2 * (batchSize - 1) * cols * sizeof(KVCacheT));
         KVCacheT *extraValBuf = extraKeyBuf + (batchSize - 1) * cols;
 
         for (int seq = initSeqLen; seq < accSeqLen; ++seq) { // Reorder is not needed for the first few lines
