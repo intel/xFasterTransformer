@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ protected:
 
     static void TearDownTestCase() {}
 
-    Messenger &myMessenger = Messenger::getInstance();;
+    Messenger &myMessenger = Messenger::getInstance();
 };
 
 TEST_F(MyTestSuite, broadcast) {
@@ -46,7 +46,7 @@ TEST_F(MyTestSuite, allreduce_ccl) {
     int hiddenSize = 4096;
 
     int totalNums = batchSize * seqLen * hiddenSize + 1;
-    float* data = (float*) malloc(totalNums * sizeof(float));
+    float *data = (float *)malloc(totalNums * sizeof(float));
     for (int i = 0; i < totalNums; ++i) {
         data[i] = myMessenger.getRank() + 1;
     }
@@ -69,7 +69,7 @@ TEST_F(MyTestSuite, allreduce_shm) {
     int hiddenSize = 4096;
 
     int totalNums = batchSize * seqLen * hiddenSize;
-    float* data = (float*) malloc(totalNums * sizeof(float));
+    float *data = (float *)malloc(totalNums * sizeof(float));
     for (int i = 0; i < totalNums; ++i) {
         data[i] = myMessenger.getRank() + 1;
     }
