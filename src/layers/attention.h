@@ -48,9 +48,7 @@ public:
     Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
-        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {
-            qkpo = LlamaRotaryEmbedding(ctx);
-        }
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
@@ -571,7 +569,7 @@ protected:
         int scoreStride = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
         auto bufSizeRequired = ctx->numThreads * mBlockSize * scoreStride;
         if (bufSizeRequired > ctx->getScoreCapacity()) {
-            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", bufSizeRequired * sizeof(float));
+            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * bufSizeRequired);
         }
 
 #pragma omp parallel for collapse(3)
@@ -680,7 +678,7 @@ protected:
         }
 
         float *shardedOut = (float *)SimpleMemPool::instance().getBuffer(
-                "shardedOutput", totalTasks * ctx->attHeadSize * sizeof(float));
+                "shardedOutput", sizeof(float) * totalTasks * ctx->attHeadSize);
 
 #pragma omp parallel for collapse(3)
         for (int b = 0; b < batchSize; ++b) {
@@ -835,6 +833,7 @@ protected:
         // TODO: kv dtype conversion for prefixSharing
         AttnT *k, *v;
         int kvStride;
+        // convert to AttnT forcely for accelerating purpose
         if constexpr (!std::is_same_v<AttnT, ImT>) {
             //Timer tmc(true, "convert KV matrix into bf16");
             kvStride = kvCols * 2;
@@ -866,28 +865,10 @@ protected:
 
         // [batch, src, head, headsize]
         scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
-                respKVHeads, headSize, result.Data(), qkvCols, kvStride, result.Stride());
+                respKVHeads, headSize, result.Data(), query.Stride(), kvStride, result.Stride());
 
-        // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
-        // When M dimension is split, also multiple tasks per copy, so do copy seperately
-#pragma omp parallel for collapse(3)
-        for (uint64_t b = 0; b < batchSize; ++b) {
-            for (uint64_t i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
-                // Copy current key/value to cached keys/values
-                // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
-                // Be noted: for group attention, the key/value is less than query
-                for (uint64_t seq = 0; seq < tgtLen; ++seq) {
-                    auto srcK = key.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
-                    auto dstK = presentKey.getSequence(pastSeqLen + seq, b, i);
-
-                    auto srcV = value.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
-                    auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
-
-                    xft::copy(dstK, srcK, headSize);
-                    xft::copy(dstV, srcV, headSize);
-                }
-            }
-        }
+        // copy current key/values to cache
+        copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
     }
 
     // scaled dot-product attention: bmm1 + softmax + bmm2
@@ -908,9 +889,9 @@ protected:
 
         int numArr = 7;
         int arrStride = (4 + tgtBlk + 2 * headSize) * srcBlk;
-        float *thrBuf = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", nth * arrStride * sizeof(float));
+        float *thrBuf = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", sizeof(float) * nth * arrStride);
         float **thrPtrBuf
-                = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", nth * numArr * sizeof(float *));
+                = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", sizeof(float *) * nth * numArr);
 
         float **preSum = thrPtrBuf;
         float **sum = thrPtrBuf + nth;
@@ -930,7 +911,7 @@ protected:
             qArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk + headSize) + srcBlk * headSize * i;
         }
 
-#pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3) schedule(dynamic)
         for (uint64_t i = 0; i < batchSize; ++i) {
             for (int j = 0; j < numQHead; ++j) {
                 for (int m = 0; m < srcLen; m += srcBlk) {
@@ -968,6 +949,11 @@ protected:
                     for (int b = 0; b < tgtLen; b += tgtBlk) {
                         int kvRealBlk = std::min(tgtBlk, tgtLen - b);
                         // TODO: mask out
+                        if (enableSkipMsk() && DecoderUtil::skipMskAttn(attnMsk + b, qRealBlk, kvRealBlk, tgtLen)) {
+                            // printf("Skip bs %d head %d src %d tgt %d\n", i, j, m, b);
+                            break;
+                        }
+
                         const AttnT *kBlk = k + b * kvStride;
                         const AttnT *vBlk = v + b * kvStride;
 

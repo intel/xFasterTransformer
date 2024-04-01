@@ -35,7 +35,7 @@ namespace xft {
 #define SHM_NAME "xft_shm_buffer"
 #define MAX_SHM_SIZE (8 * 1024 * 5120 * 4)
 #define SHM_BLOCK_SIZE (16 * 5120)
-#define MAX_SHM_BLOCK_COUNT   2048
+#define MAX_SHM_BLOCK_COUNT 2048
 
 struct ShmContext {
     const char *name;
@@ -74,7 +74,7 @@ inline void connect_shm(ShmContext *ctx) {
         exit(-1);
     }
 
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
+    const size_t total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
 
     // Map the shared memory into the address space of the process
     void *shm_ptr = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fp, 0);
@@ -94,7 +94,7 @@ inline void create_shm(ShmContext *ctx) {
         perror("shm open failed.");
         exit(-1);
     }
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
+    const size_t total_size = ctx->nstates * sizeof(int) + ctx->nbytes + ctx->nblocks * ctx->nstates;
     // Truncate the shared memory to the desired size
     if (ftruncate(ctx->fp, total_size) == -1) {
         perror("shm ftruncate failed.");
@@ -115,7 +115,7 @@ inline void create_shm(ShmContext *ctx) {
 }
 
 inline void close_shm(ShmContext *ctx) {
-    const int total_size = ctx->nstates * sizeof(int) + ctx->nbytes;
+    const size_t total_size = ctx->nstates * sizeof(int) + ctx->nbytes;
     if (ctx->fp != -1) {
         munmap(ctx->address, total_size);
         shm_unlink(ctx->name);
@@ -126,11 +126,13 @@ inline void close_shm(ShmContext *ctx) {
 
 class ShmReduction {
 public:
-    ShmReduction(int rank, int size, std::function<void(int *, size_t)> callback);
+    ShmReduction(int rank, size_t size, std::function<void(int *, size_t)> callback);
 
     ~ShmReduction() { xft::close_shm(&shmCtx_); }
 
-    int getSHMSize();
+    size_t getSHMSize();
+
+    void ShmResize(int rank, size_t size);
 
     template <typename T>
     void reduceAdd(T *sendBuf, T *recvBuf, size_t count, int rank, int rankSize);
