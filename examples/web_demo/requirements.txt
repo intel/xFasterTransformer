@@ -6,3 +6,4 @@ transformers_stream_generator==0.0.4
 einops==0.7.0
 accelerate==0.26.1
 tiktoken==0.5.2
+protobuf
