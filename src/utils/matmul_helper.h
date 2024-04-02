@@ -1469,24 +1469,12 @@ private:
             int M, int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
         gpu_queue
                 ->submit([&](sycl::handler &h) {
-                    h.parallel_for(M, [=](auto i) {
-                        for (int j = 0; j < N; ++j) {
-                            dst[i * ldd + j] = (sycl::half)src0[i * lds0 + j]
-                                    / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i * lds0 + j]))
-                                    * src1[i * lds1 + j];
-                        }
-                    });
-                })
-                .wait();
-    }
-
-    inline void sycl_sigmoid_mul_M1(
-            int N, const float16_t *src0, int lds0, const float16_t *src1, int lds1, float16_t *dst, int ldd) {
-        gpu_queue
-                ->submit([&](sycl::handler &h) {
-                    h.parallel_for(N, [=](auto i) {
-                        dst[i] = (sycl::half)src0[i] / ((sycl::half)1.0 + (sycl::half)sycl::native::exp(-src0[i]))
-                                * src1[i];
+                    h.parallel_for(M * N, [=](auto i) {
+                        int32_t row = i / N;
+                        int32_t col = i % N;
+                        dst[row * ldd + col] = (sycl::half)src0[row * lds0 + col]
+                                / ((sycl::half)1.0f + (sycl::half)sycl::native::exp(-src0[row * lds0 + col]))
+                                * (sycl::half)src1[row * lds1 + col];
                     });
                 })
                 .wait();
@@ -1824,11 +1812,7 @@ private:
 
         if (postOp == true) {
             FunTimer t3;
-            if (M > 1)
-                sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
-            else if (M == 1)
-                sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
-
+            sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
             if (Env::getVerbose() >= 1) {
                 printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "sycl_sigmoid_mul", t3.elapsed());
             }
