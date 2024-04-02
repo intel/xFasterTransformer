@@ -114,8 +114,6 @@ warmup=${warmup:-2}
 
 Info "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
-# Example here is default using fake model, you can use real model as well
-export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-1}
 Warning "The mapping method for CPU IDs in the cloud server environment is different,
         for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
         to a single physical core. In this mapping relationship,
