@@ -93,8 +93,6 @@ public:
     int getHeadNum() const { return headNum; }
     int getHeadSize() const { return headSize; }
 
-    T *getData() { return data; }
-
     // Get a vector for a specified sequence
     T *getSequence(int seqIdx, int batchIdx, int headIdx) {
         if (kvTrans()) {
@@ -179,7 +177,7 @@ public:
         const int cols = this->getHeadNum() * this->getHeadSize();
         const int batchSize = this->getBatchSize();
 
-        T *data = this->getData() + initSeqLen * batchSize * cols;
+        T *pdata = this->data + initSeqLen * batchSize * cols;
 
         // Temporary buffer used for reorder
         T *extraKeyBuf = (T *)xft::alloc((batchSize - 1) * cols * sizeof(T));
@@ -194,7 +192,7 @@ public:
                 if (from < i) { // The source line already reordered
                     // Current line will be used in future, thus save to extra buffer
                     if (valueExist(remapped + i + 1, batchSize - i - 1, i)) {
-                        memcpy(extraKeyBuf + extraBufIdx * cols, data + i * cols, cols * sizeof(T));
+                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * cols, cols * sizeof(T));
 
                         // When need line i, should look into temporary buffer, (extraBufIdx - batchSize) < 0, always
                         std::replace(remapped + i + 1, remapped + batchSize, i, extraBufIdx - batchSize);
@@ -202,14 +200,14 @@ public:
                     }
 
                     if (from < 0) { // copy from extraBuf
-                        skippableCopy(data + i * cols, extraKeyBuf + (from + batchSize) * cols, cols);
+                        skippableCopy(pdata + i * cols, extraKeyBuf + (from + batchSize) * cols, cols);
                     } else {
-                        skippableCopy(data + i * cols, data + from * cols, cols);
+                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
                     }
                 } else if (from > i) {
                     // Just need to swap
                     if (remapped[from] == i) {
-                        swapValues(data + i * cols, data + from * cols, cols);
+                        swapValues(pdata + i * cols, pdata + from * cols, cols);
 
                         // Update the map information
                         std::transform(remapped + i + 1, remapped + batchSize, remapped + i + 1, [&](int num) {
@@ -223,20 +221,20 @@ public:
                     }
                     // Current line will be used in future, thus save to extra buffer
                     else if (valueExist(remapped + i + 1, batchSize - i - 1, i)) {
-                        memcpy(extraKeyBuf + extraBufIdx * cols, data + i * cols, cols * sizeof(T));
+                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * cols, cols * sizeof(T));
 
                         // When need line i, should look into temporary buffer, (extraBufIdx - batchSize) < 0, always
                         std::replace(remapped + i + 1, remapped + batchSize, i, extraBufIdx - batchSize);
                         extraBufIdx += 1;
 
-                        skippableCopy(data + i * cols, data + from * cols, cols);
+                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
 
                         // When need line 'from', should look into line i
                         std::replace(remapped + i + 1, remapped + batchSize, from, i);
                     }
                     // Current line will never be used in futre, just overwrite it
                     else {
-                        skippableCopy(data + i * cols, data + from * cols, cols);
+                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
 
                         // When need line 'from', should look into line i
                         std::replace(remapped + i + 1, remapped + batchSize, from, i);
@@ -244,7 +242,7 @@ public:
                 }
             }
 
-            data += batchSize * cols;
+            pdata += batchSize * cols;
         }
 
         free(extraKeyBuf);
