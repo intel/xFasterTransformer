@@ -211,20 +211,20 @@ class LlamaConvert(BaseModelConvert):
         pool.close()
         pool.join()
 
-    def split_and_convert_quantized_model(self, input_dir, output_dir, dtype, processes, quantization):
+    def split_and_convert_quantized_model(self, input_dir, output_dir, dtype, processes, from_quantized_model):
         """
-        Convert auto-gptq quantized 4 bits or 8 bits Llama model.
+        Convert from AutoGPTQ quantized int8/int4 model to xFT int8/int4 model.
         """
 
-        if quantization != "gptq":
-            print(f"[ERROR] Quantization method {quantization} is not supported.")
+        if from_quantized_model != "gptq":
+            print(f"[ERROR] Input model must be AutoGPTQ quantized model. from_quantized_model must be 'gptq'.")
             return
 
         # create directory if not exist
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # load the model
+        # load AutoGPTQ quantized model
         from auto_gptq import AutoGPTQForCausalLM
         model = AutoGPTQForCausalLM.from_quantized(
             input_dir,
@@ -261,10 +261,11 @@ class LlamaConvert(BaseModelConvert):
             config["llama"]["end_id"] = str(hf_config["eos_token_id"])
             config["llama"]["weight_data_type"] = dtype
 
-            config["llama"]["quant_decoder_weights"] = str(True)
             self.wbits = quantize_config["bits"]
             assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"
-            config["llama"]["quant_wbits"] = str(self.wbits)
+            config["llama"]["quant_qweight_data_type"] = 'int8' if self.wbits == 8 else 'uint4'
+            config["llama"]["quant_scales_data_type"] = 'fp32'
+            config["llama"]["quant_zeros_data_type"] = 'fp32'
             assert quantize_config["group_size"] == -1, "Only column wise quantization is supported."
             config["llama"]["quant_groupsize"] = str(quantize_config["group_size"])
             #config["llama"]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
@@ -328,30 +329,40 @@ class LlamaConvert(BaseModelConvert):
             elif "lm_head" in name:
                 model_named_parameters[name] = param
             elif "scales" in name:
+                # scales is fp16 in AutoQPTQ, convert to fp32 for xFT.
                 model_named_parameters[name] = param.float()
             elif "qzeros" in name:
+                # get qzeros
                 qzeros = param
                 qzeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.wbits),
                         wf.unsqueeze(0)).to(torch.int16 if self.wbits == 8 else torch.int8)
                 qzeros = qzeros + 1
                 qzeros = torch.bitwise_and(qzeros, (2 ** self.wbits) - 1)
+
+                # qzeoros is uint8/uint4 in AutoQPTQ, zeros is fp32 for xFT.
+                # for int8, zeros = - scales * (qzeros - 128)
+                # for uint4, zeros = - scales * qzeros
                 if self.wbits == 8:
-                    qzeros = qzeros - 2 ** (self.wbits - 1) # uint to int
+                    qzeros = qzeros - 128 # uint8 to int8
                 qzeros = torch.flatten(qzeros).float()
                 scales = state_dict["model." + name.replace("qzeros", "scales")].float()
                 zeros = - scales * qzeros
                 model_named_parameters[name] = zeros
             elif "qweight" in name:
-                # qweight is not transposed
+                # get qweight
                 qweight = param
                 qweight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // self.wbits, -1),
                         wf.unsqueeze(-1)).to(torch.int16 if self.wbits == 8 else torch.int8)
                 qweight = torch.bitwise_and(qweight, (2 ** self.wbits) - 1)
                 qweight = qweight.reshape(-1, qweight.shape[2])
+
+                # qweight is uint8/uint4, not transposed in AutoGPTQ
+                # qweight is int8/uint4x2 in xFT
                 if self.wbits == 8:
-                    qweight = qweight - 128 # uint8 to int8
+                    # uint8 to int8
+                    qweight = qweight - 128
                 else:
-                    # pack 2 uint4 to 1 int8
+                    # pack uint4 to uint4x2
                     qweight = qweight.view(torch.int16)
                     qweight = qweight.bitwise_or(qweight.bitwise_right_shift(4))
                     qweight = torch.bitwise_and(qweight, 255)
