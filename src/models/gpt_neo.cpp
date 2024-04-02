@@ -26,9 +26,10 @@
 
 template <typename WeiT>
 GptNeoDecoder<WeiT>::GptNeoDecoder(const std::string &modelPath)
-    : CommonDecoder<Attention<WeiT, QKPO_Dummy, LayerNorm>, MLP<WeiT>>(modelPath, "gpt") {
+    : CommonDecoder<Attention<WeiT, QKPO_Dummy, LayerNorm>, MLP<WeiT>>(modelPath, "gpt_neo") {
     // Context
     DecoderContext *ctx = this->getContext();
+    ctx->attFactor = 1;
 
     // Embedding
     embedding = new OptEmbedding<float16_t>(ctx);
