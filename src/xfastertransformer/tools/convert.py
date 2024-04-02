@@ -42,8 +42,8 @@ class BaseModelConvert:
     def __init__(self):
         self.dtype = np.float32
 
-    def __call__(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, quantization=None):
-        self.convert(input_dir, output_dir, dtype, processes)
+    def __call__(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, from_quantized_model=None):
+        self.convert(input_dir, output_dir, dtype, processes, from_quantized_model)
 
     def get_weight_data_type(self, dtype: str):
         if dtype == "fp32":
