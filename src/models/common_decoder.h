@@ -336,6 +336,7 @@ public:
 #ifdef PIPELINE_PARALLEL
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
+            TimeLine t2("Decoder.MPI_Recv");
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * ctx->hiddenSize;
@@ -363,6 +364,7 @@ public:
         int hiddenSize = ctx->hiddenSize;
         int layers_per_pp_stage = this->decoders.size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
+            TimeLine t3("Decoder.Decode");
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
                 // Expand the prefix KV cache for each batch
@@ -415,6 +417,7 @@ public:
 #ifdef PIPELINE_PARALLEL
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
+            TimeLine t3("Decoder.MPI_Send");
             if constexpr (std::is_same_v<AttnInT, float>) {
                 ctx->mmHelper->gpu_queue->memcpy(ctx->mmHelper->HostBuf, ctx->mmHelper->packedI, batchSize * inputSeqLen * ctx->hiddenSize * sizeof(float16_t)).wait();
                 float16_t::cvt_float16_to_float_MT(ctx->mmHelper->HostBuf, embBuf, batchSize * inputSeqLen * ctx->hiddenSize);
