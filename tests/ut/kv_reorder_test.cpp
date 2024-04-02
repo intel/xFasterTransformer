@@ -100,7 +100,7 @@ TEST(reorder8, reorder8) {
     }
 }
 
-TEST(randomReorder, randomReorder) {
+TEST(reorder6More, reorder6More) {
     for (int i = 0; i < 256; ++i) {
         int id4 = i % 4;
         int id123 = i / 4;
