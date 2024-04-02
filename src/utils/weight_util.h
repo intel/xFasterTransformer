@@ -19,6 +19,7 @@
 #include <string>
 
 #include "INIReader.h"
+#include "allocator.h"
 #include "bfloat16.h"
 #include "compile_util.h"
 #include "copy_util.h"
@@ -71,6 +72,7 @@ int readFile(const std::string &path, T *values, int size) {
         if (getenv("XFT_FAKE_LOAD_INFO") ? atoi(getenv("XFT_FAKE_LOAD_INFO")) : 0) {
             printf("Loading fake model file %s.\n", path.c_str());
         }
+        memset(values, 0, sizeof(T) * size);
         return size;
     }
 
@@ -109,7 +111,7 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
     } else {
         // If T and WT are different types, perform dynamic type conversion
         WT *w_ptr = nullptr;
-        w_ptr = (WT *)aligned_alloc(64, sizeof(WT) * size);
+        w_ptr = (WT *)xft::alloc(sizeof(WT) * size);
         file_size = readFile(filename, w_ptr, size);
         if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
 
@@ -159,14 +161,14 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         std::filesystem::path folderPath = pathObj.parent_path();
         w_type = getWeightType(folderPath.append("config.ini").string());
     }
-    if (!ptr) { ptr = (T *)aligned_alloc(64, size * sizeof(T)); }
+    if (!ptr) { ptr = (T *)xft::alloc(size * sizeof(T)); }
     int file_size = 0;
     switch (w_type) {
         case DataType::fp32: file_size = loadWeightWithConvert<T, float>(ptr, size, filename, required); break;
         case DataType::fp16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
         case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
         case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
-        default: printf("Not support loading %s with DataType=%d", filename, w_type);
+        default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
     }
     return file_size;
 }

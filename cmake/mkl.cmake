@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,13 +20,17 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-find_package (Python COMPONENTS Interpreter Development)
-execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --prefix=${CMAKE_SOURCE_DIR}/3rdparty/mkl
-                        mkl-static==2024.0.0 mkl-include==2024.0.0
-                RESULT_VARIABLE EXIT_CODE
-                )
+set(MKL_3rdparty_DIR "${CMAKE_SOURCE_DIR}/3rdparty/mkl")
 
-if(NOT ${EXIT_CODE} EQUAL 0)
-        message(STATUS "Dependency MKL installation failed. Please check the logs for more information.")
-        message(STATUS "If `mkl-static` and `mkl-include` has already been installed with pip, please uninstall and try again.")
+if(NOT EXISTS ${MKL_3rdparty_DIR})
+    find_package(Python COMPONENTS Interpreter Development)
+    execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --force-reinstall
+                            --prefix=${MKL_3rdparty_DIR} mkl-static==2024.0.0 mkl-include==2024.0.0
+                    RESULT_VARIABLE EXIT_CODE)
+
+    if(NOT ${EXIT_CODE} EQUAL 0)
+        message(STATUS "Dependency MKL installation failed. Please check the logs for more info.")
+    endif()
+else()
+    message(STATUS "MKL directory already exists. Skipping installation.")
 endif()

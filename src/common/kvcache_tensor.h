@@ -19,6 +19,10 @@
 #include <cstring>
 #include <utility>
 
+#include "allocator.h"
+
+extern bool kvTrans();
+
 /**
  * Tensor specially designed for KV Cache
  * Naturaly, it could be represented in the shape of [seq_length][batch_size][head_num][head_size]
@@ -30,7 +34,7 @@
  *  ...   |       |       |       |  ...  |       |       |       |
  *        |       |       |       |  ...  |       |       |       |
  *        `````````````````````````````````````````````````````````
- * For better performance, it can be represented as [batch_size][head_num][seq_length][head_size]
+ * For better performance (export ENABLE_KV_TRANS=1), it can be represented as [batch_size][head_num][seq_length][head_size]
  *        __________________
  *        |       |       ^
  *        |       |       |
@@ -72,7 +76,7 @@ public:
 
         uint64_t requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * headSize;
         if (requiredSize > allocSize) {
-            this->data = (T *)aligned_alloc(1024, requiredSize * sizeof(T));
+            this->data = (T *)xft::alloc(requiredSize * sizeof(T));
             if (!this->data) {
                 printf("Failed to alloc mem for KV Cache [%d][%d][%d][%d].\n", maxSeqLen, batchSize, headNum, headSize);
                 exit(-1);
@@ -90,13 +94,28 @@ public:
 
     // Get a vector for a specified sequence
     T *getSequence(int seqIdx, int batchIdx, int headIdx) {
-        return data + (seqIdx * batchSize + batchIdx) * (headNum * headSize) + headIdx * headSize;
+        if (kvTrans()) {
+            // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
+            return data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize
+                    + (uint64_t)seqIdx * headSize;
+        } else {
+            // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
+            return data + (uint64_t)seqIdx * batchSize * headNum * headSize + (uint64_t)batchIdx * headNum * headSize
+                    + (uint64_t)headIdx * headSize;
+        }
     }
 
     // Get a head matrix, return the start address and the stride
     std::pair<T *, int> getHead(int batchIdx, int headIdx) {
-        T *addr = data + batchIdx * headNum * headSize + headIdx * headSize;
-        return std::make_pair(addr, batchSize * headNum * headSize);
+        if (kvTrans()) {
+            // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
+            T *addr = data + batchIdx * headNum * maxSeqLen * headSize + headIdx * maxSeqLen * headSize;
+            return std::make_pair(addr, headSize);
+        } else {
+            // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
+            T *addr = data + (uint64_t)batchIdx * headNum * headSize + (uint64_t)headIdx * headSize;
+            return std::make_pair(addr, batchSize * headNum * headSize);
+        }
     }
 
     /**
@@ -118,36 +137,33 @@ public:
             return;
         }
 
+        if (!kvTrans()) {
 #pragma omp parallel for
-        for (int seq = 0; seq < seqLen; ++seq) {
-            for (int b = batchSize - 1; b > 0; --b) {
-                T *dst = getSequence(seq, b, 0);
-                T *src = getSequence(seq, b / beamSize, 0);
-                memcpy(dst, src, headNum * headSize * sizeof(T));
+            for (int seq = 0; seq < seqLen; ++seq) {
+                for (int b = batchSize - 1; b > 0; --b) {
+                    T *dst = getSequence(seq, b, 0);
+                    T *src = getSequence(seq, b / beamSize, 0);
+                    memcpy(dst, src, sizeof(T) * headNum * headSize);
+                }
             }
+        } else {
+            printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
+            exit(-1);
         }
     }
 
     void expandOneSequence(int userSideBS, int beamSize, int seq) {
-        for (int b = batchSize - 1; b > 0; --b) {
-            T *dst = getSequence(seq, b, 0);
-            T *src = getSequence(seq, b / beamSize, 0);
-            memcpy(dst, src, headNum * headSize * sizeof(T));
+        if (!kvTrans()) {
+            for (int b = batchSize - 1; b > 0; --b) {
+                T *dst = getSequence(seq, b, 0);
+                T *src = getSequence(seq, b / beamSize, 0);
+                memcpy(dst, src, sizeof(T) * headNum * headSize);
+            }
+        } else {
+            printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
+            exit(-1);
         }
     }
-
-    // Below implementation could be a little faster (100.6 vs. 100.9), but also need to modify expand and reorder function
-
-    // // Get a vector for a specified sequence
-    // T *getSequence(int seqIdx, int batchIdx, int headIdx) {
-    //     return data + batchIdx * headNum * maxSeqLen * headSize + headIdx * maxSeqLen * headSize + seqIdx * headSize;
-    // }
-
-    // // Get a head matrix, return the start address and the stride
-    // std::pair<T *, int> getHead(int batchIdx, int headIdx) {
-    //     T *addr = data + batchIdx * headNum * maxSeqLen * headSize + headIdx * maxSeqLen * headSize;
-    //     return std::make_pair(addr, headSize);
-    // }
 
 private:
     int maxSeqLen;

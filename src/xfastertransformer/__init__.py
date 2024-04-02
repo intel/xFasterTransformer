@@ -41,11 +41,13 @@ _import_structure = {
         "BaichuanConvert",
         "QwenConvert",
         "YaRNLlamaConvert",
+        "DeepseekConvert",
     ],
 }
 
 if TYPE_CHECKING:
     from .tools import LlamaConvert
+    from .tools import DeepseekConvert
     from .tools import ChatGLMConvert
     from .tools import ChatGLM2Convert
     from .tools import ChatGLM3Convert

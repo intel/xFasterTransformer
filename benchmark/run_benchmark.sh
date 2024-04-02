@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,21 +17,21 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 interrupt_handler() {
-  exit 1
+    exit 1
 }
 trap interrupt_handler SIGINT
 
 function Info() {
-  echo -e "\033[32m[Info] $@ \033[0m"
+    echo -e "\033[32m[Info] $@ \033[0m"
 }
 
 function Warning() {
-  echo -e "\033[33;3m[Warning] $@ \033[0m"
+    echo -e "\033[33;3m[Warning] $@ \033[0m"
 }
 
 function Error() {
-  echo -e "\033[31m[Error] $@ \033[0m"
-  exit 1
+    echo -e "\033[31m[Error] $@ \033[0m"
+    exit 1
 }
 
 while [ -n "$1" ]; do
@@ -88,6 +88,10 @@ while [ -n "$1" ]; do
         warmup=$2
         shift 2
         ;;
+    -c | --csv)
+        csv=$2
+        shift 2
+        ;;
     "")
         shift
         break
@@ -110,8 +114,6 @@ warmup=${warmup:-2}
 
 Info "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
-# Example here is default using fake model, you can use real model as well
-export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-1}
 Warning "The mapping method for CPU IDs in the cloud server environment is different,
         for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
         to a single physical core. In this mapping relationship,
@@ -135,6 +137,22 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
 
 if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
     benchmark_cmd+=" --padding=False"
+fi
+
+if [ -n $csv ]; then
+    benchmark_cmd+=" --csv=$csv"
+fi
+
+if [[ ${model_name} == *"baichuan"* ]]; then
+    export FLASH_ATTN_THRESHOLD=1000
+fi
+
+if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
+    export ENABLE_KV_TRANS=1
+fi
+
+if [[ ${input_tokens} -ge 2048 ]]; then
+    export ENABLE_SKIP_MASK=1
 fi
 
 sockets_num=$(lscpu | grep "Socket(s)" | awk -F ':' '{print $2}')

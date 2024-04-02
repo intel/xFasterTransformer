@@ -53,6 +53,7 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |        QWen        | &#10004;  | &#10004; |   &#10004;   |
 | SecLLM(YaRN-Llama) | &#10004;  | &#10004; |   &#10004;   |
 |        Opt         | &#10004;  | &#10004; |   &#10004;   |
+|   Deepseek-coder   | &#10004;  | &#10004; |   &#10004;   |
 
 ### DataType support list
 
@@ -147,6 +148,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     - OPTConvert
     - BaichuanConvert
     - QwenConvert
+    - DeepseekConvert
 
 ## API usage
 For more details, please see API document and [examples](examples/README.md).

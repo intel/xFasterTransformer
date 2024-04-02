@@ -28,8 +28,9 @@
 #include "transformer_ctx.h"
 #include "xdnn.h"
 
-int getFlashThresh();
-bool enableCATMLP();
+extern int getFlashThresh();
+extern bool enableCATMLP();
+extern bool enableSkipMsk();
 
 class DecoderUtil {
 public:
@@ -575,9 +576,18 @@ public:
             float *expABC, ImT *output, int qStride, int kStride, int vStride, int stride) {
         sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
         // TODO:optimize
-	softmaxTile(AB, (T *)AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
+        softmaxTile(AB, (T *)AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
 
         sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
+    }
+
+    static bool skipMskAttn(const float *attnMask, int m, int n, int stride) {
+        float lowest = std::numeric_limits<float>::lowest();
+        // left bottom is lowest
+        if (attnMask[(m - 1) * stride] == lowest)
+            return true;
+        else
+            return false;
     }
 };

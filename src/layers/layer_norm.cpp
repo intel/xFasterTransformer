@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "allocator.h"
 #include "layer_norm.h"
 #include "layernorm_kernels.h"
 #include "timeline.h"
@@ -37,8 +38,8 @@ LayerNorm::~LayerNorm() {
 
 void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
     this->normSize = cols;
-    this->gamma = (float *)aligned_alloc(64, cols * sizeof(float));
-    this->beta = (float *)aligned_alloc(64, cols * sizeof(float));
+    this->gamma = (float *)xft::alloc(cols * sizeof(float));
+    this->beta = (float *)xft::alloc(cols * sizeof(float));
     memcpy(this->gamma, gamma, cols * sizeof(float));
     memcpy(this->beta, beta, cols * sizeof(float));
 }

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include "allocator.h"
 #include "bfloat16.h"
 #include "float16.h"
 
@@ -140,15 +141,20 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
     int headNum = dstTensors[0]->getHeadNum();
     int headSize = dstTensors[0]->getHeadSize();
 
+    if (!kvTrans()) {
 #pragma omp parallel for collapse(2)
-    for (int i = 0; i < 2; ++i) {
-        for (int seq = 0; seq < seqLen; ++seq) {
-            auto *src = srcTensors[i]->getSequence(seq, 0, 0);
-            for (int b = userSideBS - 1; b >= 0; --b) {
-                auto *dst = dstTensors[i]->getSequence(seq, b, 0);
-                memcpy(dst, src, headNum * headSize * sizeof(KVCacheT));
+        for (int i = 0; i < 2; ++i) {
+            for (int seq = 0; seq < seqLen; ++seq) {
+                auto *src = srcTensors[i]->getSequence(seq, 0, 0);
+                for (int b = userSideBS - 1; b >= 0; --b) {
+                    auto *dst = dstTensors[i]->getSequence(seq, b, 0);
+                    memcpy(dst, src, sizeof(KVCacheT) * headNum * headSize);
+                }
             }
         }
+    } else {
+        printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in Prefix mode for now.\n");
+        exit(-1);
     }
 }
 
@@ -156,6 +162,10 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
 // TODO: move to KVCacheTensor is better
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, int accSeqLen) {
+    if (kvTrans()) {
+        printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
+        exit(-1);
+    }
     // Reorder for all the layers
 #pragma omp parallel for
     for (int layer = 0; layer < this->layers; ++layer) {
@@ -169,7 +179,7 @@ void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, 
         KVCacheT *values = valueTensor.getData() + initSeqLen * batchSize * cols;
 
         // Temporary buffer used for reorder
-        KVCacheT *extraKeyBuf = (KVCacheT *)aligned_alloc(64, 2 * (batchSize - 1) * cols * sizeof(KVCacheT));
+        KVCacheT *extraKeyBuf = (KVCacheT *)xft::alloc(2 * (batchSize - 1) * cols * sizeof(KVCacheT));
         KVCacheT *extraValBuf = extraKeyBuf + (batchSize - 1) * cols;
 
         for (int seq = initSeqLen; seq < accSeqLen; ++seq) { // Reorder is not needed for the first few lines
