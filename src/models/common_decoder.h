@@ -311,6 +311,8 @@ public:
         this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
         this->accSeqLen += seqLen;
 
+        ctx->mmHelper->createGPUBuffer(batchSize, inputSeqLen, ctx->hiddenSize);
+
         if constexpr (std::is_same_v<AttnInT, float>) {
             // printf("embedding gpu\n");
             float16_t::cvt_float_to_float16_MT(embBuf, ctx->mmHelper->HostBuf, batchSize * inputSeqLen * ctx->hiddenSize);

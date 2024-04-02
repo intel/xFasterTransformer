@@ -44,6 +44,7 @@
 class MMHelper {
 public:
     MMHelper(xft::DeviceKind device_kind, int idx) {
+        isInitGPUBuf = false;
         if (device_kind == xft::DeviceKind::iCPU) {
             kind = dnnl::engine::kind::cpu;
             engine = new dnnl::engine(kind, idx);
@@ -55,10 +56,6 @@ public:
             stream = new dnnl::stream(*engine);
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             gpu_queue = new sycl::queue(devices[engine->get_count(kind) + idx]);
-            packedI = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
-            packedA = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
-            packedC = sycl::malloc_device<float16_t>(2050 * 32000, *gpu_queue);
-            HostBuf = sycl::malloc_host<float16_t>(2050 * 32000, *gpu_queue);
         } else {
             std::cerr << "[Error] Wrong device type." << std::endl;
             std::exit(-1);
@@ -72,6 +69,16 @@ public:
         sycl::free(packedA, *gpu_queue);
         sycl::free(packedC, *gpu_queue);
         sycl::free(HostBuf, *gpu_queue);
+    }
+
+    void createGPUBuffer(int batchSize, int inputSeqLen, int hiddenSize) {
+        if (isInitGPUBuf == false) {
+            packedI = sycl::malloc_device<float16_t>(batchSize * inputSeqLen * hiddenSize * sizeof(float16_t), *gpu_queue);
+            packedA = sycl::malloc_device<float16_t>(batchSize * inputSeqLen * hiddenSize * sizeof(float16_t), *gpu_queue);
+            packedC = sycl::malloc_device<float16_t>(batchSize * inputSeqLen * hiddenSize * 8 * sizeof(float16_t), *gpu_queue);
+            HostBuf = sycl::malloc_host<float16_t>(batchSize * inputSeqLen * hiddenSize * 3 * sizeof(float16_t), *gpu_queue);
+            isInitGPUBuf = true;
+        }
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -1374,6 +1381,7 @@ public:
     float16_t *HostBuf; // Pinned Memory
 
 private:
+    bool isInitGPUBuf;
     int gpu_index;
     dnnl::engine::kind kind;
     dnnl::engine *engine;
