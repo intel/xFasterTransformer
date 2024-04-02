@@ -40,6 +40,8 @@ if [ ! -d $svr_log_dir ]; then
     mkdir -p $svr_log_dir
 fi
 
+git log --pretty=full $commit_id -n 3 &> $commit_dir/commit_info.txt
+
 interrupt_handler() {
     exit 1
 }
@@ -70,6 +72,7 @@ svr_info() {
 
 # Define functions for build, UT, and model
 build() {
+    pip install -r requirements.txt
     Info "Running build function with arguments: $@"
     rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=1 -DPython_EXECUTABLE=$(which python) .. && make -j
 }
