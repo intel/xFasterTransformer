@@ -356,7 +356,7 @@ public:
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
         TimeLine t4("MHA");
-        // FunTimer ft4;
+        FunTimer ft4;
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -378,7 +378,9 @@ public:
             else { fusedAttention(ctx, query, key, value, imBuffer, presentKey, presentValue, attnMask, pastSeqLen); }
         }
         t4.release();
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", ctx->mmHelper->gpu_index, "attention", ft4.elapsed());
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", ctx->mmHelper->gpu_index, "attention", ft4.elapsed());
+        }
 
         // For multiple nodes inference, not the whole result buffer
         hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, imBuffer.Stride());

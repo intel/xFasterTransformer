@@ -1274,7 +1274,8 @@ public:
         const int head_size = qkShape[3];
         const int half_head_size = (head_size + 1) / 2;
         using namespace sycl;
-        // FunTimer t;
+        TimeLine tl1("ROPE");
+        FunTimer t;
 
         // Reorder input
         float16_t *packedC_buf = packedC;
@@ -1300,14 +1301,21 @@ public:
                             });
                 })
                 .wait();
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rope", t.elapsed());
+        tl1.release();
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rope", t.elapsed());
+        }
 
         // Reorder output
-        // FunTimer t2;
+        TimeLine tl2("memcpy");
+        FunTimer t2;
         gpu_queue->memcpy(HostBuf, packedC_buf, batchSize * seqLen * 3 * head_num * head_size * sizeof(float16_t))
                 .wait();
         float16_t::cvt_float16_to_float_MT(HostBuf, query, batchSize * seqLen * 3 * head_num * head_size);
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        tl2.release();
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+        }
 
         // print(batchSize * seqLen, 6, qStride, (float16_t *)packedC_buf, "packedC");
     }
@@ -1334,7 +1342,8 @@ public:
     }
 
     void computeRMSNorm(float *output, const float *input, const sycl::half *weight, int rows, int cols) {
-        // FunTimer t;
+        TimeLine tl("RMSNorm");
+        FunTimer t;
         // float16_t I_buf[rows * cols];
         // float16_t::cvt_float_to_float16_MT(input, I_buf, rows * cols);
         sycl::half *packedI_buf = (sycl::half *)packedI;
@@ -1346,7 +1355,10 @@ public:
         const float layernorm_eps = 1e-06;
         fastertransformer::invokeGeneralT5LayerNorm(
                 packedA_buf, packedI_buf, weight, (const sycl::half *)nullptr, layernorm_eps, rows, cols, gpu_queue);
-        // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rmsnorm", t.elapsed());
+        tl.release();
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "rmsnorm", t.elapsed());
+        }
         // std::cout << "GPU"<< gpu_index << "rms_norm:" <<std::endl;
         // print(rows, 6, cols, (float16_t *)packedI_buf, "packedI");
         // print(rows, 6, cols, (float16_t *)packedA_buf, "packedA");
@@ -1799,20 +1811,27 @@ private:
         }
 
         // Create the primitive args.
+        FunTimer t4;
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, packed_input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
         matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "gemm", t4.elapsed());
+        }
 
         if (postOp == true) {
-            // FunTimer t3;
+            FunTimer t3;
             if (M > 1)
                 sycl_sigmoid_mul(M, N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
             else if (M == 1)
                 sycl_sigmoid_mul_M1(N / 2, packedC, ldc, packedC + N / 2, ldc, packedA, ldc / 2);
-            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "sycl_sigmoid_mul", t3.elapsed());
+
+            if (Env::getVerbose() >= 1) {
+                printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "sycl_sigmoid_mul", t3.elapsed());
+            }
         }
 
         if (copyG2C == true) {
@@ -1892,13 +1911,15 @@ private:
 
         if (copyC2G == true) {
             // Reorder input
-            // FunTimer t2;
+            FunTimer t2;
             // float16_t::cvt_float_to_float16_MT(A, A_buf, M * K);
 #pragma omp parallel for
             for (int i = 0; i < M; ++i)
                 float16_t::cvt_float_to_float16(A + i * lda, HostBuf + i * K, K);
             gpu_queue->memcpy(packed_input_mem.get_data_handle(), HostBuf, M * K * sizeof(float16_t)).wait();
-            // printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+            if (Env::getVerbose() >= 1) {
+                printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "memcpy", t2.elapsed());
+            }
 
             // // Reorder shift
             // FunTimer t3;
@@ -1909,6 +1930,7 @@ private:
         }
 
         // Create the primitive args.
+        FunTimer t4;
         std::unordered_map<int, memory> matmul_args;
         matmul_args.insert({DNNL_ARG_SRC, packed_input_mem});
         matmul_args.insert({DNNL_ARG_WEIGHTS, packed_weight_mem});
@@ -1917,6 +1939,9 @@ private:
         matmul_args.insert({DNNL_ARG_DST, packed_output_mem});
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+        if (Env::getVerbose() >= 1) {
+            printf("xft_verbose,exec,gpu:%d,%s,%.6lf\n", gpu_index, "gemm_residential", t4.elapsed());
+        }
 
         if (copyG2C == true) {
             // Reorder output
