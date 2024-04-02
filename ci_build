@@ -24,8 +24,12 @@ workspace_dir=$(echo $current_dir | sed 's|\(.*\/xFasterTransformer\).*|\1|')
 
 source $workspace_dir/ci/test_case
 
-# get commit id
+# get commit id & tag name
 commit_id=$(git rev-parse HEAD)
+tag_name=$(git tag --points-at $commit_hash)
+if [ -n "$tag_name" ]; then
+    commit_id="$tag_name"
+fi
 
 log_dir=$HOME/xft
 commit_dir=$HOME/xft/$commit_id
@@ -120,9 +124,11 @@ ut() {
 }
 
 model() {
+    fail_targets=()
     model_case=()
     while IFS= read -r line; do
-        if [[ $line == bash* ]]; then
+        trimmed_line="${line#"${line%%[![:space:]]*}"}"
+        if [[ -n "$trimmed_line" && ! "$trimmed_line" =~ ^# ]]; then
             model_case+=("$line")
         fi
     done <<<"$_test_case"
@@ -132,11 +138,51 @@ model() {
         Info "Running model function: $_case $@"
         eval $_case $@ --csv $csv_path
         if [ $? -ne 0 ]; then
-            Error "Error: $_case execution failed"
+            Warning "Error: $_case execution failed"
+            fail_targets+=("$_case")
         fi
         echo
     done
     popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+="\n --> $element\n"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
+}
+
+release() {
+    fail_targets=()
+    model_case=()
+    while IFS= read -r line; do
+        trimmed_line="${line#"${line%%[![:space:]]*}"}"
+        if [[ -n "$trimmed_line" && ! "$trimmed_line" =~ ^# ]]; then
+            model_case+=("$line")
+        fi
+    done <<<"$rls_test_case"
+
+    pushd benchmark/
+    for _case in "${model_case[@]}"; do
+        Info "Running model function: $_case $@"
+        eval $_case $@ --csv $csv_path
+        if [ $? -ne 0 ]; then
+            Warning "Error: $_case execution failed"
+            fail_targets+=("$_case")
+        fi
+        echo
+    done
+    popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+="\n --> $element\n"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
 }
 
 # Check if a function with the given name exists and call it with provided arguments
@@ -144,7 +190,7 @@ if [ "$#" -ge 1 ]; then
     function_name="$1"
     shift
     if [ "$(type -t $function_name)" = "function" ]; then
-        exec &> >(tee ${commit_dir}/output_${function_name}.log)
+        exec &> >(tee ${commit_dir}/output_${function_name}.txt)
         $function_name "$@"
     else
         Error "Function $function_name not found."

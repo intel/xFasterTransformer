@@ -72,6 +72,7 @@ int readFile(const std::string &path, T *values, int size) {
         if (getenv("XFT_FAKE_LOAD_INFO") ? atoi(getenv("XFT_FAKE_LOAD_INFO")) : 0) {
             printf("Loading fake model file %s.\n", path.c_str());
         }
+        memset(values, 0, sizeof(T) * size);
         return size;
     }
 

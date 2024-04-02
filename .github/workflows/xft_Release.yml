@@ -1,13 +1,9 @@
 name: XFT PR Validation
 permissions: read-all
 on:
-  pull_request:
-   types: [opened, reopened, synchronize]
-   branches: [ main ]
-   paths-ignore:
-     - .github/workflows
-     - dockerfiles/
-     - 3rdparty/
+  push:
+    tags:
+      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
 
 jobs:
   build_and_simple_test:
@@ -30,7 +26,7 @@ jobs:
         run: |
             bash ci_build ut
 
-      - name: simple model test
+      - name: release model test
         shell: bash
         run: |
-            bash ci_build model
+            bash ci_build release

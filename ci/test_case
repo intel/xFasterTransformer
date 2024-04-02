@@ -27,6 +27,14 @@
 _test_case=$(
     cat <<EOF
 
+# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | -in  | -out |
+# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | ---- | ---- |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |    llama-2-7b |   √  |   √  |   ×  |   ×  |   ×  |   × | 2016 |  32  |
+# |   chatglm3-6b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+# | baichuan2-13b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+# |       qwen-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+
 # llama-2-7b with short prompt & full data type:
 bash run_benchmark.sh -m llama-2-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m llama-2-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
@@ -38,6 +46,102 @@ bash run_benchmark.sh -m llama-2-7b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
 # llama-2-7b with long prompt:
 bash run_benchmark.sh -m llama-2-7b -d fp16 -i 1 -w 0 -in 2016 -out 32 -s 1
 bash run_benchmark.sh -m llama-2-7b -d bf16 -i 1 -w 0 -in 2016 -out 32 -s 1
+
+# chatglm3-6b with short prompt & full data type:
+bash run_benchmark.sh -m chatglm3-6b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# baichuan2-13b with short prompt & full data type:
+bash run_benchmark.sh -m baichuan2-13b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# qwen-7b with short prompt & full data type:
+bash run_benchmark.sh -m qwen-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# Add new test case here:
+
+EOF
+)
+
+rls_test_case=$(
+    cat <<EOF
+
+# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | -in  | -out |
+# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | ---- | ---- |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ | 2016 |  32  |
+# |   llama-2-13b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |   chatglm3-6b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |  baichuan2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# | baichuan2-13b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |       qwen-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |      qwen-14b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+
+# llama-2-7b with short prompt & full data type:
+bash run_benchmark.sh -m llama-2-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# llama-2-7b with long prompt:
+bash run_benchmark.sh -m llama-2-7b -d fp16 -i 1 -w 0 -in 2016 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d bf16 -i 1 -w 0 -in 2016 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d int8 -i 1 -w 0 -in 2016 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d w8a8 -i 1 -w 0 -in 2016 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d int4 -i 1 -w 0 -in 2016 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-7b -d nf4 -i 1 -w 0 -in 2016 -out 32 -s 1
+
+# llama-2-13b with short prompt & full data type:
+bash run_benchmark.sh -m llama-2-13b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# chatglm3-6b with short prompt & full data type:
+bash run_benchmark.sh -m chatglm3-6b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m chatglm3-6b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# baichuan2-7b with short prompt & full data type:
+bash run_benchmark.sh -m baichuan2-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-7b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-7b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-7b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-7b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# baichuan2-13b with short prompt & full data type:
+bash run_benchmark.sh -m baichuan2-13b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m baichuan2-13b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# qwen-7b with short prompt & full data type:
+bash run_benchmark.sh -m qwen-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-7b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# qwen-14b with short prompt & full data type:
+bash run_benchmark.sh -m qwen-14b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-14b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-14b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-14b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-14b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m qwen-14b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
 
 # Add new test case here:
 
