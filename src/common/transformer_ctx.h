@@ -246,7 +246,7 @@ public:
 
     template <typename T>
     T *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
-        return (T *)SimpleMemPool::instance().getBuffer(name, size * sizeof(T), alignment);
+        return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, alignment);
     }
 
     void dump() {

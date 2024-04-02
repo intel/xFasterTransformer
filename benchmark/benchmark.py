@@ -15,6 +15,10 @@
 import os
 from typing import Tuple, List
 
+import sys
+
+sys.stdout = open(sys.stdout.fileno(), mode="w", buffering=1)
+
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -147,8 +151,6 @@ if __name__ == "__main__":
 
         print("[INFO] xfastertransformer is installed, using pip installed package.")
     except Exception as e:
-        import sys
-
         sys.path.append("../src")
         import xfastertransformer
 
@@ -237,15 +239,26 @@ if __name__ == "__main__":
         print("=" * 120, "\n" * 3)
 
         if args.csv != "":
+            from datetime import datetime
+
+            arg_dict = dict(
+                filter(
+                    lambda item: str(item[0]).find("path") == -1 and str(item[0]).find("csv") == -1, vars(args).items()
+                )
+            )
+
             rst = {
-                "infer_avg_latency (ms)": np.mean(total_times),
-                "1st_avg_latency (ms)": np.mean(first_token_times),
-                "2nd_max_latency (ms)": np.max(next_token_times),
-                "2nd_min_latency (ms)": np.min(next_token_times),
-                "2nd_P90_latency (ms)": np.percentile(next_token_times, 90),
-                "2nd_avg_latency (ms)": np.mean(next_token_times),
-                "throughput_wo_1st (tokens/s)": 1000 / np.percentile(next_token_times, 90) * args.batch_size,
-                **vars(args),
+                "test_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "infer_avg(ms)": round(np.mean(total_times), 2),
+                "1st_avg(ms)": round(np.mean(first_token_times), 2),
+                "2nd_max(ms)": round(np.max(next_token_times), 2),
+                "2nd_min(ms)": round(np.min(next_token_times), 2),
+                "2nd_P90(ms)": round(np.percentile(next_token_times, 90), 2),
+                "2nd_avg(ms)": round(np.mean(next_token_times), 2),
+                "throughput_wo_1st (tokens/s)": round(1000 / np.percentile(next_token_times, 90) * args.batch_size, 2),
+                **arg_dict,
+                "Fake_model": True if os.environ.get("XFT_FAKE_MODEL", "-1") == "1" else False,
+                "Response": response,
             }
             # print(rst)
             check_and_update_csv(args.csv, rst)
