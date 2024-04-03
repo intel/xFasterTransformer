@@ -47,6 +47,10 @@ public:
 
     // Allocate or reallocate memory buffer based on name and size
     void *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
+        if (size == 0) {
+            // std::cout << "[Warning] Try to allocate 0 bytes for buffer:" << name << std::endl;
+            return nullptr;
+        }
         auto it = memoryMap.find(name);
 
         if (it != memoryMap.end()) {
