@@ -201,16 +201,18 @@ public:
         this->prefixSharing = false;
 
         // Quantization config
-        const bool quantDecoderWeights = reader.GetBoolean(modelType, "quant_decoder_weights", false);
-        const int quantWbits = reader.GetInteger(modelType, "quant_wbits", 8);
+        const std::string quantQweightDataType = reader.Get(modelType, "quant_qweight_data_type", "");
+        const std::string quantScalesDataType = reader.Get(modelType, "quant_scales_data_type", "");
+        const std::string quantZerosDataType = reader.Get(modelType, "quant_zeros_data_type", "");
         const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
 
         // DataType dt = getWeightType(configPath, modelType);
         DataType dt = DataType::fp32;
-        if (quantDecoderWeights) {
-            REQUIRES(quantWbits == 8, "Only int8 quantization is supported.");
-            REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
+        if (quantQweightDataType == "int8") {
             dt = DataType::int8;
+            REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");
+            REQUIRES(quantZerosDataType == "fp32", "zeros should be fp32 data type.");
+            REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
         }
 
         // Buffer related (not initialized)
