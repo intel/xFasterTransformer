@@ -201,16 +201,18 @@ public:
         this->prefixSharing = false;
 
         // Quantization config
-        const bool quantDecoderWeights = reader.GetBoolean(modelType, "quant_decoder_weights", false);
-        const int quantWbits = reader.GetInteger(modelType, "quant_wbits", 8);
+        const std::string quantQweightDataType = reader.Get(modelType, "quant_qweight_data_type", "");
+        const std::string quantScalesDataType = reader.Get(modelType, "quant_scales_data_type", "");
+        const std::string quantZerosDataType = reader.Get(modelType, "quant_zeros_data_type", "");
         const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
 
         // DataType dt = getWeightType(configPath, modelType);
         DataType dt = DataType::fp32;
-        if (quantDecoderWeights) {
-            REQUIRES(quantWbits == 8 || quantWbits == 4, "Only 4 or 8 bits quantizations are supported.");
+        if (quantQweightDataType == "int8" || quantQweightDataType == "uint4") {
+            dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
+            REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");
+            REQUIRES(quantZerosDataType == "fp32", "zeros should be fp32 data type.");
             REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
-            dt = quantWbits == 8 ? DataType::int8 : DataType::int4;
         }
 
         // Buffer related (not initialized)
@@ -222,6 +224,8 @@ public:
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
                 vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK, ropeParamsPtr);
+
+        ctx->ResetConfigReader(configPath);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {
@@ -638,7 +642,7 @@ protected:
         int kvSize = attHeadSize * kvHeadNum;
         int qkvSize = qSize + kvSize + kvSize;
 
-#define ALLOC(size, alignment) aligned_alloc((alignment), (size))
+#define ALLOC(size, alignment) xft::alloc((size), (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;
@@ -885,7 +889,7 @@ protected:
     float *getAttnMask(int sizeRequired) {
         if (this->maskSize < sizeRequired) {
             if (this->attnMask) free(this->attnMask);
-            this->attnMask = (float *)aligned_alloc(64, sizeRequired * sizeof(float));
+            this->attnMask = (float *)xft::alloc(sizeRequired * sizeof(float));
             this->maskSize = sizeRequired;
         }
         return this->attnMask;

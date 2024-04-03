@@ -4,3 +4,5 @@ sentencepiece==0.1.99
 torch==2.0.1+cpu
 transformers==4.36.0
 accelerate==0.23.0
+protobuf
+tiktoken

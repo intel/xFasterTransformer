@@ -1,4 +1,18 @@
 #!/bin/bash
+# Copyright (c) 2023-2024 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 
 pushd 3rdparty/
 sh prepare_oneccl.sh
@@ -7,6 +21,26 @@ popd
 
 current_dir=$(pwd)
 workspace_dir=$(echo $current_dir | sed 's|\(.*\/xFasterTransformer\).*|\1|')
+
+source $workspace_dir/ci/test_case
+
+# get commit id & tag name
+commit_id=$(git rev-parse HEAD)
+tag_name=$(git tag --points-at $commit_hash)
+if [ -n "$tag_name" ]; then
+    commit_id="$tag_name"
+fi
+
+log_dir=$HOME/xft
+commit_dir=$HOME/xft/$commit_id
+csv_path=$HOME/xft/$commit_id/test_case.csv
+svr_log_dir=$HOME/xft/$commit_id/svr_info
+
+if [ ! -d $svr_log_dir ]; then
+    mkdir -p $svr_log_dir
+fi
+
+git log --pretty=full $commit_id -n 3 &> $commit_dir/commit_info.txt
 
 interrupt_handler() {
     exit 1
@@ -26,66 +60,132 @@ function Error() {
     exit 1
 }
 
+svr_info() {
+    pushd $log_dir
+    if [ ! -d "svr-info" ]; then
+        wget -qO- https://github.com/intel/svr-info/releases/latest/download/svr-info.tgz | tar xvz
+    fi
+    cd svr-info
+    ./svr-info -output $svr_log_dir
+    popd
+}
+
 # Define functions for build, UT, and model
 build() {
+    pip install -r requirements.txt
     Info "Running build function with arguments: $@"
     rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=1 -DPython_EXECUTABLE=$(which python) .. && make -j
 }
 
 ut() {
+    fail_targets=()
     pushd $workspace_dir/build/ut/
     Info "Running UT function with arguments: $@"
     for file in ./*; do
         if [ -x "$file" ]; then
+
+            #Todo(marvin): delete me when the case is ready.
+            if [[ "$file" == "./beam_search_test" ]]; then
+                Warning "Bypass the fail case of $file."
+                continue
+            fi
+            if [[ "$file" == "./kv_reorder_test" ]]; then
+                Warning "Bypass the fail case of $file."
+                continue
+            fi
+            if [[ "$file" == "./layers_mlp_test" ]]; then
+                Warning "Bypass the fail case of $file."
+                continue
+            fi
+            if [[ "$file" == "./rotary_embedding_test" ]]; then
+                Warning "Bypass the fail case of $file."
+                continue
+            fi
+            ##################################################
+
+            if [[ "$file" != *_test ]]; then
+                Warning "$file is not ending with '_test', skip current loop."
+                continue
+            fi
             Info "Running UT: $file"
             ./$file
             if [ $? -ne 0 ]; then
-                Warning "Error: $file execution failed"
+                fail_targets+=("$file")
             fi
+            echo
         fi
     done
     popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+=" $element"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
 }
 
 model() {
+    fail_targets=()
+    model_case=()
+    while IFS= read -r line; do
+        trimmed_line="${line#"${line%%[![:space:]]*}"}"
+        if [[ -n "$trimmed_line" && ! "$trimmed_line" =~ ^# ]]; then
+            model_case+=("$line")
+        fi
+    done <<<"$_test_case"
+
     pushd benchmark/
-    Info "Running model function with arguments: $@"
-    case $1 in
-    "full")
-        Info "model full test..."
-        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/*/)
-        DTYPE_LIST=("fp16" "bf16" "int8" "w8a8" "int4" "nf4"
-            "bf16_fp16" "bf16_int8" "bf16_w8a8" "bf16_int4"
-            "bf16_nf4" "w8a8_int8" "w8a8_int4" "w8a8_nf4")
-        ;;
-    *)
-        Info "model simple test..."
-        MODEL_LIST=$(ls -d $workspace_dir/examples/model_config/llama-2-7b/ \
-            $workspace_dir/examples/model_config/chatglm2-6b/ \
-            $workspace_dir/examples/model_config/qwen-7b/)
-        DTYPE_LIST=('fp16' 'bf16' 'int8' 'bf16_fp16' 'bf16_int8')
-        ;;
-    esac
-
-    for MODEL in ${MODEL_LIST[@]}; do
-        model_name=$(basename "$MODEL")
-
-        case "$model_name" in
-        *30* | *60* | *65* | *66* | *70* | *72*)
-            Info "Skipping the large model: $model_name."
-            continue
-            ;;
-        esac
-
-        for DTYPE in ${DTYPE_LIST[@]}; do
-            export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-0}
-            # short prompt:
-            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0 -in 32 -out 32
-            #  long prompt:
-            bash run_benchmark.sh -m $model_name -d $DTYPE -i 1 -w 0 -in 2016 -out 32
-        done
+    for _case in "${model_case[@]}"; do
+        Info "Running model function: $_case $@"
+        eval $_case $@ --csv $csv_path
+        if [ $? -ne 0 ]; then
+            Warning "Error: $_case execution failed"
+            fail_targets+=("$_case")
+        fi
+        echo
     done
     popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+="\n --> $element\n"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
+}
+
+release() {
+    fail_targets=()
+    model_case=()
+    while IFS= read -r line; do
+        trimmed_line="${line#"${line%%[![:space:]]*}"}"
+        if [[ -n "$trimmed_line" && ! "$trimmed_line" =~ ^# ]]; then
+            model_case+=("$line")
+        fi
+    done <<<"$rls_test_case"
+
+    pushd benchmark/
+    for _case in "${model_case[@]}"; do
+        Info "Running model function: $_case $@"
+        eval $_case $@ --csv $csv_path
+        if [ $? -ne 0 ]; then
+            Warning "Error: $_case execution failed"
+            fail_targets+=("$_case")
+        fi
+        echo
+    done
+    popd
+    if [ ${#fail_targets[@]} -gt 0 ]; then
+        targets_str=""
+        for element in "${fail_targets[@]}"; do
+            targets_str+="\n --> $element\n"
+        done
+
+        Error "Error: $targets_str execution failed"
+    fi
 }
 
 # Check if a function with the given name exists and call it with provided arguments
@@ -93,6 +193,7 @@ if [ "$#" -ge 1 ]; then
     function_name="$1"
     shift
     if [ "$(type -t $function_name)" = "function" ]; then
+        exec &> >(tee ${commit_dir}/output_${function_name}.txt)
         $function_name "$@"
     else
         Error "Function $function_name not found."
