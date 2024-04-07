@@ -30,9 +30,10 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         static DecoderContext *ctx;
         if (ctx == nullptr
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
-            delete ctx;
+            if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
             ctx = new DecoderContext(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 0, 1);
+            ctx->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.

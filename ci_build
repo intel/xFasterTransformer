@@ -89,10 +89,6 @@ ut() {
                 Warning "Bypass the fail case of $file."
                 continue
             fi
-            if [[ "$file" == "./layers_mlp_test" ]]; then
-                Warning "Bypass the fail case of $file."
-                continue
-            fi
             if [[ "$file" == "./rotary_embedding_test" ]]; then
                 Warning "Bypass the fail case of $file."
                 continue
