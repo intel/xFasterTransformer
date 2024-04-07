@@ -3,29 +3,6 @@
 #include "matmul_helper.h"
 #include "gtest/gtest.h"
 
-static void callOneDNN() {
-    MMHelper helper(xft::DeviceKind::iCPU, 0);
-
-    const int M = 32;
-    const int N = 128;
-    const int K = 128;
-    const int lda = K;
-    const int ldb = N;
-    const int ldc = N;
-
-    bfloat16_t *A = new bfloat16_t[M * lda];
-    bfloat16_t *packedB = new bfloat16_t[K * ldb];
-    bfloat16_t *C = new bfloat16_t[M * ldc];
-
-    // Call MMHelper::compute
-    helper.compute(false, M, N, K, 1, A, lda, packedB, nullptr, nullptr, nullptr, 0, C, ldc);
-
-    // Deallocate memory
-    delete[] A;
-    delete[] packedB;
-    delete[] C;
-}
-
 // Reference implementation of matrix multiplication
 static void mmRef(
         bfloat16_t *A, bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc, bool transB) {
@@ -123,7 +100,8 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
     }
 }
 
-void testSelfAttentionSeparateCopy(int headSize, int qHeadNum, int kvHeadNum, int *tokenSizes, int batchSize) {
+void testSelfAttention(
+        int headSize, int qHeadNum, int kvHeadNum, int *tokenSizes, int batchSize, bool bSeparateCopy = true) {
     const int qkvStride = headSize * (qHeadNum + 2 * kvHeadNum);
     const int hiddenSize = headSize * qHeadNum;
     const float scale = 1.0f / std::sqrt(headSize);
@@ -161,15 +139,28 @@ void testSelfAttentionSeparateCopy(int headSize, int qHeadNum, int kvHeadNum, in
     }
 
     // Call the function
-    xft::selfAttention_SeparateCopy<true>(
-            ourOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride, batchSize,
-            tokenSizes, scale, threadNum,
-            [&](int b, int h, int s) {
-                return kCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
-            },
-            [&](int b, int h, int s) {
-                return vCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
-            });
+    if (bSeparateCopy) {
+        xft::selfAttention_SeparateCopy<true>(
+                ourOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
+                batchSize, tokenSizes, scale, threadNum,
+                [&](int b, int h, int s) {
+                    return kCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
+                },
+                [&](int b, int h, int s) {
+                    return vCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
+                });
+    } else {
+        xft::selfAttention_FusedCopy(
+                ourOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
+                batchSize, tokenSizes, scale, threadNum,
+                [&](int b, int h, int s) {
+                    return kCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
+                },
+                [&](int b, int h, int s) {
+                    return vCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
+                });
+    }
+
     selfAttentionRef(refOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
             batchSize, tokenSizes, scale);
 
@@ -189,35 +180,52 @@ void testSelfAttentionSeparateCopy(int headSize, int qHeadNum, int kvHeadNum, in
 TEST(AttentionKernelsTest, SeparateCopyTest1) {
     int batchSize = 1;
     int tokenSizes[batchSize] = {80};
-    testSelfAttentionSeparateCopy(128, 2, 2, tokenSizes, batchSize);
+    testSelfAttention(128, 2, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest2) {
     int batchSize = 1;
     int tokenSizes[batchSize] = {100};
-    testSelfAttentionSeparateCopy(128, 6, 2, tokenSizes, batchSize);
+    testSelfAttention(128, 6, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest3) {
     int batchSize = 2;
     int tokenSizes[batchSize] = {100, 200};
-    testSelfAttentionSeparateCopy(128, 8, 2, tokenSizes, batchSize);
+    testSelfAttention(128, 8, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest4) {
     int batchSize = 3;
-    int tokenSizes[batchSize] = {100, 200, 300};
-    testSelfAttentionSeparateCopy(128, 8, 2, tokenSizes, batchSize);
+    int tokenSizes[batchSize] = {100, 101, 102};
+    testSelfAttention(128, 8, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest5) {
     int batchSize = 4;
     int tokenSizes[batchSize] = {100, 55, 111, 203};
-    testSelfAttentionSeparateCopy(128, 8, 2, tokenSizes, batchSize);
+    testSelfAttention(128, 8, 2, tokenSizes, batchSize);
+}
+
+TEST(AttentionKernelsTest, FusedCopyTest1) {
+    int batchSize = 1;
+    int tokenSizes[batchSize] = {100};
+    testSelfAttention(128, 2, 2, tokenSizes, batchSize, false);
+}
+
+TEST(AttentionKernelsTest, FusedCopyTest2) {
+    int batchSize = 2;
+    int tokenSizes[batchSize] = {100, 101};
+    testSelfAttention(128, 4, 4, tokenSizes, batchSize, false);
+}
+
+TEST(AttentionKernelsTest, FusedCopyTest3) {
+    int batchSize = 4;
+    int tokenSizes[batchSize] = {100, 101, 102, 103};
+    testSelfAttention(128, 4, 4, tokenSizes, batchSize, false);
 }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    //callOneDNN();
     return RUN_ALL_TESTS();
 }
