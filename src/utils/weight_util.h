@@ -28,6 +28,7 @@
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "uint4x2.h"
+#include "environment.h"
 
 namespace xft {
 
@@ -67,9 +68,9 @@ int readFile(const std::string &path, T *values, int size) {
     int count = 0;
     int nthreads = std::min(omp_get_max_threads(), 16);
     int chunk_size = (size + nthreads - 1) / nthreads;
-    int enable = (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0);
-    if (enable) {
-        if (getenv("XFT_FAKE_LOAD_INFO") ? atoi(getenv("XFT_FAKE_LOAD_INFO")) : 0) {
+    Env &env = Env::getInstance();
+    if (env.getFakeModelEnabled()) {
+        if (env.getFakeLoadInfoEnabled()) {
             printf("Loading fake model file %s.\n", path.c_str());
         }
         memset(values, 0, sizeof(T) * size);
