@@ -134,8 +134,9 @@ void testSelfAttention(
     bfloat16_t *key = qkv + headSize * qHeadNum;
     bfloat16_t *value = qkv + headSize * (qHeadNum + kvHeadNum);
 
+    float factor = 1.0f / RAND_MAX;
     for (int i = 0; i < totalTokens * qkvStride; i++) {
-        qkv[i] = bfloat16_t(1.0f * rand() / RAND_MAX);
+        qkv[i] = bfloat16_t(rand() * factor);
     }
 
     // Call the function
@@ -164,9 +165,8 @@ void testSelfAttention(
     selfAttentionRef(refOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
             batchSize, tokenSizes, scale);
 
-    // Add your assertions here to verify the correctness of the function
+    // Verify the correctness of the function
     for (int i = 0; i < totalTokens * hiddenSize; i++) {
-        //printf("ref[%d]: %f, our: %f\n", i, (float)refOutput[i], (float)ourOutput[i]);
         ASSERT_NEAR((float)refOutput[i], (float)ourOutput[i], 1e-2);
     }
 
