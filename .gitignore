@@ -29,6 +29,7 @@ dist/
 /3rdparty/cmdline
 /3rdparty/sentencepiece
 /3rdparty/xdnn
+/3rdparty/gpudnn
 
 
 # MLServer
