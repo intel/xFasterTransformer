@@ -15,6 +15,7 @@
 #pragma once
 #include <immintrin.h>
 #include "allocator.h"
+#include "bert_util.h"
 #include "bfloat16.h"
 #include "dtype.h"
 #include "environment.h"
