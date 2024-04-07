@@ -91,6 +91,7 @@ foreach(src ${sources})
 
     target_link_libraries(${executable} PRIVATE ${GTEST_LIBRARIES})
     target_link_libraries(${executable} PRIVATE ccl)
+    target_link_libraries(${executable} PUBLIC gtest)
     target_link_libraries(${executable} PUBLIC rt)
     target_link_libraries(${executable} PUBLIC m)
     target_link_libraries(${executable} PUBLIC dl)
