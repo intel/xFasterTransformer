@@ -107,12 +107,12 @@ class GPTNeoConvert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        config["gpt"] = {}
+        config["gpt_neo"] = {}
         has_post_decoder_layernorm = True
         try:
-            config["gpt"]["model_name"] = "gptneo" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
-            num_attention_heads = config["gpt"]["head_num"] = str(hf_config["num_heads"])
-            num_key_value_heads = config["gpt"]["kv_head_num"] = str(
+            config["gpt_neo"]["model_name"] = "gptneo" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config["gpt_neo"]["head_num"] = str(hf_config["num_heads"])
+            num_key_value_heads = config["gpt_neo"]["kv_head_num"] = str(
                 hf_config.get("num_key_value_heads", num_attention_heads)
             )
 
@@ -120,18 +120,18 @@ class GPTNeoConvert(BaseModelConvert):
             inter_size = hf_config.get("intermediate_size", None) 
             inter_size = hidden_size*4 if inter_size == None else inter_size
 
-            config["gpt"]["size_per_head"] = str(hidden_size // hf_config["num_heads"])
-            config["gpt"]["inter_size"] = str(inter_size)
-            config["gpt"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
-            config["gpt"]["num_layer"] = str(hf_config["num_layers"])
-            config["gpt"]["layernorm_eps"] = str(hf_config.get("layer_norm_epsilon", 1e-5))
-            config["gpt"]["layernorm_type"] = "pre_layernorm"
-            config["gpt"]["activation_type"] = "gelu"
-            config["gpt"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
-            config["gpt"]["vocab_size"] = str(hf_config["vocab_size"])
-            config["gpt"]["start_id"] = str(hf_config["bos_token_id"])
-            config["gpt"]["end_id"] = str(hf_config["eos_token_id"])
-            config["gpt"]["weight_data_type"] = dtype
+            config["gpt_neo"]["size_per_head"] = str(hidden_size // hf_config["num_heads"])
+            config["gpt_neo"]["inter_size"] = str(inter_size)
+            config["gpt_neo"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config["gpt_neo"]["num_layer"] = str(hf_config["num_layers"])
+            config["gpt_neo"]["layernorm_eps"] = str(hf_config.get("layer_norm_epsilon", 1e-5))
+            config["gpt_neo"]["layernorm_type"] = "pre_layernorm"
+            config["gpt_neo"]["activation_type"] = "gelu"
+            config["gpt_neo"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config["gpt_neo"]["vocab_size"] = str(hf_config["vocab_size"])
+            config["gpt_neo"]["start_id"] = str(hf_config["bos_token_id"])
+            config["gpt_neo"]["end_id"] = str(hf_config["eos_token_id"])
+            config["gpt_neo"]["weight_data_type"] = dtype
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
