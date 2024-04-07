@@ -42,7 +42,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
     int offsets[batchSize]; // offset for each input
     int blkEndIndex[batchSize]; // end block index for each input
     for (int i = 0; i < batchSize; ++i) {
-        offsets[i] = (i == 0 ? 0 : offsets[i - 1] + tokenSizes[i]);
+        offsets[i] = (i == 0 ? 0 : offsets[i - 1] + tokenSizes[i - 1]);
         auto curBlks = (tokenSizes[i] + mBlockSize - 1) / mBlockSize;
         blkEndIndex[i] = (i == 0 ? curBlks : blkEndIndex[i - 1] + curBlks);
         if (tokenSizes[i] > maxTokenSize) { maxTokenSize = tokenSizes[i]; }

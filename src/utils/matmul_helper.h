@@ -15,6 +15,7 @@
 #pragma once
 #include <immintrin.h>
 #include "allocator.h"
+#include "bert_util.h"
 #include "bfloat16.h"
 #include "dtype.h"
 #include "environment.h"
@@ -221,6 +222,22 @@ public:
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
                 const OriWeiT *src = weight + (rowOffset + i) * cols + colOffset;
                 memcpy(dst, src, colSize * sizeof(WeiT));
+            }
+        }
+
+        // UINT4 -> UINT4
+        else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, uint4x2_t>) {
+            int size = trans ? rowSize : colSize;
+            int offset = trans ? rowOffset : colOffset;
+            scaleWeight.Resize(size);
+            zeroWeight.Resize(size);
+            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride() / 2;
+                const OriWeiT *src = weight + (rowOffset + i) * cols / 2 + colOffset / 2;
+                memcpy(dst, src, colSize * sizeof(WeiT) / 2);
             }
         }
 

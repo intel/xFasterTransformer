@@ -201,16 +201,18 @@ public:
         this->prefixSharing = false;
 
         // Quantization config
-        const bool quantDecoderWeights = reader.GetBoolean(modelType, "quant_decoder_weights", false);
-        const int quantWbits = reader.GetInteger(modelType, "quant_wbits", 8);
+        const std::string quantQweightDataType = reader.Get(modelType, "quant_qweight_data_type", "");
+        const std::string quantScalesDataType = reader.Get(modelType, "quant_scales_data_type", "");
+        const std::string quantZerosDataType = reader.Get(modelType, "quant_zeros_data_type", "");
         const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
 
         // DataType dt = getWeightType(configPath, modelType);
         DataType dt = DataType::fp32;
-        if (quantDecoderWeights) {
-            REQUIRES(quantWbits == 8, "Only int8 quantization is supported.");
+        if (quantQweightDataType == "int8" || quantQweightDataType == "uint4") {
+            dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
+            REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");
+            REQUIRES(quantZerosDataType == "fp32", "zeros should be fp32 data type.");
             REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
-            dt = DataType::int8;
         }
 
         // Buffer related (not initialized)
@@ -238,6 +240,8 @@ public:
             auto pdec = new DECODER(ctx, i);
             if (dt == DataType::int8) {
                 this->setDecoderWeights<int8_t>(pdec, modelPath, i);
+            } else if (dt == DataType::int4) {
+                this->setDecoderWeights<uint4x2_t>(pdec, modelPath, i);
             } else if (dt == DataType::fp32) {
                 this->setDecoderWeights<float>(pdec, modelPath, i);
             }
@@ -560,6 +564,8 @@ public:
 
     Messenger &getMessenger() { return messenger; }
 
+    bool isMaster() { return messenger.isMaster(); }
+
     int getRank() { return messenger.getRank(); }
 
     int getEndId() { return endId; }
@@ -626,7 +632,7 @@ protected:
         return this->context.get();
     }
 
-    // OriWeiT: float or int8_t
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
     void setDecoderWeights(DECODER *pdecoder, const std::string &modelPath, int layerIdx) {
         const int hiddenSize = getContext()->hiddenSize;
@@ -668,8 +674,10 @@ protected:
         float *fc3Scales = nullptr;
         float *fc3Zeros = nullptr;
 
-        // INT8 quant, wbits = 8, qweight dtype: int8
-        if constexpr (std::is_same_v<OriWeiT, int8_t>) {
+        // INT8/INT4 quant, wbits = 8/4, qweight dtype: int8_t/uint4x2_t
+        if constexpr (std::is_same_v<OriWeiT, int8_t> || std::is_same_v<OriWeiT, uint4x2_t>) {
+            DataType dt = std::is_same_v<OriWeiT, int8_t> ? DataType::int8 : DataType::int4;
+
             qkvZeros = (float *)ALLOC(qkvSize * sizeof(float), 64);
             qkvScales = (float *)ALLOC(qkvSize * sizeof(float), 64);
             attnOutZeros = (float *)ALLOC(hiddenSize * sizeof(float), 64);
@@ -681,7 +689,7 @@ protected:
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx)
                             + ".attention.query_key_value.qweight.0.bin",
-                    qkvWeight, hiddenSize * qkvSize, DataType::int8);
+                    qkvWeight, hiddenSize * qkvSize, dt);
             loadWeight(
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.zeros.0.bin",
                     qkvZeros, qkvSize, DataType::fp32);
@@ -690,7 +698,7 @@ protected:
                     qkvScales, qkvSize, DataType::fp32);
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.qweight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize, DataType::int8);
+                    attnOutWeight, hiddenSize * hiddenSize, dt);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.zeros.0.bin",
                     attnOutZeros, hiddenSize, DataType::fp32);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.scales.0.bin",
@@ -700,14 +708,14 @@ protected:
             if (fileExists(
                         modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.qweight.0.bin")) {
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.qweight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, DataType::int8);
+                        fc1Weight, hiddenSize * imSize * mlpFactor, dt);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.zeros.0.bin",
                         fc1Zeros, imSize * mlpFactor, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_h_to_4h.scales.0.bin",
                         fc1Scales, imSize * mlpFactor, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.qweight.0.bin",
-                        fc2Weight, hiddenSize * imSize, DataType::int8);
+                        fc2Weight, hiddenSize * imSize, dt);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.zeros.0.bin",
                         fc2Zeros, hiddenSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.scales.0.bin",
@@ -720,21 +728,21 @@ protected:
                 fc3Scales = (float *)ALLOC(hiddenSize * sizeof(float), 64);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.qweight.0.bin",
-                        fc1Weight, hiddenSize * imSize * mlpFactor, DataType::int8);
+                        fc1Weight, hiddenSize * imSize * mlpFactor, dt);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.zeros.0.bin",
                         fc1Zeros, imSize * mlpFactor, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.gate_proj.scales.0.bin",
                         fc1Scales, imSize * mlpFactor, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.qweight.0.bin",
-                        fc2Weight, hiddenSize * imSize, DataType::int8);
+                        fc2Weight, hiddenSize * imSize, dt);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.zeros.0.bin",
                         fc2Zeros, imSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.up_proj.scales.0.bin",
                         fc2Scales, imSize, DataType::fp32);
 
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.qweight.0.bin",
-                        fc3Weight, hiddenSize * imSize, DataType::int8);
+                        fc3Weight, hiddenSize * imSize, dt);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.zeros.0.bin",
                         fc3Zeros, hiddenSize, DataType::fp32);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.scales.0.bin",
@@ -801,11 +809,13 @@ protected:
         READ_OPTIONAL(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.dense_4h_to_h.bias.bin", fc2Bias,
                 hiddenSize, "read FC2 bias error");
 
-        pdecoder->setWeights(getContext(), qkvWeight, qkvScales, qkvZeros, qkvBias, qkvWeight + qSize,
-                qkvScales + qSize, qkvZeros + qSize, qkvBias + qSize, qkvWeight + qSize + kvSize,
-                qkvScales + qSize + kvSize, qkvZeros + qSize + kvSize, qkvBias + qSize + kvSize, attnOutWeight,
-                attnOutScales, attnOutZeros, attnOutBias, ln1Gamma, ln1Beta, fc1Weight, fc1Scales, fc1Zeros, fc1Bias,
-                fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma, ln2Beta, fc3Weight, fc3Scales, fc3Zeros, false);
+        constexpr int sizeFactor = std::is_same_v<OriWeiT, uint4x2_t> ? 2 : 1;
+        pdecoder->setWeights(getContext(), qkvWeight, qkvScales, qkvZeros, qkvBias, qkvWeight + qSize / sizeFactor,
+                qkvScales + qSize, qkvZeros + qSize, qkvBias + qSize,
+                qkvWeight + qSize / sizeFactor + kvSize / sizeFactor, qkvScales + qSize + kvSize,
+                qkvZeros + qSize + kvSize, qkvBias + qSize + kvSize, attnOutWeight, attnOutScales, attnOutZeros,
+                attnOutBias, ln1Gamma, ln1Beta, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros,
+                fc2Bias, ln2Gamma, ln2Beta, fc3Weight, fc3Scales, fc3Zeros, false);
 
         free(qkvWeight);
         free(attnOutWeight);

@@ -62,7 +62,7 @@ void rmsNorm(Tout *output, const Tin *input, const float *weight, int rows, int 
         squareSum = _mm512_reduce_add_ps(vsqare);
 
         // Variance
-        float var = 1 / sqrt(squareSum / size + epsilon);
+        float var = 1.0f / sqrt(squareSum / size + epsilon);
         __m512 vvar = _mm512_set1_ps(var);
 
         for (col = 0; col + 15 < size; col += 16) {
@@ -114,7 +114,7 @@ void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *weig
         squareSum = _mm512_reduce_add_ps(vsqare);
 
         // Variance
-        float var = 1 / sqrt(squareSum / size + epsilon);
+        float var = 1.0f / sqrt(squareSum / size + epsilon);
         __m512 vvar = _mm512_set1_ps(var);
 
         for (col = 0; col + 15 < size; col += 16) {

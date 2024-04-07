@@ -354,7 +354,7 @@ int main(int argc, char **argv) {
     std::vector<int> input = tokenizer->encode(inputPrompt);
 
     xft::AutoModel model(modelPath, dtype);
-    bool isMaster = (model.getRank() == 0);
+    bool isMaster = model.isMaster();
     int secondIdCount = 0;
 
     // Need longer prompt
