@@ -19,6 +19,7 @@
 #include <string>
 
 #include "INIReader.h"
+#include "allocator.h"
 #include "bfloat16.h"
 #include "compile_util.h"
 #include "copy_util.h"
@@ -27,6 +28,7 @@
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "uint4x2.h"
+#include "environment.h"
 
 namespace xft {
 
@@ -66,11 +68,12 @@ int readFile(const std::string &path, T *values, int size) {
     int count = 0;
     int nthreads = std::min(omp_get_max_threads(), 16);
     int chunk_size = (size + nthreads - 1) / nthreads;
-    int enable = (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0);
-    if (enable) {
-        if (getenv("XFT_FAKE_LOAD_INFO") ? atoi(getenv("XFT_FAKE_LOAD_INFO")) : 0) {
+    Env &env = Env::getInstance();
+    if (env.getFakeModelEnabled()) {
+        if (env.getFakeLoadInfoEnabled()) {
             printf("Loading fake model file %s.\n", path.c_str());
         }
+        memset(values, 0, sizeof(T) * size);
         return size;
     }
 
@@ -109,7 +112,7 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
     } else {
         // If T and WT are different types, perform dynamic type conversion
         WT *w_ptr = nullptr;
-        w_ptr = (WT *)aligned_alloc(64, sizeof(WT) * size);
+        w_ptr = (WT *)xft::alloc(sizeof(WT) * size);
         file_size = readFile(filename, w_ptr, size);
         if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
 
@@ -159,13 +162,16 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         std::filesystem::path folderPath = pathObj.parent_path();
         w_type = getWeightType(folderPath.append("config.ini").string());
     }
-    if (!ptr) { ptr = (T *)aligned_alloc(64, size * sizeof(T)); }
+    //1 uint4x2 stores 2 uint4 value, so load size is halfed.
+    if constexpr (std::is_same_v<T, uint4x2_t>) { size = size / 2; }
+    if (!ptr) { ptr = (T *)xft::alloc(size * sizeof(T)); }
     int file_size = 0;
     switch (w_type) {
         case DataType::fp32: file_size = loadWeightWithConvert<T, float>(ptr, size, filename, required); break;
         case DataType::fp16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
         case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
         case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
+        case DataType::int4: file_size = loadWeightWithConvert<T, uint4x2_t>(ptr, size, filename, required); break;
         default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
     }
     return file_size;
@@ -186,4 +192,5 @@ template int loadWeightWithConvert<uint4x2_t, float16_t>(uint4x2_t *, int, const
 template int loadWeightWithConvert<nf4x2_t, float16_t>(nf4x2_t *, int, const std::string &, bool);
 
 template int loadWeightWithConvert<int8_t, int8_t>(int8_t *, int, const std::string &, bool);
+template int loadWeightWithConvert<uint4x2_t, uint4x2_t>(uint4x2_t *, int, const std::string &, bool);
 } // namespace xft

@@ -29,6 +29,8 @@
 #include "transformer_ctx.h"
 #include "transformer_util.h"
 
+#include "rotary_embedding.h"
+
 /**
  * WeiT: weight data type
  * InT: input data type
@@ -44,6 +46,10 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
 class Attention {
 public:
     Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
+
+        //todo(marvin): clear this code after all rotary_emb refactor
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
+
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
@@ -64,7 +70,7 @@ public:
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
-    // OriWeiT: float or int8_t
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
@@ -81,31 +87,37 @@ public:
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
         qkvWeight.Resize(hiddenSize, responsibleCols);
 
-        OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT));
+        constexpr int sizeFactor = std::is_same_v<OriWeiT, uint4x2_t> ? 2 : 1;
+
+        OriWeiT *concatBuf = (OriWeiT *)malloc(hiddenSize * responsibleCols * sizeof(OriWeiT) / sizeFactor);
         if (trans) {
-            memcpy(concatBuf, queryWeight + this->startQHead * headSize * hiddenSize,
-                    hiddenSize * qResponsibleCols * sizeof(OriWeiT));
-            memcpy(concatBuf + hiddenSize * qResponsibleCols, keyWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
-            memcpy(concatBuf + hiddenSize * (qResponsibleCols + kvResponsibleCols),
-                    valueWeight + this->startKVHead * headSize * hiddenSize,
-                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT));
+            memcpy(concatBuf, queryWeight + this->startQHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * qResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+            memcpy(concatBuf + hiddenSize * qResponsibleCols / sizeFactor,
+                    keyWeight + this->startKVHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+            memcpy(concatBuf + hiddenSize * (qResponsibleCols + kvResponsibleCols) / sizeFactor,
+                    valueWeight + this->startKVHead * headSize * hiddenSize / sizeFactor,
+                    hiddenSize * kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
         } else {
             int qkvStride = (ctx->attHeadNum + ctx->kvHeadNum + ctx->kvHeadNum) * ctx->attHeadSize;
 #pragma omp parallel for
             for (int i = 0; i < hiddenSize; ++i) {
-                memcpy(concatBuf + i * responsibleCols, queryWeight + i * qkvStride + this->startQHead * headSize,
-                        qResponsibleCols * sizeof(OriWeiT));
-                memcpy(concatBuf + i * responsibleCols + qResponsibleCols,
-                        keyWeight + i * qkvStride + this->startKVHead * headSize, kvResponsibleCols * sizeof(OriWeiT));
-                memcpy(concatBuf + i * responsibleCols + qResponsibleCols + kvResponsibleCols,
-                        valueWeight + i * qkvStride + this->startKVHead * headSize,
-                        kvResponsibleCols * sizeof(OriWeiT));
+                memcpy(concatBuf + i * responsibleCols / sizeFactor,
+                        queryWeight + i * qkvStride / sizeFactor + this->startQHead * headSize / sizeFactor,
+                        qResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+                memcpy(concatBuf + i * responsibleCols / sizeFactor + qResponsibleCols / sizeFactor,
+                        keyWeight + i * qkvStride / sizeFactor + this->startKVHead * headSize / sizeFactor,
+                        kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
+                memcpy(concatBuf + i * responsibleCols / sizeFactor + qResponsibleCols / sizeFactor
+                                + kvResponsibleCols / sizeFactor,
+                        valueWeight + i * qkvStride / sizeFactor + this->startKVHead * headSize / sizeFactor,
+                        kvResponsibleCols * sizeof(OriWeiT) / sizeFactor);
             }
         }
         float *concatScale = nullptr;
         float *concatZero = nullptr;
-        if constexpr (std::is_same_v<OriWeiT, int8_t>) {
+        if constexpr (std::is_same_v<OriWeiT, int8_t> || std::is_same_v<OriWeiT, uint4x2_t>) {
             concatScale = (float *)malloc(responsibleCols * sizeof(float));
             concatZero = (float *)malloc(responsibleCols * sizeof(float));
             memcpy(concatScale, queryScale + this->startQHead * headSize, qResponsibleCols * sizeof(float));
@@ -309,7 +321,7 @@ public:
         hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
         if (pastSeqLen == 0) {
-            if (ctx->inputSeqLen >= getFlashThresh()) {
+            if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
             } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
                 selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
@@ -387,11 +399,6 @@ protected:
             KVCacheTensor<KVCacheT> &presentValue) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
-
-        if (responsibleKVHeads != responsibleQHeads) {
-            printf("Error: encounter the case not supported in selfAttentionBF16.\n");
-            exit(-1);
-        }
 
         int tokenSizes[ctx->batchSize];
         for (int i = 0; i < ctx->batchSize; ++i) {
@@ -501,7 +508,7 @@ protected:
         auto B = value;
         auto C = output;
         const int N = headSize;
-        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);        
+        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
     }
 
     // Note: the result here is still the intermediate result from the whole attention scope
@@ -543,7 +550,8 @@ protected:
         }
 
         if (!shardHead) {
-            return slimAttention(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen, mBlockSize, kvCopied);
+            return slimAttention(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen,
+                    mBlockSize, kvCopied);
         } else { // Seperate impl. when head is sharded
             return crossAttnShardHead(ctx, query, key, value, result, presentKey, presentValue, attnMask, pastSeqLen);
         }
@@ -567,7 +575,7 @@ protected:
         int scoreStride = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
         auto bufSizeRequired = ctx->numThreads * mBlockSize * scoreStride;
         if (bufSizeRequired > ctx->getScoreCapacity()) {
-            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", bufSizeRequired * sizeof(float));
+            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * bufSizeRequired);
         }
 
 #pragma omp parallel for collapse(3)
@@ -633,8 +641,8 @@ protected:
                     // Softmax * V
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-                    this->gemm2(
-                            C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second, result.Stride());
+                    this->gemm2(C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second,
+                            result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -676,7 +684,7 @@ protected:
         }
 
         float *shardedOut = (float *)SimpleMemPool::instance().getBuffer(
-                "shardedOutput", totalTasks * ctx->attHeadSize * sizeof(float));
+                "shardedOutput", sizeof(float) * totalTasks * ctx->attHeadSize);
 
 #pragma omp parallel for collapse(3)
         for (int b = 0; b < batchSize; ++b) {
@@ -808,9 +816,9 @@ protected:
     }
 
     template <typename KVCacheT>
-    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
-            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
-            KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
+    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+            const float *attnMask, int pastSeqLen) {
 #if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
         using AttnT = bfloat16_t;
 #else
@@ -831,22 +839,22 @@ protected:
         // TODO: kv dtype conversion for prefixSharing
         AttnT *k, *v;
         int kvStride;
+        // convert to AttnT forcely for accelerating purpose
         if constexpr (!std::is_same_v<AttnT, ImT>) {
             //Timer tmc(true, "convert KV matrix into bf16");
             kvStride = kvCols * 2;
             AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
-                "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
+                    "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
 #pragma omp parallel for collapse(3)
             for (uint64_t b = 0; b < batchSize; ++b)
                 for (uint64_t seq = 0; seq < srcLen; ++seq)
                     for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
                         const ImT *srcPtr = key.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
-                        AttnT *dstPtr
-                                = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
+                        AttnT *dstPtr = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
                         if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
-                                bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                            bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                         } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
-                                bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                            bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
                         } else {
                             printf("Not supported Type in Flash Attention yet\n");
                             exit(-1);
@@ -862,36 +870,18 @@ protected:
         }
 
         // [batch, src, head, headsize]
-        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads, respKVHeads,
-                headSize, result.Data(), qkvCols, kvStride, result.Stride());
+        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
+                respKVHeads, headSize, result.Data(), query.Stride(), kvStride, result.Stride());
 
-        // For group attention, as #kvHeads != #qHeads, need to copy current key/values to cache seperately
-        // When M dimension is split, also multiple tasks per copy, so do copy seperately
-#pragma omp parallel for collapse(3)
-        for (uint64_t b = 0; b < batchSize; ++b) {
-            for (uint64_t i = 0; i < (this->endKVHead - this->startKVHead); ++i) {
-                // Copy current key/value to cached keys/values
-                // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
-                // Be noted: for group attention, the key/value is less than query
-                for (uint64_t seq = 0; seq < tgtLen; ++seq) {
-                    auto srcK = key.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
-                    auto dstK = presentKey.getSequence(pastSeqLen + seq, b, i);
-
-                    auto srcV = value.Data() + b * tgtLen * qkvCols + seq * qkvCols + i * headSize;
-                    auto dstV = presentValue.getSequence(pastSeqLen + seq, b, i);
-
-                    xft::copy(dstK, srcK, headSize);
-                    xft::copy(dstV, srcV, headSize);
-                }
-            }
-        }
+        // copy current key/values to cache
+        copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
     }
 
     // scaled dot-product attention: bmm1 + softmax + bmm2
     template <typename AttnT>
     void scaledDpAttention(const ImT *query, const AttnT *key, const AttnT *value, const float *attnMask, float scale,
-            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output,
-            int qStride, int kvStride, int stride) {
+            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output, int qStride,
+            int kvStride, int stride) {
         // output = trans(softmax(query * trans(key)) * value)
         int nth = omp_get_max_threads();
         // closest value of power of 2
@@ -905,9 +895,9 @@ protected:
 
         int numArr = 7;
         int arrStride = (4 + tgtBlk + 2 * headSize) * srcBlk;
-        float *thrBuf = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", nth * arrStride * sizeof(float));
+        float *thrBuf = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", sizeof(float) * nth * arrStride);
         float **thrPtrBuf
-                = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", nth * numArr * sizeof(float *));
+                = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", sizeof(float *) * nth * numArr);
 
         float **preSum = thrPtrBuf;
         float **sum = thrPtrBuf + nth;
@@ -927,7 +917,7 @@ protected:
             qArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk + headSize) + srcBlk * headSize * i;
         }
 
-#pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3) schedule(dynamic)
         for (uint64_t i = 0; i < batchSize; ++i) {
             for (int j = 0; j < numQHead; ++j) {
                 for (int m = 0; m < srcLen; m += srcBlk) {
@@ -965,6 +955,11 @@ protected:
                     for (int b = 0; b < tgtLen; b += tgtBlk) {
                         int kvRealBlk = std::min(tgtBlk, tgtLen - b);
                         // TODO: mask out
+                        if (enableSkipMsk() && DecoderUtil::skipMskAttn(attnMsk + b, qRealBlk, kvRealBlk, tgtLen)) {
+                            // printf("Skip bs %d head %d src %d tgt %d\n", i, j, m, b);
+                            break;
+                        }
+
                         const AttnT *kBlk = k + b * kvStride;
                         const AttnT *vBlk = v + b * kvStride;
 

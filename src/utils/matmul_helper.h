@@ -14,6 +14,8 @@
 // ============================================================================
 #pragma once
 #include <immintrin.h>
+#include "allocator.h"
+#include "bert_util.h"
 #include "bfloat16.h"
 #include "dtype.h"
 #include "environment.h"
@@ -50,7 +52,7 @@ public:
             std::exit(-1);
         }
 
-        AMXThresholdM = Env::getAMXThresholdM();
+        AMXThresholdM = Env::getInstance().getAMXThresholdM();
     }
 
     ~MMHelper() {
@@ -220,6 +222,22 @@ public:
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
                 const OriWeiT *src = weight + (rowOffset + i) * cols + colOffset;
                 memcpy(dst, src, colSize * sizeof(WeiT));
+            }
+        }
+
+        // UINT4 -> UINT4
+        else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, uint4x2_t>) {
+            int size = trans ? rowSize : colSize;
+            int offset = trans ? rowOffset : colOffset;
+            scaleWeight.Resize(size);
+            zeroWeight.Resize(size);
+            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride() / 2;
+                const OriWeiT *src = weight + (rowOffset + i) * cols / 2 + colOffset / 2;
+                memcpy(dst, src, colSize * sizeof(WeiT) / 2);
             }
         }
 
@@ -1066,7 +1084,7 @@ public:
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
                 TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
-                for (int i = 0; i < M; ++i) {
+                for (uint64_t i = 0; i < M; ++i) {
                     for (int j = 0; j < N; ++j) {
                         auto remain = N - j;
                         __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
@@ -1081,7 +1099,7 @@ public:
                 if (M > AMXThresholdM) {
                     TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
 #pragma omp parallel for collapse(2)
-                    for (int i = 0; i < M; ++i) {
+                    for (uint64_t i = 0; i < M; ++i) {
                         for (int j = 0; j < N; ++j) {
                             res[i * ldres + j] = res[i * ldres + j] * gamma;
                         }
@@ -1623,7 +1641,7 @@ private:
         if (C == res) {
             scale_mem = memory(scale_md, *engine);
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
+            for (uint64_t i = 0; i < M; ++i) {
                 memcpy((Tin *)scale_mem.get_data_handle() + i * N, res + i * ldres, N * sizeof(Tin));
             }
         } else {
@@ -1852,7 +1870,7 @@ private:
 
 #define ALLOC(DATATYPE, VALUE, SIZE)                  \
     std::unique_ptr<DATATYPE, decltype(&free)> VALUE( \
-            static_cast<DATATYPE *>(aligned_alloc(64, SIZE * sizeof(DATATYPE))), &free)
+            static_cast<DATATYPE *>(xft::alloc(SIZE * sizeof(DATATYPE))), &free)
         ALLOC(int8_t, quantizedA, M * K);
         ALLOC(float, scaleA, M);
         ALLOC(float, zeroA, M);

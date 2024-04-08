@@ -50,7 +50,6 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 }
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
-    Env::initEnvValue();
     TimeLine::init();
 }
 
@@ -154,6 +153,10 @@ void Model::createSearcher(SearcherConfig &config_) {
     } else if (genMode == GenerationMode::SAMPLE) {
         searcher = new SampleSearch(*decoder, config_);
     }
+}
+
+bool Model::isMaster() {
+    return decoder->isMaster();
 }
 
 int Model::getRank() {

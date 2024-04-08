@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+# set -x
 
 # $1: first token numa node.
 # $2: second token numa node.
@@ -20,7 +20,7 @@ function cloud_cpu_id() {
 	echo $cpu_index
 }
 
-if [ "$is_ali_cloud" -eq 1 ]; then
+if [ "$XFT_CLOUD_ENV" -eq 1 ]; then
     # 调用 get_value 函数并将结果赋值给 cpu_index
     cpu_index=`cloud_cpu_id $3 $4`
 else
@@ -28,5 +28,8 @@ else
     cpu_index=`expr $3 \* $4`-`expr $3 \* $4 + $3 - 1`
 fi
 
+# echo FIRST_TOKEN_WEIGHT_LOCATION=$1 NEXT_TOKEN_WEIGHT_LOCATION=$2 OMP_NUM_THREADS=$3 \
+# 	numactl --all -C $cpu_index -p $2 $BENCHMARK
+
 FIRST_TOKEN_WEIGHT_LOCATION=$1 NEXT_TOKEN_WEIGHT_LOCATION=$2 OMP_NUM_THREADS=$3 \
-	numactl --all -C $cpu_index -m $2 $BENCHMARK
+	numactl --all -C $cpu_index -p $2 $BENCHMARK

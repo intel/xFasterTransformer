@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 import os
 from typing import Tuple, List
 
+import sys
+
+sys.stdout = open(sys.stdout.fileno(), mode="w", buffering=1)
+
 # Ignore Tensor-RT warning from huggingface
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
@@ -25,6 +29,21 @@ import json
 import numpy as np
 
 import argparse
+import configparser
+
+import csv
+
+
+def check_and_update_csv(file_path: str, data: dict):
+    file_exists = os.path.exists(file_path)
+
+    with open(file_path, mode="a" if file_exists else "w", newline="") as csvfile:
+        fieldnames = data.keys()
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(data)
 
 
 def boolean_string(string):
@@ -52,20 +71,21 @@ DTYPE_LIST = [
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--token_path", type=str, default="/data/chatglm-6b", help="Path to token file")
-parser.add_argument("--model_path", type=str, default="/data/chatglm-6b/cpu", help="Path to model file")
-parser.add_argument("--model_name", type=str, default="Model", help="Model name")
-parser.add_argument("--prompt_path", type=str, default="./prompt_pool.json", help="Path to model file")
-parser.add_argument("--token_in", type=str, default=32, help="Input Token Len")
+parser.add_argument("--model_name", type=str, default=None, help="Model name")
+parser.add_argument("--token_in", type=str, default="32", help="Input Token Len")
 parser.add_argument("--token_out", type=int, default=32, help="Output Token Len, MaxLen=IN+OUT")
 parser.add_argument("--beam_width", type=int, default=1, help="Beam Search Width")
 parser.add_argument("--input_prompt", type=str, default=None, help="Input Prompt")
 parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
-parser.add_argument("--iteration", type=int, default=10, help=" Benchmakr Iterations")
-parser.add_argument("--warmup", type=int, default=2, help="Warm up Iterations")
+parser.add_argument("--iteration", type=int, default=3, help=" Benchmakr Iterations")
+parser.add_argument("--warmup", type=int, default=1, help="Warm up Iterations")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("--token_path", type=str, default=None, help="Path to token file")
+parser.add_argument("--model_path", type=str, default=None, help="Path to model file")
+parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+parser.add_argument("--csv", type=str, default="", help="Path to csv file")
 
 
 def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tuple[str, str]] = []):
@@ -80,25 +100,28 @@ def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tup
     return inputs
 
 
-import importlib.util
-
-xft_spec = importlib.util.find_spec("xfastertransformer")
-
-if xft_spec is None:
-    import sys
-
-    sys.path.append("../src")
-    print("[INFO] xfastertransformer is not installed in pip, using source code.")
-else:
-    print("[INFO] xfastertransformer is installed, using pip installed package.")
-
-
-import xfastertransformer
-
 if __name__ == "__main__":
     args = parser.parse_args()
     with open(args.prompt_path, "r") as json_file:
         prompt_pool = json.load(json_file)
+
+    if not args.model_name:
+        args.model_name = os.path.basename(os.path.dirname(args.model_path))
+    else:
+        os.environ.setdefault("XFT_FAKE_MODEL", "1")
+
+    # if enabled the XFT_FAKE_MODEL = 1, will try to load real weight from config.ini:model_name
+    if os.environ.get("XFT_FAKE_MODEL", "-1") == "1":
+        model_path_suffix = "-xft"
+        _config = configparser.ConfigParser()
+        _config.read(os.path.join(args.model_path, "config.ini"))
+        _weight_path = _config[_config.sections()[0]]["model_name"].rstrip(os.path.sep) + model_path_suffix
+        if os.path.exists(_weight_path):
+            print(f"The folder '{_weight_path}' exists. Loading real weight!")
+            os.environ.update({"XFT_FAKE_MODEL": "0"})
+            args.model_path = _weight_path
+        else:
+            print(f"The folder '{_weight_path}' does not exist. Using fake weight!")
 
     if "chatglm" in args.model_name.lower():
         model_prompt = prompt_pool["chatglm"]
@@ -107,6 +130,8 @@ if __name__ == "__main__":
     if "chatglm3" in args.model_name.lower():
         model_prompt = prompt_pool["chatglm3"]
     if "llama" in args.model_name.lower():
+        model_prompt = prompt_pool["llama"]
+    if "deepseek" in args.model_name.lower():
         model_prompt = prompt_pool["llama"]
     if "baichuan" in args.model_name.lower():
         model_prompt = prompt_pool["baichuan"]
@@ -118,13 +143,25 @@ if __name__ == "__main__":
         model_prompt = prompt_pool["qwen"]
 
     tokenizer = AutoTokenizer.from_pretrained(
-        args.token_path, use_fast=False, padding_side="left", trust_remote_code=True
+        args.token_path, use_fast=False, padding_side="left", trust_remote_code=True, legacy=False
     )
+
+    try:
+        import xfastertransformer
+
+        print("[INFO] xfastertransformer is installed, using pip installed package.")
+    except Exception as e:
+        sys.path.append("../src")
+        import xfastertransformer
+
+        print("[INFO] xfastertransformer is not installed in pip, using source code.")
+
     model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
     input_prompts = []
     if model.rank == 0:
         # input prompt
         print("======start=======")
+        print("[INFO] input argparse = ", args)
         if args.input_prompt is not None:
             input_prompt = args.input_prompt
         elif args.token_in in model_prompt:
@@ -170,14 +207,18 @@ if __name__ == "__main__":
             first_token_times.append(first_token_time)
             # remaining tokens
             cost_list = []
+            token_list = [next_tokens.view(-1).tolist()[0]]
             while not model.is_done():
                 start_time = time.perf_counter()
                 next_tokens = model.forward()
                 next_time = time.perf_counter() - start_time
                 cost_list.append(next_time)
+                token_list.append(next_tokens.view(-1).tolist()[0])
             generated_ids = model.finalize()
             total_times.append(first_token_time + sum(cost_list))
             next_token_times += cost_list
+            response = tokenizer.decode(token_list, skip_special_tokens=True)
+            print(f"    Response: {response}")
 
         total_times = list(map(lambda x: x * 1000, total_times))
         first_token_times = list(map(lambda x: x * 1000, first_token_times))
@@ -192,7 +233,36 @@ if __name__ == "__main__":
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
         print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
-        print(f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s")
+        print(
+            f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s"
+        )
+        print("=" * 120, "\n" * 3)
+
+        if args.csv != "":
+            from datetime import datetime
+
+            arg_dict = dict(
+                filter(
+                    lambda item: str(item[0]).find("path") == -1 and str(item[0]).find("csv") == -1, vars(args).items()
+                )
+            )
+
+            rst = {
+                "test_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "infer_avg(ms)": round(np.mean(total_times), 2),
+                "1st_avg(ms)": round(np.mean(first_token_times), 2),
+                "2nd_max(ms)": round(np.max(next_token_times), 2),
+                "2nd_min(ms)": round(np.min(next_token_times), 2),
+                "2nd_P90(ms)": round(np.percentile(next_token_times, 90), 2),
+                "2nd_avg(ms)": round(np.mean(next_token_times), 2),
+                "throughput_wo_1st (tokens/s)": round(1000 / np.percentile(next_token_times, 90) * args.batch_size, 2),
+                **arg_dict,
+                "Fake_model": True if os.environ.get("XFT_FAKE_MODEL", "-1") == "1" else False,
+                "Response": response,
+            }
+            # print(rst)
+            check_and_update_csv(args.csv, rst)
+
     else:
         for i in range(args.warmup + args.iteration):
             model.generate()

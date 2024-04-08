@@ -13,7 +13,9 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include "allocator.h"
 #include "float16.h"
+#include "token_embedding_kernels.h"
 #include "transformer_ctx.h"
 
 template <typename T>
@@ -26,7 +28,7 @@ public:
 
     void setWeights(float *tokenEmb) {
         int size = vocabSize * hiddenSize;
-        embTable = (T *)aligned_alloc(64, size * sizeof(T));
+        embTable = (T *)xft::alloc(size * sizeof(T));
 
         if constexpr (std::is_same_v<T, float>) {
             memcpy(embTable, tokenEmb, size * sizeof(T));
@@ -38,17 +40,12 @@ public:
         }
     }
 
-    void setWeights(const std::string &weightPath) {
-        loadWeight(weightPath, embTable, vocabSize * hiddenSize);
-    }
+    void setWeights(const std::string &weightPath) { loadWeight(weightPath, embTable, vocabSize * hiddenSize); }
 
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>
     void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
-        for (int i = 0; i < batchSize * seqLen; ++i) {
-            int id = tokenIds[i];
-            xft::copy(output + i * hiddenSize, embTable + id * hiddenSize, hiddenSize);
-        }
+        xft::tokenEmbedding<OutT, T>(output, tokenIds, embTable, batchSize, seqLen, hiddenSize);
     }
 
     int getVocabSize() { return vocabSize; }

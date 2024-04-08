@@ -26,18 +26,27 @@ include(ExternalProject)
 
 set(ONEDNN_BUILD_OPTIONS -DONEDNN_LIBRARY_TYPE=STATIC -DONEDNN_BUILD_TESTS=OFF -DONEDNN_BUILD_EXAMPLES=OFF)
 if(WITH_GPU)
-  set(ONEDNN_BUILD_OPTIONS "${ONEDNN_BUILD_OPTIONS} -DONEDNN_GPU_RUNTIME=SYCL")
+    set(ONEDNN_BUILD_OPTIONS "${ONEDNN_BUILD_OPTIONS};-DONEDNN_GPU_RUNTIME=SYCL")
 endif()
 
-# cmake-format: off
-ExternalProject_Add(onednn
-  GIT_REPOSITORY    https://github.com/oneapi-src/oneDNN.git
-  GIT_TAG           v3.3.3
-  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/onednn
-  BINARY_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/onednn
-  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "build" && ${CMAKE_COMMAND} -E chdir "build" ${CMAKE_COMMAND} ${ONEDNN_BUILD_OPTIONS} ..
-  BUILD_COMMAND     ${CMAKE_COMMAND} -E chdir "build" make -j all
-  INSTALL_COMMAND   ""
-  TEST_COMMAND      ""
-)
-# cmake-format: on
+set(ONEDNN_3rdparty_DIR "${CMAKE_SOURCE_DIR}/3rdparty/onednn")
+
+if(NOT EXISTS ${ONEDNN_3rdparty_DIR})
+    # cmake-format: off
+    ExternalProject_Add(onednn
+      GIT_REPOSITORY    https://github.com/oneapi-src/oneDNN.git
+      GIT_TAG           v3.3.3
+      SOURCE_DIR        ${ONEDNN_3rdparty_DIR}
+      BINARY_DIR        ${ONEDNN_3rdparty_DIR}
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "build" && ${CMAKE_COMMAND} -E chdir "build" ${CMAKE_COMMAND} ${ONEDNN_BUILD_OPTIONS} ..
+      BUILD_COMMAND     ${CMAKE_COMMAND} -E chdir "build" make -j all
+      INSTALL_COMMAND   ""
+      TEST_COMMAND      ""
+    )
+    # cmake-format: on
+else()
+    if(NOT TARGET onednn)
+        add_library(onednn INTERFACE)
+    endif()
+    message(STATUS "oneDNN directory already exists. Skipping installation.")
+endif()

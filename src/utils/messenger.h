@@ -18,20 +18,25 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <iostream>
+#include <sys/time.h>
 
 #include "bfloat16.h"
 #include "compile_util.h"
+#include "environment.h"
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
+#include "simple_mem_pool.h"
 #include "timeline.h"
 #include "verbose.h"
+
+extern bool tunedComm();
 
 class Messenger {
 private:
     Messenger() {
         // User has set the SINGLE_INSTANCE environment variable
         // or program is not with MPI.
-        if (std::getenv("SINGLE_INSTANCE") != nullptr || !withMpirun()) {
+        if (Env::getInstance().getSingleInstance() || !withMpirun()) {
             std::cout << "[INFO] SINGLE_INSTANCE MODE." << std::endl;
 #ifdef USE_SHM
             this->pshm = nullptr;
@@ -62,11 +67,11 @@ private:
 
         atexit(Messenger::mpi_finalize);
 
-        color = Env::getPipelineStage();
+        color = Env::getInstance().getPipelineStage();
         int sameHostnames = (*helperInit)(&size, &rank, &color);
 
 #ifdef USE_SHM
-        if (sameHostnames && !std::getenv("XFT_ONECCL")) {
+        if (sameHostnames && !Env::getInstance().getOneCCLEnabled()) {
             localRanksFlag = true;
             pshm = new ShmReduction(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
         } else {
@@ -89,7 +94,7 @@ public:
         return instance;
     }
 
-    bool isMaster() { return rank == 0; }
+    bool isMaster() { return rank == 0 && color == 0; }
 
     int getRank() { return rank; }
 
@@ -97,34 +102,85 @@ public:
 
     int getColor() { return color; }
 
-    // From some example code of oneCCL, inplace reducing is supported
-    // Only float is used now
-    void reduceAdd(float *sendBuf, float *recvBuf, size_t count) {
+    template <typename T>
+    void reduceAdd(T *sendBuf, T *recvBuf, size_t count) {
+        if (!check()) return;
         TimeLine t("Messenger.reduceAdd");
-
+        static std::unordered_map<size_t, int> tuned_map;
 #ifdef USE_SHM
-        if (count * sizeof(float) > pshm->getSHMSize() || !localRanksFlag) {
-            (*helperAllreduce)(sendBuf, recvBuf, count);
+        if (tunedComm() && localRanksFlag) {
+            size_t commSize = sizeof(T) * count;
+            if (sizeof(T) * count > pshm->getSHMSize()) { pshm->ShmResize(rank, commSize); }
+
+            auto it = tuned_map.find(commSize);
+            if (it == tuned_map.end()) {
+                T *commBuf = (T *)SimpleMemPool::instance().getBuffer("commBuf", commSize);
+                int warmup = 1, nruns = 3;
+                struct timeval start, end;
+                float dur_shm = std::numeric_limits<float>::max(), dur_ccl = std::numeric_limits<float>::max();
+                // tuned for the faster comm primitive
+                for (int i = 0; i < warmup + nruns; ++i) {
+                    if (i >= warmup) gettimeofday(&start, NULL);
+                    pshm->reduceAdd(commBuf, commBuf, count, rank, size);
+                }
+                gettimeofday(&end, NULL);
+                dur_shm = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) / 1000.0f;
+
+                if (commSize < 1.0e9) {
+                    for (int i = 0; i < warmup + nruns; ++i) {
+                        if (i >= warmup) gettimeofday(&start, NULL);
+                        cclAllreduce(commBuf, commBuf, count);
+                    }
+                    gettimeofday(&end, NULL);
+                    dur_ccl = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) / 1000.0f;
+                }
+
+                // default 0 means SHM Addreduce, 1 means CCL
+                int comm_type = 0;
+                if (rank == 0 && dur_ccl < dur_shm * 0.9) { comm_type = 1; }
+                this->broadcast(&comm_type, 1);
+                tuned_map[commSize] = comm_type;
+            }
+
+            if (tuned_map[commSize] == 0) {
+                pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
+            } else {
+                cclAllreduce(sendBuf, recvBuf, count);
+            }
         } else {
-            pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
+            reduceAddBase(sendBuf, recvBuf, count);
         }
 #else
-        (*helperAllreduce)(sendBuf, recvBuf, count);
+        reduceAddBase(sendBuf, recvBuf, count);
 #endif
     }
 
-    void reduceAdd(bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t count) {
+    // inplace reducing is supported
+    template <typename T>
+    void reduceAddBase(T *sendBuf, T *recvBuf, size_t count) {
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (count * sizeof(bfloat16_t) > pshm->getSHMSize() || !localRanksFlag) {
-            (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        if (sizeof(T) * count > pshm->getSHMSize() || !localRanksFlag) {
+            cclAllreduce(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
         }
 #else
-        (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        cclAllreduce(sendBuf, recvBuf, count);
 #endif
+    }
+
+    template <typename T>
+    void cclAllreduce(T *sendBuf, T *recvBuf, size_t count) {
+        if constexpr (std::is_same_v<T, bfloat16_t>) {
+            (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        } else if constexpr (std::is_same_v<T, float>) {
+            (*helperAllreduce)(sendBuf, recvBuf, count);
+        } else {
+            printf("Unsupported data type for reduceAdd.\n");
+            exit(-1);
+        }
     }
 
     // Only int is used now

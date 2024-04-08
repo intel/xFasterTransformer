@@ -1,0 +1,32 @@
+name: XFT PR Validation
+permissions: read-all
+on:
+  push:
+    tags:
+      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:
+  build_and_simple_test:
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+
+      - name: svr_info
+        shell: bash
+        run: |
+            bash ci_build svr_info
+
+      - name: Build
+        shell: bash
+        run: |
+            bash ci_build build
+
+      - name: UT
+        shell: bash
+        run: |
+            bash ci_build ut
+
+      - name: release model test
+        shell: bash
+        run: |
+            bash ci_build release

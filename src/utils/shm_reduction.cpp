@@ -15,18 +15,18 @@
 #include "shm_reduction.h"
 #include "intrinsics_util.h"
 
-static inline void multiThreadCopy(char *dst, char *src, int nbytes) {
+static inline void multiThreadCopy(char *dst, char *src, size_t nbytes) {
     constexpr int sizePerSplit = 1024;
     int splits = (nbytes + sizePerSplit - 1) / sizePerSplit;
 
 #pragma omp parallel for
-    for (int i = 0; i < splits; ++i) {
-        int size = (i == splits - 1) ? (nbytes - i * sizePerSplit) : sizePerSplit;
+    for (uint64_t i = 0; i < splits; ++i) {
+        size_t size = (i == splits - 1) ? (nbytes - i * sizePerSplit) : sizePerSplit;
         memcpy(dst + i * sizePerSplit, src + i * sizePerSplit, size);
     }
 }
 
-ShmReduction::ShmReduction(int rank, int size, std::function<void(int *, size_t)> callback)
+ShmReduction::ShmReduction(int rank, size_t size, std::function<void(int *, size_t)> callback)
     : rank_(rank), rank_size_(size) {
     shmCtx_.name = SHM_NAME;
     shmCtx_.nstates = size;
@@ -34,7 +34,7 @@ ShmReduction::ShmReduction(int rank, int size, std::function<void(int *, size_t)
     shmCtx_.nblocks = MAX_SHM_BLOCK_COUNT;
     if (rank_ == 0) {
         xft::create_shm(&shmCtx_);
-        memset(shmCtx_.state, 0, shmCtx_.nstates * sizeof(int));
+        memset(shmCtx_.state, 0, sizeof(int) * shmCtx_.nstates);
         memset((void *)shmCtx_.blockState, 0, shmCtx_.nstates * shmCtx_.nblocks);
     }
 
@@ -43,14 +43,45 @@ ShmReduction::ShmReduction(int rank, int size, std::function<void(int *, size_t)
     if (rank != 0) { xft::connect_shm(&shmCtx_); }
 }
 
-int ShmReduction::getSHMSize() {
-    return MAX_SHM_SIZE;
+void ShmReduction::ShmResize(int rank, size_t size) {
+    // remove old shm
+    size_t total_size = sizeof(int) * shmCtx_.nstates + shmCtx_.nbytes + shmCtx_.nblocks * shmCtx_.nstates;
+    munmap(shmCtx_.address, total_size);
+    // shm_unlink(shmCtx_.name);
+
+    // alloc and map new shm
+    total_size = total_size - shmCtx_.nbytes + size;
+    shmCtx_.nbytes = size;
+    // Truncate the shared memory to the desired size
+    if (rank == 0 && ftruncate(shmCtx_.fp, total_size) == -1) {
+        perror("shm ftruncate failed.");
+        exit(-1);
+    }
+
+    // Map the shared memory into the address space of the process
+    void *shm_ptr = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, shmCtx_.fp, 0);
+    if (shm_ptr == MAP_FAILED) {
+        perror("shm mmap failed.");
+        exit(-1);
+    }
+    shmCtx_.state = (int *)shm_ptr;
+    shmCtx_.blockState = (uint8_t *)((int *)shm_ptr + shmCtx_.nstates);
+    shmCtx_.address = (void *)((uint8_t *)shmCtx_.blockState + shmCtx_.nblocks * shmCtx_.nstates);
+
+    if (rank == 0) {
+        memset(shmCtx_.state, 0, sizeof(int) * shmCtx_.nstates);
+        memset((void *)shmCtx_.blockState, 0, shmCtx_.nstates * shmCtx_.nblocks);
+    }
+}
+
+size_t ShmReduction::getSHMSize() {
+    return shmCtx_.nbytes;
 }
 
 template <typename T>
 void ShmReduction::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int rankSize) {
-    int nbytes = size * sizeof(T);
-    int nBlockBytes = SHM_BLOCK_SIZE * sizeof(T);
+    size_t nbytes = sizeof(T) * size;
+    size_t nBlockBytes = sizeof(T) * SHM_BLOCK_SIZE;
     int nblocks = (size + SHM_BLOCK_SIZE - 1) / SHM_BLOCK_SIZE;
     int nthreads = std::min(nblocks, omp_get_max_threads());
 
@@ -113,4 +144,5 @@ void ShmReduction::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int 
 }
 
 template void ShmReduction::reduceAdd<float>(float *sendBuf, float *recvBuf, size_t size, int rank, int rankSize);
-template void ShmReduction::reduceAdd<bfloat16_t>(bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t size, int rank, int rankSize);
+template void ShmReduction::reduceAdd<bfloat16_t>(
+        bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t size, int rank, int rankSize);

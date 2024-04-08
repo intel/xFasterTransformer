@@ -20,8 +20,15 @@
 #include <cstring>
 #include <string>
 
+#include "allocator.h"
+#include <filesystem>
+
+#include "INIReader.h"
 #include "my_types.h"
+#include "simple_mem_pool.h"
 #include "split_util.h"
+
+namespace fs = std::filesystem;
 
 struct RopeParams {
     float base;
@@ -49,6 +56,8 @@ public:
 class MMHelper;
 
 struct DecoderContext {
+
+    // Runtime configuration
     // # of mini-batch
     int batchSize;
     // # of tokens
@@ -56,36 +65,30 @@ struct DecoderContext {
     // For custom usage
     int reserved1;
 
-    // Other configuration
+    // Model structure configuration
     int vocabSize;
     int embeddingSize;
     int maxPositions;
     int maxPosEmbed;
     int maxSeqLength; // From Qwen model's seq_length
+    bool useLogN; // From Qwen model
+    bool useNTK; // From Qwen model
     int layers;
-
-    // For BERT-base, hidden_size=768
-    const int hiddenSize;
-    // For BERT-base, intermediate_size=3072
-    const int intermediateSize;
-    // For BERT-base, attHeadNum=12
-    const int attHeadNum;
-    const int kvHeadNum;
-    // attHeadSize = hiddenSize / attHeadNum
+    int hiddenSize;
+    int intermediateSize;
+    int attHeadNum;
+    int kvHeadNum;
     int attHeadSize;
-    // attFactor = 1 / sqrtf(attHeadSize)
     float attFactor;
-
-    // norm epsilon
     float epsilon;
 
     // rope scaling parameters
     RopeParams *ropeParamsPtr;
 
     // Which split this context is for
-    const int splitIdx;
+    int splitIdx;
     // # of splits (the same as NUMA node number in the system)
-    const int numSplit;
+    int numSplit;
 
     // For pipeline parallel and tensor parallel config
     int ppSize = 1; // pipeline parallel stage size
@@ -109,6 +112,10 @@ struct DecoderContext {
 
     MMHelper *mmHelper;
 
+    std::string configPath;
+    INIReader configReader;
+    std::string sectionName;
+
 private:
     float *rawBuffer;
     uint64_t rawBufSize; // how many floats
@@ -122,7 +129,7 @@ public:
     DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
             int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
-            int numThreads = 0)
+            bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , intermediateSize(_imSize)
@@ -133,6 +140,8 @@ public:
         , maxPositions(_maxPositions)
         , maxPosEmbed(_maxPosEmbed)
         , maxSeqLength(_maxSeqLength)
+        , useLogN(_useLogN)
+        , useNTK(_useNTK)
         , ropeParamsPtr(_ropeParamsPtr)
         , splitIdx(_splitIdx)
         , numSplit(_splits)
@@ -160,7 +169,7 @@ public:
         }
 
         this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
-        this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
         memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
 
         if (act == "relu") {
@@ -175,6 +184,69 @@ public:
             printf("unsupported activation: %s\n", act.c_str());
             exit(-1);
         }
+    }
+
+    DecoderContext(std::string _configPath, std::string _sectionName = "") {
+        this->ResetConfigReader(_configPath, _sectionName);
+    }
+
+    void ResetConfigReader(std::string _configPath, std::string _sectionName = "") {
+        fs::path filePath(_configPath);
+
+        if (!fs::exists(filePath)) {
+            printf("Config File %s does not exist!", configPath.c_str());
+            exit(-1);
+        }
+
+        this->configPath = _configPath;
+        this->configReader = INIReader(_configPath);
+        if (this->configReader.ParseError() < 0) {
+            printf("Config File %s Can't be loaded!", configPath.c_str());
+            exit(-1);
+        }
+
+        if (_sectionName == "") {
+            if (!this->configReader.Sections().empty()) {
+                this->sectionName = *(this->configReader.Sections().begin());
+            } else {
+                printf("Config File %s Can't be loaded!", configPath.c_str());
+                exit(-1);
+            }
+        }
+    }
+
+    template <typename T>
+    void GetAttr(const std::string &attrName, T *attrValue) {
+        if constexpr (std::is_integral<T>::value) { // int
+            *attrValue = this->configReader.GetInteger(this->sectionName, attrName);
+        } else if constexpr (std::is_floating_point<T>::value) { // float
+            *attrValue = this->configReader.GetFloat(this->sectionName, attrName);
+        } else if constexpr (std::is_same<T, bool>::value) { // bool
+            printf("the func GetBoolean(%s) should have default value!", attrName);
+            exit(-1);
+        } else { // string
+            *attrValue = this->configReader.Get(this->sectionName, attrName);
+        }
+    }
+
+    template <typename T>
+    void GetAttr(const std::string &attrName, T *attrValue, const T defValue) {
+        if constexpr (std::is_integral<T>::value) { // int
+            *attrValue = this->configReader.GetInteger(this->sectionName, attrName, defValue);
+        } else if constexpr (std::is_floating_point<T>::value) { // float
+            *attrValue = this->configReader.GetFloat(this->sectionName, attrName, defValue);
+        } else if constexpr (std::is_same<T, bool>::value) { // bool
+            *attrValue = this->configReader.GetBoolean(this->sectionName, attrName, defValue);
+        } else { // string
+            *attrValue = this->configReader.Get(this->sectionName, attrName, defValue);
+        }
+    }
+
+    bool cached(const std::string &name) { return SimpleMemPool::instance().cached(name); }
+
+    template <typename T>
+    T *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
+        return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, alignment);
     }
 
     void dump() {
@@ -236,7 +308,7 @@ public:
             this->rawBufSize = total;
             free(this->rawBuffer);
 
-            this->rawBuffer = (float *)aligned_alloc(64, sizeof(float) * rawBufSize);
+            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
             memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
         }
 

@@ -14,9 +14,10 @@
 // ============================================================================
 #pragma once
 #include <tuple>
+#include <cstdint>
 
-#include "messenger.h"
-#include "transformer_ctx.h"
+class DecoderContext;
+class Messenger;
 
 class AbstractDecoder {
 public:
@@ -41,6 +42,8 @@ public:
     virtual DecoderContext *getContext() = 0;
 
     virtual Messenger &getMessenger() = 0;
+
+    virtual bool isMaster() = 0;
 
     virtual int getRank() = 0;
 

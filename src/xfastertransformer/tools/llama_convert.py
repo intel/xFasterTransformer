@@ -59,12 +59,12 @@ class LlamaConvert(BaseModelConvert):
             if i == 0:
                 save_val(val, key)
 
-        elif "mlp.gate_proj.weight" in key or "mlp.up_proj.weight" in key or "mlp.down_proj.weight" in key:
+        elif "mlp.gate_proj" in key or "mlp.up_proj" in key or "mlp.down_proj" in key:
             split_vals = np.split(val, factor, axis=0)
             for j in range(factor):
                 save_val(split_vals[j], key, i * factor + j)
 
-        elif "attention.query_key_value.weight" in key:
+        elif "attention.query_key_value" in key:
             qkvcols = val.shape[-1]
             head_size = int(qkvcols / (int(num_attention_heads) + int(num_key_value_heads) * 2))
             qcol = int(num_attention_heads) * head_size
@@ -81,7 +81,7 @@ class LlamaConvert(BaseModelConvert):
                 val = np.concatenate((q_split_vals[j], k_split_vals[j], v_split_vals[j]), axis=-1)
                 save_val(val, key, i * factor + j)
 
-        elif "attention.dense.weight" in key:
+        elif "attention.dense" in key:
             split_vals = np.split(val, factor, axis=0)
             for j in range(factor):
                 save_val(split_vals[j], key, i * factor + j)
@@ -123,7 +123,17 @@ class LlamaConvert(BaseModelConvert):
             config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
             config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
             config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = "silu"
+            config["llama"]["activation_type"] = str(hf_config["hidden_act"])
+            config["llama"]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
+
+            rope_scaling = hf_config.get("rope_scaling", None)
+            if rope_scaling:
+                config["llama"]["scaling_factor"] = str(rope_scaling.get("factor", 1.0))
+                config["llama"]["rope_type"] = str(rope_scaling.get("type", "null"))
+            else:
+                config["llama"]["scaling_factor"] = str(1.0)
+                config["llama"]["rope_type"] = str("null")
+
             config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
             config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
             config["llama"]["start_id"] = str(hf_config["bos_token_id"])
@@ -133,7 +143,6 @@ class LlamaConvert(BaseModelConvert):
                 config.write(configfile)
         except Exception as e:
             print("Fail to save the config in config.ini.", str(e))
-
         hf_model_name_pattern = [
             "input_layernorm.weight",
             "attention.query_key_value.weight",
@@ -203,6 +212,203 @@ class LlamaConvert(BaseModelConvert):
                                 factor,
                                 new_name,
                                 param.detach().cpu().numpy().astype(self.dtype),
+                                num_attention_heads,
+                                num_key_value_heads,
+                            )
+                        )
+                pool.starmap_async(self.split_and_convert_process, starmap_args)
+        pool.close()
+        pool.join()
+
+    def split_and_convert_quantized_model(self, input_dir, output_dir, dtype, processes, from_quantized_model):
+        """
+        Convert from AutoGPTQ quantized int8/int4 model to xFT int8/int4 model.
+        """
+
+        if from_quantized_model != "gptq":
+            print(f"[ERROR] Input model must be AutoGPTQ quantized model. from_quantized_model must be 'gptq'.")
+            return
+
+        # create directory if not exist
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # load AutoGPTQ quantized model
+        from auto_gptq import AutoGPTQForCausalLM
+        model = AutoGPTQForCausalLM.from_quantized(
+            input_dir,
+            inject_fused_attention=True,
+            low_cpu_mem_usage=True,
+            device_map="auto",
+        )
+
+        hf_config = vars(model.config)
+        quantize_config = vars(model.quantize_config)
+
+        # save parameters to config file
+        config = configparser.ConfigParser()
+        config["llama"] = {}
+        has_post_decoder_layernorm = True
+        try:
+            config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
+            num_key_value_heads = config["llama"]["kv_head_num"] = str(
+                hf_config.get("num_key_value_heads", num_attention_heads)
+            )
+
+            hidden_size = hf_config["hidden_size"]
+            config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
+            config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
+            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
+            config["llama"]["layernorm_type"] = "pre_layernorm"
+            config["llama"]["activation_type"] = "silu"
+            config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
+            config["llama"]["start_id"] = str(hf_config["bos_token_id"])
+            config["llama"]["end_id"] = str(hf_config["eos_token_id"])
+            config["llama"]["weight_data_type"] = dtype
+
+            self.wbits = quantize_config["bits"]
+            assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"
+            config["llama"]["quant_qweight_data_type"] = 'int8' if self.wbits == 8 else 'uint4'
+            config["llama"]["quant_scales_data_type"] = 'fp32'
+            config["llama"]["quant_zeros_data_type"] = 'fp32'
+            assert quantize_config["group_size"] == -1, "Only column wise quantization is supported."
+            config["llama"]["quant_groupsize"] = str(quantize_config["group_size"])
+            #config["llama"]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
+
+            with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
+                config.write(configfile)
+        except Exception as e:
+            print("Fail to save the config in config.ini.", str(e))
+
+        hf_model_name_pattern = [
+            "input_layernorm.weight",
+            "self_attn.qkv_proj.qweight",
+            "self_attn.qkv_proj.qzeros",
+            "self_attn.qkv_proj.scales",
+            "self_attn.o_proj.qweight",
+            "self_attn.o_proj.qzeros",
+            "self_attn.o_proj.scales",
+            "post_attention_layernorm.weight",
+            "mlp.gate_proj.qweight",
+            "mlp.gate_proj.qzeros",
+            "mlp.gate_proj.scales",
+            "mlp.up_proj.qweight",
+            "mlp.up_proj.qzeros",
+            "mlp.up_proj.scales",
+            "mlp.down_proj.qweight",
+            "mlp.down_proj.qzeros",
+            "mlp.down_proj.scales",
+        ]
+
+        ft_model_name_pattern = [
+            "input_layernorm.weight",
+            "attention.query_key_value.qweight",
+            "attention.query_key_value.zeros",
+            "attention.query_key_value.scales",
+            "attention.dense.qweight",
+            "attention.dense.zeros",
+            "attention.dense.scales",
+            "post_attention_layernorm.weight",
+            "mlp.gate_proj.qweight",
+            "mlp.gate_proj.zeros",
+            "mlp.gate_proj.scales",
+            "mlp.up_proj.qweight",
+            "mlp.up_proj.zeros",
+            "mlp.up_proj.scales",
+            "mlp.down_proj.qweight",
+            "mlp.down_proj.zeros",
+            "mlp.down_proj.scales",
+        ]
+
+        state_dict = model.state_dict()
+        model_named_parameters = dict()
+        for name, param in state_dict.items():
+            if name.startswith("model."):
+                name = name[6:]
+            wf = torch.tensor(list(range(0, 32, self.wbits)), dtype=torch.int32).unsqueeze(0)
+
+            print(name)
+
+            if "embed" in name:
+                model_named_parameters[name] = param
+            elif "lm_head" in name:
+                model_named_parameters[name] = param
+            elif "scales" in name:
+                # scales is fp16 in AutoQPTQ, convert to fp32 for xFT.
+                model_named_parameters[name] = param.float()
+            elif "qzeros" in name:
+                # get qzeros
+                qzeros = param
+                qzeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.wbits),
+                        wf.unsqueeze(0)).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qzeros = qzeros + 1
+                qzeros = torch.bitwise_and(qzeros, (2 ** self.wbits) - 1)
+
+                # qzeoros is uint8/uint4 in AutoQPTQ, zeros is fp32 for xFT.
+                # for int8, zeros = - scales * (qzeros - 128)
+                # for uint4, zeros = - scales * qzeros
+                if self.wbits == 8:
+                    qzeros = qzeros - 128 # uint8 to int8
+                qzeros = torch.flatten(qzeros).float()
+                scales = state_dict["model." + name.replace("qzeros", "scales")].float()
+                zeros = - scales * qzeros
+                model_named_parameters[name] = zeros
+            elif "qweight" in name:
+                # get qweight
+                qweight = param
+                qweight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // self.wbits, -1),
+                        wf.unsqueeze(-1)).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qweight = torch.bitwise_and(qweight, (2 ** self.wbits) - 1)
+                qweight = qweight.reshape(-1, qweight.shape[2])
+
+                # qweight is uint8/uint4, not transposed in AutoGPTQ
+                # qweight is int8/uint4x2 in xFT
+                if self.wbits == 8:
+                    # uint8 to int8
+                    qweight = qweight - 128
+                else:
+                    # pack uint4 to uint4x2
+                    qweight = qweight.view(torch.int16)
+                    qweight = qweight.bitwise_or(qweight.bitwise_right_shift(4))
+                    qweight = torch.bitwise_and(qweight, 255)
+                model_named_parameters[name] = qweight.to(torch.int8)
+            else:
+                model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
+
+        pool = multiprocessing.Pool(processes)
+        for name, param in model_named_parameters.items():
+            if name == "model.embed_tokens.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(os.path.join(output_dir, "model.wte.bin"))
+            elif name == "model.norm.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(
+                    os.path.join(output_dir, "model.final_layernorm.weight.bin")
+                )
+            elif name == "lm_head.weight":
+                param.detach().cpu().numpy().astype(self.dtype).tofile(
+                    os.path.join(output_dir, "model.lm_head.weight.bin")
+                )
+            else:
+                starmap_args = []
+                dtype = self.dtype
+                if "qweight" in name:
+                    dtype = np.int8
+                if "qzero" in name or "scales" in name:
+                    dtype = np.float32
+                for i in range(len(hf_model_name_pattern)):
+                    if hf_model_name_pattern[i] in name:
+                        factor = 1
+                        new_name = name.replace(hf_model_name_pattern[i], ft_model_name_pattern[i])
+                        starmap_args.append(
+                            (
+                                0,
+                                output_dir,
+                                factor,
+                                new_name,
+                                param.detach().cpu().numpy().astype(dtype),
                                 num_attention_heads,
                                 num_key_value_heads,
                             )

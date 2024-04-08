@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "allocator.h"
 #include "rms_norm.h"
 #include "rmsnorm_kernels.h"
 #include "timeline.h"
@@ -34,7 +35,7 @@ RmsNorm::~RmsNorm() {
 
 void RmsNorm::setWeight(const float *w, const float *, int cols) {
     this->normSize = cols;
-    this->weight = (float *)aligned_alloc(64, cols * sizeof(float));
+    this->weight = (float *)xft::alloc(cols * sizeof(float));
     memcpy(weight, w, cols * sizeof(float));
 }
 

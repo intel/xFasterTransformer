@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,80 +16,91 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-WEIGHT_LOCATION() {
-    if [ "$#" -ne 2 ]; then
-        echo "error: must get two input." >&2
-        return 1
-    fi
+interrupt_handler() {
+    exit 1
+}
+trap interrupt_handler SIGINT
 
-    local result="-env FIRST_TOKEN_WEIGHT_LOCATION $1 -env NEXT_TOKEN_WEIGHT_LOCATION $2"
-    echo "$result"
+function Info() {
+    echo -e "\033[32m[Info] $@ \033[0m"
 }
 
-while [ -n "$1" ]  
-do	
-	case $1 in
-        -m | --model_name)
-		model_name=$2
-		shift 2
-        ;;  
-        -d | --dtype)
-		case $2 in
-            "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4" | "bf16_nf4" | "nf4" | "w8a8" | "bf16_w8a8" | "w8a8_int8" | "w8a8_int4" | "w8a8_nf4")
+function Warning() {
+    echo -e "\033[33;3m[Warning] $@ \033[0m"
+}
+
+function Error() {
+    echo -e "\033[31m[Error] $@ \033[0m"
+    exit 1
+}
+
+while [ -n "$1" ]; do
+    case $1 in
+    -m | --model_name)
+        model_name=$2
+        shift 2
+        ;;
+    -d | --dtype)
+        case $2 in
+        "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4" | "bf16_nf4" | "nf4" | "w8a8" | "bf16_w8a8" | "w8a8_int8" | "w8a8_int4" | "w8a8_nf4")
             dtype=$2
             shift 2
             ;;
-            *)
-            echo "dtype must in bf16, bf16_fp16, bf16_int8, int8, fp16, bf16_int4, bf16_nf4, nf4, w8a8, bf16_w8a8, w8a8_int8, w8a8_int4, w8a8_nf4."
+        *)
+            Error "dtype must in bf16, bf16_fp16, bf16_int8, int8, fp16, bf16_int4, bf16_nf4, nf4, w8a8, bf16_w8a8, w8a8_int8, w8a8_int4, w8a8_nf4."
             exit 1
             ;;
         esac
         ;;
-        -s | --sockets)
+    -s | --sockets)
         case $2 in
-            "1" | "2")
+        "1" | "2")
             sockets=$2
             shift 2
             ;;
-            *)
-            echo "sockets must in 1 or 2."
+        *)
+            Error "sockets must in 1 or 2."
             exit 1
             ;;
         esac
         ;;
-        -bs | --batch_size)
-		batch_size=$2
-		shift 2
+    -bs | --batch_size)
+        batch_size=$2
+        shift 2
         ;;
-        -in | --input_tokens)
-		input_tokens=$2
-		shift 2
+    -in | --input_tokens)
+        input_tokens=$2
+        shift 2
         ;;
-        -out | --output_tokens)
-		output_tokens=$2
-		shift 2
+    -out | --output_tokens)
+        output_tokens=$2
+        shift 2
         ;;
-        -b | --beam_width)
-		beam_width=$2
-		shift 2
+    -b | --beam_width)
+        beam_width=$2
+        shift 2
         ;;
-        -i | --iter)
-		iter=$2
-		shift 2
+    -i | --iter)
+        iter=$2
+        shift 2
         ;;
-        -w | --warmup)
-		warmup=$2
-		shift 2
+    -w | --warmup)
+        warmup=$2
+        shift 2
         ;;
-        "")
+    -c | --csv)
+        csv=$2
+        shift 2
+        ;;
+    "")
         shift
         break
         ;;
-    esac 
+    esac
 done
 
 if [ "${model_name}" == "" ]; then
-    echo "Please pass a value of model name using -m or --model_name."
+    Error "Please pass a value of model name using -m or --model_name."
     exit 1
 fi
 dtype=${dtype:-bf16}
@@ -101,10 +112,13 @@ beam_width=${beam_width:-1}
 iter=${iter:-10}
 warmup=${warmup:-2}
 
-echo "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
+Info "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
-# Example here is default using fake model, you can use real model as well
-export XFT_FAKE_MODEL=${XFT_FAKE_MODEL:-1}
+Warning "The mapping method for CPU IDs in the cloud server environment is different,
+        for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
+        to a single physical core. In this mapping relationship,
+        you can enable \`export XFT_CLOUD_ENV=1\` to bind to the correct physical core."
+export XFT_CLOUD_ENV=${XFT_CLOUD_ENV:-0}
 
 model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
 
@@ -125,91 +139,96 @@ if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; the
     benchmark_cmd+=" --padding=False"
 fi
 
-sockets_num=`lscpu | grep "Socket(s)" | awk -F ':' '{print $2}'`
-cores_per_socket=`lscpu | grep "Core(s) per socket" | awk -F ':' '{print $2}'`
-numa_nodes=`lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}'`
+if [ -n $csv ]; then
+    benchmark_cmd+=" --csv=$csv"
+fi
+
+if [[ ${model_name} == *"baichuan"* ]]; then
+    export FLASH_ATTN_THRESHOLD=1000
+fi
+
+if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
+    export ENABLE_KV_TRANS=1
+fi
+
+if [[ ${input_tokens} -ge 2048 ]]; then
+    export ENABLE_SKIP_MASK=1
+fi
+
+sockets_num=$(lscpu | grep "Socket(s)" | awk -F ':' '{print $2}')
+cores_per_socket=$(lscpu | grep "Core(s) per socket" | awk -F ':' '{print $2}')
+numa_nodes=$(lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}')
 # Multiply by 2 to avoid an float result in HBM flat mode that the NUMA count twice and it will be divided later.
-cores_per_numa=$(( $sockets_num * $cores_per_socket * 2 / $numa_nodes ))
+cores_per_numa=$(($sockets_num * $cores_per_socket * 2 / $numa_nodes))
+
+export BENCHMARK=$benchmark_cmd
 
 if [ "${numa_nodes}" -eq 16 ]; then
     #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
     #0-7 is DRAM memory node, 8-15 is HBM node
     export OMP_NUM_THREADS=${cores_per_numa}
-    echo "OMP_NUM_THREADS: ${cores_per_numa}"
-    echo "HBM SNC4 mode"
+    Info "OMP_NUM_THREADS: ${cores_per_numa}"
+    Info "HBM SNC4 mode"
     run_cmd="mpirun \
-    -n 1 $(WEIGHT_LOCATION 0  8) numactl -p 8  -N 0 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 1  9) numactl -p 9  -N 1 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 2 10) numactl -p 10 -N 2 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 3 11) numactl -p 11 -N 3 ${benchmark_cmd} "
+    -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
+    -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
+    -n 1 bash run.sh 2 10 ${OMP_NUM_THREADS} 2 : \
+    -n 1 bash run.sh 3 11 ${OMP_NUM_THREADS} 3"
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
-        -n 1 $(WEIGHT_LOCATION 4 12) numactl -p 12 -N 4 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 5 13) numactl -p 13 -N 5 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 6 14) numactl -p 14 -N 6 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 7 15) numactl -p 15 -N 7 ${benchmark_cmd} "
+        -n 1 bash run.sh 4 12 ${OMP_NUM_THREADS} 4 : \
+        -n 1 bash run.sh 5 13 ${OMP_NUM_THREADS} 5 : \
+        -n 1 bash run.sh 6 14 ${OMP_NUM_THREADS} 6 : \
+        -n 1 bash run.sh 7 15 ${OMP_NUM_THREADS} 7"
     fi
 elif [ "${numa_nodes}" -eq 8 ]; then
     #HBM SNC-4 for cache or hbm only mode
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    echo "HBM SNC4 mode"
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    Info "HBM SNC4 mode"
     run_cmd="mpirun \
-    -n 1 $(WEIGHT_LOCATION 0 0) numactl -m 0 -N 0 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 1 1) numactl -m 1 -N 1 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 2 2) numactl -m 2 -N 2 ${benchmark_cmd} : \
-    -n 1 $(WEIGHT_LOCATION 3 3) numactl -m 3 -N 3 ${benchmark_cmd} "
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
+    -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
+    -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
+    -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
-        -n 1 $(WEIGHT_LOCATION 4 4) numactl -m 4 -N 4 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 5 5) numactl -m 5 -N 5 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 6 6) numactl -m 6 -N 6 ${benchmark_cmd} : \
-        -n 1 $(WEIGHT_LOCATION 7 7) numactl -m 7 -N 7 ${benchmark_cmd} "
+        -n 1 bash run.sh 4 4 ${OMP_NUM_THREADS} 4 : \
+        -n 1 bash run.sh 5 5 ${OMP_NUM_THREADS} 5 : \
+        -n 1 bash run.sh 6 6 ${OMP_NUM_THREADS} 6 : \
+        -n 1 bash run.sh 7 7 ${OMP_NUM_THREADS} 7"
     fi
 elif [ "${numa_nodes}" -eq 4 ]; then
     #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
-    echo "HBM Quad mode"
+    Info "HBM Quad mode"
     export OMP_NUM_THREADS=${cores_per_numa}
-    echo "OMP_NUM_THREADS: ${cores_per_numa}"
+    Info "OMP_NUM_THREADS: ${cores_per_numa}"
     run_cmd="mpirun \
-    -n 1 $(WEIGHT_LOCATION 0 2) numactl -p 2 -N 0 ${benchmark_cmd} "
+    -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
-        -n 1 $(WEIGHT_LOCATION 1 3) numactl -p 3 -N 1 ${benchmark_cmd} "
+        -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
     fi
 elif [ "${numa_nodes}" -eq 2 ]; then
     #SPR or hbm only or hbm cache Quad-mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
-    echo "SPR Quad mode"
+    Info "SPR Quad mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd="mpirun \
-    -n 1 $(WEIGHT_LOCATION 0 0) numactl -N 0 -m 0 ${benchmark_cmd}"
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
-        -n 1 $(WEIGHT_LOCATION 1 1) numactl -m 1 -N 1 ${benchmark_cmd} "
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
     fi
 elif [ "${numa_nodes}" -eq 1 ]; then
     # General Test mode
-    XFT_CLOUD_ENV=${XFT_CLOUD_ENV:-0}
-    echo "General Test mode:
-            The mapping method for CPU IDs in the cloud server environment is different,
-            for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
-            to a single physical core. In this mapping relationship,
-            you can enable \`export XFT_CLOUD_ENV=1\` to bind to the correct physical core."
+    Info "General Test mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-    echo "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    echo ""
-    if [ "$XFT_CLOUD_ENV" -eq 1 ]; then
-        cpu_index="0"
-        for ((i=2; i<${cores_per_numa}; i+=2)); do
-		cpu_index+=",$i"
-	    done
-    else
-        cpu_index=0-`expr $OMP_NUM_THREADS - 1`
-    fi
-    run_cmd="numactl -C ${cpu_index} -m 0 ${benchmark_cmd}"
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
 else
-    echo "Please double check the memory nodes"
+    Error "Please double check the memory nodes"
 fi
 
 echo "Run command line: ${run_cmd}"

@@ -19,6 +19,8 @@
 #include <cstdlib>
 #include <new>
 
+#include "allocator.h"
+
 typedef int8_t s8;
 typedef uint8_t u8;
 
@@ -39,14 +41,6 @@ namespace hpj {
 template <typename T>
 struct is_quantization_type {
     static const bool value = false;
-};
-template <>
-struct is_quantization_type<u8> {
-    static const bool value = true;
-};
-template <>
-struct is_quantization_type<s8> {
-    static const bool value = true;
 };
 
 template <typename T, bool _IS_QUANTIZED = is_quantization_type<T>::value>
@@ -77,7 +71,7 @@ struct MatData {
             this->buf_alloc_size = 0;
         }
     }
-    void Resize(int rows, int cols, int stride) {
+    void Resize(uint64_t rows, uint64_t cols, uint64_t stride) {
         assert(!shadow);
         uint64_t size = (uint64_t)rows * stride;
         if (this->buf_alloc_size >= size) {
@@ -137,9 +131,9 @@ struct MatData<T, true> {
         this->buf_alloc_size = 0;
         this->qscheme = qscheme_undefined;
     }
-    void Resize(int rows, int cols, int stride) {
+    void Resize(uint64_t rows, uint64_t cols, uint64_t stride) {
         assert(!shadow);
-        uint64_t size = (uint64_t)rows * stride;
+        uint64_t size = rows * stride;
         if (this->buf_alloc_size < size) {
             if (buf) { xft_numa_free(buf, sizeof(T) * buf_alloc_size); }
             this->buf_alloc_size = size;
@@ -150,13 +144,13 @@ struct MatData<T, true> {
         if ((this->qscheme == per_channel_symmetric || this->qscheme == per_channel_affine)
                 && this->qparam.per_c.alloc_size < rows) {
             if (this->qparam.per_c.scales) { free(this->qparam.per_c.scales); }
-            this->qparam.per_c.scales = (float *)aligned_alloc(64, sizeof(float) * rows);
+            this->qparam.per_c.scales = (float *)xft::alloc(sizeof(float) * rows);
             if (this->qparam.per_c.scales == NULL) { throw std::bad_alloc(); }
             this->qparam.per_c.alloc_size = rows;
             // For per_channel_affine, need to check buffer for zero point
             if (this->qscheme == per_channel_affine) {
                 if (this->qparam.per_c.zps) { free(this->qparam.per_c.zps); }
-                this->qparam.per_c.zps = (int32_t *)aligned_alloc(64, sizeof(int32_t) * rows);
+                this->qparam.per_c.zps = (int32_t *)xft::alloc(sizeof(int32_t) * rows);
                 if (this->qparam.per_c.zps == NULL) { throw std::bad_alloc(); }
             }
         }
@@ -220,9 +214,9 @@ struct MatData<T, true> {
 template <typename T>
 class Matrix {
 private:
-    int rows;
-    int cols;
-    int stride;
+    uint64_t rows;
+    uint64_t cols;
+    uint64_t stride;
 
     MatData<T> data;
 
@@ -235,7 +229,7 @@ public:
         this->stride = 0;
     }
 
-    Matrix(Matrix &m, int start_row, int rows, int start_col, int cols)
+    Matrix(Matrix &m, uint64_t start_row, uint64_t rows, uint64_t start_col, uint64_t cols)
         : data(m.data.buf + start_row * m.stride + start_col) {
         this->rows = rows;
         this->cols = cols;
@@ -249,19 +243,19 @@ public:
     }
 
     // Create dilated matrix, for example, if dilation = 2, then select the 1st, 3rd, 5th, ... lines
-    Matrix(Matrix &m, int start_row, int dilation, bool unused) : data(m.data.buf + start_row * m.stride) {
+    Matrix(Matrix &m, uint64_t start_row, uint64_t dilation, bool unused) : data(m.data.buf + start_row * m.stride) {
         this->rows = m.rows / dilation;
         this->cols = m.cols;
         this->stride = m.stride * dilation;
     }
 
-    Matrix(Matrix &m, int start_row, int rows) : data(m.data.buf + start_row * m.stride) {
+    Matrix(Matrix &m, uint64_t start_row, uint64_t rows) : data(m.data.buf + start_row * m.stride) {
         this->rows = rows;
         this->cols = m.cols;
         this->stride = m.stride;
     }
 
-    Matrix(T *buf, int rows, int cols, int stride) : data(buf) {
+    Matrix(T *buf, uint64_t rows, uint64_t cols, uint64_t stride) : data(buf) {
         this->rows = rows;
         this->cols = cols;
         this->stride = stride;
@@ -269,14 +263,14 @@ public:
 
     ~Matrix() { this->Release(); }
 
-    void Assign(T *buf, int rows, int cols, int stride) {
+    void Assign(T *buf, uint64_t rows, uint64_t cols, uint64_t stride) {
         this->data.Assign(buf);
         this->rows = rows;
         this->cols = cols;
         this->stride = stride;
     }
 
-    void Resize(int rows, int cols) {
+    void Resize(uint64_t rows, uint64_t cols) {
         assert(!data.shadow);
 
         if (this->rows == rows && this->cols == cols) { return; }
@@ -293,7 +287,7 @@ public:
         this->cols = cols;
         this->data.Resize(rows, cols, stride);
     }
-    void Resize(int rows, int cols, int stride) {
+    void Resize(uint64_t rows, uint64_t cols, uint64_t stride) {
         assert(!data.shadow);
 
         if (this->rows == rows && this->cols == cols && this->stride == stride) { return; }
@@ -317,15 +311,15 @@ public:
         this->cols = 0;
         this->stride = 0;
     }
-    int Rows() const { return this->rows; }
-    int Cols() const { return this->cols; }
-    int Stride() const { return this->stride; }
-    T *Row(const int idx) {
+    uint64_t Rows() const { return this->rows; }
+    uint64_t Cols() const { return this->cols; }
+    uint64_t Stride() const { return this->stride; }
+    T *Row(const uint64_t idx) {
         // assert(idx < rows_ && idx >= 0);
         return this->data.buf + this->stride * idx;
     }
-    const T *Row(const int idx) const { return this->data.buf + this->stride * idx; }
-    T &operator()(int r, int c) {
+    const T *Row(const uint64_t idx) const { return this->data.buf + this->stride * idx; }
+    T &operator()(uint64_t r, uint64_t c) {
         // assert(r >= 0 && r < rows_ && c >= 0 && c < cols_);
         return *(this->data.buf + r * this->stride + c);
     }
