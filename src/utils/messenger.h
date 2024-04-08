@@ -22,6 +22,7 @@
 
 #include "bfloat16.h"
 #include "compile_util.h"
+#include "environment.h"
 #include "oneapi/ccl.hpp"
 #include "shm_reduction.h"
 #include "simple_mem_pool.h"
@@ -35,7 +36,7 @@ private:
     Messenger() {
         // User has set the SINGLE_INSTANCE environment variable
         // or program is not with MPI.
-        if (std::getenv("SINGLE_INSTANCE") != nullptr || !withMpirun()) {
+        if (Env::getInstance().getSingleInstance() || !withMpirun()) {
             std::cout << "[INFO] SINGLE_INSTANCE MODE." << std::endl;
 #ifdef USE_SHM
             this->pshm = nullptr;
@@ -66,11 +67,11 @@ private:
 
         atexit(Messenger::mpi_finalize);
 
-        color = Env::getPipelineStage();
+        color = Env::getInstance().getPipelineStage();
         int sameHostnames = (*helperInit)(&size, &rank, &color);
 
 #ifdef USE_SHM
-        if (sameHostnames && !std::getenv("XFT_ONECCL")) {
+        if (sameHostnames && !Env::getInstance().getOneCCLEnabled()) {
             localRanksFlag = true;
             pshm = new ShmReduction(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
         } else {

@@ -603,9 +603,10 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
             const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
             int maxPositions, int maxPosEmbed, int maxSeqLength, bool useLogN, bool useNTK, RopeParams *ropeParamsPtr) {
+        Env &env = Env::getInstance();
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
-        int ppSize = Env::getPipelineStage();
+        int ppSize = env.getPipelineStage();
         int ppRank = messenger.getColor();
         // printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 
@@ -623,10 +624,10 @@ protected:
                     vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
                     ropeParamsPtr, useLogN, useNTK));
 
-            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
-                this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
+            if (env.getEngineKind() == xft::DeviceKind::iGPU && env.getEngineIndex() < 0) // Sequential assignment
+                this->context->mmHelper = new MMHelper(env.getEngineKind(), ppRank * tpSize + tpRank);
             else // assignment through the user
-                this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
+                this->context->mmHelper = new MMHelper(env.getEngineKind(), env.getEngineIndex());
         }
 
         return this->context.get();

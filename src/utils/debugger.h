@@ -25,6 +25,7 @@
 #include "my_types.h"
 #include "uint4x2.h"
 #include "normal_float4x2.h"
+#include "environment.h"
 
 class Debugger {
 public:
@@ -35,8 +36,8 @@ public:
 
     Debugger(const std::string &filename) {
         std::string debugFilePath = filename;
-        if (std::getenv("XFT_DEBUG_DIR") != nullptr) {
-            std::string debugDir = std::getenv("XFT_DEBUG_DIR");
+        std::string debugDir = Env::getInstance().getDebugDir();
+        if (!debugDir.empty()) {
             if (debugDir.back() != '/') { debugDir += '/'; }
             debugFilePath = debugDir + filename;
 

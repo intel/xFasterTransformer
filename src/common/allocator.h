@@ -16,18 +16,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <sys/mman.h>
+#include "environment.h"
 
 namespace xft {
 
 constexpr size_t g_thp_threshold = (size_t)2 * 1024 * 1024;
 
-static inline bool thp_enabled() {
-    const char *str = std::getenv("ENABLE_THP");
-    return str != nullptr ? std::atoi(str) : 0;
-}
-
 static inline bool is_thp_alloc(size_t nbytes) {
-    return (thp_enabled() && (nbytes >= g_thp_threshold));
+    return (Env::getInstance().getTHPEnabled() && (nbytes >= g_thp_threshold));
 }
 
 static inline void *alloc(size_t nbytes, size_t alignment = 64) {
