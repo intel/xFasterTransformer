@@ -39,6 +39,7 @@ public:
     virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
     virtual void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen);
     virtual void lastLayerNormForward(float *input, float *output, int rows);
+    virtual void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
     virtual int *getPositionIds(int *ids, int batchSize, int seqLen, int step) override;
 
 private:

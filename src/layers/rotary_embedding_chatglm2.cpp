@@ -140,8 +140,8 @@ void ChatGLM2RotaryEmbedding::forward(
 #pragma omp simd
                 for (int i = 0; i < dim; i += 2) {
                     auto t1 = p1[i];
-                    p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
-                    p1[i + 1] = p1[i + 1] * pcos[i] + t1 * psin[i];
+                    p1[i] = p1[i] * pcos[i / 2] - p1[i + 1] * psin[i / 2];
+                    p1[i + 1] = p1[i + 1] * pcos[i / 2] + t1 * psin[i / 2];
                 }
                 off += qStride;
             }
@@ -157,34 +157,39 @@ void ChatGLM2RotaryEmbedding::forward(
     const int seq_len = qk_shape[1];
     const int head_num = qk_shape[2] + qk_shape[4];
     const int half = inv_freq_size;
-
-#pragma omp parallel for 
+#pragma omp parallel for
     for (int head = 0; head < head_num; ++head) {
         int off = head * dim;
         for (int bs = 0; bs < batch_size; ++bs) {
             for (int seq = 0; seq < seq_len; ++seq) {
-                bfloat16_t *p1 = query + off;
+                bfloat16_t *pBF = query + off;
 
                 int pos = position_ids[seq];
                 float *pcos = emb_cos + pos * dim;
                 float *psin = emb_sin + pos * dim;
-                for (int i = 0; i < dim; i += 16) {
-                    int remain = dim - i;
-                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-                    __mmask16 wmask = 0xAAAA;
+                for (int i = 0; i < dim; i += 32) {
+                    // p1[i] = p1[i] * pcos[i / 2] - p1[i + 1] * psin[i / 2];
+                    // p1[i + 1] = p1[i + 1] * pcos[i / 2] + t1 * psin[i / 2];
+                    __mmask16 mask = 0xffff;
+                    __m512 pCosVec = _mm512_maskz_loadu_ps(mask, pcos + i / 2);
+                    __m512 pSinVec = _mm512_maskz_loadu_ps(mask, psin + i / 2);
+                    bfloat16_t p0[16], p1[16];
+                    for (int j = 0; j < 16; j++) {
+                        p0[j] = pBF[2 * j];
+                        p1[j] = pBF[2 * j + 1];
+                    }
 
-                    __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
-                    __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
-
-                    // Compute something like:
-                    //  p1[i] = p1[i] * pcos[i] - p1[i + 1] * psin[i];
-                    //  p1[i + 1] = p1[i + 1] * pcos[i] + p1[i] * psin[i];
-                    __m512 qVec0 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &p1[i]));
-                    __m512 qVec1 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &p1[i+1]));
+                    __m512 qVec0 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, p0));
+                    __m512 qVec1 = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, p1));
                     __m512 qNew0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
-                    __m512 qNew1 = _mm512_fmadd_ps(qVec1, pCosVec, _mm512_mul_ps(qVec0, pSinVec));
-                    _mm256_mask_storeu_epi16(&p1[i], wmask, bfloat16_t::cvt_fp32_to_bf16(qNew0));
-                    _mm256_mask_storeu_epi16(&p1[i + 1], wmask, bfloat16_t::cvt_fp32_to_bf16(qNew1));
+                    __m512 qNew1 = _mm512_fmadd_ps(qVec0, pSinVec, _mm512_mul_ps(qVec1, pCosVec));
+                    _mm256_mask_storeu_epi16(p0, mask, bfloat16_t::cvt_fp32_to_bf16(qNew0));
+                    _mm256_mask_storeu_epi16(p1, mask, bfloat16_t::cvt_fp32_to_bf16(qNew1));
+
+                    for (int j = 0; j < 16; j++) {
+                        pBF[2 * j] = p0[j];
+                        pBF[2 * j + 1] = p1[j];
+                    }
                 }
                 off += qStride;
             }

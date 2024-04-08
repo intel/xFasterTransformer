@@ -33,7 +33,7 @@ static inline void *alloc(size_t nbytes, size_t alignment = 64) {
 
     int err = posix_memalign(&data, alignment, nbytes);
     if (err != 0) {
-        printf("Unable to allocate buffer with size of %lld, err=%d\n", nbytes, err);
+        printf("Unable to allocate buffer with size of %lu, err=%d\n", nbytes, err);
         exit(-1);
     }
 

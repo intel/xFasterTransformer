@@ -129,6 +129,10 @@ void ChatGLM2<WeiT>::lastLayerNormForward(float *input, float *output, int rows)
     finalLN.forward(input, output, rows);
 }
 
+template <typename WeiT>
+void ChatGLM2<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
 // Return the position_ids + block_position_ids
 // if position_ids is None:
 //     position_ids = self.get_position_ids(input_ids, device=input_ids.device)
