@@ -17,9 +17,9 @@
 #include "mlp_llama.h"
 
 template <typename WeiT, typename InT, typename ImT, typename OutT, typename NORM_CLS, bool INPUT_AS_RESID>
-class ChatGLM2MLP : public LlamaMLP<WeiT> {
+class ChatGLM2MLP : public LlamaMLP<WeiT, InT, ImT, OutT> {
 public:
-    ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT>(ctx) {}
+    ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT, InT, ImT, OutT>(ctx) {}
 
     // OriWeiT: float
     template <typename OriWeiT>
