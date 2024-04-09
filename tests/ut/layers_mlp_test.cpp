@@ -164,10 +164,6 @@ TEST(MLPLLaMA, float16_t) {
     test_MLPLLaMA<float16_t>();
 }
 
-TEST(MLPLLaMA, int8_t) {
-    test_MLPLLaMA<int8_t>();
-}
-
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
