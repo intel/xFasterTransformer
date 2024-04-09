@@ -14,6 +14,11 @@
 // ============================================================================
 #pragma once
 
+#include "abstract_decoder.h"
+#include "abstract_searcher.h"
 #include "dtype.h"
+#include "layers_attention.h"
+#include "layers_mlp.h"
 #include "layers_norm.h"
+#include "layers_rotary_embedding.h"
 #include "models.h"
