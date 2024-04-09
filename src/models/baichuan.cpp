@@ -18,8 +18,11 @@
 
 template <typename WeiT, typename KVCacheT>
 Baichuan<WeiT, KVCacheT>::Baichuan(const std::string &modelPath)
-    : CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT>(
-            modelPath, "baichuan") {
+    : CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                            typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+            LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType>,
+            KVCacheT>(modelPath, "baichuan") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -32,17 +35,17 @@ Baichuan<WeiT, KVCacheT>::Baichuan(const std::string &modelPath)
 }
 
 template <typename WeiT, typename KVCacheT>
-Baichuan<WeiT,KVCacheT>::~Baichuan() {
+Baichuan<WeiT, KVCacheT>::~Baichuan() {
     delete embedding;
 }
 
 template <typename WeiT, typename KVCacheT>
-void Baichuan<WeiT,KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
+void Baichuan<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
 template <typename WeiT, typename KVCacheT>
-void Baichuan<WeiT,KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
+void Baichuan<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -72,7 +75,7 @@ void Baichuan<WeiT,KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
 //    return alibi_mask
 
 template <typename WeiT, typename KVCacheT>
-void Baichuan<WeiT,KVCacheT>::prepareAttnMaskBase(int *ids, int step) {
+void Baichuan<WeiT, KVCacheT>::prepareAttnMaskBase(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -106,7 +109,7 @@ void Baichuan<WeiT,KVCacheT>::prepareAttnMaskBase(int *ids, int step) {
 }
 
 template <typename WeiT, typename KVCacheT>
-void Baichuan<WeiT,KVCacheT>::prepareAttnMask(int *ids, int step) {
+void Baichuan<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     if (ctx->maxPosEmbed > 0) {
         // Base Mask for CausalLM
@@ -170,7 +173,17 @@ void Baichuan<WeiT,KVCacheT>::embeddingForward(int *ids, float *output, int toke
 }
 
 template <typename WeiT, typename KVCacheT>
-void Baichuan<WeiT,KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
+void Baichuan<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
+}
+
+template <typename WeiT, typename KVCacheT>
+void Baichuan<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
+
+template <typename WeiT, typename KVCacheT>
+void Baichuan<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
