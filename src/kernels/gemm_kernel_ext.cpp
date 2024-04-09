@@ -570,3 +570,16 @@ void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const float16
         int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, float16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+void small_gemm_transb(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc) {
+    printf("unsupported yet!\n");
+    exit(-1);
+}
+void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc) {
+    printf("unsupported yet!\n");
+    exit(-1);
+}

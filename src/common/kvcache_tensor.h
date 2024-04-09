@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <tuple>
 #include <utility>
 
 #include "allocator.h"
@@ -93,29 +94,31 @@ public:
     int getHeadNum() const { return headNum; }
     int getHeadSize() const { return headSize; }
 
-    // Get a vector for a specified sequence
-    T *getSequence(int seqIdx, int batchIdx, int headIdx) {
+    // Get a vector for a specified sequence, return the start address, and the scale factor
+    std::pair<T *, float *> getSequence(int seqIdx, int batchIdx, int headIdx) {
         if (kvTrans()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
-            return data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize
+            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize
                     + (uint64_t)seqIdx * headSize;
+            return std::make_pair(addr, nullptr); 
         } else {
             // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
-            return data + (uint64_t)seqIdx * batchSize * headNum * headSize + (uint64_t)batchIdx * headNum * headSize
+            T *addr = data + (uint64_t)seqIdx * batchSize * headNum * headSize + (uint64_t)batchIdx * headNum * headSize
                     + (uint64_t)headIdx * headSize;
+            return std::make_pair(addr, nullptr); 
         }
     }
 
-    // Get a head matrix, return the start address and the stride
-    std::pair<T *, int> getHead(int batchIdx, int headIdx) {
+    // Get a head matrix, return the start address, stride and the scale factor
+    std::tuple<T *, int, float *> getHead(int batchIdx, int headIdx) {
         if (kvTrans()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
-            T *addr = data + batchIdx * headNum * maxSeqLen * headSize + headIdx * maxSeqLen * headSize;
-            return std::make_pair(addr, headSize);
+            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize;
+            return std::make_tuple(addr, headSize, nullptr);
         } else {
             // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
             T *addr = data + (uint64_t)batchIdx * headNum * headSize + (uint64_t)headIdx * headSize;
-            return std::make_pair(addr, batchSize * headNum * headSize);
+            return std::make_tuple(addr, batchSize * headNum * headSize, nullptr);
         }
     }
 
@@ -156,9 +159,10 @@ public:
     void expandOneSequence(int userSideBS, int beamSize, int seq) {
         if (!kvTrans()) {
             for (int b = batchSize - 1; b > 0; --b) {
-                T *dst = getSequence(seq, b, 0);
-                T *src = getSequence(seq, b / beamSize, 0);
-                memcpy(dst, src, sizeof(T) * headNum * headSize);
+                auto dst = getSequence(seq, b, 0);
+                auto src = getSequence(seq, b / beamSize, 0);
+                memcpy(dst.first, src.first, sizeof(T) * headNum * headSize);
+                memcpy(dst.second, src.second, sizeof(float) * headNum);
             }
         } else {
             printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
@@ -296,11 +300,36 @@ private:
         }
     }
 
+    template <typename DT>
+    static void swapValues8(DT *p1, DT *p2, int size) {
+        static_assert(sizeof(DT) == 1, "swapValues8 is designed for data types with 1 byte.");
+
+        int i = 0;
+        for (; i + 63 < size; i += 64) {
+            __m512i v1 = _mm512_loadu_si512((__m512i *)(p1 + i));
+            __m512i v2 = _mm512_loadu_si512((__m512i *)(p2 + i));
+            _mm512_storeu_si512(p1 + i, v2);
+            _mm512_storeu_si512(p2 + i, v1);
+        }
+
+        if (i < size) {
+            int remain = size - i;
+            __mmask64 mask = (1ULL << remain) - 1;
+
+            __m512i v1 = _mm512_maskz_loadu_epi8(mask, (__m512i *)(p1 + i));
+            __m512i v2 = _mm512_maskz_loadu_epi8(mask, (__m512i *)(p2 + i));
+            _mm512_mask_storeu_epi8(p1 + i, mask, v2);
+            _mm512_mask_storeu_epi8(p2 + i, mask, v1);
+        }
+    }
+
     static void swapValues(float *p1, float *p2, int size) { swapValues32(p1, p2, size); }
 
     static void swapValues(float16_t *p1, float16_t *p2, int size) { swapValues16(p1, p2, size); }
 
     static void swapValues(bfloat16_t *p1, bfloat16_t *p2, int size) { swapValues16(p1, p2, size); }
+
+    static void swapValues(int8_t *p1, int8_t *p2, int size) { swapValues8(p1, p2, size); }
 
     template <typename DT>
     static void skippableCopy(DT *dst, DT *src, int size) {

@@ -462,8 +462,20 @@ protected:
                     auto srcV = value.Row(b * ctx->inputSeqLen + seq) + h * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, h);
 
-                    xft::copy(dstK, srcK, headSize);
-                    xft::copy(dstV, srcV, headSize);
+                    // Suppose dstK and dstV are the same data type
+                    if constexpr (std::is_same_v<decltype(dstK), float *>
+                            || std::is_same_v<decltype(dstK), bfloat16_t *>
+                            || std::is_same_v<decltype(dstK), float16_t *>) {
+                        xft::copy(dstK, srcK, headSize);
+                        xft::copy(dstV, srcV, headSize);
+                    } else if constexpr (std::is_same_v<decltype(dstK),
+                                                 std::pair<int8_t *, typename decltype(dstK)::second_type>>) {
+                        xft::quantize(dstK.first, dstK.second, srcK, headSize);
+                        xft::quantize(dstV.first, dstV.second, srcV, headSize);
+                    } else {
+                        xft::copy(dstK.first, srcK, headSize);
+                        xft::copy(dstV.first, srcV, headSize);
+                    }
                 }
             }
         }
@@ -477,19 +489,34 @@ protected:
         for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
             auto src = kv.Row(bdx * ctx->inputSeqLen + seq) + hdx * ctx->attHeadSize;
             auto dst = presentKV.getSequence(pastSeqLen + seq, bdx, hdx);
-            xft::copy(dst, src, ctx->attHeadSize);
+            if constexpr (std::is_same_v<decltype(dst), float *> || std::is_same_v<decltype(dst), bfloat16_t *>
+                    || std::is_same_v<decltype(dst), float16_t *>) {
+                xft::copy(dst, src, ctx->attHeadSize);
+            } else if constexpr (std::is_same_v<decltype(dst),
+                                     std::pair<int8_t *, typename decltype(dst)::second_type>>) {
+                xft::quantize(dst.first, dst.second, src, ctx->attHeadSize);
+            } else {
+                xft::copy(dst.first, src, ctx->attHeadSize);
+            }
         }
     }
 
     // query: M * headSize, key: N * headSize, score: M * N
-    // ldq: leading dimension of query; ldk: leading dimension of key; lds: LD of score
+    // ldq: leading dimension of query; lds: LD of score
     template <typename T1, typename T2, typename T3>
-    void gemm1(T1 *query, T2 *key, T3 *score, int M, int N, int headSize, int ldq, int ldk, int lds) {
+    void gemm1(T1 *query, const std::tuple<T2 *, int, float *> &keyMat, T3 *score, int M, int N, int headSize, int ldq,
+            int lds) {
         auto A = query;
-        auto B = key;
+        auto B = std::get<0>(keyMat);
         auto C = score;
         const int K = headSize;
-        small_gemm_transb(A, B, C, M, N, K, ldq, ldk, lds);
+        const int ldb = std::get<1>(keyMat);
+        const float *scale = std::get<2>(keyMat);
+        if constexpr (std::is_same_v<T2, int8_t>) {
+            small_gemm_transb(A, B, scale, C, M, N, K, ldq, ldb, lds);
+        } else {
+            small_gemm_transb(A, B, C, M, N, K, ldq, ldb, lds);
+        }
     }
 
     // Softmax between 2 BMM
@@ -595,16 +622,16 @@ protected:
                     int k = ctx->attHeadSize;
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
-                    int ldb = keyMatInfo.second;
+                    int ldb = std::get<1>(keyMatInfo);
                     int ldc = scoreStride;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
-                    auto B = keyMatInfo.first;
+                    auto B = std::get<0>(keyMatInfo);
                     auto C = scoreBuf + omp_get_thread_num() * mBlockSize * scoreStride;
 
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
 
-                    this->gemm1(A, B, C, m, n, headSize, lda, ldb, ldc);
+                    this->gemm1(A, keyMatInfo, C, m, n, headSize, lda, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -631,18 +658,14 @@ protected:
                     // Copy current value to cached values
                     // Re-layout is needed: (bs, seq, hidden_size) -> (seq, bs, hidden_size)
                     if (!kvCopied) {
-                        for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
-                            auto src = value.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
-                            auto dst = presentValue.getSequence(pastSeqLen + seq, b, i);
-                            xft::copy(dst, src, ctx->attHeadSize);
-                        }
+                        copyKVCache(ctx, value, presentValue, pastSeqLen, b, i);
                     }
 
                     // Softmax * V
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-                    this->gemm2(C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second,
-                            result.Stride());
+                    this->gemm2(C, std::get<0>(valueMat), output, m, headSize, keyLen, scoreStride,
+                            std::get<1>(valueMat), result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -700,17 +723,23 @@ protected:
                     int k = ctx->attHeadSize;
                     int n = (s < splits - 1 ? nb : N - nOff);
                     int lda = query.Stride();
-                    int ldb = keyMatInfo.second;
+                    int ldb = std::get<1>(keyMatInfo);
                     int strideC = pastSeqLen > 0 ? (N + 15) / 16 * 16 : ctx->inputSeqLen;
                     int ldc = strideC;
                     auto A = query.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize;
-                    auto B = keyMatInfo.first + nOff * ldb;
+                    auto B = std::get<0>(keyMatInfo) + nOff * ldb;
                     auto C = ctx->qkScores + (b * responsibleHeads + i) * ctx->inputSeqLen * strideC + nOff;
 
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = N;
 
-                    small_gemm_transb(getMask(attnMask, b, i, queryLen, keyLen), A, B, C, m, n, k, lda, ldb, ldc);
+                    //auto mask = getMask(attnMask, b, i, queryLen, keyLen);
+                    if constexpr (std::is_same_v<KVCacheT, int8_t>) {
+                        auto bScale = std::get<2>(keyMatInfo);
+                        small_gemm_transb(A, B, bScale, C, m, n, k, lda, ldb, ldc);
+                    } else {
+                        small_gemm_transb(A, B, C, m, n, k, lda, ldb, ldc);
+                    }
 
 #ifdef DEBUG
                     if (b == 0 && i == 0 && s == splits - 1) {
@@ -741,11 +770,11 @@ protected:
                     auto valueMatInfo = presentValue.getHead(b, i / groupNum);
                     std::swap(k, n);
                     lda = strideC;
-                    ldb = valueMatInfo.second;
+                    ldb = std::get<1>(valueMatInfo);
                     ldc = result.Stride();
                     {
                         float *A = C;
-                        KVCacheT *B = valueMatInfo.first + nOff * ldb;
+                        KVCacheT *B = std::get<0>(valueMatInfo) + nOff * ldb;
                         auto C = &shardedOut[threadIdx * ctx->attHeadSize];
                         xft::small_gemm(A, B, C, m, n, k, lda, ldb, ldc);
                     }

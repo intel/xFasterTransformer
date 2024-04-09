@@ -69,10 +69,11 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
 #pragma omp parallel for collapse(2)
         for (int i = 0; i < 2; ++i) {
             for (int seq = 0; seq < seqLen; ++seq) {
-                auto *src = srcTensors[i]->getSequence(seq, 0, 0);
+                auto src = srcTensors[i]->getSequence(seq, 0, 0);
                 for (int b = userSideBS - 1; b >= 0; --b) {
-                    auto *dst = dstTensors[i]->getSequence(seq, b, 0);
-                    memcpy(dst, src, sizeof(KVCacheT) * headNum * headSize);
+                    auto dst = dstTensors[i]->getSequence(seq, b, 0);
+                    memcpy(dst.first, src.first, sizeof(KVCacheT) * headNum * headSize);
+                    memcpy(dst.second, src.second, sizeof(float) * headNum);
                 }
             }
         }
@@ -108,3 +109,4 @@ void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, 
 template class KVCacheManager<float16_t>;
 template class KVCacheManager<bfloat16_t>;
 template class KVCacheManager<float>;
+template class KVCacheManager<int8_t>;

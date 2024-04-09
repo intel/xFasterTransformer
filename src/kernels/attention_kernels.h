@@ -20,6 +20,7 @@
 #include "amx_sgemm_bf16bf16bf16.h"
 #include "bfloat16.h"
 #include "copy_util.h"
+#include "quantize_util.h"
 #include "simple_mem_pool.h"
 #include "softmax.h"
 #include "thread_util.h"
@@ -29,6 +30,17 @@
 #endif
 
 namespace xft {
+
+template <typename T1, typename T2>
+void storeKVCache(T1 &dst, T2 *src, int headSize) {
+    if constexpr (std::is_same_v<T1, float *> || std::is_same_v<T1, bfloat16_t *> || std::is_same_v<T1, float16_t *>) {
+        xft::copy(dst, src, headSize);
+    } else if constexpr (std::is_same_v<T1, std::pair<int8_t *, typename T1::second_type>>) {
+        xft::quantize(dst.first, dst.second, src, headSize);
+    } else {
+        xft::copy(dst.first, src, headSize);
+    }
+}
 
 // Self attention while KV cache copy is separated
 template <bool fusedPack, typename Lambda1, typename Lambda2>
@@ -61,7 +73,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
     // Copy key/value to cache and pack them
     // If packing is not fused into computing, then pack it here
-    if constexpr (!fusedPack) { 
+    if constexpr (!fusedPack) {
 #pragma omp parallel for collapse(2)
         for (int b = 0; b < batchSize; ++b) {
             for (int i = 0; i < kvHeadNum; ++i) {
@@ -73,7 +85,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
                 auto B = key + offsets[b] * kvStride + i * headSize;
                 for (int s = 0; s < tokens; ++s) {
                     auto dst = getKCache(b, i, s);
-                    xft::copy(dst, B + s * kvStride, headSize);
+                    auto src = B + s * kvStride;
+                    storeKVCache(dst, src, headSize);
                 }
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -82,7 +95,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
                 auto V = value + offsets[b] * kvStride + i * headSize;
                 for (int s = 0; s < tokens; ++s) {
                     auto dst = getVCache(b, i, s);
-                    xft::copy(dst, V + s * kvStride, headSize);
+                    auto src = V + s * kvStride;
+                    storeKVCache(dst, src, headSize);
                 }
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -99,11 +113,11 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
             auto B = key + offsets[b] * kvStride + i * headSize;
             auto dst = getKCache(b, i, s);
-            xft::copy(dst, B + s * kvStride, headSize);
+            storeKVCache(dst, B + s * kvStride, headSize);
 
             auto V = value + offsets[b] * kvStride + i * headSize;
             dst = getVCache(b, i, s);
-            xft::copy(dst, V + s * kvStride, headSize);
+            storeKVCache(dst, V + s * kvStride, headSize);
         });
     }
 
@@ -278,7 +292,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
             auto B = key + offsets[b] * kvStride + i * headSize;
             for (int s = 0; s < tokens; ++s) {
                 auto dst = getKCache(b, i, s);
-                xft::copy(dst, B + s * kvStride, headSize);
+                storeKVCache(dst, B + s * kvStride, headSize);
             }
 
             xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -287,7 +301,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
             auto V = value + offsets[b] * kvStride + i * headSize;
             for (int s = 0; s < tokens; ++s) {
                 auto dst = getVCache(b, i, s);
-                xft::copy(dst, V + s * kvStride, headSize);
+                storeKVCache(dst, V + s * kvStride, headSize);
             }
 
             xdnn_small_amx_sgemm_bf16bf16bf16_packb(

@@ -13,19 +13,25 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <cstdint>
 #include <cstdio>
 #include <typeinfo>
 
 #include "bfloat16.h"
 #include "float16.h"
 #include "sgemm.h"
-#include "sgemm_f32f16f32.h"
 #include "sgemm_f32f16bf16.h"
+#include "sgemm_f32f16f32.h"
 
 // Single thread small gemm
 void small_gemm_transb(const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
-void small_gemm_transb(const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+void small_gemm_transb(
+        const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+void small_gemm_transb(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc);
+void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc);
 
 // Single thread small gemm with attention mask (skip skippable computation according to attnMask)
 void small_gemm_transb(const float *attnMask, const float *A, const float *B, float *C, int M, int N, int K, int lda,
@@ -61,7 +67,8 @@ inline void small_gemm(const float *A, const float16_t *B, float *C, int M, int 
 }
 
 template <>
-inline void small_gemm(const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc) {
+inline void small_gemm(
+        const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc) {
     small_sgemm_f32f16bf16(false, M, N, K, A, lda, (const XDNN_FP16 *)B, ldb, (XDNN_BF16 *)C, ldc);
 }
 } // namespace xft
