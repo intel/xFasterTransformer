@@ -95,9 +95,19 @@ static void compareMLPLLaMA(
                 (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
         auto t1 = std::chrono::high_resolution_clock::now();
         float during_time = std::chrono::duration<float>(t1 - t0).count();
-        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA %.6f sec\n", during_time);
+        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA(bf16) %.6f sec\n", during_time);
 
         refMLPLLaMA<bfloat16_t>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize,
+                (const float *)input, hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
+    } else if constexpr (std::is_same<T, float16_t>::value) {
+        auto t0 = std::chrono::high_resolution_clock::now();
+        invokeMLPLLaMA(xft::DataType::fp16, numTokens, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize,
+                (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        float during_time = std::chrono::duration<float>(t1 - t0).count();
+        printf("[ RUNTIME  ] XFT::invokeMLPLLaMA(fp16) %.6f sec\n", during_time);
+
+        refMLPLLaMA<float16_t>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize,
                 (const float *)input, hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
     }
 
@@ -140,6 +150,40 @@ TEST(MLPLLaMA, bfloat16_t) {
     compareMLPLLaMA<bfloat16_t>(6, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
     compareMLPLLaMA<bfloat16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+
+    free(gateW);
+    free(upW);
+    free(downW);
+}
+
+TEST(MLPLLaMA, float16_t) {
+    int hiddenSize = 4096;
+    int intermediateSize = 11008;
+
+    float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
+        gateW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
+        upW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
+        downW[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
+    }
+
+    compareMLPLLaMA<float16_t>(18, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(10, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(4, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(2, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(1, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(2, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(4, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(6, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
+    compareMLPLLaMA<float16_t>(16, hiddenSize, intermediateSize, gateW, upW, downW);
 
     free(gateW);
     free(upW);
