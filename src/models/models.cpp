@@ -50,7 +50,6 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
 }
 
 Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
-    Env::initEnvValue();
     TimeLine::init();
 }
 

@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include "environment.h"
 #include <unordered_map>
 
 class TimeLine {
@@ -193,18 +194,17 @@ private:
     }
 
     static void initWhitelist() {
-        char *value = getenv("XFT_TIMELINE_WHITELIST");
+        std::string whitelist = Env::getInstance()::getTimelineWhitelist();
         eventWhitelist.clear();
-        if (value) {
-            std::string env(value);
+        if (!whitelist.empty()) {
             size_t start = 0, end;
-            while ((end = env.find(',', start)) != std::string::npos) {
-                auto event = std::string(env.substr(start, end - start));
+            while ((end = whitelist.find(',', start)) != std::string::npos) {
+                auto event = std::string(whitelist.substr(start, end - start));
                 strip(event);
                 if (!event.empty()) eventWhitelist[event] = 1;
                 start = end + 1;
             }
-            auto event = std::string(env.substr((start)));
+            auto event = std::string(whitelist.substr((start)));
             strip(event);
 
             if (!event.empty()) eventWhitelist[event] = 1;

@@ -52,7 +52,7 @@ public:
             std::exit(-1);
         }
 
-        AMXThresholdM = Env::getAMXThresholdM();
+        AMXThresholdM = Env::getInstance().getAMXThresholdM();
     }
 
     ~MMHelper() {
