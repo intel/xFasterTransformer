@@ -142,6 +142,8 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     
     Supported model convert list:
     - LlamaConvert
+    - YiConvert
+    - GemmaConvert
     - ChatGLMConvert
     - ChatGLM2Convert
     - ChatGLM3Convert

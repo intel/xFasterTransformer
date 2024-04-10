@@ -35,6 +35,8 @@ _test_case=$(
 # |  baichuan2-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
 # | baichuan2-13b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
 # |       qwen-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+# |      gemma-2b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+# |      gemma-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
 
 # llama-2-7b with short prompt & full data type:
 bash run_benchmark.sh -m llama-2-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
@@ -63,6 +65,14 @@ bash run_benchmark.sh -m baichuan2-13b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
 # qwen-7b with short prompt & full data type:
 bash run_benchmark.sh -m qwen-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m qwen-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# gemma-2b with short prompt & full data type:
+bash run_benchmark.sh -m gemma-2b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# gemma-7b with short prompt & full data type:
+bash run_benchmark.sh -m gemma-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
 
 # Add new test case here:
 
@@ -156,6 +166,21 @@ bash run_benchmark.sh -m qwen-14b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m qwen-14b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m qwen-14b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
 
+# gemma-2b with short prompt & full data type:
+bash run_benchmark.sh -m gemma-2b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-2b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
+
+# gemma-7b with short prompt & full data type:
+bash run_benchmark.sh -m gemma-7b -d fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d bf16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d int8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d w8a8 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d int4 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m gemma-7b -d nf4 -i 1 -w 0 -in 32 -out 32 -s 1
 
 # Add new test case here:
 

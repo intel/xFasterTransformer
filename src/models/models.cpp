@@ -23,6 +23,7 @@
 #include "chatglm.h"
 #include "chatglm2.h"
 #include "chatglm3.h"
+#include "gemma.h"
 #include "hybrid_model.h"
 #include "llama.h"
 #include "opt_decoder.h"
@@ -309,6 +310,28 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
             case xft::DataType::w8a8_int8: setDecoder(new HybridModel<LlamaLLM, w8a8_t, int8_t>(modelPath)); break;
             case xft::DataType::w8a8_int4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, uint4x2_t>(modelPath)); break;
             case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<LlamaLLM, w8a8_t, nf4x2_t>(modelPath)); break;
+            default: printf("Unsupported data type.\n"); exit(-1);
+        }
+    } else if (modeltype == "gemma") {
+        switch (datatype) {
+            case xft::DataType::fp16: setDecoder(new GemmaLLM<float16_t>(modelPath)); break;
+            case xft::DataType::bf16: setDecoder(new GemmaLLM<bfloat16_t>(modelPath)); break;
+            case xft::DataType::int8: setDecoder(new GemmaLLM<int8_t>(modelPath)); break;
+            case xft::DataType::w8a8: setDecoder(new GemmaLLM<w8a8_t>(modelPath)); break;
+            case xft::DataType::int4: setDecoder(new GemmaLLM<uint4x2_t>(modelPath)); break;
+            case xft::DataType::nf4: setDecoder(new GemmaLLM<nf4x2_t>(modelPath)); break;
+            case xft::DataType::bf16_fp16:
+                setDecoder(new HybridModel<GemmaLLM, bfloat16_t, float16_t>(modelPath));
+                break;
+            case xft::DataType::bf16_int8: setDecoder(new HybridModel<GemmaLLM, bfloat16_t, int8_t>(modelPath)); break;
+            case xft::DataType::bf16_w8a8: setDecoder(new HybridModel<GemmaLLM, bfloat16_t, w8a8_t>(modelPath)); break;
+            case xft::DataType::bf16_int4:
+                setDecoder(new HybridModel<GemmaLLM, bfloat16_t, uint4x2_t>(modelPath));
+                break;
+            case xft::DataType::bf16_nf4: setDecoder(new HybridModel<GemmaLLM, bfloat16_t, nf4x2_t>(modelPath)); break;
+            case xft::DataType::w8a8_int8: setDecoder(new HybridModel<GemmaLLM, w8a8_t, int8_t>(modelPath)); break;
+            case xft::DataType::w8a8_int4: setDecoder(new HybridModel<GemmaLLM, w8a8_t, uint4x2_t>(modelPath)); break;
+            case xft::DataType::w8a8_nf4: setDecoder(new HybridModel<GemmaLLM, w8a8_t, nf4x2_t>(modelPath)); break;
             default: printf("Unsupported data type.\n"); exit(-1);
         }
     } else if (modeltype == "yarn_llama") {
