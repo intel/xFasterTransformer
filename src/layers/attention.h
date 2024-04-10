@@ -218,7 +218,6 @@ public:
             bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
 
         auto hiddenSize = ctx->hiddenSize;
-        auto attSize = ctx->attHeadNum * ctx->attHeadSize;
         hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
         hpj::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
         hpj::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);

@@ -214,7 +214,7 @@ private:
         if (ctx->actType == DecoderContext::SILU) {
             ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
-            ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
             ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
         } else {
