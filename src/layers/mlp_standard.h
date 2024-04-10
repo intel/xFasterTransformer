@@ -194,11 +194,11 @@ protected:
             //     pout[j] = ctx->erf_buffer[tid][j] * 0.5f * (1 + pout[j]);
             // }
             float *pout = output.Row(i);
-            __m512 c1 = _mm512_set1_ps(0.044715f);
-            __m512 c2 = _mm512_set1_ps(factor);
-            __m512 vone = _mm512_set1_ps(1);
-            __m512 vtwo = _mm512_set1_ps(2);
-            __m512 vhalf = _mm512_set1_ps(0.5f);
+            const __m512 c1 = _mm512_set1_ps(0.044715f);
+            const __m512 c2 = _mm512_set1_ps(factor);
+            const __m512 vone = _mm512_set1_ps(1);
+            const __m512 vtwo = _mm512_set1_ps(2);
+            const __m512 vhalf = _mm512_set1_ps(0.5f);
 
             for (int off = 0; off < output.Cols(); off += 16) {
                 int remain = output.Cols() - off;

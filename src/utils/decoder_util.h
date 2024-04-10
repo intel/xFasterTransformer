@@ -456,15 +456,15 @@ public:
     // compute gelu on the left half and then add it with the right half
     template <typename T1, typename T2>
     static void geluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
-        __m512 c1 = _mm512_set1_ps(0.044715f);
-        __m512 c2 = _mm512_set1_ps(0.7978845608f);
-        __m512 vone = _mm512_set1_ps(1.0f);
-        __m512 vtwo = _mm512_set1_ps(2.0f);
-        __m512 vhalf = _mm512_set1_ps(0.5f);
-        int M = src.Rows();
-        int stride = src.Cols();
-        int N = stride / 2;
-        int ldd = dst.Stride();
+        const __m512 c1 = _mm512_set1_ps(0.044715f);
+        const __m512 c2 = _mm512_set1_ps(0.7978845608f);
+        const __m512 vone = _mm512_set1_ps(1.0f);
+        const __m512 vtwo = _mm512_set1_ps(2.0f);
+        const __m512 vhalf = _mm512_set1_ps(0.5f);
+        const int M = src.Rows();
+        const int stride = src.Cols();
+        const int N = stride / 2;
+        const int ldd = dst.Stride();
 
 #pragma omp parallel for collapse(2)
         for (int64_t i = 0; i < M; ++i) {
