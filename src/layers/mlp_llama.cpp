@@ -32,7 +32,7 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
             if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
-            ctx = new DecoderContext(1, hiddenSize, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 0, 1);
+            ctx = new DecoderContext(1, hiddenSize, 1, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
         }
 

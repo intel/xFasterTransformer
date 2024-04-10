@@ -453,6 +453,36 @@ public:
         }
     }
 
+    // compute gelu on the left half and then add it with the right half
+    template <typename T1, typename T2>
+    static void geluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
+        __m512 c1 = _mm512_set1_ps(0.044715f);
+        __m512 c2 = _mm512_set1_ps(0.7978845608f);
+        __m512 vone = _mm512_set1_ps(1.0f);
+        __m512 vtwo = _mm512_set1_ps(2.0f);
+        __m512 vhalf = _mm512_set1_ps(0.5f);
+        int M = src.Rows();
+        int stride = src.Cols();
+        int N = stride / 2;
+        int ldd = dst.Stride();
+
+#pragma omp parallel for collapse(2)
+        for (int64_t i = 0; i < M; ++i) {
+            for (int64_t j = 0; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                auto vx = xft::load_avx512(mask, src.Data() + i * stride + j);
+                auto right = xft::load_avx512(mask, src.Data() + i * stride + j + N);
+                __m512 vt = c2 * (vx + c1 * vx * vx * vx);
+                vt = BertUtil::vexp(vt * vtwo);
+                vt = vone - vtwo * _mm512_rcp14_ps(vt + vone); // tanh
+                __m512 vy = vx * (vone + vt) * vhalf;
+                auto res = _mm512_mul_ps(right, vy);
+                xft::store_avx512(dst.Data() + i * ldd + j, mask, res);
+            }
+        }
+    }
+
     // C = A * B
     // bTranspose: B need to be transposed or not
     // xdnn_sgemm_single_thread(transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);

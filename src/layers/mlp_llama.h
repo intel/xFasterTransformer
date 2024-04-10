@@ -49,7 +49,8 @@ public:
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
 
-        REQUIRES(ctx->actType == DecoderContext::SILU, "unsupported activation.");
+        REQUIRES(ctx->actType == DecoderContext::SILU || ctx->actType == DecoderContext::GELU,
+                "unsupported activation.");
 
         // Vertically split the gate weight and up weight
         hpj::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
@@ -78,8 +79,8 @@ public:
             ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
         }
         // Horizontally split the down weight
-        ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false,
-                quantizedDownWeight, downWeightScale, downWeightZero, downWeightSum);
+        ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
+                downWeightScale, downWeightZero, downWeightSum);
         ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
 
 #ifdef DEBUG
@@ -126,6 +127,8 @@ public:
 #ifdef DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
         dbg.dumpMatrix(normBuffer);
+        dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
+        dbg.dumpMatrix(inBuffer);
 #endif
 
         if (!enableCATMLP()) {
@@ -134,18 +137,19 @@ public:
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
-            dbg.debugPrint("gateWeight:\n");
+            dbg.debugPrint(
+                    ">>> gateWeight: [%d, %d] (%d)\n", gateWeight.Rows(), gateWeight.Cols(), gateWeight.Stride());
             dbg.dumpMatrix(gateWeight);
-            dbg.debugPrint("gate output:\n");
+            dbg.debugPrint(">>> gate output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
             dbg.dumpMatrix(imBuffer);
 #endif
 
             upProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef DEBUG
-            dbg.debugPrint("upWeight:\n");
+            dbg.debugPrint(">>> upWeight: [%d, %d] (%d)\n", upWeight.Rows(), upWeight.Cols(), upWeight.Stride());
             dbg.dumpMatrix(upWeight);
-            dbg.debugPrint("up output:\n");
+            dbg.debugPrint(">>> up output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
             dbg.dumpMatrix(imBuffer);
 #endif
             downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
@@ -160,23 +164,31 @@ public:
             auto bufSize = sizeof(ImT) * M * cols;
             ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
             hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
-
+#ifdef DEBUG
+            dbg.debugPrint(
+                    ">>> enableCATMLP imBuffer: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
+            dbg.dumpMatrix(imBuffer);
+            dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
+            dbg.dumpMatrix(inBuffer);
+#endif
             catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
 #ifdef DEBUG
             dbg.debugPrint("catWeights:\n");
             dbg.dumpMatrix(catWeights);
             dbg.debugPrint("gateUp output:\n");
             dbg.dumpMatrix(siluBuf);
+            dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
+            dbg.dumpMatrix(inBuffer);
 #endif
             downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
         }
 
 #ifdef DEBUG
-        dbg.debugPrint("downWeight:\n");
+        dbg.debugPrint(">>> downWeight: [%d, %d] (%d)\n", downWeight.Rows(), downWeight.Cols(), downWeight.Stride());
         dbg.dumpMatrix(downWeight);
-        dbg.debugPrint("residential:\n");
+        dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
         dbg.dumpMatrix(inBuffer);
-        dbg.debugPrint("final output:\n");
+        dbg.debugPrint(">>> final output: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(), outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
 #endif
     }
@@ -199,7 +211,16 @@ private:
         const float *sumB = gateWeightSum.Data();
         ImT *C = output.Data();
 
-        ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        if (ctx->actType == DecoderContext::SILU) {
+            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
+            ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        } else if (ctx->actType == DecoderContext::GELU) { // gemma
+            ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        } else {
+            printf("ERROR: unsupported activation in MLP.\n");
+            exit(-1);
+        }
     }
 
     void upProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
@@ -273,7 +294,16 @@ private:
         ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
 
         // Compute silu on the left half and then add it with the right half
-        DecoderUtil::siluSum(output, siluBuf);
+        if (ctx->actType == DecoderContext::SILU) {
+            DecoderUtil::siluSum(output, siluBuf);
+        } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
+            DecoderUtil::siluSum(output, siluBuf);
+        } else if (ctx->actType == DecoderContext::GELU) { // gemma
+            DecoderUtil::geluSum(output, siluBuf);
+        } else {
+            printf("ERROR: unsupported activation in MLP.\n");
+            exit(-1);
+        }
     }
 
     void catGateUpWeights(hpj::Matrix<WeiT> &gateWeight, hpj::Matrix<WeiT> &upWeight,
