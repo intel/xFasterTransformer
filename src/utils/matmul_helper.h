@@ -1413,7 +1413,7 @@ private:
                 break;
             }
             default:
-                printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg));
+                printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
                 exit(-1);
                 break;
             }
@@ -2063,8 +2063,15 @@ private:
             return _mm512_mul_ps(v, vres);
         };
         auto silu = [](__m512 &v, int row, int col) {
-            __m512 vone = _mm512_set1_ps(1.0f);
+            const __m512 vone = _mm512_set1_ps(1.0f);
             __m512 vp = BertUtil::vexp(v);
+            __m512 vrecip = _mm512_rcp14_ps(vp + vone);
+            return vp * vrecip * v;
+        };
+        auto gelu = [](__m512 &v, int row, int col) {
+            const __m512 vone = _mm512_set1_ps(1.0f);
+            const __m512 c1 = _mm512_set1_ps(1.702f);
+            __m512 vp = BertUtil::vexp(v * c1);
             __m512 vrecip = _mm512_rcp14_ps(vp + vone);
             return vp * vrecip * v;
         };
@@ -2076,6 +2083,7 @@ private:
                 dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd_relu);
                 break;
             case matmul_kinds::Silu: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, silu); break;
+            case matmul_kinds::Gelu: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, gelu); break;
             case matmul_kinds::Resmul: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, resmul); break;
             case matmul_kinds::Residential:
                 if (bias) {

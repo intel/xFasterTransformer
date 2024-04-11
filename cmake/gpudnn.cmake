@@ -27,7 +27,7 @@ include(ExternalProject)
 # cmake-format: off
 ExternalProject_Add(gpudnn_lib
   URL               https://github.com/intel/xFasterTransformer/releases/download/gpuDNN/gpudnn_v0.1.tar.gz
-  URL_HASH          MD5=05b3554413e454ed027014e44a5c7fe4
+  URL_HASH          MD5=7082ae7dd35e5209ef8a2779526ff0d5
   TIMEOUT           60
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/gpudnn
   CONFIGURE_COMMAND ""

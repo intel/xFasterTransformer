@@ -25,7 +25,6 @@ public:
     // Return the decoding result, split offset, and split size
     // The returned result is a split representing the possibilities of next token, like the shadow part in below graph
     //                                         splitOffset
-    //                                              \ 
     //                                               \|<-splitSize->|
     //    _                ___________________________v______________________________________
     //    ^               |             |             |||||||||||||||             |          |
