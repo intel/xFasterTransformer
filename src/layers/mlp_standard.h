@@ -27,10 +27,10 @@ class MLP {
 public:
     MLP(DecoderContext *ctx) {}
 
-    // OriWeiT: float
+    // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
-    void setWeights(DecoderContext *ctx, const OriWeiT *_imWeight, const float * /*unused*/, const float * /*unused*/,
-            const float *_imBias, const OriWeiT *_outputWeight, const float * /*unused*/, const float * /*unused*/,
+    void setWeights(DecoderContext *ctx, const OriWeiT *_imWeight, const float * _imScale, const float * _imZero,
+            const float *_imBias, const OriWeiT *_outputWeight, const float * _outputScale, const float * _outputZero,
             const float *_outputBias, const float *_gamma2, const float *_beta2, const OriWeiT * /*unused*/,
             const float * /*unused*/, const float * /*unused*/, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
@@ -38,7 +38,7 @@ public:
 
         // Vertically split intermediate(FC1) weight
         hpj::Matrix<WeiT> quantizedIntermediateWeight;
-        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, nullptr, nullptr, true,
+        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, intermediateSize, _imWeight, _imScale, _imZero, true,
                 quantizedIntermediateWeight, intermediateWeightScale, intermediateWeightZero, intermediateWeightSum);
         ctx->mmHelper->packWeight(trans, quantizedIntermediateWeight, intermediateWeight);
 
@@ -50,7 +50,7 @@ public:
 
         // Horizontally split the output(FC2) weight
         hpj::Matrix<WeiT> quantizedOutputWeight;
-        ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, nullptr, nullptr, false,
+        ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, _outputWeight, _outputScale, _outputZero, false,
                 quantizedOutputWeight, outputWeightScale, outputWeightZero, outputWeightSum);
         ctx->mmHelper->packWeight(trans, quantizedOutputWeight, outputWeight);
 
