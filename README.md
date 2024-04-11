@@ -54,6 +54,9 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 | SecLLM(YaRN-Llama) | &#10004;  | &#10004; |   &#10004;   |
 |        Opt         | &#10004;  | &#10004; |   &#10004;   |
 |   Deepseek-coder   | &#10004;  | &#10004; |   &#10004;   |
+|      gemma         | &#10004;  | &#10004; |   &#10004;   |
+|     gemma-1.1      | &#10004;  | &#10004; |   &#10004;   |
+|     codegemma      | &#10004;  | &#10004; |   &#10004;   |
 
 ### DataType support list
 
