@@ -530,12 +530,18 @@ protected:
 
     // score: M * K(keyLen), value: K * headSize, output: M * headSize
     template <typename T1, typename T2, typename T3>
-    void gemm2(T1 *score, T2 *value, T3 *output, int M, int headSize, int K, int lds, int ldv, int ldo) {
+    void gemm2(T1 *score, const std::tuple<T2 *, int, float *> &valueMat, T3 *output, int M, int headSize, int K,
+            int lds, int ldo) {
         auto A = score;
-        auto B = value;
+        T2 *B = std::get<0>(valueMat);
         auto C = output;
         const int N = headSize;
-        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
+        const int ldv = std::get<1>(valueMat);
+        if constexpr (std::is_same_v<T2, int8_t>) {
+            xft::small_gemm(A, B, std::get<2>(valueMat), C, M, N, K, lds, ldv, ldo);
+        } else {
+            xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
+        }
     }
 
     // Note: the result here is still the intermediate result from the whole attention scope
@@ -664,8 +670,7 @@ protected:
                     // Softmax * V
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-                    this->gemm2(C, std::get<0>(valueMat), output, m, headSize, keyLen, scoreStride,
-                            std::get<1>(valueMat), result.Stride());
+                    this->gemm2(C, valueMat, output, m, headSize, keyLen, scoreStride, result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -770,13 +775,13 @@ protected:
                     auto valueMatInfo = presentValue.getHead(b, i / groupNum);
                     std::swap(k, n);
                     lda = strideC;
-                    ldb = std::get<1>(valueMatInfo);
                     ldc = result.Stride();
                     {
                         float *A = C;
-                        KVCacheT *B = std::get<0>(valueMatInfo) + nOff * ldb;
+                        std::get<0>(valueMatInfo) = std::get<0>(valueMatInfo) + nOff * ldb;
+                        std::get<2>(valueMatInfo) = std::get<2>(valueMatInfo) + nOff;
                         auto C = &shardedOut[threadIdx * ctx->attHeadSize];
-                        xft::small_gemm(A, B, C, m, n, k, lda, ldb, ldc);
+                        gemm2(A, valueMatInfo, C, m, n, k, lda, ldc);
                     }
 
                     std::get<2>(splitInfo[threadIdx].data) = 1; // set finished flag

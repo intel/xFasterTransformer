@@ -71,4 +71,9 @@ inline void small_gemm(
         const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc) {
     small_sgemm_f32f16bf16(false, M, N, K, A, lda, (const XDNN_FP16 *)B, ldb, (XDNN_BF16 *)C, ldc);
 }
+
+void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc);
+void small_gemm(const float *A, const int8_t *B, const float *bScale, bfloat16_t *C, int M, int N, int K, int lda,
+        int ldb, int ldc);
 } // namespace xft

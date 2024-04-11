@@ -66,10 +66,12 @@ extern bool kvTrans();
 template <typename T>
 class KVCacheTensor {
 public:
-    KVCacheTensor() : maxSeqLen(0), batchSize(0), headNum(0), headSize(0), data(nullptr), allocSize(0) {}
+    KVCacheTensor()
+        : maxSeqLen(0), batchSize(0), headNum(0), headSize(0), data(nullptr), allocSize(0), scales(nullptr) {}
 
     ~KVCacheTensor() {
         if (this->data) { free(this->data); }
+        if (this->scales) { free(this->scales); }
     }
 
     void resize(int maxSeqLen, int batchSize, int headNum, int headSize) {
@@ -80,14 +82,17 @@ public:
 
         uint64_t requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * headSize;
         if (requiredSize > allocSize) {
+            if (this->data) { free(this->data); }
             this->data = (T *)xft::alloc(requiredSize * sizeof(T));
             if (!this->data) {
                 printf("Failed to alloc mem for KV Cache [%d][%d][%d][%d].\n", maxSeqLen, batchSize, headNum, headSize);
                 exit(-1);
             }
-
             allocSize = requiredSize;
         }
+
+        if (this->scales) { free(this->scales); }
+        this->scales = (float *)xft::alloc((uint64_t)maxSeqLen * batchSize * headNum * sizeof(float));
     }
 
     int getBatchSize() const { return batchSize; }
@@ -96,29 +101,35 @@ public:
 
     // Get a vector for a specified sequence, return the start address, and the scale factor
     std::pair<T *, float *> getSequence(int seqIdx, int batchIdx, int headIdx) {
+        // scale is in [batchSize, headNum, seq]
+        float *scale = scales + (uint64_t)batchIdx * headNum * maxSeqLen + (uint64_t)headIdx * maxSeqLen + seqIdx;
+
         if (kvTrans()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
-            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize
-                    + (uint64_t)seqIdx * headSize;
-            return std::make_pair(addr, nullptr); 
+            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize
+                    + (uint64_t)headIdx * maxSeqLen * headSize + (uint64_t)seqIdx * headSize;
+            return std::make_pair(addr, scale);
         } else {
             // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
             T *addr = data + (uint64_t)seqIdx * batchSize * headNum * headSize + (uint64_t)batchIdx * headNum * headSize
                     + (uint64_t)headIdx * headSize;
-            return std::make_pair(addr, nullptr); 
+            return std::make_pair(addr, scale);
         }
     }
 
     // Get a head matrix, return the start address, stride and the scale factor
     std::tuple<T *, int, float *> getHead(int batchIdx, int headIdx) {
+        // scale is in [batchSize, headNum, seq]
+        float *scale = scales + (uint64_t)batchIdx * headNum * maxSeqLen + (uint64_t)headIdx * maxSeqLen;
+
         if (kvTrans()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
             T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize;
-            return std::make_tuple(addr, headSize, nullptr);
+            return std::make_tuple(addr, headSize, scale);
         } else {
             // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
             T *addr = data + (uint64_t)batchIdx * headNum * headSize + (uint64_t)headIdx * headSize;
-            return std::make_tuple(addr, batchSize * headNum * headSize, nullptr);
+            return std::make_tuple(addr, batchSize * headNum * headSize, scale);
         }
     }
 
@@ -313,4 +324,7 @@ private:
 
     T *data;
     uint64_t allocSize;
+
+    // The scale factor for each head (if T is int8)
+    float *scales;
 };
