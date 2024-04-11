@@ -194,7 +194,7 @@ private:
     }
 
     static void initWhitelist() {
-        std::string whitelist = Env::getInstance()::getTimelineWhitelist();
+        std::string whitelist = Env::getInstance().getTimelineWhitelist();
         eventWhitelist.clear();
         if (!whitelist.empty()) {
             size_t start = 0, end;
