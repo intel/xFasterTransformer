@@ -48,19 +48,19 @@ public:
 
     int getRank();
 
-    int getBatchSize() { return batchSize; }
+    int getBatchSize() { return searchCtx.batchSize; }
 
-    int getSeqLen() { return seqLen; }
+    int getSeqLen() { return searchCtx.seqLen; }
 
     void setVocabSize(int vocabSize) { this->vocabSize = vocabSize; }
 
     int getVocabSize() { return this->vocabSize; }
 
-    SearcherConfig getConfig() { return configuration; }
+    SearcherConfig getConfig() { return searchCtx.config; }
 
     void setDecoder(AbstractDecoder *dec);
 
-    std::vector<int32_t> finalize() { return searcher->finalize(); }
+    std::vector<int32_t> finalize();
 
     void exitSlaves();
 
@@ -73,12 +73,8 @@ public:
 private:
     AbstractDecoder *decoder;
     AbstractSearcher *searcher;
-    std::vector<int32_t> inputIds;
-    int batchSize;
-    int seqLen;
+    SearchContext searchCtx;
     int vocabSize;
-    SearcherConfig configuration;
-    bool isNewInput;
 };
 
 class AutoModel : public Model {

@@ -63,3 +63,16 @@ struct SearcherConfig {
         , topP(topP_)
         , repetitionPenalty(repetitionPenalty_) {}
 };
+
+struct SearchContext {
+    int batchSize = -1;
+    int step = 0;
+    int seqLen = 0;
+    std::vector<int> doneBatch;
+    std::vector<int> nextTokens;
+    std::vector<int> promptIds;    
+    std::vector<std::vector<int>> stopWordsList;
+    std::vector<std::vector<int>> stopWordsIndex;
+    std::vector<std::vector<int>> cachedRepetVec;
+    SearcherConfig config;
+};

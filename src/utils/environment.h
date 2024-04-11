@@ -65,6 +65,9 @@ public:
     // get OneCCL Enabled
     bool getOneCCLEnabled() { return oneCCLEnabled; }
 
+    // get searcher Enabled
+    bool getSearcherEnabled() { return searcherEnabled; }
+
 private:
     Env() {
         // init Verbose
@@ -99,6 +102,9 @@ private:
 
         // init OneCCL Enabled
         initOneCCLEnabled();
+
+        // init searcher enabled
+        initSearcherEnabled();
     }
 
     // Verbose
@@ -238,5 +244,12 @@ private:
     void initOneCCLEnabled() {
         char *xftOneCCLValue = getenv("XFT_ONECCL");
         oneCCLEnabled = xftOneCCLValue != nullptr ? std::atoi(xftOneCCLValue) : false;
+    }
+
+    // XFT_SEARCHER
+    bool searcherEnabled = true;
+    void initSearcherEnabled() {
+        char *xftSearcherValue = getenv("XFT_SEARCHER");
+        searcherEnabled = xftSearcherValue != nullptr ? std::atoi(xftSearcherValue) : true;
     }
 };

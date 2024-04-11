@@ -29,6 +29,7 @@
 #include "llama.h"
 #include "opt_decoder.h"
 #include "qwen.h"
+#include "sampling.h"
 #include "searcher.h"
 #include "timeline.h"
 #include "yarn_llama.h"
@@ -51,7 +52,7 @@ GenerationMode getGenerationMode(SearcherConfig &config_) {
     }
 }
 
-Model::Model() : decoder(nullptr), searcher(nullptr), isNewInput(true) {
+Model::Model() : decoder(nullptr), searcher(nullptr) {
     TimeLine::init();
 }
 
@@ -63,14 +64,14 @@ Model::~Model() {
 
 void Model::exitSlaves() {
     if (decoder->getRank() == 0) {
-        configuration.numBeams = 0;
+        searchCtx.config.numBeams = 0;
         Messenger &messenger = decoder->getMessenger();
-        messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+        messenger.broadcast((int *)&searchCtx.config, sizeof(SearcherConfig) / sizeof(int));
     }
 }
 
 void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
-    isNewInput = true;
+    searchCtx.step = 0;
     Messenger &messenger = decoder->getMessenger();
     int dims[2];
     if (decoder->getRank() == 0) {
@@ -78,74 +79,105 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
         dims[1] = inputIds_.size();
     }
     messenger.broadcast(dims, 2);
-    batchSize = dims[0];
-    seqLen = dims[1] / batchSize;
 
-    inputIds.resize(dims[1]);
-    if (decoder->getRank() == 0) { inputIds = inputIds_; }
-    messenger.broadcast(inputIds.data(), dims[1]);
+    searchCtx.promptIds.resize(dims[1]);
+    if (decoder->getRank() == 0) { searchCtx.promptIds = inputIds_; }
+    messenger.broadcast(searchCtx.promptIds.data(), dims[1]);
+
+    searchCtx.batchSize = dims[0];
+    searchCtx.seqLen = dims[1] / dims[0];
+
+    searchCtx.doneBatch = std::vector<int>(dims[0], 0);
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
         int eosTokenId_, int padTokenId_, bool doSample_, float temperature_, int topK_, float topP_,
         float repetitionPenalty_, const std::vector<std::vector<int>> &stopWordsList_) {
-    configuration.maxLen = maxLen_;
-    configuration.numBeams = numBeams_;
-    configuration.numBeamHypsToKeep = numBeamHypsToKeep_;
-    configuration.lenPenalty = lenPenalty_;
-    configuration.doEarlyStopping = doEarlyStopping_;
-    configuration.eosTokenId = eosTokenId_;
-    configuration.padTokenId = padTokenId_;
-    configuration.doSample = doSample_;
-    configuration.temperature = temperature_;
-    configuration.topK = topK_;
-    configuration.topP = topP_;
-    configuration.repetitionPenalty = repetitionPenalty_;
-
+    SearcherConfig configuration(maxLen_, numBeams_, numBeamHypsToKeep_, lenPenalty_, doEarlyStopping_, eosTokenId_,
+            padTokenId_, doSample_, temperature_, topK_, topP_, repetitionPenalty_);
     this->config(configuration, stopWordsList_);
 }
 
 void Model::config(SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_) {
-    isNewInput = true;
-    if (decoder->getRank() == 0) { configuration = config_; }
+    searchCtx.step = 0;
+
+    if (decoder->getRank() == 0) {
+        if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
+        if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
+
+        if (config_.repetitionPenalty <= 0) {
+            printf("`repetitionPenalty` has to be a strictly positive float, but is %f.\n", config_.repetitionPenalty);
+            exit(-1);
+        }
+        searchCtx.config = config_;
+    }
     Messenger &messenger = decoder->getMessenger();
-    messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+    messenger.broadcast((int *)&searchCtx.config, sizeof(SearcherConfig) / sizeof(int));
 
     // Slaves get exit flags and exit directly
-    if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
+    if (decoder->getRank() > 0 && searchCtx.config.numBeams == 0) { exit(0); }
 
-    createSearcher(configuration);
+    createSearcher(searchCtx.config);
     setStopWords(stopWordsList_);
 }
 
 bool Model::isDone() {
-    if (searcher == nullptr || inputIds.empty()) {
+    if (searchCtx.promptIds.empty()) {
         printf("Please set input and config first.\n");
         exit(-1);
+    } else if (searcher == nullptr) {
+        return xft::isDone(searchCtx);
     }
-    return !isNewInput && searcher->isDone();
+    return searchCtx.step && searcher->isDone();
+}
+
+std::vector<int32_t> Model::finalize() {
+    if (searcher == nullptr) { return xft::finalize(searchCtx); }
+    return searcher->finalize();
 }
 
 std::tuple<float *, int, int> Model::forward() {
-    int64_t dims[3] = {batchSize, 1, seqLen};
-    return decoder->forward(inputIds.data(), dims, 0, true);
+    int64_t dims[3] = {searchCtx.batchSize, 1, searchCtx.seqLen};
+    return decoder->forward(searchCtx.promptIds.data(), dims, 0, true);
 }
 
 std::vector<int32_t> Model::generate() {
-    if (inputIds.empty()) {
+    if (searchCtx.promptIds.empty()) {
         printf("Please set input tokens by model.input().\n");
         exit(-1);
     }
-    if (searcher == nullptr) {
-        printf("Please set generation config by model.config().\n");
-        exit(-1);
-    }
+    // if (searcher == nullptr) {
+    //     printf("Please set generation config by model.config().\n");
+    //     exit(-1);
+    // }
 
-    if (isNewInput) {
-        isNewInput = false;
-        return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+    if (!searchCtx.step) {
+        if (searcher == nullptr) {
+            TimeLine t("1st Token");
+            if (!searchCtx.stopWordsList.empty()) {
+                searchCtx.stopWordsIndex = std::vector<std::vector<int>>(
+                        searchCtx.stopWordsList.size(), std::vector<int>(searchCtx.batchSize, 0));
+            }
+            int64_t dims[3] = {searchCtx.batchSize, 1, searchCtx.seqLen};
+            std::tuple<float *, int, int> result = decoder->forward(searchCtx.promptIds.data(), dims, searchCtx.step++);
+
+            return greedySearch(std::get<0>(result), std::get<1>(result), std::get<2>(result), searchCtx,
+                    *decoder->getContext(), decoder->getMessenger());
+        } else {
+            searchCtx.step++;
+            return searcher->getNextToken(searchCtx.promptIds.data(), searchCtx.batchSize, searchCtx.seqLen);
+        }
     } else {
-        return searcher->getNextToken();
+        if (searcher == nullptr) {
+            TimeLine t("Next Token");
+            int64_t dims[3] = {searchCtx.batchSize, 1, 1};
+            std::tuple<float *, int, int> result
+                    = decoder->forward(searchCtx.nextTokens.data(), dims, searchCtx.step++);
+            return greedySearch(std::get<0>(result), std::get<1>(result), std::get<2>(result), searchCtx,
+                    *decoder->getContext(), decoder->getMessenger());
+        } else {
+            return searcher->getNextToken();
+        }
     }
 }
 
@@ -154,7 +186,11 @@ void Model::createSearcher(SearcherConfig &config_) {
 
     GenerationMode genMode = getGenerationMode(config_);
     if (genMode == GenerationMode::GREEDY_SEARCH) {
-        searcher = new GreedySearch(*decoder, config_);
+        if (Env::getInstance().getSearcherEnabled()) {
+            searcher = new GreedySearch(*decoder, config_);
+        } else {
+            searcher = nullptr;
+        }
     } else if (genMode == GenerationMode::BEAM_SEARCH) {
         searcher = new BeamSearch(*decoder, config_);
     } else if (genMode == GenerationMode::SAMPLE) {
@@ -193,16 +229,16 @@ void Model::unsetPrefix() {
 }
 
 bool Model::setStopWords(std::vector<std::vector<int>> stopWordsList) {
-    if (searcher == nullptr) {
-        printf("[Warning] Fails to set stop words. Please config model first.");
-        return false;
-    }
     Messenger &messenger = decoder->getMessenger();
 
     // Remove empty words and words containing non-positive elements.
+    // Remove words containing only eosTokenId.
     if (decoder->getRank() == 0) {
         for (auto it = stopWordsList.rbegin(); it != stopWordsList.rend(); ++it) {
             if ((*it).empty()) {
+                stopWordsList.erase(std::next(it).base());
+                continue;
+            } else if ((*it).size() == 1 && (*it)[0] == searchCtx.config.eosTokenId) {
                 stopWordsList.erase(std::next(it).base());
                 continue;
             }
@@ -242,20 +278,19 @@ bool Model::setStopWords(std::vector<std::vector<int>> stopWordsList) {
     messenger.broadcast(wordsData.data(), wordsDataLen);
 
     if (decoder->getRank() == 0) {
-        return searcher->setStopWords(stopWordsList);
+        searchCtx.stopWordsList = stopWordsList;
     } else {
         // restore stop words list to 2-D vector
-        std::vector<std::vector<int>> restoredList;
+        searchCtx.stopWordsList.clear();
         int currentIndex = 0;
         for (int i = 0; i < wordsSize.size(); ++i) {
             int size = wordsSize[i];
             std::vector<int> subVector(wordsData.begin() + currentIndex, wordsData.begin() + currentIndex + size);
             currentIndex += size;
-            restoredList.emplace_back(subVector);
+            searchCtx.stopWordsList.emplace_back(subVector);
         }
-
-        return searcher->setStopWords(restoredList);
     }
+    return !searchCtx.stopWordsList.empty();
 }
 
 AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
