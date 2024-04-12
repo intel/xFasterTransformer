@@ -1,5 +1,30 @@
 # CHANGELOG
 
+# [Version v1.5.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.5.0)
+v1.5.0 - Gemma series models supported.
+
+## Functionality
+- Support Gemma series medels, including Gemma and CodeGemma, and DeepSeek model.
+- Llama Converter support convert quantized huggingface model by params `from_quantized_model='gptq` into xFt format INT8/INT4 model files.
+- Support loading INT4 data weights directly from local files.
+- Optimize memory usage during QWen model conversion, particularly for QWen 72B.
+
+## Dependency
+- Bump `transformers` to `4.38.1` to support Gemma models.
+- Add `protobuf` to support new behavier in `tokenzier`.
+
+## Performance
+- Update xDNN to release `v1.4.5`
+- Add GPU kernel library gpuDNN v0.1 to support Intel Arc GPU series. 
+- Optimize ROPE perfermance by reducing repeated sin and cos embedding table data.
+- Accelerate KVCache copy by increasing parallelism in self attention.
+- Accelerate addreduce operation in long sequence case by transposing KVCache and tuned comm.
+
+## BUG fix
+- Fix a incorrect computing which should be in float, but was in integer.
+- Fix timeline is disordered.
+- Fix runtime issue of Qwen when seq_length is bigger than 32768.
+
 # [Version v1.4.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.4.0)
 v1.4.0 - Fully BF16 support in Llama for better performance and serving framework support.
 
