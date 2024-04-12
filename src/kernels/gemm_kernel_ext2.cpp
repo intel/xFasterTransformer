@@ -129,9 +129,8 @@ void small_sgemm_smallm(
     // The mask to load the last column
     __mmask16 mask16 = (1 << (N % 16 == 0 ? 16 : N % 16)) - 1;
 
-    auto set0 = [&](auto i) { vc[i] = xft::set_avx512(0); };
     for (int i = 0; i < M * COLS; ++i) {
-        set0(i);
+        vc[i] = xft::set_avx512(0);
     }
 
 // Accumulate along k
