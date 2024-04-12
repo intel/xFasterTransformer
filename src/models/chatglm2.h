@@ -29,8 +29,6 @@ class ChatGLM2
               ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
               typename TypeSelector<WeiT>::KVCacheType> {
-    // : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
-    //                          ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();

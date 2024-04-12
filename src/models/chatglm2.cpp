@@ -26,8 +26,6 @@ ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelT
             ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                     typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
             typename TypeSelector<WeiT>::KVCacheType>(modelPath, modelType) {
-    // : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
-    //         ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
@@ -83,13 +81,8 @@ void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
         // int startId = this->getStartId();
 
         for (int b = 0; b < ctx->batchSize; ++b) {
-            // int contextLen = -1;
-            // auto it = std::find(ids + b * seqLen, ids + (b + 1) * seqLen, startId);
-            // if (it != ids + (b + 1) * seqLen) { contextLen = std::distance(ids + b * seqLen, it); }
-
             auto pmask = mask + b * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
-                // int zeroLen = contextLen > (i + 1) ? contextLen : (i + 1);
                 int zeroLen = i + 1;
                 memset(pmask + i * seqLen, 0, zeroLen * sizeof(float)); // bottom left or 0:contextLen are 0
                 std::fill_n(pmask + i * seqLen + zeroLen, seqLen - zeroLen, std::numeric_limits<float>::lowest());
@@ -133,6 +126,7 @@ template <typename WeiT>
 void ChatGLM2<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
 // Return the position_ids + block_position_ids
 // if position_ids is None:
 //     position_ids = self.get_position_ids(input_ids, device=input_ids.device)
