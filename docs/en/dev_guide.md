@@ -19,11 +19,19 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
 - Example Usage: The documentation includes examples demonstrating how to use xFT for both C++ and Python. These examples cover various scenarios, including single and multi-rank execution, and provide a practical guide to integrating xFT into applications.
 - Web Demos and Benchmarking: xFT also provides web demos for popular LLM models and benchmarking tools/scripts to evaluate performance.
 
+Here is the meaning of xFT each code directory:
+- src: the source code directory. It consists pytorch/C++ API definitions, models, layers, kernels, searchers and other utilities.
+- example and benchmark: references to examples and benchmarks suggest directories containing sample code and scripts to demonstrate the usage of xFasterTransformer and to measure its performance.
+- evaluation: contains scripts and tools for evaluating the performance and accuracy of the models supported by xFT
+- serving: hold resources related to deploying and serving the models in production environments.
+- tests: This directory usually contains unit tests, integration tests, and other testing scripts designed to ensure the functionality and stability.
+- 3rdparty: the dependencies required by xFasterTransformer, ensuring that all necessary libraries are available for the build process.
+- docs: documentation files. This can range from API documentation, getting started guides, tutorials, and technical specifications of the xFT project.
 
 ### 1.2 Add new model steps
 To add a new model to xFasterTransformer (xFT), follow these steps:
 1. Contribution Guidelines: Follow the contribution guidelines provided in the CONTRIBUTING.md file. This includes ensuring your code adheres to the coding standards, writing meaningful commit messages, and submitting a pull request for review.
-2. Model Implementation: Implement the new model in C++ within the xFT framework. This involves creating a new class for your model that inherits from the appropriate base class provided by xFT. You'll need to implement the model's forward pass, handling input and output tensors.
+2. Model Implementation: Implement the new model in C++ within the xFT framework. In xFT, all LLMs are loaded by `AutoModel`. The parent class `Model` has a `generate()` interface to inference. In `Model::generate()`, there are 3 searcher: `GreedySearch`, `BeamSearch` and `SampleSearch`. Usually you do not need to modify seacher's logic. You only need to pay attention on the `Decoder` implementation in `Model`. This involves creating a new decoder class for your model that inherits from the `CommonDecoder` class provided by xFT, and implement the its forward pass, handling input and output tensors. 
 3. Tokenizer Support: If your model requires a specific tokenizer, ensure support for this tokenizer is added. This might involve integrating with existing tokenization libraries or implementing a custom tokenizer.
 4. Testing: Write unit tests for your model to ensure it performs as expected. This includes testing the model's inference capabilities and any specific features or configurations it supports.
 5. Documentation: Document your model's API, including how to instantiate it, configure it, and run inference. Include any specific requirements or limitations.
@@ -65,9 +73,10 @@ It includes mechanisms for managing key-value (KV) caches, which are crucial for
 
 The CommonDecoder inference logic consists 4 stage:
 - *Embedding*: the embedding layer processes the input IDs and stores the embeddings in `embBuf`.
+- *Attention mask*: most of the LLMs are Autoregressive generative model, which predicts outputs based on past. Typically the Attention Mask is triangular mask.
 - *Decoder*: the decoder layers will be invoked, and store the results to `outBuf`.
 - *LastLayerNorm*: after all decoder layers finished, the result will pass to a final layernorm.
-- *Predictor* and *beam search*: the final layernorm result will be processed by a predictor (typically a linear layer), and store in `finalOut`. If beamSize is more than 1, it will expand the result to make it cover multiple beams. 
+- *Predictor*: the final layernorm result will be processed by a predictor (typically a linear layer), and store in `finalOut`. If beamSize is more than 1, it will expand the result to make it cover multiple beams. 
 
 If you want to add a new model in xFT, you would focus on the Embedding and Decoder implementation of the new model.
 
