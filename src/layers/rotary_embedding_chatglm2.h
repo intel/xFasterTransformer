@@ -40,10 +40,14 @@ public:
     //         int hidden_size_per_attention_head, const int *position_ids);
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids);
-    void forward(bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qk_shape, const int *position_ids);
+    void forward(
+            bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qk_shape, const int *position_ids);
 
 private:
     void glm2CalEmb();
+    void interleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1);
+    void deinterleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1);
+    void prepare_sincos(__m512 a, __m512 b, __m512 *result);
 
 private:
     static bool initialized;
