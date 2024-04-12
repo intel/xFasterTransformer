@@ -133,6 +133,8 @@ if __name__ == "__main__":
         model_prompt = prompt_pool["llama"]
     if "deepseek" in args.model_name.lower():
         model_prompt = prompt_pool["llama"]
+    if "gemma" in args.model_name.lower():
+        model_prompt = prompt_pool["llama"]
     if "baichuan" in args.model_name.lower():
         model_prompt = prompt_pool["baichuan"]
     if "baichuan2" in args.model_name.lower():

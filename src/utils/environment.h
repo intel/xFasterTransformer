@@ -162,7 +162,7 @@ private:
 #ifdef PIPELINE_PARALLEL
             int value = atoi(xft_pipeline_value);
             if (value >= 1)
-                pipelineStageValue() = value;
+                pipelineStageValue = value;
             else
                 printf("[ERROR] XFT_PIPELINE_STAGE value need to be greater than 0.\n");
 #else

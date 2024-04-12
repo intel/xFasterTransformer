@@ -19,7 +19,7 @@ import numpy as np
 import os
 import torch
 
-from transformers import LlamaForCausalLM
+from transformers import AutoModelForCausalLM
 
 from .convert import BaseModelConvert
 
@@ -95,7 +95,7 @@ class LlamaConvert(BaseModelConvert):
             os.makedirs(output_dir)
 
         # load the model
-        model = LlamaForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             input_dir,
             load_in_8bit=False,
             torch_dtype=torch.float16,
@@ -107,38 +107,44 @@ class LlamaConvert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        config["llama"] = {}
+        sec_name = hf_config["model_type"]
+        config[sec_name] = {}
         has_post_decoder_layernorm = True
         try:
-            config["llama"]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
-            num_attention_heads = config["llama"]["head_num"] = str(hf_config["num_attention_heads"])
-            num_key_value_heads = config["llama"]["kv_head_num"] = str(
+            config[sec_name]["model_name"] = "llama" if hf_config["_name_or_path"] == "" else hf_config["_name_or_path"]
+            num_attention_heads = config[sec_name]["head_num"] = str(hf_config["num_attention_heads"])
+            num_key_value_heads = config[sec_name]["kv_head_num"] = str(
                 hf_config.get("num_key_value_heads", num_attention_heads)
             )
 
             hidden_size = hf_config["hidden_size"]
-            config["llama"]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
-            config["llama"]["inter_size"] = str(hf_config["intermediate_size"])
-            config["llama"]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
-            config["llama"]["num_layer"] = str(hf_config["num_hidden_layers"])
-            config["llama"]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
-            config["llama"]["layernorm_type"] = "pre_layernorm"
-            config["llama"]["activation_type"] = str(hf_config["hidden_act"])
-            config["llama"]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
-
+            config[sec_name]["hidden_size"] = str(hidden_size)
+            if "gemma" in sec_name:
+                config[sec_name]["size_per_head"] = str(hf_config["head_dim"])
+            else:
+                config[sec_name]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config[sec_name]["inter_size"] = str(hf_config["intermediate_size"])
+            config[sec_name]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
+            config[sec_name]["num_layer"] = str(hf_config["num_hidden_layers"])
+            config[sec_name]["layernorm_eps"] = str(hf_config.get("rms_norm_eps", 1e-6))
+            config[sec_name]["layernorm_type"] = "pre_layernorm"
+            config[sec_name]["activation_type"] = str(hf_config["hidden_act"])
+            config[sec_name]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
             rope_scaling = hf_config.get("rope_scaling", None)
             if rope_scaling:
-                config["llama"]["scaling_factor"] = str(rope_scaling.get("factor", 1.0))
-                config["llama"]["rope_type"] = str(rope_scaling.get("type", "null"))
+                config[sec_name]["scaling_factor"] = str(rope_scaling.get("factor", 1.0))
+                config[sec_name]["rope_type"] = str(rope_scaling.get("type", "null"))
             else:
-                config["llama"]["scaling_factor"] = str(1.0)
-                config["llama"]["rope_type"] = str("null")
-
-            config["llama"]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
-            config["llama"]["vocab_size"] = str(hf_config["vocab_size"])
-            config["llama"]["start_id"] = str(hf_config["bos_token_id"])
-            config["llama"]["end_id"] = str(hf_config["eos_token_id"])
-            config["llama"]["weight_data_type"] = dtype
+                config[sec_name]["scaling_factor"] = str(1.0)
+                config[sec_name]["rope_type"] = str("null")
+            config[sec_name]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
+            config[sec_name]["vocab_size"] = str(hf_config["vocab_size"])
+            config[sec_name]["start_id"] = str(hf_config["bos_token_id"])
+            config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
+            pad_token_id = hf_config.get("pad_token_id")
+            if pad_token_id is not None:
+                config[sec_name]["pad_id"] = str(pad_token_id)
+            config[sec_name]["weight_data_type"] = dtype
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
@@ -166,7 +172,7 @@ class LlamaConvert(BaseModelConvert):
         state_dict = model.state_dict()
         model_named_parameters = dict()
         for name, param in state_dict.items():
-            print(name)
+            print(f"name = {name}")
             # merge QKV
             if "self_attn.q_proj.weight" in name:
                 k_name = name.replace("q_proj", "k_proj")
@@ -174,15 +180,19 @@ class LlamaConvert(BaseModelConvert):
                 qkv = torch.cat(
                     (param.permute(1, 0), state_dict[k_name].permute(1, 0), state_dict[v_name].permute(1, 0)), dim=1
                 )
-                model_named_parameters[
-                    name.replace("self_attn.q_proj.weight", "attention.query_key_value.weight")
-                ] = qkv
+                model_named_parameters[name.replace("self_attn.q_proj.weight", "attention.query_key_value.weight")] = (
+                    qkv
+                )
             # for merged weights, skip
             elif "self_attn.k_proj.weight" in name or "self_attn.v_proj.weight" in name:
                 continue
             elif "embed" in name:
                 model_named_parameters[name] = param
             elif "lm_head" in name:
+                model_named_parameters[name] = param
+            elif "gemma" in sec_name and "norm" in name:
+                model_named_parameters[name] = param + 1
+            elif "layernorm" in name:
                 model_named_parameters[name] = param
             else:
                 model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
@@ -235,6 +245,7 @@ class LlamaConvert(BaseModelConvert):
 
         # load AutoGPTQ quantized model
         from auto_gptq import AutoGPTQForCausalLM
+
         model = AutoGPTQForCausalLM.from_quantized(
             input_dir,
             inject_fused_attention=True,
@@ -272,12 +283,12 @@ class LlamaConvert(BaseModelConvert):
 
             self.wbits = quantize_config["bits"]
             assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"
-            config["llama"]["quant_qweight_data_type"] = 'int8' if self.wbits == 8 else 'uint4'
-            config["llama"]["quant_scales_data_type"] = 'fp32'
-            config["llama"]["quant_zeros_data_type"] = 'fp32'
+            config["llama"]["quant_qweight_data_type"] = "int8" if self.wbits == 8 else "uint4"
+            config["llama"]["quant_scales_data_type"] = "fp32"
+            config["llama"]["quant_zeros_data_type"] = "fp32"
             assert quantize_config["group_size"] == -1, "Only column wise quantization is supported."
             config["llama"]["quant_groupsize"] = str(quantize_config["group_size"])
-            #config["llama"]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
+            # config["llama"]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
 
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
@@ -343,26 +354,28 @@ class LlamaConvert(BaseModelConvert):
             elif "qzeros" in name:
                 # get qzeros
                 qzeros = param
-                qzeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.wbits),
-                        wf.unsqueeze(0)).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qzeros = torch.bitwise_right_shift(
+                    torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.wbits), wf.unsqueeze(0)
+                ).to(torch.int16 if self.wbits == 8 else torch.int8)
                 qzeros = qzeros + 1
-                qzeros = torch.bitwise_and(qzeros, (2 ** self.wbits) - 1)
+                qzeros = torch.bitwise_and(qzeros, (2**self.wbits) - 1)
 
                 # qzeoros is uint8/uint4 in AutoQPTQ, zeros is fp32 for xFT.
                 # for int8, zeros = - scales * (qzeros - 128)
                 # for uint4, zeros = - scales * qzeros
                 if self.wbits == 8:
-                    qzeros = qzeros - 128 # uint8 to int8
+                    qzeros = qzeros - 128  # uint8 to int8
                 qzeros = torch.flatten(qzeros).float()
                 scales = state_dict["model." + name.replace("qzeros", "scales")].float()
-                zeros = - scales * qzeros
+                zeros = -scales * qzeros
                 model_named_parameters[name] = zeros
             elif "qweight" in name:
                 # get qweight
                 qweight = param
-                qweight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // self.wbits, -1),
-                        wf.unsqueeze(-1)).to(torch.int16 if self.wbits == 8 else torch.int8)
-                qweight = torch.bitwise_and(qweight, (2 ** self.wbits) - 1)
+                qweight = torch.bitwise_right_shift(
+                    torch.unsqueeze(qweight, 1).expand(-1, 32 // self.wbits, -1), wf.unsqueeze(-1)
+                ).to(torch.int16 if self.wbits == 8 else torch.int8)
+                qweight = torch.bitwise_and(qweight, (2**self.wbits) - 1)
                 qweight = qweight.reshape(-1, qweight.shape[2])
 
                 # qweight is uint8/uint4, not transposed in AutoGPTQ
