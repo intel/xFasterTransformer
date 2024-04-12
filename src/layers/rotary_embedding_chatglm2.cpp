@@ -172,7 +172,8 @@ void ChatGLM2RotaryEmbedding::forward(
                 int pos = position_ids[seq];
                 float *pcos = emb_cos + pos * dim;
                 float *psin = emb_sin + pos * dim;
-                for (int i = 0; i < dim; i += 32) {
+
+                for (int i = 0; i < half; i += 32) {
                     __mmask16 mask = 0xffff;
                     __m512 pCos0 = _mm512_maskz_loadu_ps(mask, &pcos[i]);
                     __m512 pSin0 = _mm512_maskz_loadu_ps(mask, &psin[i]);

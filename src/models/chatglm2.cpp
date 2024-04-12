@@ -74,12 +74,10 @@ template <typename WeiT>
 void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
-    int sizeRequired = ctx->batchSize * seqLen * seqLen;
 
     if (step == 0) {
+        int sizeRequired = ctx->batchSize * seqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
-        // int startId = this->getStartId();
-
         for (int b = 0; b < ctx->batchSize; ++b) {
             auto pmask = mask + b * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
