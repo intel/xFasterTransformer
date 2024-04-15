@@ -119,7 +119,9 @@ class QwenConvert(BaseModelConvert):
         from typing import TYPE_CHECKING, Any, Callable, ContextManager, Iterator, Sequence, TypeVar, cast
 
         def _get_name_and_param(model_dir: Path):
-            num_parts = 82
+            all_files = os.listdir(model_dir)
+            safetensors_files = [f for f in all_files if f.endswith('.safetensors')]
+            num_parts = len(safetensors_files)
             for part_name in (f"model-{n:05}-of-{num_parts:05}.safetensors" for n in range(1, num_parts + 1)):
                 ctx: ContextManager[Any]
                 from safetensors import safe_open
