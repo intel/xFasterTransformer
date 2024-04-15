@@ -21,13 +21,13 @@
 #include "token_embedding.h"
 #include "type_selector.h"
 
-template <typename WeiT>
+template <typename WeiT, typename KVCacheT = typename TypeSelector<WeiT>::KVCacheType>
 class LlamaLLM
     : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
               LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
-              typename TypeSelector<WeiT>::KVCacheType> {
+              KVCacheT> {
 public:
     LlamaLLM(const std::string &modelPath);
     ~LlamaLLM();
