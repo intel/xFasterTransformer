@@ -120,38 +120,32 @@ void ChatGLM2RotaryEmbedding::forward(
 }
 
 inline void ChatGLM2RotaryEmbedding::prepare_sincos(__m512 a, __m512 b, __m512 *result) {
-    __m512i mask = _mm512_set_epi32(
+    const __m512i mask = _mm512_set_epi32(
             0x1e, 0x1c, 0x1a, 0x18, 0x16, 0x14, 0x12, 0x10, 0x0e, 0x0c, 0x0a, 0x08, 0x06, 0x04, 0x02, 0x00);
 
-    __m512 merged = _mm512_permutex2var_ps(a, mask, b);
-    *result = merged;
+    *result = _mm512_permutex2var_ps(a, mask, b);
 }
 
 inline void ChatGLM2RotaryEmbedding::interleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1) {
-    __m512i mask0 = _mm512_set_epi32(
+    const __m512i mask0 = _mm512_set_epi32(
             0x1e, 0x1c, 0x1a, 0x18, 0x16, 0x14, 0x12, 0x10, 0x0e, 0x0c, 0x0a, 0x08, 0x06, 0x04, 0x02, 0x00);
 
-    __m512i mask1 = _mm512_set_epi32(
+    const __m512i mask1 = _mm512_set_epi32(
             0x1f, 0x1d, 0x1b, 0x19, 0x17, 0x15, 0x13, 0x11, 0x0f, 0x0d, 0x0b, 0x09, 0x07, 0x05, 0x03, 0x01);
 
-    __m512 merged = _mm512_permutex2var_ps(a, mask0, b);
-    *result0 = merged;
-    merged = _mm512_permutex2var_ps(a, mask1, b);
-    *result1 = merged;
+    *result0 = _mm512_permutex2var_ps(a, mask0, b);
+    *result1 = _mm512_permutex2var_ps(a, mask1, b);
 }
 
 inline void ChatGLM2RotaryEmbedding::deinterleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1) {
-    __m512i mask0 = _mm512_set_epi32(
+    const __m512i mask0 = _mm512_set_epi32(
             0x17, 0x07, 0x16, 0x06, 0x15, 0x05, 0x14, 0x04, 0x13, 0x03, 0x12, 0x02, 0x11, 0x01, 0x10, 0x00);
 
-    __m512i mask1 = _mm512_set_epi32(
+    const __m512i mask1 = _mm512_set_epi32(
             0x1f, 0x0f, 0x1e, 0x0e, 0x1d, 0x0d, 0x1c, 0x0c, 0x1b, 0x0b, 0x1a, 0x0a, 0x19, 0x09, 0x18, 0x08);
 
-    __m512 merged = _mm512_permutex2var_ps(a, mask0, b);
-    *result0 = merged;
-
-    merged = _mm512_permutex2var_ps(a, mask1, b);
-    *result1 = merged;
+    *result0 = _mm512_permutex2var_ps(a, mask0, b);
+    *result1 = _mm512_permutex2var_ps(a, mask1, b);
 }
 
 void ChatGLM2RotaryEmbedding::forward(
