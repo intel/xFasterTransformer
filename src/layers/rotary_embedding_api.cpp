@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#include "rotary_embedding_api.h"
+#include "layers_rotary_embedding.h"
+#include "compile_util.h"
 #include "bfloat16.h"
 namespace xft {
 
@@ -82,7 +83,7 @@ void rotaryEmbeddingKernel(const int64_t *position_ids, bfloat16_t *query, bfloa
     }
 }
 
-void rotaryEmbeddingKernel(DataType dt, const int64_t *positionIds, void *query, void *key, const void *embCos,
+void invokeRotaryEmbedding(DataType dt, const int64_t *positionIds, void *query, void *key, const void *embCos,
         const void *embSin, const int dim, const int qStride, const int kStride, const int numTokens, const int headNum,
         const int headSize, const int numKvHeads) {
     if (dt == DataType::bf16) {
