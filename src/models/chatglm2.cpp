@@ -21,8 +21,11 @@
 
 template <typename WeiT>
 ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
-    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
-            ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>>(modelPath, modelType) {
+    : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                            typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+            ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
+            typename TypeSelector<WeiT>::KVCacheType>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
@@ -71,20 +74,13 @@ template <typename WeiT>
 void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
-    int sizeRequired = ctx->batchSize * seqLen * seqLen;
 
     if (step == 0) {
+        int sizeRequired = ctx->batchSize * seqLen * seqLen;
         float *mask = this->getAttnMask(sizeRequired);
-        // int startId = this->getStartId();
-
         for (int b = 0; b < ctx->batchSize; ++b) {
-            // int contextLen = -1;
-            // auto it = std::find(ids + b * seqLen, ids + (b + 1) * seqLen, startId);
-            // if (it != ids + (b + 1) * seqLen) { contextLen = std::distance(ids + b * seqLen, it); }
-
             auto pmask = mask + b * seqLen * seqLen;
             for (int i = 0; i < seqLen; ++i) {
-                // int zeroLen = contextLen > (i + 1) ? contextLen : (i + 1);
                 int zeroLen = i + 1;
                 memset(pmask + i * seqLen, 0, zeroLen * sizeof(float)); // bottom left or 0:contextLen are 0
                 std::fill_n(pmask + i * seqLen + zeroLen, seqLen - zeroLen, std::numeric_limits<float>::lowest());
@@ -115,7 +111,17 @@ void ChatGLM2<WeiT>::embeddingForward(int *ids, float *output, int batchSize, in
 }
 
 template <typename WeiT>
+void ChatGLM2<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+    embedding->forward(ids, output, batchSize, seqLen);
+}
+
+template <typename WeiT>
 void ChatGLM2<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
+
+template <typename WeiT>
+void ChatGLM2<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
