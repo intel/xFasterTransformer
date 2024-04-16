@@ -32,7 +32,7 @@ static void reorder(int *idx, int bs) {
             for (int headIdx = 0; headIdx < headNum; ++headIdx) {
                 // Set each position to a unique value
                 T val = (T)(1.0f * (seqIdx * bs + batchIdx) + 0.01f * headIdx);
-                T *data = tensor.getSequence(seqIdx, batchIdx, headIdx);
+                T *data = tensor.getSequence(seqIdx, batchIdx, headIdx).first;
                 std::fill(data, data + headSize, val);
             }
         }
@@ -45,7 +45,7 @@ static void reorder(int *idx, int bs) {
         for (int batchIdx = 0; batchIdx < bs; ++batchIdx) {
             for (int headIdx = 0; headIdx < headNum; ++headIdx) {
                 T val = (T)(1.0f * (seqIdx * bs + idx[batchIdx]) + 0.01f * headIdx);
-                T *data = tensor.getSequence(seqIdx, batchIdx, headIdx);
+                T *data = tensor.getSequence(seqIdx, batchIdx, headIdx).first;
                 for (int i = 0; i < headSize; ++i) {
                     EXPECT_NEAR(data[i], val, 0.00001f);
                 }

@@ -463,8 +463,9 @@ protected:
                     auto srcV = value.Row(b * ctx->inputSeqLen + seq) + h * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, h);
 
-                    xft::copy(dstK, srcK, headSize);
-                    xft::copy(dstV, srcV, headSize);
+                    // Suppose dstK and dstV are the same data type
+                    xft::storeKVCache(dstK, srcK, headSize);
+                    xft::storeKVCache(dstV, srcV, headSize);
                 }
             }
         }
@@ -478,19 +479,26 @@ protected:
         for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
             auto src = kv.Row(bdx * ctx->inputSeqLen + seq) + hdx * ctx->attHeadSize;
             auto dst = presentKV.getSequence(pastSeqLen + seq, bdx, hdx);
-            xft::copy(dst, src, ctx->attHeadSize);
+            xft::storeKVCache(dst, src, ctx->attHeadSize);
         }
     }
 
     // query: M * headSize, key: N * headSize, score: M * N
-    // ldq: leading dimension of query; ldk: leading dimension of key; lds: LD of score
+    // ldq: leading dimension of query; lds: LD of score
     template <typename T1, typename T2, typename T3>
-    void gemm1(T1 *query, T2 *key, T3 *score, int M, int N, int headSize, int ldq, int ldk, int lds) {
+    void gemm1(T1 *query, const std::tuple<T2 *, int, float *> &keyMat, T3 *score, int M, int N, int headSize, int ldq,
+            int lds) {
         auto A = query;
-        auto B = key;
+        auto B = std::get<0>(keyMat);
         auto C = score;
         const int K = headSize;
-        small_gemm_transb(A, B, C, M, N, K, ldq, ldk, lds);
+        const int ldb = std::get<1>(keyMat);
+        const float *scale = std::get<2>(keyMat);
+        if constexpr (std::is_same_v<T2, int8_t>) {
+            small_gemm_transb(A, B, scale, C, M, N, K, ldq, ldb, lds);
+        } else {
+            small_gemm_transb(A, B, C, M, N, K, ldq, ldb, lds);
+        }
     }
 
     // Softmax between 2 BMM
@@ -504,12 +512,18 @@ protected:
 
     // score: M * K(keyLen), value: K * headSize, output: M * headSize
     template <typename T1, typename T2, typename T3>
-    void gemm2(T1 *score, T2 *value, T3 *output, int M, int headSize, int K, int lds, int ldv, int ldo) {
+    void gemm2(T1 *score, const std::tuple<T2 *, int, float *> &valueMat, T3 *output, int M, int headSize, int K,
+            int lds, int ldo) {
         auto A = score;
-        auto B = value;
+        T2 *B = std::get<0>(valueMat);
         auto C = output;
         const int N = headSize;
-        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
+        const int ldv = std::get<1>(valueMat);
+        if constexpr (std::is_same_v<T2, int8_t>) {
+            xft::small_gemm(A, B, std::get<2>(valueMat), C, M, N, K, lds, ldv, ldo);
+        } else {
+            xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
+        }
     }
 
     // Note: the result here is still the intermediate result from the whole attention scope
@@ -596,16 +610,16 @@ protected:
                     int k = ctx->attHeadSize;
                     int n = pastSeqLen + ctx->inputSeqLen;
                     int lda = query.Stride();
-                    int ldb = keyMatInfo.second;
+                    int ldb = std::get<1>(keyMatInfo);
                     int ldc = scoreStride;
                     auto A = query.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize; // updated
-                    auto B = keyMatInfo.first;
+                    auto B = std::get<0>(keyMatInfo);
                     auto C = scoreBuf + omp_get_thread_num() * mBlockSize * scoreStride;
 
                     const int queryLen = ctx->inputSeqLen;
                     const int keyLen = pastSeqLen + ctx->inputSeqLen;
 
-                    this->gemm1(A, B, C, m, n, headSize, lda, ldb, ldc);
+                    this->gemm1(A, keyMatInfo, C, m, n, headSize, lda, ldc);
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -631,19 +645,12 @@ protected:
 
                     // Copy current value to cached values
                     // Re-layout is needed: (bs, seq, hidden_size) -> (seq, bs, hidden_size)
-                    if (!kvCopied) {
-                        for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
-                            auto src = value.Row(b * ctx->inputSeqLen + seq) + i * ctx->attHeadSize;
-                            auto dst = presentValue.getSequence(pastSeqLen + seq, b, i);
-                            xft::copy(dst, src, ctx->attHeadSize);
-                        }
-                    }
+                    if (!kvCopied) { copyKVCache(ctx, value, presentValue, pastSeqLen, b, i); }
 
                     // Softmax * V
                     auto valueMat = presentValue.getHead(b, i / groupNum);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
-                    this->gemm2(C, valueMat.first, output, m, headSize, keyLen, scoreStride, valueMat.second,
-                            result.Stride());
+                    this->gemm2(C, valueMat, output, m, headSize, keyLen, scoreStride, result.Stride());
 
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
@@ -665,155 +672,14 @@ protected:
             KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
         const int responsibleHeads = this->endQHead - this->startQHead;
         const int batchSize = ctx->batchSize;
+        const int presentSeqLen = pastSeqLen + ctx->inputSeqLen;
         const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
-        int N = pastSeqLen + ctx->inputSeqLen;
-        int splits = ctx->numThreads / (batchSize * responsibleHeads);
-        int nb = (N + splits - 1) / splits; // block size for each thread
-
-        REQUIRES(splits > 1, "Do not call me when splits=%d", splits);
-
-        // AVX512 is used and the case where head_size is not multiple of 16 hasn't been taken into account
-        REQUIRES(ctx->attHeadSize % 16 == 0, "Head size (%d) is not supported.", ctx->attHeadSize);
-
-        // max(xi), sum(exp(xi)), finish_tag for each split
-        int totalTasks = batchSize * responsibleHeads * splits;
-        AlignedType<std::tuple<float, float, float>, 32> splitInfo[totalTasks];
-        for (int i = 0; i < totalTasks; ++i) {
-            std::get<1>(splitInfo[i].data) = 0;
-            std::get<2>(splitInfo[i].data) = 0;
-        }
-
-        float *shardedOut = (float *)SimpleMemPool::instance().getBuffer(
-                "shardedOutput", sizeof(float) * totalTasks * ctx->attHeadSize);
-
-#pragma omp parallel for collapse(3)
-        for (int b = 0; b < batchSize; ++b) {
-            for (int i = 0; i < responsibleHeads; ++i) {
-                for (int s = 0; s < splits; ++s) {
-                    int headStartIdx = b * responsibleHeads * splits + i * splits;
-                    int threadIdx = b * responsibleHeads * splits + i * splits + s;
-
-                    // Q * K
-                    int nOff = s * nb;
-                    auto keyMatInfo = presentKey.getHead(b, i / groupNum);
-                    int m = 1;
-                    int k = ctx->attHeadSize;
-                    int n = (s < splits - 1 ? nb : N - nOff);
-                    int lda = query.Stride();
-                    int ldb = keyMatInfo.second;
-                    int strideC = pastSeqLen > 0 ? (N + 15) / 16 * 16 : ctx->inputSeqLen;
-                    int ldc = strideC;
-                    auto A = query.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize;
-                    auto B = keyMatInfo.first + nOff * ldb;
-                    auto C = ctx->qkScores + (b * responsibleHeads + i) * ctx->inputSeqLen * strideC + nOff;
-
-                    const int queryLen = ctx->inputSeqLen;
-                    const int keyLen = N;
-
-                    small_gemm_transb(getMask(attnMask, b, i, queryLen, keyLen), A, B, C, m, n, k, lda, ldb, ldc);
-
-#ifdef DEBUG
-                    if (b == 0 && i == 0 && s == splits - 1) {
-                        dbg.debugPrint("Q * K, first head (some value may not be ready):\n");
-                        auto p = ctx->qkScores;
-                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
-                                p[2] * ctx->attFactor, p[keyLen - 3] * ctx->attFactor, p[keyLen - 2] * ctx->attFactor,
-                                p[keyLen - 1] * ctx->attFactor);
-                    }
-#endif
-
-                    // Softmax and the stats info
-                    auto info = DecoderUtil::softmaxWithStats(
-                            ctx, C, getMask(attnMask, b, i, queryLen, keyLen) + nOff, n);
-                    std::get<0>(splitInfo[threadIdx].data) = info.first;
-                    std::get<1>(splitInfo[threadIdx].data) = info.second;
-
-#ifdef DEBUG
-                    if (b == 0 && i == 0 && s == splits - 1) {
-                        dbg.debugPrint("Softmax(Q * K), first head (some value may not be ready):\n");
-                        auto p = ctx->qkScores;
-                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[keyLen - 3], p[keyLen - 2],
-                                p[keyLen - 1]);
-                    }
-#endif
-
-                    // Softmax * V
-                    auto valueMatInfo = presentValue.getHead(b, i / groupNum);
-                    std::swap(k, n);
-                    lda = strideC;
-                    ldb = valueMatInfo.second;
-                    ldc = result.Stride();
-                    {
-                        float *A = C;
-                        KVCacheT *B = valueMatInfo.first + nOff * ldb;
-                        auto C = &shardedOut[threadIdx * ctx->attHeadSize];
-                        xft::small_gemm(A, B, C, m, n, k, lda, ldb, ldc);
-                    }
-
-                    std::get<2>(splitInfo[threadIdx].data) = 1; // set finished flag
-
-                    // Wait for all threads to finish and reduce the result
-                    // Firstly get the max value, and then revise the value by considering the factor on numerator and denominator
-                    if (s == 0) {
-                        float realMax = std::get<0>(splitInfo[threadIdx].data);
-                        for (int idx = headStartIdx + 1; idx < headStartIdx + splits; ++idx) {
-                            while (std::get<2>(splitInfo[idx].data) == 0) {
-                                _mm_pause();
-                            }
-                            if (std::get<0>(splitInfo[idx].data) > realMax) {
-                                realMax = std::get<0>(splitInfo[idx].data);
-                            }
-                        }
-
-                        float realSum = 0;
-                        for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
-                            float splitMax = std::get<0>(splitInfo[idx].data);
-                            float splitSum = std::get<1>(splitInfo[idx].data);
-                            float revFactor = std::exp(splitMax - realMax); // revise factor
-                            std::get<2>(splitInfo[idx].data) = revFactor; // borrow finish flag for revise factor
-                            realSum += splitSum * revFactor;
-                        }
-
-                        // Accumulate in float
-                        float acc[ctx->attHeadSize];
-                        memset(acc, 0, ctx->attHeadSize * sizeof(float));
-
-                        for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
-                            float splitMax = std::get<0>(splitInfo[idx].data);
-                            float splitSum = std::get<1>(splitInfo[idx].data);
-                            float revFactor = std::get<2>(splitInfo[idx].data);
-
-                            float factor = revFactor * (splitSum / realSum);
-                            auto vfactor = xft::set_avx512(factor);
-
-                            float *p = &shardedOut[idx * ctx->attHeadSize];
-                            for (int off = 0; off < ctx->attHeadSize; off += 16) {
-                                auto vacc = xft::load_avx512(acc + off);
-                                vacc = vacc + xft::load_avx512(p + off) * vfactor;
-                                xft::store_avx512(acc + off, 0xffff, vacc);
-                            }
-                        }
-
-                        // Store the result (acc -> result)
-                        ImT *pResult = result.Row(b * ctx->inputSeqLen) + i * ctx->attHeadSize;
-                        for (int off = 0; off < ctx->attHeadSize; off += 16) {
-                            auto vacc = xft::load_avx512(acc + off);
-                            xft::store_avx512(pResult + off, 0xffff, vacc);
-                        }
-                    }
-
-#ifdef DEBUG
-                    if (b == 0 && i == 0 && s == 0) {
-                        dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
-                        auto p = C;
-                        dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[ctx->attHeadSize - 3],
-                                p[ctx->attHeadSize - 2], p[ctx->attHeadSize - 1]);
-                    }
-#endif
-                } // end for s
-            } // end for i
-        } // end for b
+        xft::crossAttnShardedHead(
+                result.Data(), query.Data(), attnMask, ctx->inputSeqLen, presentSeqLen, responsibleHeads,
+                ctx->attHeadSize, result.Stride(), query.Stride(), batchSize, ctx->attFactor, ctx->numThreads,
+                [&](int b, int qHeadIdx) { return presentKey.getHead(b, qHeadIdx / groupNum); },
+                [&](int b, int qHeadIdx) { return presentValue.getHead(b, qHeadIdx / groupNum); });
     }
 
     template <typename KVCacheT>
