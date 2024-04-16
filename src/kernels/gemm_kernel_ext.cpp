@@ -335,7 +335,7 @@ void small_gemm_transb_1xn_dynk(const TA *A, const TB *B, float *C, int N, int K
     // Each loop compute 'BC' elements in C
     int i = 0;
     for (; i + BC - 1 < N; i += BC) {
-        const TA *pA = A + i * ldb;
+        const TA *pA = A;
         const TB *pB = B + i * ldb;
 
         __m512 vc[BC];
@@ -356,7 +356,7 @@ void small_gemm_transb_1xn_dynk(const TA *A, const TB *B, float *C, int N, int K
 
     // Remain elements
     for (; i < N; ++i) {
-        const TA *pA = A + i * ldb;
+        const TA *pA = A;
         const TB *pB = B + i * ldb;
         __m512 vc = _mm512_set1_ps(0);
 
