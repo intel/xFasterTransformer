@@ -38,6 +38,9 @@ class AutoModel:
         else:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
 
+    def __call__(self, inputs, **kwargs):
+        return self.model.forward(inputs)
+
     @classmethod
     def from_pretrained(cls, path, dtype: str = "fp16"):
         return cls(path, dtype)

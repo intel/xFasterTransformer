@@ -125,6 +125,11 @@ bool Model::isDone() {
     return !isNewInput && searcher->isDone();
 }
 
+std::tuple<float *, int, int> Model::forward() {
+    int64_t dims[3] = {batchSize, 1, seqLen};
+    return decoder->forward(inputIds.data(), dims, 0, true);
+}
+
 std::vector<int32_t> Model::generate() {
     if (inputIds.empty()) {
         printf("Please set input tokens by model.input().\n");
@@ -261,6 +266,7 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
         exit(-1);
     }
     std::string modeltype = *reader.Sections().begin();
+    setVocabSize(reader.GetInteger(modeltype, "vocab_size"));
 
     if (modeltype == "gpt") {
         switch (datatype) {
