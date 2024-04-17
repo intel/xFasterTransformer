@@ -52,9 +52,9 @@ public:
 
     int getSeqLen() { return seqLen; }
 
-    void setVocabSize(int vocabSize) { vocabSize_ = vocabSize; }
+    void setVocabSize(int vocabSize) { this->vocabSize = vocabSize; }
 
-    int getVocabSize() { return vocabSize_; }
+    int getVocabSize() { return this->vocabSize; }
 
     SearcherConfig getConfig() { return configuration; }
 
@@ -76,7 +76,7 @@ private:
     std::vector<int32_t> inputIds;
     int batchSize;
     int seqLen;
-    int vocabSize_;
+    int vocabSize;
     SearcherConfig configuration;
     bool isNewInput;
 };
