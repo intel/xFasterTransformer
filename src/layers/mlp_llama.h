@@ -13,6 +13,11 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+
+#ifdef UNDEBUG
+#undef NDEBUG
+#endif
+
 #include "bert_util.h"
 #include "copy_util.h"
 #include "debugger.h"
@@ -248,10 +253,7 @@ private:
         TimeLine t("DownProj");
 
         assert(input.Rows() == output.Rows());
-        if (!enableCATMLP())
-            assert(input.Cols() == downWeight.Rows());
-        else
-            assert(input.Cols() == 2 * downWeight.Rows());
+        assert(input.Cols() == downWeight.Rows());
         assert(downWeight.Cols() == output.Cols());
 
         int M = input.Rows(), N = output.Cols(), K = downWeight.Rows();
