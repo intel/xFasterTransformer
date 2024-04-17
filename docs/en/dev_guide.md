@@ -1,6 +1,6 @@
 # xFasterTransformer Development Guide  
 
-This document describes how to add support for a new LLM model in xFasterTransformer, which is a highly optimized LLM inference framework on Xeon.  
+This document describes how to add support for a new LLM model in xFasterTransformer (we call it as xFT in short), which is a highly optimized LLM inference framework on Xeon.  
 Generally, to incorporate support for a new model, we need to:  
 
 - Comprehend the structure of the model. For instance, we need to determine whether Attention and MLP are arranged in serial or in parallel, what type of positional embedding is used, and so on.
@@ -13,9 +13,9 @@ Below content give more details for how to add the support, which is organized i
 
 ### 1.1 How xFT works
 
-xFasterTransformer is an exceptionally optimized solution for large language models (LLM) on the X86 platform, which is similar to FasterTransformer on the GPU platform. xFasterTransformer is able to operate in distributed mode across multiple sockets and nodes to support inference on larger models. Here's a brief overview of how xFT works:
+xFT is an exceptionally optimized solution for large language models (LLM) on Xeon, which is similar to FasterTransformer on the GPU platform. To utilize xFT for LLM inference, we need to initially transform the model into an intermediate representation which could be loaded by xFT, using a dedicated Python script. xFT is able to operate in distributed mode across multiple sockets and nodes to support inference on larger models. Here's a brief overview of how xFT works:
 
-- Optimization for X86 Platforms: xFT is specifically optimized for X86 architectures. The optimization includes leveraging specific hardware features of Xeon processors to accelerate inference tasks.
+- Optimization for Xeon: xFT is specifically optimized for Xeon. The optimization includes leveraging specific hardware features of Xeon processors to accelerate inference tasks through oneDNN or hand cooked kernels.
 - Support for Various Models and Data Types: xFT supports a range of popular LLMs and data types, ensuring broad applicability across different AI scenarios. The supported models and data types are detailed in the documentation, including FP16, BF16, INT8, and more.
 - Model Conversion: xFT supports converting models from the Hugging Face format to a format compatible with xFT, facilitating the use of a wide range of pre-trained models.
 - C++ and Python APIs: xFT provides both C++ and Python APIs, catering to different levels of integration needs. This flexibility allows users to easily adopt xFT in their existing projects or services.
@@ -24,19 +24,24 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
 - Example Usage: The documentation includes examples demonstrating how to use xFT for both C++ and Python. These examples cover various scenarios, including single and multi-rank execution, and provide a practical guide to integrating xFT into applications.
 - Web Demos and Benchmarking: xFT also provides web demos for popular LLM models and benchmarking tools/scripts to evaluate performance.
 
-Here is the meaning of xFT each code directory:
+Here is the meaning of each directory in xFT project:
 
 - src: the source code directory. It consists pytorch/C++ API definitions, models, layers, kernels, searchers and other utilities.
-- example and benchmark: references to examples and benchmarks suggest directories containing sample code and scripts to demonstrate the usage of xFasterTransformer and to measure its performance.
+  - src/common: Common data type or structures
+  - src/kernels: Kernels implementation (please be noted, not all kernels here, some kernels are be provided by oneDNN or other libraries)
+  - src/layers: Layers implementation
+  - src/models: Models implementation
+  - src/pytorch: PyTorch interface wrapper
+- example and benchmark: references to examples and benchmarks suggest directories containing sample code and scripts to demonstrate the usage of xFT and to measure its performance.
 - evaluation: contains scripts and tools for evaluating the performance and accuracy of the models supported by xFT
 - serving: hold resources related to deploying and serving the models in production environments.
 - tests: This directory usually contains unit tests, integration tests, and other testing scripts designed to ensure the functionality and stability.
-- 3rdparty: the dependencies required by xFasterTransformer, ensuring that all necessary libraries are available for the build process.
+- 3rdparty: the dependencies required by xFT, ensuring that all necessary libraries are available for the build process.
 - docs: documentation files. This can range from API documentation, getting started guides, tutorials, and technical specifications of the xFT project.
 
 ### 1.2 Add new model steps
 
-To add a new model to xFasterTransformer (xFT), follow these steps:
+To add a new model to xFT, follow these steps:
 
 1. Contribution Guidelines: Follow the contribution guidelines provided in the CONTRIBUTING.md file. This includes ensuring your code adheres to the coding standards, writing meaningful commit messages, and submitting a pull request for review.
 2. Model Implementation: Implement the new model in C++ within the xFT framework. In xFT, all LLMs are loaded by `AutoModel`. The parent class `Model` has a `generate()` interface to inference. In `Model::generate()`, there are 3 searcher: `GreedySearch`, `BeamSearch` and `SampleSearch`. Usually you do not need to modify seacher's logic. You only need to pay attention on the `Decoder` implementation in `Model`. This involves creating a new decoder class for your model that inherits from the `CommonDecoder` class provided by xFT, and implement the its forward pass, handling input and output tensors. 
@@ -96,6 +101,7 @@ If you want to add a new model in xFT, you would focus on the Embedding and Deco
 
 #### 2.1.1 Attention
 
+[In most cases, you do not need to rewrite Attention, as most models use SDPA (scale dot product attention)]  
 Attention class is the base layer for attention layer in `CommonDecoder`, all related weights and bias are set by the method `setWeights()`.   
 Typically the LLM's interface is for PyTorch, thus the weights are already transposed(column-based) in files.  
 The datatype of weights is defined by an Attention class's template parameter `WeiT`.  
@@ -121,7 +127,6 @@ MLP class has some template parameters: `WeiT` is the datatype of weights, `InT`
 ### 2.2 Code for inference logic before Decoder Block
 
 Before Decoder Block, CommonDecoder prepares the input data(`ids`) and context(`DecoderContext`) for processing.  
-Handles prefix sharing if enabled, adjusting input sequence lengths and IDs accordingly.  
 Performs embedding operations on the input IDs to generate embeddings.  
 
 ### 2.3 Coding for inference logic after Decoder Block
