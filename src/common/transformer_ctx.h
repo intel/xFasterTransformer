@@ -191,13 +191,6 @@ public:
     }
 
     void ResetConfigReader(std::string _configPath, std::string _sectionName = "") {
-        fs::path filePath(_configPath);
-
-        if (!fs::exists(filePath)) {
-            printf("Config File %s does not exist!", configPath.c_str());
-            exit(-1);
-        }
-
         this->configPath = _configPath;
         this->configReader = INIReader(_configPath);
         if (this->configReader.ParseError() < 0) {

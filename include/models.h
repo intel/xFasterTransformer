@@ -38,6 +38,8 @@ public:
 
     bool isDone();
 
+    std::tuple<float *, int, int> forward();
+
     std::vector<int32_t> generate();
 
     void createSearcher(SearcherConfig &config_);
@@ -49,6 +51,10 @@ public:
     int getBatchSize() { return batchSize; }
 
     int getSeqLen() { return seqLen; }
+
+    void setVocabSize(int vocabSize) { this->vocabSize = vocabSize; }
+
+    int getVocabSize() { return this->vocabSize; }
 
     SearcherConfig getConfig() { return configuration; }
 
@@ -70,6 +76,7 @@ private:
     std::vector<int32_t> inputIds;
     int batchSize;
     int seqLen;
+    int vocabSize;
     SearcherConfig configuration;
     bool isNewInput;
 };
