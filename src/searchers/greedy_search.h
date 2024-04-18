@@ -18,6 +18,7 @@
 #include "messenger.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
+#include "thread_util.h"
 
 class GreedySearch : public AbstractSearcher {
 public:
@@ -40,6 +41,7 @@ private:
     std::vector<int> search(std::tuple<float *, int, int> &result);
 
     AbstractDecoder &decoder;
+    ThreadPool *pool;
 
     // Predicted token IDs
     std::vector<int> nextTokens;

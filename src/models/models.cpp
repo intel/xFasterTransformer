@@ -31,6 +31,7 @@
 #include "searcher.h"
 #include "timeline.h"
 #include "yarn_llama.h"
+#include "prompt.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -136,9 +137,25 @@ std::vector<int32_t> Model::generate() {
     }
 
     if (isNewInput) {
-        isNewInput = false;
+        static int i = 0;
+        i++;
+        if (i > 3) {
+            isNewInput = false;
+            i = 0;
+        }
+        // TODO: Create it when request input
+        if (this->isMaster()) {
+            int promptID = InputQueue<float>::getInstance().createPromptID();
+            int tokenID = InputQueue<float>::getInstance().createTokenID();
+            InputQueue<float>::getInstance().push(new PromptMeta<float>(promptID, tokenID, batchSize, seqLen, inputIds));
+        }
         return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
     } else {
+        static int i = 0;
+        i++;
+        if (i == 10) {
+            isNewInput = true;
+        }
         return searcher->getNextToken();
     }
 }

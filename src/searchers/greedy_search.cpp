@@ -15,6 +15,11 @@
 #include "greedy_search.h"
 #include "messenger.h"
 #include "search_utils.h"
+#include "prompt.h"
+
+#include <thread>
+
+using namespace xft;
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
@@ -26,6 +31,8 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     }
     stopWordsList = {};
     stopWordsIndex = {};
+
+    pool = new ThreadPool(4);
 }
 
 std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) {
@@ -38,18 +45,46 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
         this->nextTokens = std::vector<int>(batchSize, 0);
         if (ctx->ppSize > 1 && ctx->ppRank == 0) {
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
-                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            // TODO: Error: different scope when dynamic loading so file
-            // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
+            // std::thread feedbackWaitingLastPP([&, predictor_world_rank, this](){
+            //     TimeLine t("GreedySearch.MPI_Recv");
+            //     MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
+            //             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            //     // TODO: Error: different scope when dynamic loading so file
+            //     // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
+            //     printf("%d\n", this->nextTokens[0]);
+            // });
+            // feedbackWaitingLastPP.detach();
+            pool->enqueue([predictor_world_rank, this] {
+                TimeLine t("GreedySearch.MPI_Recv");
+                printf("0: GreedySearch.MPI_Recv.AsyncStart\n");
+                int32_t promptID;
+                MPI_Recv(&promptID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
+                        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
+                        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                printf("%d\n", this->nextTokens[0]);
+                if (PromptPool<float>::getInstance().has(promptID)) {
+                    TaskWaitingQueue<float>::getInstance().push(PromptPool<float>::getInstance().get(promptID));
+                } else {
+                    printf("error: should have promptID\n");
+                }
+                printf("0: GreedySearch.MPI_Recv.AsyncDone %d\n", promptID);
+                fflush(stdout);
+            });
         }
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = this->search(result);
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
+            TimeLine t("GreedySearch.MPI_Send");
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            static int32_t promptID = 0;
+            MPI_Send(&promptID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
             MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD);
+            printf("%d: GreedySearch.MPI_Send %d\n", ctx->ppRank, promptID);
+            fflush(stdout);
+            promptID++;
             // TODO: Error: different scope when dynamic loading so file
             // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
         }
