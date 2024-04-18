@@ -24,6 +24,14 @@ install
 flash_attention
 ```
 
+# Development Guide
+
+```{toctree}
+:maxdepth: 2
+:caption: Expanding xFasterTransformer
+
+dev_guide
+```
 
 # Distributed Deployment
 

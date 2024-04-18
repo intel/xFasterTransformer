@@ -1,4 +1,4 @@
-# xFasterTransformer Development Guide  
+# Integrating Support for New LLM Models
 
 This document describes how to add support for a new LLM model in xFasterTransformer (we call it as xFT in short), which is a highly optimized LLM inference framework on Xeon.  
 Generally, to incorporate support for a new model, we need to:  
