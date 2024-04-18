@@ -675,7 +675,7 @@ protected:
         const int presentSeqLen = pastSeqLen + ctx->inputSeqLen;
         const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
-        xft::crossAttnShardedHead(
+        xft::crossAttnShardedHead<ImT, KVCacheT>(
                 result.Data(), query.Data(), attnMask, ctx->inputSeqLen, presentSeqLen, responsibleHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), batchSize, ctx->attFactor, ctx->numThreads,
                 [&](int b, int qHeadIdx) { return presentKey.getHead(b, qHeadIdx / groupNum); },

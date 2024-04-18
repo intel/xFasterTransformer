@@ -447,7 +447,7 @@ inline std::pair<T, T> balance211(T n, U team, U tid) {
  * @param scale Scale factor
  * @param threadNum Thread number
 */
-template <typename T1, typename Lambda1, typename Lambda2>
+template <typename T1, typename KVCacheT, typename Lambda1, typename Lambda2>
 void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, int inputSeqLen, int presentSeqLen,
         int qHeadNum, int headSize, int oStride, int qStride, int batchSize, const float scale, int threadNum,
         const Lambda1 &getKHead, const Lambda2 &getVHead) {
@@ -508,7 +508,7 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
                 const int queryLen = inputSeqLen;
                 const int keyLen = N;
 
-                if constexpr (std::is_same_v<decltype(*B), int8_t>) { // INT8 KV cache
+                if constexpr (std::is_same_v<KVCacheT, int8_t>) { // INT8 KV cache
                     auto bScale = std::get<2>(keyMatInfo);
                     small_gemm_transb(A, B, bScale, C, m, n, k, lda, ldb, ldc);
                 } else {
@@ -533,7 +533,7 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
                     auto B = std::get<0>(valueMatInfo) + nOff * ldb;
                     auto C = tmpBuf + threadIdx * sizePerThread + m * NB;
 
-                    if constexpr (std::is_same_v<decltype(*B), int8_t>) {
+                    if constexpr (std::is_same_v<KVCacheT, int8_t>) {
                         auto bScale = std::get<2>(valueMatInfo) + nOff;
                         xft::small_gemm(A, B, bScale, C, m, n, k, lda, ldb, ldc);
                     } else {
