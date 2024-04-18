@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #include "sample_search.h"
+#include "decoder_util.h"
 #include "search_utils.h"
 
 SampleSearch::SampleSearch(AbstractDecoder &dec, const SearcherConfig &config)
@@ -230,19 +231,14 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
     std::uniform_real_distribution<float> distribution(0.0, 1.0);
 #pragma omp parallel for
     for (int batchIdx = 0; batchIdx < batchSize; batchIdx++) {
-        float probs[topPNums[batchIdx]];
-        float probs_sum = 0;
         float cursum = 0;
         float randomValue = distribution(generator);
 
-        for (int i = 0; i < topPNums[batchIdx]; i++) {
-            probs[i] = exp(topKVals[batchIdx * topK + i]);
-            probs_sum += probs[i];
-        }
+        // Calculate softmax
+        DecoderUtil::computeSoftmax(topKVals + batchIdx * topK, topPNums[batchIdx]);
 
-        float probs_sum_inv = 1 / probs_sum;
         for (int i = 0; i < topPNums[batchIdx]; i++) {
-            cursum += probs[i] * probs_sum_inv;
+            cursum += topKVals[batchIdx * topK + i];
             if (cursum >= randomValue) {
                 nextTokens[batchIdx] = topKIds[batchIdx * topK + i];
                 break;
