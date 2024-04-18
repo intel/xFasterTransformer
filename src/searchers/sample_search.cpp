@@ -230,19 +230,19 @@ void SampleSearch::sample(std::tuple<float *, int, int> &result) {
     std::uniform_real_distribution<float> distribution(0.0, 1.0);
 #pragma omp parallel for
     for (int batchIdx = 0; batchIdx < batchSize; batchIdx++) {
-        float probs[topPNums[batchIdx]];
-        float probs_sum = 0;
+        double probs[topPNums[batchIdx]];
+        double probs_sum = 0;
         float cursum = 0;
         float randomValue = distribution(generator);
 
         for (int i = 0; i < topPNums[batchIdx]; i++) {
-            probs[i] = exp(topKVals[batchIdx * topK + i]);
+            probs[i] = exp(double(topKVals[batchIdx * topK + i]));
             probs_sum += probs[i];
         }
 
-        float probs_sum_inv = 1 / probs_sum;
+        double probs_sum_inv = 1 / probs_sum;
         for (int i = 0; i < topPNums[batchIdx]; i++) {
-            cursum += probs[i] * probs_sum_inv;
+            cursum += float(probs[i] * probs_sum_inv);
             if (cursum >= randomValue) {
                 nextTokens[batchIdx] = topKIds[batchIdx * topK + i];
                 break;
