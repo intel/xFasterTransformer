@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -123,11 +123,3 @@ template <typename WeiT>
 void GemmaLLM<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
-
-template class GemmaLLM<float>;
-template class GemmaLLM<float16_t>;
-template class GemmaLLM<bfloat16_t>;
-template class GemmaLLM<int8_t>;
-template class GemmaLLM<w8a8_t>;
-template class GemmaLLM<uint4x2_t>;
-template class GemmaLLM<nf4x2_t>;

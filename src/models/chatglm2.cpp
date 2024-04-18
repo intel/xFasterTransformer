@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -175,10 +175,3 @@ int *ChatGLM2<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int ste
     return positionIds;
 }
 
-template class ChatGLM2<float>;
-template class ChatGLM2<float16_t>;
-template class ChatGLM2<bfloat16_t>;
-template class ChatGLM2<int8_t>;
-template class ChatGLM2<w8a8_t>;
-template class ChatGLM2<uint4x2_t>;
-template class ChatGLM2<nf4x2_t>;

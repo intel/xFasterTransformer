@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -122,11 +122,3 @@ template <typename WeiT>
 void OptDecoder<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
-
-template class OptDecoder<float>;
-template class OptDecoder<float16_t>;
-template class OptDecoder<bfloat16_t>;
-template class OptDecoder<int8_t>;
-template class OptDecoder<w8a8_t>;
-template class OptDecoder<uint4x2_t>;
-template class OptDecoder<nf4x2_t>;
