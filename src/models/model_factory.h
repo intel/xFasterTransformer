@@ -50,6 +50,9 @@ public:
     }
 };
 
+
+// When implementing a new model, you need to add the corresponding model header file in `models.cpp`.
+// Otherwise, the model registration mechanism won't be able to find the corresponding model.
 #define REGISTER_DECODER(CLASS, NAME, T)          \
     template class CLASS<T>;                      \
     static DecoderRegister decoder_##CLASS##_##T( \

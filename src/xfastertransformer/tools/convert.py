@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,12 @@
 # ============================================================================
 import numpy as np
 import os
+from pathlib import Path
 import json
 import traceback
 import transformers
+
+from typing import Any, Callable, ContextManager, Iterator, Sequence, TypeVar, cast
 
 
 def check_transformers_version_compatibility(token_path):
@@ -36,6 +39,29 @@ def check_transformers_version_compatibility(token_path):
                     + "This model convert error may be caused by transformers version compatibility. "
                     + f"You can downgrade or reinstall transformers by `pip install transformers=={transformers_version} --force-reinstall` and try again."
                 )
+
+
+def get_name_and_param(model_dir: Path):
+    all_files = os.listdir(model_dir)
+    safetensors_files = [f for f in all_files if f.endswith(".safetensors")]
+    num_parts = len(safetensors_files)
+    file_list = (
+        [f"model-{n:05}-of-{num_parts:05}.safetensors" for n in range(1, num_parts + 1)]
+        if num_parts > 1
+        else safetensors_files
+    )
+    print(f"Found {num_parts} model parts: {file_list}")
+    for part_name in file_list:
+        ctx: ContextManager[Any]
+        from safetensors import safe_open
+
+        ctx = cast(
+            ContextManager[Any],
+            safe_open(Path(model_dir) / part_name, framework="pt", device="cpu"),
+        )
+        with ctx as model_part:
+            for name in model_part.keys():
+                yield name, model_part.get_tensor(name)
 
 
 class BaseModelConvert:
