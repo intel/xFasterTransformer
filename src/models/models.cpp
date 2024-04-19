@@ -157,11 +157,6 @@ std::vector<int32_t> Model::generate() {
         }
         return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
     } else {
-        // static int i = 0;
-        // i++;
-        // if (i == 10) {
-        //     isNewInput = true;
-        // }
         return searcher->getNextToken();
     }
 }

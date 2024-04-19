@@ -16,7 +16,6 @@
 #include <omp.h>
 
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <queue>
 #include <thread>

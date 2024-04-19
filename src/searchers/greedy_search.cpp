@@ -17,8 +17,6 @@
 #include "search_utils.h"
 #include "prompt.h"
 
-#include <thread>
-
 using namespace xft;
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)

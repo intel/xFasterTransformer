@@ -361,28 +361,26 @@ public:
             printf("%d: Decoder.MPI_Recv.SyncDone %d\n", ctx->ppRank, promptID);
             fflush(stdout);
         }
-#endif
 
-        if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-            if (!InputQueue<AttnInT>::getInstance().empty()) {
-                if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-                    auto prompt = InputQueue<AttnInT>::getInstance().pop();
-                    prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                    PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
-                    TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(prompt->promptID));
-                }
+        if (!InputQueue<AttnInT>::getInstance().empty()) {
+            if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
+                auto prompt = InputQueue<AttnInT>::getInstance().pop();
+                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
+                PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
+                TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(prompt->promptID));
             }
         }
 
-    while(TaskWaitingQueue<float>::getInstance().empty());
+        while(TaskWaitingQueue<float>::getInstance().empty());
 
-    PromptMeta<AttnInT> *runningTask;
-    if (!TaskWaitingQueue<AttnInT>::getInstance().empty()) {
-        runningTask = TaskWaitingQueue<AttnInT>::getInstance().pop();
-        ctx->promptID = runningTask->promptID;
-        TimeLine t("Decoder.forward." + std::to_string(ctx->promptID));
-        printf("%d: Decoder.forward\n", ctx->ppRank);
-        fflush(stdout);
+        PromptMeta<AttnInT> *runningTask;
+        if (!TaskWaitingQueue<AttnInT>::getInstance().empty()) {
+            runningTask = TaskWaitingQueue<AttnInT>::getInstance().pop();
+            ctx->promptID = runningTask->promptID;
+            TimeLine t("Decoder.forward." + std::to_string(ctx->promptID));
+            printf("%d: Decoder.forward\n", ctx->ppRank);
+            fflush(stdout);
+#endif
 
         // Decoder: forward from runningTask
         int layers_per_pp_stage = this->decoders.size();
@@ -435,12 +433,10 @@ public:
                 }
             }
         }
-    } 
-    // else {
-    //     return std::tuple<float *, int, int>(nullptr, 0, 0);
-    // }
 
 #ifdef PIPELINE_PARALLEL
+        }
+
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
             TimeLine t("Decoder.MPI_Send");
