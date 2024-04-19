@@ -18,7 +18,6 @@
 #include "messenger.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
-#include "thread_util.h"
 
 class GreedySearch : public AbstractSearcher {
 public:

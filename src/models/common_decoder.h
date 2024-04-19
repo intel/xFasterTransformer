@@ -382,7 +382,7 @@ public:
             fflush(stdout);
 #endif
 
-        // Decoder: forward from runningTask
+        // Decoder: forward
         int layers_per_pp_stage = this->decoders.size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
