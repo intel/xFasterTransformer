@@ -1,4 +1,3 @@
 datasets
 fire
 peft
-oneccl_bind_pt-2.0.0+cpu-cp39-cp39-linux_x86_64.whl
