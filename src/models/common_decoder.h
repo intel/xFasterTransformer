@@ -274,7 +274,6 @@ public:
     std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logitsAll = false) {
         // Assume input has been synced with master in higher level.
         // Assume the 1st step input's shape is [userSideBS][1][seqLen].
-        TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
 
         int userSideBS = dims[0];
@@ -345,8 +344,9 @@ public:
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * ctx->hiddenSize;
             if (TaskWaitingQueue<AttnInT>::getInstance().empty()) {
-                TimeLine t("Decoder.MPI_Recv");
+                TimeLine t("Decoder.MPI_Recv." + std::to_string(ctx->promptID));
                 printf("%d: Decoder.MPI_Recv.SyncStart\n", ctx->ppRank);
+                fflush(stdout);
                 int32_t promptID;
                 MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -362,37 +362,36 @@ public:
                 printf("%d: Decoder.MPI_Recv.SyncDone %d\n", ctx->ppRank, promptID);
                 fflush(stdout);
             } else {
-                pool->enqueue([=, &embBuf] {
-                    TimeLine t("Decoder.MPI_Recv");
-                    printf("%d: Decoder.MPI_Recv.ASyncStart\n", ctx->ppRank);
-                    int32_t promptID;
-                    MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    // TODO: Error: different scope when dynamic loading so file
-                    // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-                    printf("%.6f\n", embBuf[0]);
-                    if (!PromptPool<AttnInT>::getInstance().has(promptID)) {
-                        PromptMeta<AttnInT> *prompt = new PromptMeta<AttnInT>(promptID, 0, batchSize, seqLen, hiddenSize);
-                        prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                        PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
-                    }
-                    TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(promptID));
-                    printf("%d: Decoder.MPI_Recv.ASyncDone %d\n", ctx->ppRank, promptID);
-                    fflush(stdout);
-                });
+                static bool init = false;
+                if (init == false) {
+                    init = true;
+                    pool->enqueue([curr_world_rank, prev_world_rank, count, batchSize, seqLen, hiddenSize, pastSeqLen, &embBuf, &ctx, this] {
+                        while (true) {
+                            printf("%d: Decoder.MPI_Recv.ASyncStart\n", ctx->ppRank);
+                            fflush(stdout);
+                            int32_t promptID;
+                            MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                            // TODO: Error: different scope when dynamic loading so file
+                            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+                            printf("%.6f\n", embBuf[0]);
+                            TimeLine t("Decoder.MPI_Recv");
+                            if (!PromptPool<AttnInT>::getInstance().has(promptID)) {
+                                PromptMeta<AttnInT> *prompt = new PromptMeta<AttnInT>(promptID, 0, batchSize, seqLen, hiddenSize);
+                                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
+                                PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
+                            }
+                            TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(promptID));
+                            printf("%d: Decoder.MPI_Recv.ASyncDone %d\n", ctx->ppRank, promptID);
+                            fflush(stdout);
+                        }
+                    });
+                }
             }
         }
 #endif
 
         if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-            // for (const auto& prompt : PromptPool<AttnInT>::getInstance().getAll()) {
-            //     if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-            //         if (prompt->hiddenStatesReceived) {
-            //             TaskWaitingQueue<AttnInT>::getInstance().push(prompt);
-            //         }
-            //     }
-            // }
-
             if (!InputQueue<AttnInT>::getInstance().empty()) {
                 if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
                     auto prompt = InputQueue<AttnInT>::getInstance().pop();
@@ -403,10 +402,16 @@ public:
             }
         }
 
+    while(TaskWaitingQueue<float>::getInstance().empty());
+
     PromptMeta<AttnInT> *runningTask;
-    while (!TaskWaitingQueue<AttnInT>::getInstance().empty()) {
+    if (!TaskWaitingQueue<AttnInT>::getInstance().empty()) {
         runningTask = TaskWaitingQueue<AttnInT>::getInstance().pop();
+        ctx->promptID = runningTask->promptID;
+        TimeLine t("Decoder.forward." + std::to_string(ctx->promptID));
         printf("%d: Decoder.forward\n", ctx->ppRank);
+        fflush(stdout);
+
         // Decoder: forward from runningTask
         int layers_per_pp_stage = this->decoders.size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
