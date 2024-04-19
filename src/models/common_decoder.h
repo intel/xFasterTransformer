@@ -225,7 +225,6 @@ public:
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
                 epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK,
                 ropeParamsPtr);
-        pool = new ThreadPool(4);
 
         ctx->ResetConfigReader(configPath);
 
@@ -365,7 +364,7 @@ public:
                 static bool init = false;
                 if (init == false) {
                     init = true;
-                    pool->enqueue([curr_world_rank, prev_world_rank, count, batchSize, seqLen, hiddenSize, pastSeqLen, &embBuf, &ctx, this] {
+                    ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, count, batchSize, seqLen, hiddenSize, pastSeqLen, &embBuf, &ctx, this] {
                         while (true) {
                             printf("%d: Decoder.MPI_Recv.ASyncStart\n", ctx->ppRank);
                             fflush(stdout);
@@ -1038,8 +1037,6 @@ protected:
 
     // Activation buffers (declared as float, but the actual data type may be different)
     std::shared_ptr<hpj::Matrix<float>> actBuffers;
-
-    ThreadPool *pool;
 
 protected:
     // Components most LLMs may use

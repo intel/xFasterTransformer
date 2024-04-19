@@ -41,7 +41,6 @@ private:
     std::vector<int> search(std::tuple<float *, int, int> &result);
 
     AbstractDecoder &decoder;
-    ThreadPool *pool;
 
     // Predicted token IDs
     std::vector<int> nextTokens;

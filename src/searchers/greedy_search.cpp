@@ -31,8 +31,6 @@ GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     }
     stopWordsList = {};
     stopWordsIndex = {};
-
-    pool = new ThreadPool(4);
 }
 
 std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) {
@@ -56,7 +54,7 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             //     printf("%d\n", this->nextTokens[0]);
             // });
             // feedbackWaitingLastPP.detach();
-            pool->enqueue([predictor_world_rank, this] {
+            ThreadPool::getInstance().addTask([predictor_world_rank, this] {
                 while (true) {
                     printf("0: GreedySearch.MPI_Recv.AsyncStart\n");
                     fflush(stdout);
