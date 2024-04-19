@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,15 +23,21 @@
 #include "token_embedding.h"
 
 template <typename WeiT>
-class ChatGLM2 : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, float, float, float, true>,
-                         ChatGLM2MLP<WeiT, float, float, float, RmsNorm, true>> {
+class ChatGLM2
+    : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                                   typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+              ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                      typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
+              typename TypeSelector<WeiT>::KVCacheType> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();
 
     virtual void prepareAttnMask(int *ids, int step);
     virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
+    virtual void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen);
     virtual void lastLayerNormForward(float *input, float *output, int rows);
+    virtual void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
     virtual int *getPositionIds(int *ids, int batchSize, int seqLen, int step) override;
 
 private:
@@ -52,3 +58,19 @@ private:
     int *positionIds;
     int posBufSize;
 };
+
+REGISTER_DECODER(ChatGLM2, chatglm2, float)
+REGISTER_DECODER(ChatGLM2, chatglm2, float16_t)
+REGISTER_DECODER(ChatGLM2, chatglm2, bfloat16_t)
+REGISTER_DECODER(ChatGLM2, chatglm2, int8_t)
+REGISTER_DECODER(ChatGLM2, chatglm2, w8a8_t)
+REGISTER_DECODER(ChatGLM2, chatglm2, uint4x2_t)
+REGISTER_DECODER(ChatGLM2, chatglm2, nf4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, nf4x2_t)

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,3 +40,19 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
+
+REGISTER_DECODER(Baichuan, baichuan, float)
+REGISTER_DECODER(Baichuan, baichuan, float16_t)
+REGISTER_DECODER(Baichuan, baichuan, bfloat16_t)
+REGISTER_DECODER(Baichuan, baichuan, int8_t)
+REGISTER_DECODER(Baichuan, baichuan, w8a8_t)
+REGISTER_DECODER(Baichuan, baichuan, uint4x2_t)
+REGISTER_DECODER(Baichuan, baichuan, nf4x2_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, nf4x2_t)

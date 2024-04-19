@@ -19,8 +19,9 @@
 
 #include "gtest/gtest.h"
 
+template <typename TA, typename TB, typename TC>
 static void small_gemm_tranb_ref(
-        const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+        const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc) {
     // Loop over the rows of A
     for (int i = 0; i < M; i++) {
         // Loop over the columns of B
@@ -28,7 +29,7 @@ static void small_gemm_tranb_ref(
             // Compute the dot product of row i of A with column j of B
             float dot_product = 0;
             for (int k = 0; k < K; k++) {
-                dot_product += A[i * lda + k] * B[j * ldb + k];
+                dot_product += (float)A[i * lda + k] * (float)B[j * ldb + k];
             }
             // Store the result in C[i][j]
             C[i * ldc + j] = dot_product;
@@ -54,13 +55,14 @@ static void small_gemm_tranb_ref(
 }
 
 // Test function to compare reference and optimized implementations
+template <typename TA = float, typename TB = float, typename TC = float>
 void test_small_gemm_tranb(int M, int N, int K) {
-    float *A_ref = new float[M * K];
-    float *B_ref = new float[K * N];
-    float *C_ref = new float[M * N];
-    float *A_opt = new float[M * K];
-    float *B_opt = new float[K * N];
-    float *C_opt = new float[M * N];
+    TA *A_ref = new TA[M * K];
+    TB *B_ref = new TB[K * N];
+    TC *C_ref = new TC[M * N];
+    TA *A_opt = new TA[M * K];
+    TB *B_opt = new TB[K * N];
+    TC *C_opt = new TC[M * N];
 
     // Generate random matrices A and B
     std::random_device dev;
@@ -260,6 +262,12 @@ void test_small_gemm_int8(int M, int N, int K) {
 TEST(small_gemm_tranb, small_gemm_tranb_f32) {
     test_small_kernel();
     test_bigger_kernel();
+}
+
+TEST(small_gemm_tranb, small_gemm_tranb_bf16fp16f32) {
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 2, 16);
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 4, 128);
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 4, 256);
 }
 
 TEST(small_gemm_tranb, small_gemm_tranb_int8) {

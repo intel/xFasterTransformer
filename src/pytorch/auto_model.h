@@ -129,6 +129,25 @@ public:
                 doSample, temperature, topK, topP, repetitionPenalty, stopWordsList_int32);
     }
 
+    torch::Tensor forward(torch::Tensor &inputIds) {
+        int batchSize = inputIds.size(0);
+        int seqLen = inputIds.size(1);
+        int vocabSize = model->getVocabSize();
+        int logitsN = batchSize * seqLen * vocabSize;
+
+        if (model->getRank() == 0) { input(inputIds); }
+
+        std::tuple<float *, int, int> result = model->forward();
+        float *outBuf = std::get<0>(result);
+        int sampleOffset = std::get<1>(result);
+        int sampleSize = std::get<2>(result);
+
+        // Create a torch::Tensor from the C array
+        int64_t tdims[3] = {batchSize, seqLen, vocabSize};
+        torch::Tensor ret = torch::from_blob(outBuf, tdims, torch::kFloat32);
+        return ret;
+    }
+
     torch::Tensor generate() {
         auto nextTokens = model->generate();
 

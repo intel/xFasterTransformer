@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -275,6 +275,48 @@ public:
             __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
             __m512 vmask = _mm512_maskz_loadu_ps(k, attnMask + i * 16);
             vx = BertUtil::vexp(vx * vfactor + vmask - vmax);
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
+        }
+
+        float sum = _mm512_reduce_add_ps(vsum);
+        __m512 vrsum = _mm512_set1_ps(1.0f / sum);
+
+        // Compute exp/sum(exp) and store
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = vx * vrsum;
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+        }
+    }
+
+    // General version
+    static void computeSoftmax(float *data, int size) {
+        int vecs = (size + 15) / 16; // how many avx512 vectors
+        __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
+
+        __m512 vsum = _mm512_set1_ps(0);
+
+        // maxVal is used to avoid exp(x) = inf
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vmax = _mm512_set1_ps(maxVal);
+
+        int i = 0;
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx);
+        }
+
+        maxVal = _mm512_reduce_max_ps(vmax);
+        vmax = _mm512_set1_ps(maxVal);
+
+        // Compute vexp(vx - vmax) and sum it
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = BertUtil::vexp(vx - vmax);
             _mm512_mask_storeu_ps(data + i * 16, k, vx);
             vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
         }
