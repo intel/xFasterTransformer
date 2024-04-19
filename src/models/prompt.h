@@ -22,7 +22,8 @@ namespace xft {
 template <typename AttnInT>
 class PromptMeta {
 public:
-    PromptMeta(int32_t _promptID, int32_t _tokenID, int32_t _batchSize, int32_t _inputSeqLen, std::vector<int32_t> _inputs) {
+    PromptMeta(int32_t _promptID, int32_t _tokenID, int32_t _batchSize, int32_t _inputSeqLen,
+            std::vector<int32_t> _inputs) {
         promptID = _promptID;
         tokenID = _tokenID;
         batchSize = _batchSize;
@@ -92,9 +93,7 @@ public:
         return id;
     }
 
-    bool empty() {
-        return queue.empty();
-    }
+    bool empty() { return queue.empty(); }
 
     PromptMeta<T> *pop() {
         auto buffer = queue.front();
@@ -102,9 +101,7 @@ public:
         return buffer;
     }
 
-    void push(PromptMeta<T> *buffer) {
-        queue.push(buffer);
-    }
+    void push(PromptMeta<T> *buffer) { queue.push(buffer); }
 
 private:
     InputQueue() {}
@@ -128,18 +125,13 @@ public:
         return instance;
     }
 
-    bool empty() {
-        return queue.empty();
-    }
+    bool empty() { return queue.empty(); }
 
-    int32_t size() {
-        return queue.size();
-    }
+    int32_t size() { return queue.size(); }
 
     bool isFull() {
         bool full = false;
-        if (this->size() >= 4)
-            full = true;
+        if (this->size() >= 4) full = true;
         return full;
     }
 
@@ -149,9 +141,7 @@ public:
         return buffer;
     }
 
-    void push(PromptMeta<T> *buffer) {
-        queue.push(buffer);
-    }
+    void push(PromptMeta<T> *buffer) { queue.push(buffer); }
 
 private:
     TaskWaitingQueue() {}
@@ -167,13 +157,9 @@ public:
         return instance;
     }
 
-    void insert(int32_t key, PromptMeta<T> *prompt) {
-        hub[key] = prompt;
-    }
+    void insert(int32_t key, PromptMeta<T> *prompt) { hub[key] = prompt; }
 
-    bool has(int32_t key) const {
-        return hub.find(key) != hub.end();
-    }
+    bool has(int32_t key) const { return hub.find(key) != hub.end(); }
 
     PromptMeta<T> *get(int32_t key) const {
         auto it = hub.find(key);
@@ -186,21 +172,17 @@ public:
 
     std::vector<PromptMeta<T> *> getAll() {
         std::vector<PromptMeta<T> *> metas;
-        for (const auto& pair : hub) {
+        for (const auto &pair : hub) {
             metas.push_back(pair.second);
         }
         return metas;
     }
 
-    void remove(int32_t key) {
-        hub.erase(key);
-    }
+    void remove(int32_t key) { hub.erase(key); }
 
     void modify(int32_t oldKey, PromptMeta<T> *newPrompt) {
         auto it = hub.find(oldKey);
-        if (it != hub.end()) {
-            it->second = newPrompt;
-        }
+        if (it != hub.end()) { it->second = newPrompt; }
     }
 
     bool isUpdated(int32_t key) const {
