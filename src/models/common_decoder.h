@@ -274,6 +274,7 @@ public:
     std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logitsAll = false) {
         // Assume input has been synced with master in higher level.
         // Assume the 1st step input's shape is [userSideBS][1][seqLen].
+        TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
 
         int userSideBS = dims[0];
@@ -315,7 +316,7 @@ public:
         }
 
         AttnInT *embBuf = (AttnInT *)actBuffers->Data();
-        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * ctx->hiddenSize);
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
 
         // Embedding
         this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
@@ -326,8 +327,8 @@ public:
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
         dbg.debugPrint(
-                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
-        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
+                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
         // Prepare attention mask
@@ -342,52 +343,23 @@ public:
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
-            if (TaskWaitingQueue<AttnInT>::getInstance().empty()) {
-                TimeLine t("Decoder.MPI_Recv." + std::to_string(ctx->promptID));
-                printf("%d: Decoder.MPI_Recv.SyncStart\n", ctx->ppRank);
-                fflush(stdout);
-                int32_t promptID;
-                MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                // TODO: Error: different scope when dynamic loading so file
-                // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-                printf("%.6f\n", embBuf[0]);
-                if (!PromptPool<AttnInT>::getInstance().has(promptID)) {
-                    PromptMeta<AttnInT> *prompt = new PromptMeta<AttnInT>(promptID, 0, batchSize, seqLen, hiddenSize);
-                    prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                    PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
-                }
-                TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(promptID));
-                printf("%d: Decoder.MPI_Recv.SyncDone %d\n", ctx->ppRank, promptID);
-                fflush(stdout);
-            } else {
-                static bool init = false;
-                if (init == false) {
-                    init = true;
-                    ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, count, batchSize, seqLen, hiddenSize, pastSeqLen, &embBuf, &ctx, this] {
-                        while (true) {
-                            printf("%d: Decoder.MPI_Recv.ASyncStart\n", ctx->ppRank);
-                            fflush(stdout);
-                            int32_t promptID;
-                            MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                            // TODO: Error: different scope when dynamic loading so file
-                            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-                            printf("%.6f\n", embBuf[0]);
-                            TimeLine t("Decoder.MPI_Recv");
-                            if (!PromptPool<AttnInT>::getInstance().has(promptID)) {
-                                PromptMeta<AttnInT> *prompt = new PromptMeta<AttnInT>(promptID, 0, batchSize, seqLen, hiddenSize);
-                                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                                PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
-                            }
-                            TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(promptID));
-                            printf("%d: Decoder.MPI_Recv.ASyncDone %d\n", ctx->ppRank, promptID);
-                            fflush(stdout);
-                        }
-                    });
-                }
+            int count = batchSize * inputSeqLen * hiddenSize;
+            TimeLine t("Decoder.MPI_Recv." + std::to_string(ctx->promptID));
+            printf("%d: Decoder.MPI_Recv.SyncStart\n", ctx->ppRank);
+            fflush(stdout);
+            int32_t promptID;
+            MPI_Recv(&promptID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // TODO: Error: different scope when dynamic loading so file
+            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+            if (!PromptPool<AttnInT>::getInstance().has(promptID)) {
+                PromptMeta<AttnInT> *prompt = new PromptMeta<AttnInT>(promptID, 0, batchSize, seqLen, hiddenSize);
+                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
+                PromptPool<AttnInT>::getInstance().insert(prompt->promptID, prompt);
             }
+            TaskWaitingQueue<AttnInT>::getInstance().push(PromptPool<AttnInT>::getInstance().get(promptID));
+            printf("%d: Decoder.MPI_Recv.SyncDone %d\n", ctx->ppRank, promptID);
+            fflush(stdout);
         }
 #endif
 
@@ -473,7 +445,7 @@ public:
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
             TimeLine t("Decoder.MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            int count = batchSize * inputSeqLen * hiddenSize;
             MPI_Send(&runningTask->promptID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
