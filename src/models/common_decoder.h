@@ -30,6 +30,7 @@
 #include "messenger.h"
 #include "mlp_chatglm2.h"
 #include "mlp_standard.h"
+#include "model_factory.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"

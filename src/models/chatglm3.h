@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,10 +23,19 @@ public:
     ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT>(modelPath, "chatglm3") {}
 };
 
-template class ChatGLM3<float>;
-template class ChatGLM3<float16_t>;
-template class ChatGLM3<bfloat16_t>;
-template class ChatGLM3<int8_t>;
-template class ChatGLM3<w8a8_t>;
-template class ChatGLM3<uint4x2_t>;
-template class ChatGLM3<nf4x2_t>;
+REGISTER_DECODER(ChatGLM3, chatglm3, float)
+REGISTER_DECODER(ChatGLM3, chatglm3, float16_t)
+REGISTER_DECODER(ChatGLM3, chatglm3, bfloat16_t)
+REGISTER_DECODER(ChatGLM3, chatglm3, int8_t)
+REGISTER_DECODER(ChatGLM3, chatglm3, w8a8_t)
+REGISTER_DECODER(ChatGLM3, chatglm3, uint4x2_t)
+REGISTER_DECODER(ChatGLM3, chatglm3, nf4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, nf4x2_t)
+

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,3 +40,19 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
+
+REGISTER_DECODER(YaRNLlama, yarn_llama, float)
+REGISTER_DECODER(YaRNLlama, yarn_llama, float16_t)
+REGISTER_DECODER(YaRNLlama, yarn_llama, bfloat16_t)
+REGISTER_DECODER(YaRNLlama, yarn_llama, int8_t)
+REGISTER_DECODER(YaRNLlama, yarn_llama, w8a8_t)
+REGISTER_DECODER(YaRNLlama, yarn_llama, uint4x2_t)
+REGISTER_DECODER(YaRNLlama, yarn_llama, nf4x2_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, nf4x2_t)
