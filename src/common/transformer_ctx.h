@@ -18,17 +18,15 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <string>
 
-#include "INIReader.h"
 #include "allocator.h"
+#include <filesystem>
+
+#include "INIReader.h"
 #include "my_types.h"
 #include "simple_mem_pool.h"
 #include "split_util.h"
-#include "float16.h"
-#include "singleton.h"
-#include "kvcache_manager.h"
 
 namespace fs = std::filesystem;
 
@@ -66,8 +64,7 @@ struct DecoderContext {
     int inputSeqLen;
     // For custom usage
     int reserved1;
-    // promptID
-    int32_t promptID;
+    int promptID;
 
     // Model structure configuration
     int vocabSize;
@@ -130,10 +127,10 @@ private:
     uint64_t size3;
 
 public:
-    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize,
-            const std::string &act, float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions,
-            int _maxPosEmbed, int _maxSeqLength, int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0,
-            RopeParams *_ropeParamsPtr = nullptr, bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
+    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
+            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
+            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
+            bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , attHeadSize(_headSize)
@@ -155,7 +152,9 @@ public:
         , tpSize(_splits)
         , tpRank(_splitIdx)
         , epsilon(epsilon) {
-        if (attHeadNum != 0) { this->attFactor = 1 / sqrtf(attHeadSize); }
+        if (attHeadNum != 0) {
+            this->attFactor = 1 / sqrtf(attHeadSize);
+        }
 
         // Set the default value (don't worry, it can be changed later)
         this->batchSize = 1;

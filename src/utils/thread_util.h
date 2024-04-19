@@ -23,6 +23,8 @@
 #include <vector>
 #include <condition_variable>
 
+namespace xft {
+
 template <typename Lambda>
 void parallel_for(int tasks, const Lambda &fn) {
 #pragma omp parallel for
@@ -90,3 +92,5 @@ private:
     std::condition_variable condition;
     bool stop;
 };
+
+} // namespace xft
