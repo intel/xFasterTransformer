@@ -40,6 +40,10 @@ public:
         for (auto &it : sampleCaches) {
             delete it.second;
         }
+        // Free resource in prefixCaches
+        for (auto &it : prefixCaches) {
+            delete it.second;
+        }
         // Free resource in freeCaches
         for (auto &it : freeCaches) {
             delete it;
@@ -79,21 +83,53 @@ public:
     // Reorder cache based on prevSampleIDs for beam search (caches reordered from prevSampleIDs to sampleIDs)
     // For example, if sampleIDs = {1, 2, 3, 4} and prevSampleIDs = {1, 1, 1, 1}, then means to expand cache for sample 1
     bool reorderCache(const std::vector<int> &sampleIDs, const std::vector<int> &prevSampleIDs) override {
+        // TODO: implement reorderCache
         return false;
     }
 
     // Create KVCache for prefix sharing
-    bool addPrefix(int prefixId, int sampleID) override { return false; }
+    bool addPrefix(int prefixId, int sampleID) override {
+        // Fail if already exist
+        if (prefixCaches.find(prefixId) != prefixCaches.end()) { return false; }
+
+        // Cannot find the sample cache
+        if (sampleCaches.find(sampleID) == sampleCaches.end()) { return false; }
+
+        // Create a new one
+        KVCacheTensor<T> *cache = new KVCacheTensor<T>[2 * layers];
+
+        for (int i = 0; i < 2 * layers; i++) {
+            // TODO: add from method in KVCacheTensor
+            //cache[i].from(sampleCaches[sampleID][i]);
+        }
+
+        prefixCaches.insert({prefixId, cache});
+
+        return true;
+    }
 
     // Set cache to be ready for this order of sampleIds
-    bool prepareCache(const std::vector<int> &sampleIDs) override { return false; }
+    bool prepareCache(const std::vector<int> &sampleIDs) override {
+        std::vector<KVCacheTensor<T> *> readyList;
+        readyList.reserve(sampleIDs.size());
+
+        for (auto sampleID : sampleIDs) {
+            auto it = sampleCaches.find(sampleID);
+            if (it == sampleCaches.end()) { return false; }
+            readyList.push_back(it->second);
+        }
+
+        readyCaches == std::move(readyList);
+
+        return true;
+    }
 
     // Get key caches for a layer
     std::vector<void *> getKey(int layerId) override {
         std::vector<void *> keyCaches;
         keyCaches.reserve(readyCaches.size());
         for (auto cache : readyCaches) {
-            keyCaches.push_back(cache[2 * layerId]);
+            keyCaches.push_back(&cache[2 * layerId]);
         }
     }
 
@@ -102,12 +138,12 @@ public:
         std::vector<void *> valueCaches;
         valueCaches.reserve(readyCaches.size());
         for (auto cache : readyCaches) {
-            valueCaches.push_back(cache[2 * layerId + 1]);
+            valueCaches.push_back(&cache[2 * layerId + 1]);
         }
     }
 
 private:
-    // sampleID -> pointer to an array (each element is a KVCacheTensor, size=2*layers)
+    // sampleID -> pointer to an array of caches (each element is a KVCacheTensor, size=2*layers)
     // Layout of each array is:
     //     Key cache for layer 0
     //     Value cache for layer 0
@@ -116,7 +152,10 @@ private:
     //     ...
     std::unordered_map<int, KVCacheTensor<T> *> sampleCaches;
 
-    // List of ready caches, each element is for a sample
+    // prefixID -> pointer to an array of caches (each element is a KVCacheTensor, size=2*layers)
+    std::unordered_map<int, KVCacheTensor<T> *> prefixCaches;
+
+    // List of ready caches, each element is for a sample; subset of sampleCaches
     std::vector<KVCacheTensor<T> *> readyCaches;
 
     // List of pending free caches, each element is for a sample
