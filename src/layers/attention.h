@@ -463,7 +463,6 @@ protected:
                     auto srcV = value.Row(b * ctx->inputSeqLen + seq) + h * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, h);
 
-                    // Suppose dstK and dstV are the same data type
                     xft::storeKVCache(dstK, srcK, headSize);
                     xft::storeKVCache(dstV, srcV, headSize);
                 }
