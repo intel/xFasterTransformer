@@ -345,8 +345,6 @@ public:
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;
             TimeLine t("Decoder.MPI_Recv." + std::to_string(ctx->sampleID));
-            printf("%d: Decoder.MPI_Recv.SyncStart\n", ctx->ppRank);
-            fflush(stdout);
             int32_t sampleID;
             MPI_Recv(&sampleID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -358,8 +356,6 @@ public:
                 SamplePool<AttnInT>::getInstance().insert(prompt->getSampleID(), prompt);
             }
             TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(sampleID));
-            printf("%d: Decoder.MPI_Recv.SyncDone %d\n", ctx->ppRank, sampleID);
-            fflush(stdout);
         }
 
         if (!InputQueue<AttnInT>::getInstance().empty()) {
@@ -378,8 +374,6 @@ public:
             runningTask = TaskWaitingQueue<AttnInT>::getInstance().pop();
             ctx->sampleID = runningTask->getSampleID();
             TimeLine t("Decoder.forward." + std::to_string(ctx->sampleID));
-            printf("%d: Decoder.forward\n", ctx->ppRank);
-            fflush(stdout);
 #endif
 
         // Decoder: forward
@@ -447,8 +441,6 @@ public:
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
-            printf("%d: Decoder.MPI_Send %d\n", ctx->ppRank, sampleID);
-            fflush(stdout);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 #endif

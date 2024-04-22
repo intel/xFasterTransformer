@@ -143,17 +143,7 @@ std::vector<int32_t> Model::generate() {
     }
 
     if (isNewInput) {
-        static int i = 0;
-        i++;
-        if (i > 1) {
-            isNewInput = false;
-            i = 0;
-        }
-        // TODO: Create it when request input
-        if (this->isMaster()) {
-            int sampleID = InputQueue<float>::getInstance().createSampleID();
-            InputQueue<float>::getInstance().push(new SampleMeta<float>(sampleID, seqLen, inputIds));
-        }
+        isNewInput = false;
         return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
     } else {
         return searcher->getNextToken();
