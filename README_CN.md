@@ -117,6 +117,13 @@ docker run -it \
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
+##### 安装依赖的库
+
+请安装所依赖的libnuma库:
+- CentOS: yum install libnuma-devel
+- Ubuntu: apt-get install libnuma-dev
+
+
 ##### 如何编译
 - 使用 'CMake'
   ```bash
