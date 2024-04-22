@@ -14,9 +14,9 @@
 // ============================================================================
 #include "greedy_search.h"
 #include "messenger.h"
+#include "prompt.h"
 #include "search_utils.h"
 #include "thread_util.h"
-#include "prompt.h"
 
 using namespace xft;
 
@@ -46,11 +46,11 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             ThreadPool::getInstance().addTask([predictor_world_rank, this] {
                 while (true) {
                     int32_t promptID;
-                    MPI_Recv(&promptID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
-                            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(&promptID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
+                            MPI_STATUS_IGNORE);
                     TimeLine t("GreedySearch.MPI_Recv.prompt" + std::to_string(promptID));
-                    MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
-                            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
+                            predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     if (PromptPool<float>::getInstance().has(promptID)) {
                         auto prompt = PromptPool<float>::getInstance().get(promptID);
                         TaskWaitingQueue<float>::getInstance().push(prompt);
