@@ -178,7 +178,23 @@ public:
         return instance;
     }
 
-    void insert(int32_t key, SampleMeta<T> *sample) { hub[key] = sample; }
+    bool add(int32_t key, SampleMeta<T> *sample) {
+        bool exist = has(key);
+        if (!exist) {
+            hub[key] = sample;
+        }
+
+        return exist;
+    }
+
+    void forceAdd(int32_t key, SampleMeta<T> *sample) {
+        auto it = hub.find(key);
+        if (it != hub.end()) {
+            delete it->second;
+        }
+
+        hub[key] = sample;
+    }
 
     bool has(int32_t key) const { return hub.find(key) != hub.end(); }
 
@@ -191,9 +207,13 @@ public:
         }
     }
 
-    void remove(int32_t key) { hub.erase(key); }
+    void remove(int32_t key) {
+        if (has(key)) {
+            hub.erase(key);
+        }
+    }
 
-    void modify(int32_t oldKey, SampleMeta<T> *newSample) {
+    void replace(int32_t oldKey, SampleMeta<T> *newSample) {
         auto it = hub.find(oldKey);
         if (it != hub.end()) {
             delete it->second;
