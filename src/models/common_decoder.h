@@ -35,7 +35,7 @@
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
-#include "prompt.h"
+#include "sample_info.h"
 
 using namespace xft;
 

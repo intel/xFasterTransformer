@@ -14,7 +14,7 @@
 // ============================================================================
 #include "greedy_search.h"
 #include "messenger.h"
-#include "prompt.h"
+#include "sample_info.h"
 #include "search_utils.h"
 #include "thread_util.h"
 
