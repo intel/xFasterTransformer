@@ -128,6 +128,15 @@ public:
         return instance;
     }
 
+    int32_t createSequenceID() {
+        int32_t id = globalSequenceID++;
+        if (id >= 10 * 1024) {
+            globalSequenceID = 0;
+            id = globalSequenceID++;
+        }
+        return id;
+    }
+
     SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen,
             std::vector<int32_t> &inputTokens) {
         auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen, inputTokens);
@@ -201,6 +210,7 @@ public:
 private:
     SequencePool() {}
 
+    int32_t globalSequenceID = 0;
     std::unordered_map<int32_t, SequenceMeta *> hub;
 };
 
@@ -211,15 +221,6 @@ public:
     static InputQueue &getInstance() {
         static InputQueue instance;
         return instance;
-    }
-
-    int32_t createSequenceID() {
-        int32_t id = sequenceID++;
-        if (id >= 10 * 1024) {
-            sequenceID = 0;
-            id = sequenceID++;
-        }
-        return id;
     }
 
     bool empty() { return queue.empty(); }
@@ -235,7 +236,6 @@ public:
 private:
     InputQueue() {}
 
-    int32_t sequenceID = 0;
     std::queue<SequenceMeta *> queue;
 };
 
