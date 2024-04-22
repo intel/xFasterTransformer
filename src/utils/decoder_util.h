@@ -423,7 +423,7 @@ public:
 
     // Same implementation with softmax, but:
     // Return max value, and the sum value of exp
-    static std::pair<float, float> softmaxWithStats(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+    static std::pair<float, float> softmaxWithStats(float *data, const float *attnMask, int size, float scale) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
         __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
 
@@ -432,7 +432,7 @@ public:
         // maxVal is used to avoid exp(x) = inf
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vmax = _mm512_set1_ps(maxVal);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        __m512 vfactor = _mm512_set1_ps(scale);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
