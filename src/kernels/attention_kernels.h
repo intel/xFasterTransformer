@@ -17,9 +17,14 @@
 #include <cstdio>
 #include <cstring>
 #include <omp.h>
+#include "aligned_type.h"
 #include "amx_sgemm_bf16bf16bf16.h"
 #include "bfloat16.h"
+#include "compile_util.h"
 #include "copy_util.h"
+#include "decoder_util.h"
+#include "gemm_kernel_ext.h"
+#include "quantize_util.h"
 #include "simple_mem_pool.h"
 #include "softmax.h"
 #include "thread_util.h"
@@ -28,7 +33,22 @@
 #define unlikely(x) __builtin_expect((x), 0)
 #endif
 
+#ifndef ALIGNED_SIZE
+#define ALIGNED_SIZE(size, align) (((size) + (align)-1) / (align) * (align))
+#endif
+
 namespace xft {
+
+template <typename T1, typename T2>
+void storeKVCache(T1 &dst, T2 *src, int headSize) {
+    if constexpr (std::is_same_v<T1, float *> || std::is_same_v<T1, bfloat16_t *> || std::is_same_v<T1, float16_t *>) {
+        xft::copy(dst, src, headSize);
+    } else if constexpr (std::is_same_v<T1, std::pair<int8_t *, typename T1::second_type>>) {
+        xft::quantize(dst.first, dst.second, src, headSize);
+    } else {
+        xft::copy(dst.first, src, headSize);
+    }
+}
 
 // Self attention while KV cache copy is separated
 template <bool fusedPack, typename Lambda1, typename Lambda2>
@@ -61,7 +81,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
     // Copy key/value to cache and pack them
     // If packing is not fused into computing, then pack it here
-    if constexpr (!fusedPack) { 
+    if constexpr (!fusedPack) {
 #pragma omp parallel for collapse(2)
         for (int b = 0; b < batchSize; ++b) {
             for (int i = 0; i < kvHeadNum; ++i) {
@@ -73,7 +93,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
                 auto B = key + offsets[b] * kvStride + i * headSize;
                 for (int s = 0; s < tokens; ++s) {
                     auto dst = getKCache(b, i, s);
-                    xft::copy(dst, B + s * kvStride, headSize);
+                    auto src = B + s * kvStride;
+                    storeKVCache(dst, src, headSize);
                 }
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -82,7 +103,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
                 auto V = value + offsets[b] * kvStride + i * headSize;
                 for (int s = 0; s < tokens; ++s) {
                     auto dst = getVCache(b, i, s);
-                    xft::copy(dst, V + s * kvStride, headSize);
+                    auto src = V + s * kvStride;
+                    storeKVCache(dst, src, headSize);
                 }
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -99,11 +121,11 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 
             auto B = key + offsets[b] * kvStride + i * headSize;
             auto dst = getKCache(b, i, s);
-            xft::copy(dst, B + s * kvStride, headSize);
+            storeKVCache(dst, B + s * kvStride, headSize);
 
             auto V = value + offsets[b] * kvStride + i * headSize;
             dst = getVCache(b, i, s);
-            xft::copy(dst, V + s * kvStride, headSize);
+            storeKVCache(dst, V + s * kvStride, headSize);
         });
     }
 
@@ -278,7 +300,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
             auto B = key + offsets[b] * kvStride + i * headSize;
             for (int s = 0; s < tokens; ++s) {
                 auto dst = getKCache(b, i, s);
-                xft::copy(dst, B + s * kvStride, headSize);
+                storeKVCache(dst, B + s * kvStride, headSize);
             }
 
             xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -287,7 +309,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
             auto V = value + offsets[b] * kvStride + i * headSize;
             for (int s = 0; s < tokens; ++s) {
                 auto dst = getVCache(b, i, s);
-                xft::copy(dst, V + s * kvStride, headSize);
+                storeKVCache(dst, V + s * kvStride, headSize);
             }
 
             xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -384,6 +406,194 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
         selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
                 kvStride, batchSize, tokenSizes, scale, threadNum, getKCache, getVCache);
     }
+}
+
+template <typename T, typename U>
+inline std::pair<T, T> balance211(T n, U team, U tid) {
+    T n_start;
+    T n_mine;
+
+    if (team <= 1 || n == 0) {
+        n_start = 0;
+        n_mine = n;
+    } else {
+        // team = T1 + T2
+        // n = T1*n1 + T2*n2  (n1 - n2 = 1)
+        T n1 = (n + team - 1) / team;
+        T n2 = n1 - 1;
+        T T1 = n - n2 * (T)team;
+        n_mine = (T)tid < T1 ? n1 : n2;
+        n_start = (T)tid <= T1 ? (T)tid * n1 : T1 * n1 + ((T)tid - T1) * n2;
+    }
+
+    return std::make_pair(n_start, n_mine);
+}
+
+/**
+ * @brief Cross attention with sharded heads (When #heads is few, need to split each head to use more resources)
+ * @tparam T1 Query and output data type
+ * @param output Output tensor
+ * @param query Query tensor
+ * @param attnMask Attention mask
+ * @param inputSeqLen Input sequence length
+ * @param presentSeqLen Present sequence length (input sequence len + past sequence len)
+ * @param qHeadNum Query head number
+ * @param kvHeadNum KV head number
+ * @param headSize Head size
+ * @param oStride Output stride
+ * @param qStride Query stride
+ * @param kvStride KV stride
+ * @param batchSize Batch size
+ * @param scale Scale factor
+ * @param threadNum Thread number
+*/
+template <typename T1, typename KVCacheT, typename Lambda1, typename Lambda2>
+void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, int inputSeqLen, int presentSeqLen,
+        int qHeadNum, int headSize, int oStride, int qStride, int batchSize, const float scale, int threadNum,
+        const Lambda1 &getKHead, const Lambda2 &getVHead) {
+
+    const int responsibleHeads = qHeadNum;
+
+    int N = presentSeqLen;
+    int splits = threadNum / (batchSize * responsibleHeads);
+    int NB = (N + splits - 1) / splits; // Max block size in one thread
+
+    REQUIRES(splits > 1, "Do not call me when splits=%d, threadNum=%d, batchSize=%d, heads=%d\n", splits, threadNum,
+            batchSize, responsibleHeads);
+
+    // AVX512 is used and the case where headSize is not multiple of 16 hasn't been taken into account
+    REQUIRES(headSize % 16 == 0, "Head size (%d) is not supported.", headSize);
+
+    // The first element is for max, the second is for sum, the third is for finish flag
+    // [max(xi), sum(exp(xi)), finish_tag] for each thread
+    // totalTasks <= threadNum, thus we could not synchronize among threads
+    int totalTasks = batchSize * responsibleHeads * splits;
+    AlignedType<std::tuple<float, float, float>, 32> splitInfo[totalTasks];
+    for (int i = 0; i < totalTasks; ++i) {
+        std::get<1>(splitInfo[i].data) = 0;
+        std::get<2>(splitInfo[i].data) = 0;
+    }
+
+    // In each thread, sizeof(score_buf) = inputSeqLen * NB, sizeof(output) = inputSeqLen * headSize
+    // In tmpBuf, score_buf and output are stored in a continuous memory block, the layout is:
+    // (score_buf, output) for thread 1
+    // (score_buf, output) for thread 2
+    // ...
+    size_t sizePerThread = inputSeqLen * (NB + headSize);
+    sizePerThread = ALIGNED_SIZE(sizePerThread, 16);
+    size_t totalBufSize = threadNum * sizePerThread * sizeof(float);
+    float *tmpBuf = (float *)SimpleMemPool::instance().getBuffer("tmpBuf", totalBufSize);
+
+#pragma omp parallel for collapse(3)
+    for (int b = 0; b < batchSize; ++b) {
+        for (int i = 0; i < responsibleHeads; ++i) {
+            for (int s = 0; s < splits; ++s) {
+                int headStartIdx = b * responsibleHeads * splits + i * splits;
+                int threadIdx = b * responsibleHeads * splits + i * splits + s;
+
+                // Q * K
+                auto myTask = balance211(N, splits, s);
+                int nOff = myTask.first;
+                auto keyMatInfo = getKHead(b, i);
+                int m = inputSeqLen;
+                int k = headSize;
+                int n = myTask.second;
+                int lda = qStride;
+                int ldb = std::get<1>(keyMatInfo);
+                int ldc = n;
+                auto A = query + b * inputSeqLen * lda + i * headSize;
+                auto B = std::get<0>(keyMatInfo) + nOff * ldb;
+                auto C = tmpBuf + threadIdx * sizePerThread;
+
+                const int queryLen = inputSeqLen;
+                const int keyLen = N;
+
+                if constexpr (std::is_same_v<KVCacheT, int8_t>) { // INT8 KV cache
+                    auto bScale = std::get<2>(keyMatInfo);
+                    small_gemm_transb(A, B, bScale, C, m, n, k, lda, ldb, ldc);
+                } else {
+                    small_gemm_transb(A, B, C, m, n, k, lda, ldb, ldc);
+                }
+
+                // Softmax and the stats info
+                auto mask = attnMask + b * queryLen * keyLen + nOff;
+                auto smInfo = DecoderUtil::softmaxWithStats(C, mask, n, scale);
+                std::get<0>(splitInfo[threadIdx].data) = smInfo.first;
+                std::get<1>(splitInfo[threadIdx].data) = smInfo.second;
+
+                // Softmax * V
+                {
+                    auto valueMatInfo = getVHead(b, i);
+                    int k = n;
+                    int n = headSize;
+                    int lda = ldc;
+                    int ldb = std::get<1>(valueMatInfo);
+                    int ldc = n;
+                    float *A = C;
+                    auto B = std::get<0>(valueMatInfo) + nOff * ldb;
+                    auto C = tmpBuf + threadIdx * sizePerThread + m * NB;
+
+                    if constexpr (std::is_same_v<KVCacheT, int8_t>) {
+                        auto bScale = std::get<2>(valueMatInfo) + nOff;
+                        xft::small_gemm(A, B, bScale, C, m, n, k, lda, ldb, ldc);
+                    } else {
+                        xft::small_gemm(A, B, C, m, n, k, lda, ldb, ldc);
+                    }
+                }
+
+                std::get<2>(splitInfo[threadIdx].data) = 1; // set finished flag
+
+                // Wait for all threads to finish and reduce the result
+                // Firstly get the max value, and then revise the value by considering the factor on numerator and denominator
+                if (s == 0) {
+                    float realMax = std::get<0>(splitInfo[threadIdx].data);
+                    for (int idx = headStartIdx + 1; idx < headStartIdx + splits; ++idx) {
+                        while (std::get<2>(splitInfo[idx].data) == 0) {
+                            _mm_pause();
+                        }
+                        if (std::get<0>(splitInfo[idx].data) > realMax) { realMax = std::get<0>(splitInfo[idx].data); }
+                    }
+
+                    float realSum = 0;
+                    for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
+                        float splitMax = std::get<0>(splitInfo[idx].data);
+                        float splitSum = std::get<1>(splitInfo[idx].data);
+                        float revFactor = std::exp(splitMax - realMax); // revise factor
+                        std::get<2>(splitInfo[idx].data) = revFactor; // borrow finish flag for revise factor
+                        realSum += splitSum * revFactor;
+                    }
+
+                    // Accumulate in float
+                    float acc[headSize];
+                    memset(acc, 0, headSize * sizeof(float));
+
+                    for (int idx = headStartIdx; idx < headStartIdx + splits; ++idx) {
+                        float splitMax = std::get<0>(splitInfo[idx].data);
+                        float splitSum = std::get<1>(splitInfo[idx].data);
+                        float revFactor = std::get<2>(splitInfo[idx].data);
+
+                        float factor = revFactor * (splitSum / realSum);
+                        auto vfactor = xft::set_avx512(factor);
+
+                        // Note: here need to make sure the right address of the buffer
+                        float *p = tmpBuf + idx * sizePerThread + m * NB;
+                        for (int off = 0; off < headSize; off += 16) {
+                            auto vacc = xft::load_avx512(acc + off);
+                            vacc = vacc + xft::load_avx512(p + off) * vfactor;
+                            xft::store_avx512(acc + off, 0xffff, vacc);
+                        }
+                    }
+
+                    // Store the result (acc -> result)
+                    T1 *pResult = output + b * inputSeqLen * oStride + i * headSize;
+                    for (int off = 0; off < headSize; off += 16) {
+                        auto vacc = xft::load_avx512(acc + off);
+                        xft::store_avx512(pResult + off, 0xffff, vacc);
+                    }
+                }
+            } // end for s
+        } // end for i
+    } // end for b
 }
 
 } // namespace xft

@@ -28,6 +28,7 @@
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "uint4x2.h"
+#include "environment.h"
 
 namespace xft {
 
@@ -67,9 +68,9 @@ int readFile(const std::string &path, T *values, int size) {
     int count = 0;
     int nthreads = std::min(omp_get_max_threads(), 16);
     int chunk_size = (size + nthreads - 1) / nthreads;
-    int enable = (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0);
-    if (enable) {
-        if (getenv("XFT_FAKE_LOAD_INFO") ? atoi(getenv("XFT_FAKE_LOAD_INFO")) : 0) {
+    Env &env = Env::getInstance();
+    if (env.getFakeModelEnabled()) {
+        if (env.getFakeLoadInfoEnabled()) {
             printf("Loading fake model file %s.\n", path.c_str());
         }
         memset(values, 0, sizeof(T) * size);
@@ -157,9 +158,10 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
     // By default, read the config.ini configuration file
     // in the same directory as the model file to determine the data type of the file.
     if (w_type == DataType::unknown) {
-        std::filesystem::path pathObj(filename);
-        std::filesystem::path folderPath = pathObj.parent_path();
-        w_type = getWeightType(folderPath.append("config.ini").string());
+        std::size_t pos = filename.find_last_of("/\\");
+        std::string dirPath = filename.substr(0, pos);
+        std::string configFilePath = dirPath + "/config.ini";
+        w_type = getWeightType(configFilePath);
     }
     //1 uint4x2 stores 2 uint4 value, so load size is halfed.
     if constexpr (std::is_same_v<T, uint4x2_t>) { size = size / 2; }

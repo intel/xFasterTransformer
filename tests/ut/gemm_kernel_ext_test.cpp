@@ -19,8 +19,9 @@
 
 #include "gtest/gtest.h"
 
+template <typename TA, typename TB, typename TC>
 static void small_gemm_tranb_ref(
-        const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+        const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc) {
     // Loop over the rows of A
     for (int i = 0; i < M; i++) {
         // Loop over the columns of B
@@ -28,22 +29,40 @@ static void small_gemm_tranb_ref(
             // Compute the dot product of row i of A with column j of B
             float dot_product = 0;
             for (int k = 0; k < K; k++) {
-                dot_product += A[i * lda + k] * B[j * ldb + k];
+                dot_product += (float)A[i * lda + k] * (float)B[j * ldb + k];
             }
             // Store the result in C[i][j]
-            C[i * ldc + j] += dot_product;
+            C[i * ldc + j] = dot_product;
+        }
+    }
+}
+
+static void small_gemm_tranb_ref(
+        const float *A, const int8_t *B, const float *scale, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+    // Loop over the rows of A
+    for (int i = 0; i < M; i++) {
+        // Loop over the columns of B
+        for (int j = 0; j < N; j++) {
+            // Compute the dot product of row i of A with column j of B
+            float dot_product = 0;
+            for (int k = 0; k < K; k++) {
+                dot_product += A[i * lda + k] * B[j * ldb + k] * scale[j];
+            }
+            // Store the result in C[i][j]
+            C[i * ldc + j] = dot_product;
         }
     }
 }
 
 // Test function to compare reference and optimized implementations
+template <typename TA = float, typename TB = float, typename TC = float>
 void test_small_gemm_tranb(int M, int N, int K) {
-    float *A_ref = new float[M * K];
-    float *B_ref = new float[K * N];
-    float *C_ref = new float[M * N];
-    float *A_opt = new float[M * K];
-    float *B_opt = new float[K * N];
-    float *C_opt = new float[M * N];
+    TA *A_ref = new TA[M * K];
+    TB *B_ref = new TB[K * N];
+    TC *C_ref = new TC[M * N];
+    TA *A_opt = new TA[M * K];
+    TB *B_opt = new TB[K * N];
+    TC *C_opt = new TC[M * N];
 
     // Generate random matrices A and B
     std::random_device dev;
@@ -81,6 +100,58 @@ void test_small_gemm_tranb(int M, int N, int K) {
     delete[] A_opt;
     delete[] B_opt;
     delete[] C_opt;
+}
+
+// Test function to compare reference and optimized implementations
+void test_small_gemm_tranb_int8(int M, int N, int K) {
+    float *A_ref = new float[M * K];
+    int8_t *B_ref = new int8_t[K * N];
+    float *C_ref = new float[M * N];
+    float *A_opt = new float[M * K];
+    int8_t *B_opt = new int8_t[K * N];
+    float *C_opt = new float[M * N];
+    float *scale = new float[N];
+
+    // Generate random matrices A and B
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<float> distr(0.0f, 1.0f);
+
+    for (int i = 0; i < M * K; i++) {
+        A_ref[i] = distr(rng);
+        A_opt[i] = A_ref[i];
+    }
+    for (int i = 0; i < K * N; i++) {
+        B_ref[i] = distr(rng) * 200 - 100;
+        B_opt[i] = B_ref[i];
+    }
+    for (int i = 0; i < N; i++) {
+        scale[i] = distr(rng) / 100;
+    }
+
+    // Compute matrix multiplication with reference implementation
+    memset(C_ref, 0, M * N * sizeof(float));
+    small_gemm_tranb_ref(A_ref, B_ref, scale, C_ref, M, N, K, K, K, N);
+
+    // Compute matrix multiplication with optimized implementation
+    memset(C_opt, 0, M * N * sizeof(float));
+    small_gemm_transb(A_opt, B_opt, scale, C_opt, M, N, K, K, K, N);
+
+    // Compare results
+    float eps = 1e-4;
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            EXPECT_NEAR(C_opt[i * N + j], C_ref[i * N + j], eps);
+        }
+    }
+
+    delete[] A_ref;
+    delete[] B_ref;
+    delete[] C_ref;
+    delete[] A_opt;
+    delete[] B_opt;
+    delete[] C_opt;
+    delete[] scale;
 }
 
 static void test_small_kernel() {
@@ -128,9 +199,91 @@ static void test_bigger_kernel() {
     test_small_gemm_tranb(10, 10, 128);
 }
 
-TEST(small_gemm_tranb, small_gemm_tranb) {
+static void small_gemm_ref(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc) {
+    // Loop over the rows of A
+    for (int i = 0; i < M; i++) {
+        // Loop over the columns of B
+        for (int j = 0; j < N; j++) {
+            // Compute the dot product of row i of A with column j of B
+            float dot_product = 0;
+            for (int k = 0; k < K; k++) {
+                dot_product += A[i * lda + k] * (B[k * ldb + j] * bScale[k]);
+            }
+            // Store the result in C[i][j]
+            C[i * ldc + j] = dot_product;
+        }
+    }
+}
+
+void test_small_gemm_int8(int M, int N, int K) {
+    const int lda = K;
+    const int ldb = N;
+    const int ldc = N;
+
+    float *A = new float[M * K];
+    int8_t *B = new int8_t[K * N];
+    float *bScale = new float[K];
+    float *C = new float[M * N];
+    float *refC = new float[M * N];
+
+    // Generate random data for A, B, and bScale
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<float> distr(-1.0f, 1.0f);
+    for (int i = 0; i < M * K; i++) {
+        A[i] = distr(rng);
+    }
+    for (int i = 0; i < K * N; i++) {
+        B[i] = distr(rng) * 127;
+    }
+    for (int i = 0; i < K; i++) {
+        bScale[i] = distr(rng) / 100;
+    }
+    memset(C, 0, M * N * sizeof(float));
+    memset(refC, 0, M * N * sizeof(float));
+
+    xft::small_gemm(A, B, bScale, C, M, N, K, lda, ldb, ldc);
+    small_gemm_ref(A, B, bScale, refC, M, N, K, lda, ldb, ldc);
+
+    // Compare results
+    float eps = 1e-3;
+    for (int i = 0; i < M * N; i++) {
+        EXPECT_NEAR(C[i], refC[i], eps);
+    }
+
+    delete[] A;
+    delete[] B;
+    delete[] bScale;
+    delete[] C;
+    delete[] refC;
+}
+
+TEST(small_gemm_tranb, small_gemm_tranb_f32) {
     test_small_kernel();
     test_bigger_kernel();
+}
+
+TEST(small_gemm_tranb, small_gemm_tranb_bf16fp16f32) {
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 2, 16);
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 4, 128);
+    test_small_gemm_tranb<bfloat16_t, float16_t, float>(1, 4, 256);
+}
+
+TEST(small_gemm_tranb, small_gemm_tranb_int8) {
+    test_small_gemm_tranb_int8(1, 100, 128);
+    test_small_gemm_tranb_int8(2, 101, 256);
+}
+
+TEST(small_gemm, small_gemm_int8) {
+    for (int m = 0; m < 10; ++m) {
+        test_small_gemm_int8(m, 64, 100);
+        test_small_gemm_int8(m, 100, 313);
+        test_small_gemm_int8(m, 128, 1024);
+        test_small_gemm_int8(m, 256, 19);
+        test_small_gemm_int8(m, 500, 111);
+        test_small_gemm_int8(m, 512, 39);
+    }
 }
 
 int main(int argc, char **argv) {

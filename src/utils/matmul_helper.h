@@ -52,7 +52,7 @@ public:
             std::exit(-1);
         }
 
-        AMXThresholdM = Env::getAMXThresholdM();
+        AMXThresholdM = Env::getInstance().getAMXThresholdM();
     }
 
     ~MMHelper() {
@@ -750,13 +750,13 @@ public:
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
                 GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_silu",
-                        onednn_amx_sgemm_f32bf16f32_compute_silu(
-                                transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+                        onednn_amx_sgemm_f32bf16f32_compute(
+                                transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Silu));
             } else {
                 if (M > AMXThresholdM) {
                     GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_silu",
-                            onednn_amx_sgemm_f32bf16f32_compute_silu(
-                                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+                            onednn_amx_sgemm_f32bf16f32_compute(
+                                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Silu));
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_silu",
                             xdnn_bgemm_f32bf16f32_compute_silu(
@@ -817,6 +817,115 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_NF4)
             GEMMVERBOSE("xdnn_hgemm_f32nf4f32_compute_silu",
                     xdnn_hgemm_f32nf4f32_compute_silu(
+                            transA, M, N, K, alpha, A, lda, (const XDNN_NF4x2 *)packedB, scaleB, zeroB, beta, C, ldc));
+#else
+            printf("%s:%d: Need to define WEIGHT_ONLY_NF4 kernel data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#endif
+        }
+    }
+
+    template <typename InT, typename WeiT, typename OutT>
+    void compute_gelu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+        // FP32
+        if constexpr (std::is_same_v<WeiT, float>) {
+            GEMMVERBOSE("xdnn_sgemm_compute_gelu",
+                    xdnn_sgemm_compute_gelu(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+        }
+
+        // FP16
+        else if constexpr (std::is_same_v<WeiT, float16_t>) {
+#ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_gelu",
+                    xdnn_sgemm_f32f16f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+#elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+            GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_gelu",
+                    xdnn_hgemm_f32f16f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+#else
+            printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#endif
+        }
+
+        // BF16
+        else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
+#ifdef AVX512_FP32_WEIGHT_ONLY_BF16
+            GEMMVERBOSE("xdnn_sgemm_f32bf16f32_compute_gelu",
+                    xdnn_sgemm_f32bf16f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc));
+#elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
+            if constexpr (std::is_same_v<InT, bfloat16_t>) {
+                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_gelu",
+                        onednn_amx_sgemm_f32bf16f32_compute(
+                                transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Gelu));
+            } else {
+                if (M > AMXThresholdM) {
+                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_gelu",
+                            onednn_amx_sgemm_f32bf16f32_compute(
+                                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Gelu));
+                } else {
+                    GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_gelu",
+                            xdnn_bgemm_f32bf16f32_compute_gelu(
+                                    transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc));
+                }
+            }
+#else
+            printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#endif
+        }
+
+        // INT8
+        else if constexpr (std::is_same_v<WeiT, int8_t>) {
+#ifdef AVX512_FP32_WEIGHT_ONLY_INT8
+            GEMMVERBOSE("xdnn_sgemm_f32s8f32_compute_gelu",
+                    xdnn_sgemm_f32s8f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
+#elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
+            GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_gelu",
+                    xdnn_hgemm_f32s8f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
+#else
+            printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#endif
+        }
+
+        // W8A8
+        else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
+            GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_gelu",
+                    onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Gelu));
+        }
+
+        // INT4
+        else if constexpr (std::is_same_v<WeiT, uint4x2_t>) {
+#ifdef AVX512_FP32_WEIGHT_ONLY_INT4
+            GEMMVERBOSE("xdnn_sgemm_f32u4f32_compute_gelu",
+                    xdnn_sgemm_f32u4f32_compute_gelu(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
+                            scaleB, zeroB, beta, C, ldc));
+#elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
+            GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_gelu",
+                    xdnn_hgemm_f32u4f32_compute_gelu(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
+                            scaleB, zeroB, beta, C, ldc));
+#else
+            printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#endif
+        }
+
+        // NF4
+        else if constexpr (std::is_same_v<WeiT, nf4x2_t>) {
+#ifdef AVX512_FP32_WEIGHT_ONLY_NF4
+            GEMMVERBOSE("xdnn_sgemm_f32nf4f32_compute_gelu",
+                    xdnn_sgemm_f32nf4f32_compute_gelu(
+                            transA, M, N, K, alpha, A, lda, (const XDNN_NF4x2 *)packedB, scaleB, zeroB, beta, C, ldc));
+#elif defined(AVX512_FP16_WEIGHT_ONLY_NF4)
+            GEMMVERBOSE("xdnn_hgemm_f32nf4f32_compute_gelu",
+                    xdnn_hgemm_f32nf4f32_compute_gelu(
                             transA, M, N, K, alpha, A, lda, (const XDNN_NF4x2 *)packedB, scaleB, zeroB, beta, C, ldc));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_NF4 kernel data type.\n", __FILE__, __LINE__);
@@ -1187,6 +1296,7 @@ private:
         BiasAdd,
         BiasAdd_Relu,
         Silu,
+        Gelu,
         Resmul,
         Residential,
         Resext,
@@ -1243,7 +1353,7 @@ private:
 
     template <typename Tin, typename Tout>
     void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
-            const bfloat16_t *packedB, float beta, Tout *C, int ldc) {
+            const bfloat16_t *packedB, float beta, Tout *C, int ldc, const matmul_kinds postAlg = matmul_kinds::Basic) {
         TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
         TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
         using namespace dnnl;
@@ -1252,7 +1362,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+        std::string key = create_key(transA, M, N, K, postAlg);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1273,14 +1383,43 @@ private:
                 output_md = memory::desc(output_dims, dt::bf16, tag::ab);
             } else {
                 printf(">>> onednn amx output date type not supported.");
+                exit(-1);
             }
 
             // Create primitive descriptor and primitive.
-            matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
+            switch (postAlg)
+            {
+            case matmul_kinds::Basic:
+                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
+                break;
+            case matmul_kinds::Silu:{
+                const float post_alpha = 1.0f;
+                const float post_beta = 0.0f;
+                post_ops matmul_ops;
+                matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
+                primitive_attr matmul_attr;
+                matmul_attr.set_post_ops(matmul_ops);
+                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                break;
+            }
+            case matmul_kinds::Gelu:{
+                const float post_alpha = 1.0f;
+                const float post_beta = 0.0f;
+                post_ops matmul_ops;
+                matmul_ops.append_eltwise(algorithm::eltwise_gelu_tanh, post_alpha, post_beta);
+                primitive_attr matmul_attr;
+                matmul_attr.set_post_ops(matmul_ops);
+                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                break;
+            }
+            default:
+                printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
+                exit(-1);
+                break;
+            }
             matmul_prim = new matmul(*matmul_pd);
-
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+            std::string key = create_key(transA, M, N, K, postAlg);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1479,92 +1618,6 @@ private:
 
         // Executions.
         TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu.execute_primitive");
-        // Reorder
-        if constexpr (std::is_same_v<Tin, float>) {
-#pragma omp parallel for
-            for (uint64_t i = 0; i < M; ++i) {
-                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
-            }
-        }
-
-        matmul_prim->execute(*stream, matmul_args);
-        stream->wait();
-    }
-
-    template <typename Tin, typename Tout>
-    void onednn_amx_sgemm_f32bf16f32_compute_silu(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
-            const bfloat16_t *packedB, float beta, Tout *C, int ldc) {
-        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_silu");
-        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_silu.create_primitive");
-        using namespace dnnl;
-        using tag = memory::format_tag;
-        using dt = memory::data_type;
-
-        matmul::primitive_desc *matmul_pd;
-        matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Silu);
-        auto it = matmul_hub.find(key);
-        if (it != matmul_hub.end()) {
-            matmul_pd = std::get<0>(it->second);
-            matmul_prim = std::get<1>(it->second);
-        } else {
-            // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
-            memory::dims weight_dims = {K, N};
-            memory::dims output_dims = {M, N};
-
-            // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
-            memory::desc output_md;
-            if constexpr (std::is_same_v<Tin, float>) {
-                output_md = memory::desc(output_dims, dt::f32, tag::ab);
-            } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
-            } else {
-                printf(">>> onednn amx output date type not supported.");
-            }
-
-            // Create primitive post-ops (SiLU).
-            const float post_alpha = 1.0f;
-            const float post_beta = 0.0f;
-            post_ops matmul_ops;
-            matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
-            primitive_attr matmul_attr;
-            matmul_attr.set_post_ops(matmul_ops);
-
-            // Create primitive descriptor and primitive.
-            matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
-            matmul_prim = new matmul(*matmul_pd);
-
-            // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Silu);
-            std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
-            matmul_hub[key] = value;
-        }
-
-        // Repack and convert input data.
-        memory input_mem;
-        if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine);
-        } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
-        } else {
-            printf(">>> onednn amx input date type not supported.");
-        }
-
-        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
-
-        // Create the primitive args.
-        std::unordered_map<int, memory> matmul_args;
-        matmul_args.insert({DNNL_ARG_SRC, input_mem});
-        matmul_args.insert({DNNL_ARG_WEIGHTS, weight_mem});
-        matmul_args.insert({DNNL_ARG_DST, output_mem});
-        t1.release();
-
-        // Executions.
-        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute_silu.execute_primitive");
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
@@ -2010,8 +2063,15 @@ private:
             return _mm512_mul_ps(v, vres);
         };
         auto silu = [](__m512 &v, int row, int col) {
-            __m512 vone = _mm512_set1_ps(1.0f);
+            const __m512 vone = _mm512_set1_ps(1.0f);
             __m512 vp = BertUtil::vexp(v);
+            __m512 vrecip = _mm512_rcp14_ps(vp + vone);
+            return vp * vrecip * v;
+        };
+        auto gelu = [](__m512 &v, int row, int col) {
+            const __m512 vone = _mm512_set1_ps(1.0f);
+            const __m512 c1 = _mm512_set1_ps(1.702f);
+            __m512 vp = BertUtil::vexp(v * c1);
             __m512 vrecip = _mm512_rcp14_ps(vp + vone);
             return vp * vrecip * v;
         };
@@ -2023,6 +2083,7 @@ private:
                 dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, biasadd_relu);
                 break;
             case matmul_kinds::Silu: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, silu); break;
+            case matmul_kinds::Gelu: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, gelu); break;
             case matmul_kinds::Resmul: dequant_base(M, N, C_int32, ldc_int32, C, ldc, dequant_op, resmul); break;
             case matmul_kinds::Residential:
                 if (bias) {

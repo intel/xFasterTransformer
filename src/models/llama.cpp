@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 #include "llama.h"
 
-template <typename WeiT>
-LlamaLLM<WeiT>::LlamaLLM(const std::string &modelPath)
+template <typename WeiT, typename KVCacheT>
+LlamaLLM<WeiT, KVCacheT>::LlamaLLM(const std::string &modelPath)
     : CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                             typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
             LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                     typename TypeSelector<WeiT>::OutType>,
-            typename TypeSelector<WeiT>::KVCacheType>(modelPath, "llama") {
+            KVCacheT>(modelPath, "llama") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -34,18 +34,18 @@ LlamaLLM<WeiT>::LlamaLLM(const std::string &modelPath)
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-LlamaLLM<WeiT>::~LlamaLLM() {
+template <typename WeiT, typename KVCacheT>
+LlamaLLM<WeiT, KVCacheT>::~LlamaLLM() {
     delete embedding;
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -70,8 +70,8 @@ void LlamaLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //             expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
 //         )
 //     return combined_attention_mask
-template <typename WeiT>
-void LlamaLLM<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -104,30 +104,22 @@ void LlamaLLM<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
-template <typename WeiT>
-void LlamaLLM<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
-
-template class LlamaLLM<float>;
-template class LlamaLLM<float16_t>;
-template class LlamaLLM<bfloat16_t>;
-template class LlamaLLM<int8_t>;
-template class LlamaLLM<w8a8_t>;
-template class LlamaLLM<uint4x2_t>;
-template class LlamaLLM<nf4x2_t>;

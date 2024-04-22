@@ -296,9 +296,7 @@ void small_gemm_transb_1xn_fixk(const TA *A, const TB *B, float *C, int N, int l
         const TB *pB = B + i * ldb;
 
         __m512 vc[BC];
-        compile_time_for<BC>::op([&](auto idx) {
-            vc[idx] = _mm512_set1_ps(0);
-        });
+        compile_time_for<BC>::op([&](auto idx) { vc[idx] = _mm512_set1_ps(0); });
 
         for (int j = 0; j < vecs; ++j) {
             __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
@@ -309,16 +307,14 @@ void small_gemm_transb_1xn_fixk(const TA *A, const TB *B, float *C, int N, int l
         }
 
         // Store to C
-        compile_time_for<BC>::op([&](auto idx) {
-            C[i + idx] = _mm512_reduce_add_ps(vc[idx]);
-        });
+        compile_time_for<BC>::op([&](auto idx) { C[i + idx] = _mm512_reduce_add_ps(vc[idx]); });
     }
 
     // Remain elements
     for (; i < N; ++i) {
         const TB *pB = B + i * ldb;
         __m512 vc = _mm512_set1_ps(0);
-        
+
         for (int j = 0; j < vecs; ++j) {
             __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
             __m512 vb = xft::load_avx512(m, pB + j * 16);
@@ -339,13 +335,11 @@ void small_gemm_transb_1xn_dynk(const TA *A, const TB *B, float *C, int N, int K
     // Each loop compute 'BC' elements in C
     int i = 0;
     for (; i + BC - 1 < N; i += BC) {
-        const TA *pA = A + i * ldb;
+        const TA *pA = A;
         const TB *pB = B + i * ldb;
 
         __m512 vc[BC];
-        compile_time_for<BC>::op([&](auto idx) {
-            vc[idx] = _mm512_set1_ps(0);
-        });
+        compile_time_for<BC>::op([&](auto idx) { vc[idx] = _mm512_set1_ps(0); });
 
         for (int j = 0; j < vecs; ++j) {
             __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
@@ -357,17 +351,15 @@ void small_gemm_transb_1xn_dynk(const TA *A, const TB *B, float *C, int N, int K
         }
 
         // Store to C
-        compile_time_for<BC>::op([&](auto idx) {
-            C[i + idx] = _mm512_reduce_add_ps(vc[idx]);
-        });
+        compile_time_for<BC>::op([&](auto idx) { C[i + idx] = _mm512_reduce_add_ps(vc[idx]); });
     }
 
     // Remain elements
     for (; i < N; ++i) {
-        const TA *pA = A + i * ldb;
+        const TA *pA = A;
         const TB *pB = B + i * ldb;
         __m512 vc = _mm512_set1_ps(0);
-        
+
         for (int j = 0; j < vecs; ++j) {
             __mmask16 m = (j == vecs - 1 ? mask : 0xffff);
             __m512 va = xft::load_avx512(m, pA + j * 16);
@@ -426,9 +418,7 @@ void small_gemm_transb(const TA *A, const TB *B, float *C, int M, int N, int K, 
     constexpr int MB = 6;
 
     // Special case for M = 1
-    if (M == 1) {
-        return small_gemm_transb_1xn(A, B, C, N, K, lda, ldb, ldc);
-    }
+    if (M == 1) { return small_gemm_transb_1xn(A, B, C, N, K, lda, ldb, ldc); }
 
     for (i = 0; i + MB - 1 < M; i += MB) {
         const TA *pA = A + i * lda;
@@ -542,7 +532,8 @@ void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int 
     small_gemm_transb<float, float16_t>(A, B, C, M, N, K, lda, ldb, ldc);
 }
 
-void small_gemm_transb(const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+void small_gemm_transb(
+        const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, float16_t>(A, B, C, M, N, K, lda, ldb, ldc);
 }
 
@@ -569,4 +560,31 @@ void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const bfloat1
 void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K,
         int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, float16_t>(attnMask, A, B, C, M, N, K, lda, ldb, ldc);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void apply_scale(float *C, const float *scale, int M, int N, int ldc) {
+    for (int i = 0; i < M; ++i) {
+        for (int j = 0; j < N; j += 16) {
+            int remain = N - j;
+            __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+            __m512 v = xft::load_avx512(mask, &C[i * ldc + j]);
+            __m512 scaleVec = xft::load_avx512(mask, scale + j);
+            v = v * scaleVec;
+            xft::store_avx512(&C[i * ldc + j], mask, v);
+        }
+    }
+}
+
+void small_gemm_transb(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc) {
+    small_gemm_transb<float, int8_t>(A, B, C, M, N, K, lda, ldb, ldc);
+    if (bScale) { apply_scale(C, bScale, M, N, ldc); }
+}
+
+void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc) {
+    small_gemm_transb<bfloat16_t, int8_t>(A, B, C, M, N, K, lda, ldb, ldc);
+    if (bScale) { apply_scale(C, bScale, M, N, ldc); }
 }

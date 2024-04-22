@@ -40,3 +40,19 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
+
+REGISTER_DECODER(Qwen, qwen, float)
+REGISTER_DECODER(Qwen, qwen, float16_t)
+REGISTER_DECODER(Qwen, qwen, bfloat16_t)
+REGISTER_DECODER(Qwen, qwen, int8_t)
+REGISTER_DECODER(Qwen, qwen, w8a8_t)
+REGISTER_DECODER(Qwen, qwen, uint4x2_t)
+REGISTER_DECODER(Qwen, qwen, nf4x2_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, nf4x2_t)

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -291,6 +291,48 @@ public:
         }
     }
 
+    // General version
+    static void computeSoftmax(float *data, int size) {
+        int vecs = (size + 15) / 16; // how many avx512 vectors
+        __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
+
+        __m512 vsum = _mm512_set1_ps(0);
+
+        // maxVal is used to avoid exp(x) = inf
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vmax = _mm512_set1_ps(maxVal);
+
+        int i = 0;
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx);
+        }
+
+        maxVal = _mm512_reduce_max_ps(vmax);
+        vmax = _mm512_set1_ps(maxVal);
+
+        // Compute vexp(vx - vmax) and sum it
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = BertUtil::vexp(vx - vmax);
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
+        }
+
+        float sum = _mm512_reduce_add_ps(vsum);
+        __m512 vrsum = _mm512_set1_ps(1.0f / sum);
+
+        // Compute exp/sum(exp) and store
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            vx = vx * vrsum;
+            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+        }
+    }
+
     // Softmax: skip the calculation when attention mask is the lowest value
     static void softmaxSkipMask(DecoderContext *ctx, float *data, const float *attnMask, int size) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
@@ -381,7 +423,7 @@ public:
 
     // Same implementation with softmax, but:
     // Return max value, and the sum value of exp
-    static std::pair<float, float> softmaxWithStats(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+    static std::pair<float, float> softmaxWithStats(float *data, const float *attnMask, int size, float scale) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
         __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
 
@@ -390,7 +432,7 @@ public:
         // maxVal is used to avoid exp(x) = inf
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vmax = _mm512_set1_ps(maxVal);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        __m512 vfactor = _mm512_set1_ps(scale);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
@@ -448,6 +490,36 @@ public:
                 auto x1 = _mm512_add_ps(one, x0);
                 auto x2 = _mm512_div_ps(left, x1);
                 auto res = _mm512_mul_ps(right, x2);
+                xft::store_avx512(dst.Data() + i * ldd + j, mask, res);
+            }
+        }
+    }
+
+    // compute gelu on the left half and then add it with the right half
+    template <typename T1, typename T2>
+    static void geluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
+        const __m512 c1 = _mm512_set1_ps(0.044715f);
+        const __m512 c2 = _mm512_set1_ps(0.7978845608f);
+        const __m512 vone = _mm512_set1_ps(1.0f);
+        const __m512 vtwo = _mm512_set1_ps(2.0f);
+        const __m512 vhalf = _mm512_set1_ps(0.5f);
+        const int M = src.Rows();
+        const int stride = src.Cols();
+        const int N = stride / 2;
+        const int ldd = dst.Stride();
+
+#pragma omp parallel for collapse(2)
+        for (int64_t i = 0; i < M; ++i) {
+            for (int64_t j = 0; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                auto vx = xft::load_avx512(mask, src.Data() + i * stride + j);
+                auto right = xft::load_avx512(mask, src.Data() + i * stride + j + N);
+                __m512 vt = c2 * (vx + c1 * vx * vx * vx);
+                vt = BertUtil::vexp(vt * vtwo);
+                vt = vone - vtwo * _mm512_rcp14_ps(vt + vone); // tanh
+                __m512 vy = vx * (vone + vt) * vhalf;
+                auto res = _mm512_mul_ps(right, vy);
                 xft::store_avx512(dst.Data() + i * ldd + j, mask, res);
             }
         }

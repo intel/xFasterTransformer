@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -94,10 +94,3 @@ void YaRNLlama<WeiT>::lastLayerNormForward(float *input, float *output, int rows
     finalLN.forward(input, output, rows);
 }
 
-template class YaRNLlama<float>;
-template class YaRNLlama<float16_t>;
-template class YaRNLlama<bfloat16_t>;
-template class YaRNLlama<int8_t>;
-template class YaRNLlama<w8a8_t>;
-template class YaRNLlama<uint4x2_t>;
-template class YaRNLlama<nf4x2_t>;

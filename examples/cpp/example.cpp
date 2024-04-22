@@ -258,6 +258,15 @@ private:
     const char **vocab_list = vocab_qwen;
 };
 
+class GemmaTokenizer : public TokenizerBase {
+public:
+    GemmaTokenizer(std::string &tokenPath) : TokenizerBase(tokenPath) {
+        vocabSize = 256000;
+        prefixTokenIds = {2, 2, 106, 1645, 108};
+        suffixTokenIds = {107, 108, 106, 2516, 108};
+    }
+};
+
 TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
     if (modeltype == "gpt") {
         return new OptTokenizer(tokenPath);
@@ -273,6 +282,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new ChatGLM2Tokenizer(tokenPath);
     } else if (modeltype == "qwen") {
         return new QwenTokenizer(tokenPath);
+    } else if (modeltype == "gemma") {
+        return new GemmaTokenizer(tokenPath);
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);

@@ -30,6 +30,7 @@
 #include "messenger.h"
 #include "mlp_chatglm2.h"
 #include "mlp_standard.h"
+#include "model_factory.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"
@@ -176,8 +177,7 @@ public:
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
         const bool useLogN = reader.GetInteger(modelType, "use_logn_attn", true);
         const bool useNTK = reader.GetInteger(modelType, "use_dynamic_ntk", true);
-
-        const int hiddenSize = attHeadNum * size_per_head;
+        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * size_per_head);
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
@@ -222,8 +222,9 @@ public:
         actBuffers.reset(new hpj::Matrix<float>());
 
         // Context
-        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK, ropeParamsPtr);
+        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
+                epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK,
+                ropeParamsPtr);
 
         ctx->ResetConfigReader(configPath);
 
@@ -425,8 +426,14 @@ public:
         }
 
 #ifdef DEBUG
+        dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
-        dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
+
+        if (!logitsAll)
+            dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
+        else
+            dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
         // LN, as it supports inplace computing, input and output can be the same
@@ -438,7 +445,10 @@ public:
 
 #ifdef DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
-        dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
+        if (!logitsAll)
+            dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
+        else
+            dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
         // Predictor
@@ -451,7 +461,10 @@ public:
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
-        dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
+        if (!logitsAll)
+            dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
+        else
+            dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize);
 #endif
 
         // Expand the result to make it cover multiple beams
@@ -600,12 +613,14 @@ protected:
         return file.good();
     }
 
-    DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int attHeadNum, const int kvHeadNum,
-            const int imSize, const std::string &act, const float epsilon, int vocabSize, int embeddingSize,
-            int maxPositions, int maxPosEmbed, int maxSeqLength, bool useLogN, bool useNTK, RopeParams *ropeParamsPtr) {
+    DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int headSize, const int attHeadNum,
+            const int kvHeadNum, const int imSize, const std::string &act, const float epsilon, int vocabSize,
+            int embeddingSize, int maxPositions, int maxPosEmbed, int maxSeqLength, bool useLogN, bool useNTK,
+            RopeParams *ropeParamsPtr) {
+        Env &env = Env::getInstance();
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
-        int ppSize = Env::getPipelineStage();
+        int ppSize = env.getPipelineStage();
         int ppRank = messenger.getColor();
         // printf("ppSize: %d, ppRank: %d, tpSize: %d, tpRank: %d\n", ppSize, ppRank, tpSize, tpRank);
 
@@ -619,14 +634,14 @@ protected:
                 exit(-1);
             }
         } else {
-            this->context.reset(new DecoderContext(layers, hiddenSize, attHeadNum, kvHeadNum, imSize, act, epsilon,
-                    vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize, ppRank,
-                    ropeParamsPtr, useLogN, useNTK));
+            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
+                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize,
+                    ppRank, ropeParamsPtr, useLogN, useNTK));
 
-            if (Env::getEngineKind() == xft::DeviceKind::iGPU && Env::getEngineIndex() < 0) // Sequential assignment
-                this->context->mmHelper = new MMHelper(Env::getEngineKind(), ppRank * tpSize + tpRank);
+            if (env.getEngineKind() == xft::DeviceKind::iGPU && env.getEngineIndex() < 0) // Sequential assignment
+                this->context->mmHelper = new MMHelper(env.getEngineKind(), ppRank * tpSize + tpRank);
             else // assignment through the user
-                this->context->mmHelper = new MMHelper(Env::getEngineKind(), Env::getEngineIndex());
+                this->context->mmHelper = new MMHelper(env.getEngineKind(), env.getEngineIndex());
         }
 
         return this->context.get();
@@ -638,11 +653,12 @@ protected:
         const int hiddenSize = getContext()->hiddenSize;
         const int imSize = getContext()->intermediateSize;
         const int kvHeadNum = getContext()->kvHeadNum;
+        const int attHeadNum = getContext()->attHeadNum;
         const int attHeadSize = getContext()->attHeadSize;
         const int mlpFactor = (getContext()->actType == DecoderContext::SWIGLU) ? 2 : 1;
-        int qSize = hiddenSize;
+        int qSize = attHeadSize * attHeadNum;
         int kvSize = attHeadSize * kvHeadNum;
-        int qkvSize = qSize + kvSize + kvSize;
+        int qkvSize = qSize + 2 * kvSize;
 
 #define ALLOC(size, alignment) xft::alloc((size), (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
@@ -650,7 +666,7 @@ protected:
         float *qkvZeros = nullptr;
         float *qkvBias = (float *)ALLOC(qkvSize * sizeof(float), 64);
 
-        OriWeiT *attnOutWeight = (OriWeiT *)ALLOC(hiddenSize * hiddenSize * sizeof(OriWeiT), 64);
+        OriWeiT *attnOutWeight = (OriWeiT *)ALLOC(qSize * hiddenSize * sizeof(OriWeiT), 64);
         float *attnOutScales = nullptr;
         float *attnOutZeros = nullptr;
         float *attnOutBias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
@@ -698,7 +714,7 @@ protected:
                     qkvScales, qkvSize, DataType::fp32);
 
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.qweight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize, dt);
+                    attnOutWeight, qSize * hiddenSize, dt);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.zeros.0.bin",
                     attnOutZeros, hiddenSize, DataType::fp32);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.scales.0.bin",
@@ -754,7 +770,7 @@ protected:
                     modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.query_key_value.weight.0.bin",
                     qkvWeight, hiddenSize * qkvSize);
             loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".attention.dense.weight.0.bin",
-                    attnOutWeight, hiddenSize * hiddenSize);
+                    attnOutWeight, qSize * hiddenSize);
 
             // Stardard 2 layer MLP
             if (fileExists(

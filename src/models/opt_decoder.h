@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,3 +46,19 @@ private:
     OptEmbedding<float16_t> *embedding;
     LayerNorm finalLN;
 };
+
+REGISTER_DECODER(OptDecoder, gpt, float)
+REGISTER_DECODER(OptDecoder, gpt, float16_t)
+REGISTER_DECODER(OptDecoder, gpt, bfloat16_t)
+REGISTER_DECODER(OptDecoder, gpt, int8_t)
+REGISTER_DECODER(OptDecoder, gpt, w8a8_t)
+REGISTER_DECODER(OptDecoder, gpt, uint4x2_t)
+REGISTER_DECODER(OptDecoder, gpt, nf4x2_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(OptDecoder, gpt, w8a8_t, nf4x2_t)

@@ -45,6 +45,12 @@ inline __m512 load_avx512<float16_t>(const float16_t *addr) {
     return v;
 }
 
+template <>
+inline __m512 load_avx512<int8_t>(const int8_t *addr) {
+    __m512 v = _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(_mm_maskz_loadu_epi8(0xffff, addr)));
+    return v;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
@@ -63,6 +69,12 @@ inline __m512 load_avx512<bfloat16_t>(__mmask16 mask, const bfloat16_t *addr) {
 template <>
 inline __m512 load_avx512<float16_t>(__mmask16 mask, const float16_t *addr) {
     __m512 v = _mm512_cvtph_ps(_mm256_maskz_loadu_epi16(mask, addr));
+    return v;
+}
+
+template <>
+inline __m512 load_avx512<int8_t>(__mmask16 mask, const int8_t *addr) {
+    __m512 v = _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(_mm_maskz_loadu_epi8(mask, addr)));
     return v;
 }
 

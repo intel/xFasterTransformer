@@ -21,30 +21,13 @@ import gradio as gr
 import argparse
 import time
 import torch
-from demo_utils import ChatDemo
+from demo_utils import ChatDemo, XFT_DTYPE_LIST
 
-
-DTYPE_LIST = [
-    "fp16",
-    "bf16",
-    "int8",
-    "w8a8",
-    "int4",
-    "nf4",
-    "bf16_fp16",
-    "bf16_int8",
-    "bf16_w8a8",
-    "bf16_int4",
-    "bf16_nf4",
-    "w8a8_int8",
-    "w8a8_int4",
-    "w8a8_nf4",
-]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-t", "--token_path", type=str, default="/data/llama-2-7b-chat-hf", help="Path to token file")
-parser.add_argument("-m", "--model_path", type=str, default="/data/llama-2-7b-chat-cpu", help="Path to model file")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-t", "--token_path", type=str, default="/data/models/Yi-6B-Chat", help="Path to token file")
+parser.add_argument("-m", "--model_path", type=str, default="/data/models/Yi-6B-Chat-xft", help="Path to model file")
+parser.add_argument("-d", "--dtype", type=str, choices=XFT_DTYPE_LIST, default="fp16", help="Data type")
 
 
 class YiDemo(ChatDemo):
@@ -53,20 +36,21 @@ class YiDemo(ChatDemo):
         if history is None:
             history = []
 
-        history.append((query, None))
+        _history = history + [(query, None)]
         messages = []
-        for idx, (user_msg, model_msg) in enumerate(history):
+        for idx, (user_msg, model_msg) in enumerate(_history):
             print(f"user_msg={user_msg}, model_msg={model_msg}")
-            if idx == len(history) - 1 and not model_msg:
+            if idx == len(_history) - 1 and not model_msg:
                 messages.append({"role": "user", "content": user_msg})
                 break
             if user_msg:
                 messages.append({"role": "user", "content": user_msg})
             if model_msg:
                 messages.append({"role": "assistant", "content": model_msg})
-        
+
         model_inputs = self.tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt").to("cpu")
+            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt"
+        ).to("cpu")
         return model_inputs
 
     def html_func(self):
@@ -75,8 +59,14 @@ class YiDemo(ChatDemo):
 
     def config(self):
         return {
-            "stop_words_ids": [[2], [6], [7], [8]]
+            "eos_token_id": 7,
+            "pad_token_id": 0,
+            "do_sample": True,
+            "temperature": 0.6,
+            "top_p": 0.8,
+            "stop_words_ids": [[2], [6], [7], [8]],
         }
+
 
 if __name__ == "__main__":
     args = parser.parse_args()

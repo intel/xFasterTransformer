@@ -126,12 +126,13 @@ private:
     uint64_t size3;
 
 public:
-    DecoderContext(int _layers, int _hiddenSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
+    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
             int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
             bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
+        , attHeadSize(_headSize)
         , intermediateSize(_imSize)
         , attHeadNum(_attHeadNum)
         , kvHeadNum(_kvHeadNum)
@@ -151,7 +152,6 @@ public:
         , tpRank(_splitIdx)
         , epsilon(epsilon) {
         if (attHeadNum != 0) {
-            this->attHeadSize = hiddenSize / attHeadNum;
             this->attFactor = 1 / sqrtf(attHeadSize);
         }
 
@@ -191,13 +191,6 @@ public:
     }
 
     void ResetConfigReader(std::string _configPath, std::string _sectionName = "") {
-        fs::path filePath(_configPath);
-
-        if (!fs::exists(filePath)) {
-            printf("Config File %s does not exist!", configPath.c_str());
-            exit(-1);
-        }
-
         this->configPath = _configPath;
         this->configReader = INIReader(_configPath);
         if (this->configReader.ParseError() < 0) {
@@ -282,7 +275,7 @@ public:
         int vCols = kCols;
         int qkvCols = qCols + kCols + vCols;
         int qkvStride = (qkvCols % 512 == 0 ? qkvCols + pad : qkvCols); // stride for the concated QKV
-        int mlpFactor = (this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
+        int mlpFactor = (this->actType == GELU || this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
         auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
         int imCols = range.second - range.first;
         int imStride = (imCols % 512 == 0 ? imCols + pad : imCols); // stride for intermediate output

@@ -18,13 +18,15 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
 
 #include "my_types.h"
-#include "uint4x2.h"
 #include "normal_float4x2.h"
+#include "environment.h"
+#include "uint4x2.h"
 
 class Debugger {
 public:
@@ -35,8 +37,8 @@ public:
 
     Debugger(const std::string &filename) {
         std::string debugFilePath = filename;
-        if (std::getenv("XFT_DEBUG_DIR") != nullptr) {
-            std::string debugDir = std::getenv("XFT_DEBUG_DIR");
+        std::string debugDir = Env::getInstance().getDebugDir();
+        if (!debugDir.empty()) {
             if (debugDir.back() != '/') { debugDir += '/'; }
             debugFilePath = debugDir + filename;
 
@@ -99,15 +101,15 @@ public:
     void outputStream(std::ostringstream &oss, T val, bool isFinished = false) {
         if (isFinished == false) {
             if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
-                oss << float(val.get_v1()) << ", " << float(val.get_v2()) << ", ";
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", " << float(val.get_v2()) << ", ";
             } else {
-                oss << float(val) << ", ";
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val) << ", ";
             }
         } else {
             if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
-                oss << float(val.get_v1()) << ", " << float(val.get_v2()) << std::endl;
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", " << float(val.get_v2()) << std::endl;
             } else {
-                oss << float(val) << std::endl;
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val) << std::endl;
             }
         }
     }
@@ -115,72 +117,72 @@ public:
     template <typename T>
     void dumpMatrix(hpj::Matrix<T> &m, bool print_all = false) {
         std::ostringstream oss;
-        int rows = m.Rows();
-        int cols = m.Cols();
+        uint64_t rows = m.Rows();
+        uint64_t cols = m.Cols();
 
         // Collect values to string
         if (print_all == true) {
-            for (int i = 0; i < rows; ++i) {
-                for (int j = 0; j < cols - 1; ++j) {
+            for (uint64_t i = 0; i < rows; ++i) {
+                for (uint64_t j = 0; j < cols - 1; ++j) {
                     outputStream(oss, m(i, j));
                 }
                 outputStream(oss, m(i, cols - 1), true);
             }
         } else {
             if (rows <= 12) {
-                for (int i = 0; i < rows; ++i) {
+                for (uint64_t i = 0; i < rows; ++i) {
                     if (cols <= 12) {
-                        for (int j = 0; j < cols - 1; ++j) {
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
+                        for (uint64_t j = 0; j < 6; ++j) {
                             outputStream(oss, m(i, j));
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     }
                     outputStream(oss, m(i, cols - 1), true);
                 }
             } else {
-                for (int i = 0; i < 6; ++i) {
+                for (uint64_t i = 0; i < 6; ++i) {
                     if (cols <= 12) {
-                        for (int j = 0; j < cols - 1; ++j) {
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
+                        for (uint64_t j = 0; j < 6; ++j) {
                             outputStream(oss, m(i, j));
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     }
                     outputStream(oss, m(i, cols - 1), true);
                 }
 
-                oss << "..." << std::endl;
+                oss << std::setprecision(8) << std::setw(15) << std::right << "..." << std::endl;
 
-                for (int i = rows - 6; i < rows; ++i) {
+                for (uint64_t i = rows - 6; i < rows; ++i) {
                     if (cols < 10) {
-                        for (int j = 0; j < cols - 1; ++j) {
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
+                        for (uint64_t j = 0; j < 6; ++j) {
                             outputStream(oss, m(i, j));
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
                             outputStream(oss, m(i, j));
                         }
                     }
@@ -198,76 +200,76 @@ public:
     }
 
     template <typename T>
-    void dumpMatrix(T *data, int rows, int cols, int stride, bool print_all = false) {
+    void dumpMatrix(T *data, uint64_t rows, uint64_t cols, uint64_t stride, bool print_all = false) {
         std::ostringstream oss;
 
         // Collect values to string
         if (print_all == true) {
-            for (int i = 0; i < rows; ++i) {
-                for (int j = 0; j < cols - 1; ++j) {
-                    oss << float(data[i * stride + j]) << ", ";
+            for (uint64_t i = 0; i < rows; ++i) {
+                for (uint64_t j = 0; j < cols - 1; ++j) {
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                 }
                 oss << float(data[i * stride + cols - 1]) << std::endl;
             }
         } else {
             if (rows <= 12) {
-                for (int i = 0; i < rows; ++i) {
+                for (uint64_t i = 0; i < rows; ++i) {
                     if (cols <= 12) {
-                        for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < 6; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     }
-                    oss << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
                 }
             } else {
-                for (int i = 0; i < 6; ++i) {
+                for (uint64_t i = 0; i < 6; ++i) {
                     if (cols <= 12) {
-                        for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < 6; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     }
-                    oss << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
                 }
 
-                oss << "..." << std::endl;
+                oss << std::setprecision(8) << std::setw(15) << std::right << "..." << std::endl;
 
-                for (int i = rows - 6; i < rows; ++i) {
+                for (uint64_t i = rows - 6; i < rows; ++i) {
                     if (cols < 10) {
-                        for (int j = 0; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     } else {
-                        for (int j = 0; j < 6; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = 0; j < 6; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
 
-                        oss << "..., ";
+                        oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
-                        for (int j = cols - 6; j < cols - 1; ++j) {
-                            oss << float(data[i * stride + j]) << ", ";
+                        for (uint64_t j = cols - 6; j < cols - 1; ++j) {
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
                         }
                     }
-                    oss << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
                 }
             }
         }
@@ -282,11 +284,11 @@ public:
 
     // Function to store float* data to a file
     template <typename T>
-    void storeMatrix(const std::string &filename, const T *data, int rows, int cols) {
+    void storeMatrix(const std::string &filename, const T *data, uint64_t rows, uint64_t cols) {
         std::ofstream file(filename, std::ios::binary);
         if (file.is_open()) {
-            file.write(reinterpret_cast<const char *>(&rows), sizeof(int));
-            file.write(reinterpret_cast<const char *>(&cols), sizeof(int));
+            file.write(reinterpret_cast<const char *>(&rows), sizeof(uint64_t));
+            file.write(reinterpret_cast<const char *>(&cols), sizeof(uint64_t));
             file.write(reinterpret_cast<const char *>(data), rows * cols * sizeof(T));
             file.close();
         } else {
@@ -295,11 +297,11 @@ public:
     }
 
     // Function to load float* data from a file
-    void loadMatrixSize(const std::string &filename, int &rows, int &cols) {
+    void loadMatrixSize(const std::string &filename, uint64_t &rows, uint64_t &cols) {
         std::ifstream file(filename, std::ios::binary);
         if (file.is_open()) {
-            file.read(reinterpret_cast<char *>(&rows), sizeof(int));
-            file.read(reinterpret_cast<char *>(&cols), sizeof(int));
+            file.read(reinterpret_cast<char *>(&rows), sizeof(uint64_t));
+            file.read(reinterpret_cast<char *>(&cols), sizeof(uint64_t));
             file.close();
         } else {
             std::cerr << "Unable to open file for reading: " << filename << std::endl;
@@ -307,11 +309,11 @@ public:
     }
 
     template <typename T>
-    void loadMatrixData(const std::string &filename, T *data, int rows, int cols) {
+    void loadMatrixData(const std::string &filename, T *data, uint64_t rows, uint64_t cols) {
         std::ifstream file(filename, std::ios::binary);
         if (file.is_open()) {
-            file.read(reinterpret_cast<char *>(&rows), sizeof(int));
-            file.read(reinterpret_cast<char *>(&cols), sizeof(int));
+            file.read(reinterpret_cast<char *>(&rows), sizeof(uint64_t));
+            file.read(reinterpret_cast<char *>(&cols), sizeof(uint64_t));
             file.read(reinterpret_cast<char *>(data), rows * cols * sizeof(T));
             file.close();
         } else {

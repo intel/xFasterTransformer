@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -174,10 +174,3 @@ void Baichuan<WeiT>::lastLayerNormForward(float *input, float *output, int rows)
     finalLN.forward(input, output, rows);
 }
 
-template class Baichuan<float>;
-template class Baichuan<float16_t>;
-template class Baichuan<bfloat16_t>;
-template class Baichuan<int8_t>;
-template class Baichuan<w8a8_t>;
-template class Baichuan<uint4x2_t>;
-template class Baichuan<nf4x2_t>;

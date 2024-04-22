@@ -48,7 +48,7 @@ public:
 };
 
 #define GEMMVERBOSE(api_func, compute_func)                \
-    if (Env::getVerbose() >= 1) {                          \
+    if (Env::getInstance().getVerbose() >= 1) {            \
         TimeLine t(api_func);                              \
         FunTimer timer;                                    \
         compute_func;                                      \

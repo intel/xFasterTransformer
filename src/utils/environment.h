@@ -14,13 +14,59 @@
 // ============================================================================
 #pragma once
 #include <iostream>
-#include "dtype.h"
 #include <sstream>
+#include <string>
+#include "dtype.h"
 
 class Env {
 
 public:
-    static void initEnvValue() {
+    // Meyers' Singleton
+    static Env &getInstance() {
+        static Env instance;
+        return instance;
+    }
+
+    // Don't allow copying & assignment
+    Env(Env const &) = delete;
+    void operator=(Env const &) = delete;
+
+    // get Verbose
+    int getVerbose() { return verboseValue; }
+
+    // get Pipeline Parallel
+    xft::DeviceKind getEngineKind() { return engineKindValue; }
+    int getEngineIndex() { return engineIndexValue; }
+
+    // get Engine Kind and Index
+    int getPipelineStage() { return pipelineStageValue; }
+
+    // get AMX Threshold M
+    int getAMXThresholdM() { return AMXThresholdMValue; }
+
+    // get THP_enabled
+    bool getTHPEnabled() { return thpEnabled; }
+
+    // get fake Model Enabled
+    bool getFakeModelEnabled() { return fakeModelEnabled; }
+
+    // get fake Load Info Enabled
+    bool getFakeLoadInfoEnabled() { return fakeLoadInfoEnabled; }
+
+    // get Debug Dir
+    std::string getDebugDir() { return debugDir; }
+
+    // get Timeline Whitelist
+    std::string getTimelineWhitelist() { return timelineWhitelist; }
+
+    // get Single Instance
+    bool getSingleInstance() { return singleInstance; }
+
+    // get OneCCL Enabled
+    bool getOneCCLEnabled() { return oneCCLEnabled; }
+
+private:
+    Env() {
         // init Verbose
         initVerbose();
 
@@ -33,57 +79,47 @@ public:
         // init AMX Threshold M
         initAMXThresholdM();
 
-        // TODO: Move XFT_FAKE_MODEL here.
-        if (getenv("XFT_FAKE_MODEL") ? atoi(getenv("XFT_FAKE_MODEL")) : 0) {
-            printf("[INFO] XFT_FAKE_MODEL is enabled. Using `export XFT_FAKE_LOAD_INFO=1` for more details.\n");
-        }
+        // init THPEnabled
+        initTHPEnabled();
+
+        // init fake Model Enabled
+        initFakeModelEnabled();
+
+        // init fake Load Info Enabled
+        initFakeLoadInfoEnabled();
+
+        // init Debug Dir
+        initDebugDir();
+
+        // init Timeline Whitelist
+        initTimelineWhitelist();
+
+        // init Single Instance
+        initSingleInstance();
+
+        // init OneCCL Enabled
+        initOneCCLEnabled();
     }
 
-    // get Verbose
-    static int getVerbose() { return verboseValue(); }
-
-    // get Pipeline Parallel
-    static xft::DeviceKind getEngineKind() { return engineKindValue(); }
-    static int getEngineIndex() { return engineIndexValue(); }
-
-    // get Engine Kind and Index
-    static int getPipelineStage() { return pipelineStageValue(); }
-
-    // get AMX Threshold M
-    static int getAMXThresholdM() { return AMXThresholdMValue(); }
-
-private:
     // Verbose
-    static int &verboseValue() {
-        static int value = 0;
-        return value;
-    }
-
-    static void initVerbose() {
+    int verboseValue = 0;
+    void initVerbose() {
         char *xft_verbose_value = getenv("XFT_VERBOSE");
         if (xft_verbose_value != NULL) {
             int value = atoi(xft_verbose_value);
             if (value >= 0)
-                verboseValue() = value;
+                verboseValue = value;
             else
                 printf("[ERROR] XFT_VERBOSE value need to be greater than or equal to 0.\n");
         } else {
-            verboseValue() = 0;
+            verboseValue = 0;
         }
     }
 
     // Engine Kind and Index
-    static xft::DeviceKind &engineKindValue() {
-        static xft::DeviceKind value = xft::DeviceKind::iCPU;
-        return value;
-    }
-
-    static int &engineIndexValue() {
-        static int value = 0;
-        return value;
-    }
-
-    static void initEngineKindIndex() {
+    xft::DeviceKind engineKindValue = xft::DeviceKind::iCPU;
+    int engineIndexValue = 0;
+    void initEngineKindIndex() {
         char *xft_engine_env = getenv("XFT_ENGINE");
         if (xft_engine_env != NULL) {
             std::string xft_engine_str(xft_engine_env);
@@ -92,11 +128,11 @@ private:
 
             if (std::getline(ss, token, ':')) {
                 if (token == "CPU") {
-                    engineKindValue() = xft::DeviceKind::iCPU;
-                    engineIndexValue() = 0;
+                    engineKindValue = xft::DeviceKind::iCPU;
+                    engineIndexValue = 0;
                     return;
                 } else if (token == "GPU")
-                    engineKindValue() = xft::DeviceKind::iGPU;
+                    engineKindValue = xft::DeviceKind::iGPU;
                 else
                     printf("[ERROR] Undefined device kind in XFT_ENGINE.\n");
             } else {
@@ -106,58 +142,101 @@ private:
             if (std::getline(ss, token, ':')) {
                 int value = std::stoi(token);
                 if (value >= 0)
-                    engineIndexValue() = value;
+                    engineIndexValue = value;
                 else
                     printf("[ERROR] Undefined device index in XFT_ENGINE.\n");
             } else {
-                engineIndexValue() = -1;
+                engineIndexValue = -1;
             }
         } else {
-            engineKindValue() = xft::DeviceKind::iCPU;
-            engineIndexValue() = 0;
+            engineKindValue = xft::DeviceKind::iCPU;
+            engineIndexValue = 0;
         }
     }
 
     // Pipeline Parallel
-    static int &pipelineStageValue() {
-        static int value = 1;
-        return value;
-    }
-
-    static void initPipelineStage() {
+    int pipelineStageValue = 1;
+    void initPipelineStage() {
         char *xft_pipeline_value = getenv("XFT_PIPELINE_STAGE");
         if (xft_pipeline_value != NULL) {
 #ifdef PIPELINE_PARALLEL
             int value = atoi(xft_pipeline_value);
             if (value >= 1)
-                pipelineStageValue() = value;
+                pipelineStageValue = value;
             else
                 printf("[ERROR] XFT_PIPELINE_STAGE value need to be greater than 0.\n");
 #else
             printf("[WARNING] XFT_PIPELINE_STAGE need to build with WITH_PIPELINE_PARALLEL=ON.\n");
 #endif
         } else {
-            pipelineStageValue() = 1;
+            pipelineStageValue = 1;
         }
     }
 
     // AMX Threshold M
-    static int &AMXThresholdMValue() {
-        static int value = 1;
-        return value;
-    }
-
-    static void initAMXThresholdM() {
+    int AMXThresholdMValue = 1;
+    void initAMXThresholdM() {
         char *xFTAMXThresholdMValue = getenv("XFT_USE_AMX_M");
         if (xFTAMXThresholdMValue != NULL) {
             int value = atoi(xFTAMXThresholdMValue);
             if (value >= 0)
-                AMXThresholdMValue() = value;
+                AMXThresholdMValue = value;
             else
                 printf("[ERROR] XFT_USE_AMX_M value need to be greater than or equal to 0.\n");
         } else {
-            AMXThresholdMValue() = 1;
+            AMXThresholdMValue = 1;
         }
     }
 
+    // ENABLE_THP
+    bool thpEnabled = false;
+    void initTHPEnabled() {
+        char *xftThpValue = getenv("ENABLE_THP");
+        thpEnabled = xftThpValue != nullptr ? std::atoi(xftThpValue) : false;
+    }
+
+    // XFT_FAKE_MODEL
+    bool fakeModelEnabled = false;
+    void initFakeModelEnabled() {
+        char *xftFakeModelValue = getenv("XFT_FAKE_MODEL");
+        fakeModelEnabled = xftFakeModelValue != nullptr ? std::atoi(xftFakeModelValue) : false;
+        if (fakeModelEnabled) {
+            printf("[INFO] XFT_FAKE_MODEL is enabled. Using `export XFT_FAKE_LOAD_INFO=1` for more details.\n");
+        }
+    }
+
+    // XFT_FAKE_LOAD_INFO
+    bool fakeLoadInfoEnabled = false;
+    void initFakeLoadInfoEnabled() {
+        char *xftFakeLoadInfoValue = getenv("XFT_FAKE_LOAD_INFO");
+        fakeLoadInfoEnabled = xftFakeLoadInfoValue != nullptr ? std::atoi(xftFakeLoadInfoValue) : false;
+    }
+
+    // XFT_DEBUG_DIR
+    std::string debugDir = "";
+    void initDebugDir() {
+        char *xftDebugDirValue = getenv("XFT_DEBUG_DIR");
+        debugDir = xftDebugDirValue != nullptr ? xftDebugDirValue : "";
+    }
+
+    // XFT_TIMELINE_WHITELIST
+    std::string timelineWhitelist = "";
+    void initTimelineWhitelist() {
+        char *xftTimelineWhitelistValue = getenv("XFT_TIMELINE_WHITELIST");
+        timelineWhitelist = xftTimelineWhitelistValue != nullptr ? xftTimelineWhitelistValue : "";
+    }
+
+    // SINGLE_INSTANCE
+    bool singleInstance = false;
+    void initSingleInstance() {
+        char *xftSingleInstanceValue = getenv("SINGLE_INSTANCE");
+        singleInstance = xftSingleInstanceValue != nullptr ? std::atoi(xftSingleInstanceValue) : false;
+    }
+
+    // XFT_ONECCL
+    bool oneCCLEnabled = false;
+    void initOneCCLEnabled() {
+        char *xftOneCCLValue = getenv("XFT_ONECCL");
+        oneCCLEnabled = xftOneCCLValue != nullptr ? std::atoi(xftOneCCLValue) : false;
+    }
 };

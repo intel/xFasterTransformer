@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
-#include <tuple>
 #include <cstdint>
+#include <tuple>
 
 class DecoderContext;
 class Messenger;
@@ -25,7 +25,6 @@ public:
     // Return the decoding result, split offset, and split size
     // The returned result is a split representing the possibilities of next token, like the shadow part in below graph
     //                                         splitOffset
-    //                                              \ 
     //                                               \|<-splitSize->|
     //    _                ___________________________v______________________________________
     //    ^               |             |             |||||||||||||||             |          |
