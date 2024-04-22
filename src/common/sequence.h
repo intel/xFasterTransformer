@@ -19,9 +19,9 @@
 #include <unordered_map>
 
 /*
-                           SamplePool
+                           SequencePool
                           ┌──────┬──────┬──────┐
-                          │      │      │  ◄───┼──┬─ SampleMeta
+                          │      │      │  ◄───┼──┬─ SequenceMeta
                           ├──────┼──────┼──────┤  │
     BatchInputs           │      │      │  ◄───┼──┘
       │                   └▲─┬─▲─┴──────┴──────┘
@@ -39,65 +39,77 @@
 
 namespace xft {
 
-// The Sample is one of batch inputs
-template <typename T>
-class SampleMeta {
+// The Sequence is one sequence of batch inputs and includes the generated tokens.
+class SequenceMeta {
 public:
-    SampleMeta(int32_t _sampleID, int32_t _inputSeqLen, std::vector<int32_t> _inputTokens)
-        : sampleID(_sampleID), inputSeqLen(_inputSeqLen), bePrefill(true) {
+    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> _inputTokens)
+        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), step(0) {
         inputTokens.resize(_inputSeqLen);
         inputTokens.assign(_inputTokens.begin(), _inputTokens.end());
-        pastTokens.resize(_inputSeqLen);
+        nextTokens.resize(_inputSeqLen);
     }
 
-    SampleMeta(int32_t _sampleID, int32_t _inputSeqLen, int32_t _hiddenSize)
-        : sampleID(_sampleID), inputSeqLen(_inputSeqLen), hiddenSize(_hiddenSize), bePrefill(true) {
-        inputTokens.resize(_inputSeqLen);
-        pastTokens.resize(_inputSeqLen);
+    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
+        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), inputTokens(_inputSeqLen, 0), step(0) {
+        nextTokens.resize(_inputSeqLen);
     }
 
-    void ResetKVCache(int32_t _hiddenSize, int32_t _pastSeqLen, int32_t _layerIdx, void *_hiddenStates, void *_kvm) {
-        hiddenSize = _hiddenSize;
-        pastSeqLen = _pastSeqLen;
-        layerIdx = _layerIdx;
-        hiddenStates.Resize(inputSeqLen, hiddenSize, hiddenSize);
-        memcpy(hiddenStates.Data(), _hiddenStates, sizeof(T) * inputSeqLen * hiddenSize);
-        kvm = _kvm;
-    }
+    ~SequenceMeta() {}
 
-    int32_t getSampleID() const { return sampleID; }
+    int32_t getSequenceID() const { return sequenceID; }
 
-    // Get the input tokens in sample
-    int32_t *getInputTokens() const { return inputTokens.data(); }
+    // Get the input tokens in sequence
+    int32_t getInputSeqLen() const { return inputSeqLen; }
 
-    // For generated tokens
-    void addGeneratedToken(int32_t token) { pastTokens.push_back(token); }
+    const int32_t *getInputTokens() const { return inputTokens.data(); }
 
-    int32_t getLatestToken() const { return pastTokens.back(); }
+    int32_t getPastSeqLen() const { return pastSeqLen; }
 
-    int32_t *getTotalTokens() const { return pastTokens.data(); }
+    void setPastSeqLen(int32_t _pastSeqLen) { pastSeqLen = _pastSeqLen; }
 
-    bool isPrefill() const { return bePrefill; }
+    // For next tokens
+    void addNextToken(int32_t token) { nextTokens.push_back(token); }
 
-    void setPrefill(bool _bePrefill) { bePrefill = _bePrefill; }
+    int32_t getLatestToken() const { return nextTokens.back(); }
+
+    const int32_t *getTotalTokens() const { return nextTokens.data(); }
+
+    int32_t getStep() const { return step; }
+
+    void setStep(int32_t _step) { step = _step; }
 
 private:
-    int32_t sampleID;
+    int32_t sequenceID;
     int32_t inputSeqLen;
-    int32_t hiddenSize;
     int32_t pastSeqLen;
-    std::vector<int32_t> inputTokens;
-    std::vector<int32_t> pastTokens; // generated tokens
+    std::vector<int32_t> inputTokens; // input tokens + next tokens
+    std::vector<int32_t> nextTokens; // next tokens
 
-    // Indicates whether the sample is in the prefill phase
-    bool bePrefill;
+    // Indicates whether the sequence is in the prefill phase
+    int32_t step;
 
-    int32_t layerIdx;
-    hpj::Matrix<T> hiddenStates;
-    void *kvm; // KVCacheManager<KVCacheT>
+#ifdef PIPELINE_PARALLEL
+public:
+    template <typename T>
+    void allocBuffer(int32_t hiddenSize, void *_hiddenStates) {
+        hiddenStates = xft::alloc(sizeof(T) * getInputSeqLen() * hiddenSize);
+        memcpy(hiddenStates, _hiddenStates, sizeof(T) * getInputSeqLen() * hiddenSize);
+    }
+
+private:
+    int32_t hiddenSize;
+    void* hiddenStates;
+#endif
 };
 
-template <typename T>
+// For beam searcher
+// class SequenceGroupMeta {
+// public:
+//     SequenceGroupMeta(int32_t num_beams) { sequence = new SequenceMeta[num_beams]; }
+
+//     SequenceMeta *sequence;
+// };
+
 class InputQueue {
 public:
     static InputQueue &getInstance() {
@@ -105,40 +117,33 @@ public:
         return instance;
     }
 
-    int32_t createSampleID() {
-        int32_t id = sampleID++;
+    int32_t createSequenceID() {
+        int32_t id = sequenceID++;
         if (id >= 10 * 1024) {
-            sampleID = 0;
-            id = sampleID++;
+            sequenceID = 0;
+            id = sequenceID++;
         }
         return id;
     }
 
     bool empty() { return queue.empty(); }
 
-    SampleMeta<T> *pop() {
+    SequenceMeta *pop() {
         auto buffer = queue.front();
         queue.pop();
         return buffer;
     }
 
-    void push(SampleMeta<T> *buffer) { queue.push(buffer); }
+    void push(SequenceMeta *buffer) { queue.push(buffer); }
 
 private:
     InputQueue() {}
 
-    static int32_t sampleID;
-    static int32_t tokenID;
-    std::queue<SampleMeta<T> *> queue;
+    int32_t sequenceID = 0;
+    std::queue<SequenceMeta *> queue;
 };
 
-template <typename T>
-int32_t InputQueue<T>::sampleID = 0;
 
-template <typename T>
-int32_t InputQueue<T>::tokenID = 0;
-
-template <typename T>
 class TaskWaitingQueue {
 public:
     static TaskWaitingQueue &getInstance() {
@@ -156,45 +161,45 @@ public:
         return full;
     }
 
-    SampleMeta<T> *pop() {
+    SequenceMeta *pop() {
         auto buffer = queue.front();
         queue.pop();
         return buffer;
     }
 
-    void push(SampleMeta<T> *buffer) { queue.push(buffer); }
+    void push(SequenceMeta *buffer) { queue.push(buffer); }
 
 private:
     TaskWaitingQueue() {}
 
-    std::queue<SampleMeta<T> *> queue;
+    std::queue<SequenceMeta *> queue;
 };
 
-template <typename T>
-class SamplePool {
+
+class SequencePool {
 public:
-    static SamplePool &getInstance() {
-        static SamplePool instance;
+    static SequencePool &getInstance() {
+        static SequencePool instance;
         return instance;
     }
 
-    bool add(int32_t key, SampleMeta<T> *sample) {
+    bool add(int32_t key, SequenceMeta *sequence) {
         bool exist = has(key);
-        if (!exist) { hub[key] = sample; }
+        if (!exist) { hub[key] = sequence; }
 
         return exist;
     }
 
-    void forceAdd(int32_t key, SampleMeta<T> *sample) {
+    void forceAdd(int32_t key, SequenceMeta *sequence) {
         auto it = hub.find(key);
         if (it != hub.end()) { delete it->second; }
 
-        hub[key] = sample;
+        hub[key] = sequence;
     }
 
     bool has(int32_t key) const { return hub.find(key) != hub.end(); }
 
-    SampleMeta<T> *get(int32_t key) const {
+    SequenceMeta *get(int32_t key) const {
         auto it = hub.find(key);
         if (it != hub.end()) {
             return it->second;
@@ -207,12 +212,12 @@ public:
         if (has(key)) { hub.erase(key); }
     }
 
-    bool replace(int32_t oldKey, SampleMeta<T> *newSample) {
+    bool replace(int32_t oldKey, SequenceMeta *newSequence) {
         bool ret = false;
         auto it = hub.find(oldKey);
         if (it != hub.end()) {
             delete it->second;
-            it->second = newSample;
+            it->second = newSequence;
             ret = true;
         }
 
@@ -220,9 +225,11 @@ public:
     }
 
 private:
-    SamplePool() {}
+    SequencePool() {}
 
-    std::unordered_map<int32_t, SampleMeta<T> *> hub;
+    std::unordered_map<int32_t, SequenceMeta *> hub;
+
+    //mgr
 };
 
 } // namespace xft

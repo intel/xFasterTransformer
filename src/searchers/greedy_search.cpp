@@ -14,7 +14,7 @@
 // ============================================================================
 #include "greedy_search.h"
 #include "messenger.h"
-#include "sample_info.h"
+#include "sequence.h"
 #include "search_utils.h"
 #include "thread_util.h"
 
@@ -45,17 +45,17 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
             ThreadPool::getInstance().addTask([predictor_world_rank, this] {
                 while (true) {
-                    int32_t sampleID;
-                    MPI_Recv(&sampleID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
+                    int32_t sequenceID;
+                    MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
                             MPI_STATUS_IGNORE);
-                    TimeLine t("GreedySearch.MPI_Recv.prompt" + std::to_string(sampleID));
+                    TimeLine t("GreedySearch.MPI_Recv.sequence" + std::to_string(sequenceID));
                     MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
                             predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    if (SamplePool<float>::getInstance().has(sampleID)) {
-                        auto prompt = SamplePool<float>::getInstance().get(sampleID);
-                        TaskWaitingQueue<float>::getInstance().push(prompt);
+                    if (SequencePool::getInstance().has(sequenceID)) {
+                        auto sequence = SequencePool::getInstance().get(sequenceID);
+                        TaskWaitingQueue::getInstance().push(sequence);
                     } else {
-                        printf("Error: should have sampleID\n");
+                        printf("Error: should have sequenceID\n");
                         fflush(stdout);
                     }
                 }
@@ -64,10 +64,10 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = this->search(result);
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
-            TimeLine t("GreedySearch.MPI_Send.prompt" + std::to_string(ctx->sampleID));
+            TimeLine t("GreedySearch.MPI_Send.sequence" + std::to_string(ctx->sequenceID));
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Send(&ctx->sampleID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
+            MPI_Send(&ctx->sequenceID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
             MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file

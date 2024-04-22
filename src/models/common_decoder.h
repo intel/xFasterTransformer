@@ -35,7 +35,7 @@
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
-#include "sample_info.h"
+#include "sequence.h"
 
 using namespace xft;
 
@@ -279,7 +279,7 @@ public:
 
         int userSideBS = dims[0];
         int beamSize = dims[1];
-        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as samples are duplicated at step 0
+        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as sequence are duplicated at step 0
         int seqLen = dims[2];
         int pastSeqLen = step == 0 ? 0 : this->accSeqLen;
         int inputSeqLen = seqLen;
@@ -344,36 +344,38 @@ public:
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;
-            int32_t sampleID;
-            MPI_Recv(&sampleID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TimeLine t("Decoder.MPI_Recv." + std::to_string(sampleID));
+            int32_t sequenceID;
+            MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            TimeLine t("Decoder.MPI_Recv." + std::to_string(sequenceID));
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-            if (!SamplePool<AttnInT>::getInstance().has(sampleID)) {
-                SampleMeta<AttnInT> *sample = new SampleMeta<AttnInT>(sampleID, seqLen, hiddenSize);
-                sample->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                SamplePool<AttnInT>::getInstance().forceAdd(sample->getSampleID(), sample);
+            if (!SequencePool::getInstance().has(sequenceID)) {
+                SequenceMeta *sequence = new SequenceMeta(sequenceID, seqLen);
+                sequence->setPastSeqLen(pastSeqLen);
+                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().forceAdd(sequence->getSequenceID(), sequence);
             }
-            TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(sampleID));
+            TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
 
-        if (!InputQueue<AttnInT>::getInstance().empty()) {
-            if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-                auto sample = InputQueue<AttnInT>::getInstance().pop();
-                sample->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                SamplePool<AttnInT>::getInstance().forceAdd(sample->getSampleID(), sample);
-                TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(sample->getSampleID()));
+        if (!InputQueue::getInstance().empty()) {
+            if (!TaskWaitingQueue::getInstance().isFull()) {
+                auto sequence = InputQueue::getInstance().pop();
+                sequence->setPastSeqLen(pastSeqLen);
+                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().forceAdd(sequence->getSequenceID(), sequence);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
             }
         }
 
-        while(TaskWaitingQueue<float>::getInstance().empty());
+        while(TaskWaitingQueue::getInstance().empty());
 
-        SampleMeta<AttnInT> *runningTask;
-        if (!TaskWaitingQueue<AttnInT>::getInstance().empty()) {
-            runningTask = TaskWaitingQueue<AttnInT>::getInstance().pop();
-            ctx->sampleID = runningTask->getSampleID();
-            TimeLine t("Decoder.forward." + std::to_string(ctx->sampleID));
+        SequenceMeta *runningTask;
+        if (!TaskWaitingQueue::getInstance().empty()) {
+            runningTask = TaskWaitingQueue::getInstance().pop();
+            ctx->sequenceID = runningTask->getSequenceID();
+            TimeLine t("Decoder.step." + std::to_string(ctx->sequenceID));
 #endif
 
         // Decoder: forward
@@ -436,8 +438,8 @@ public:
             TimeLine t("Decoder.MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;
-            int32_t sampleID = runningTask->getSampleID();
-            MPI_Send(&sampleID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
+            int32_t sequenceID = runningTask->getSequenceID();
+            MPI_Send(&sequenceID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
