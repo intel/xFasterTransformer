@@ -183,18 +183,23 @@ public:
         return instance;
     }
 
-    bool add(int32_t key, SequenceMeta *sequence) {
-        bool exist = has(key);
-        if (!exist) { hub[key] = sequence; }
+    bool add(int32_t key, SequenceMeta *sequence, bool force = false) {
+        bool isSuccess = false;
+        if (force) {
+            auto it = hub.find(key);
+            if (it != hub.end()) { delete it->second; }
 
-        return exist;
-    }
+            hub[key] = sequence;
+            isSuccess = true;
+        } else {
+            bool exist = has(key);
+            if (!exist) {
+                hub[key] = sequence;
+                isSuccess = true;
+            }
+        }
 
-    void forceAdd(int32_t key, SequenceMeta *sequence) {
-        auto it = hub.find(key);
-        if (it != hub.end()) { delete it->second; }
-
-        hub[key] = sequence;
+        return isSuccess;
     }
 
     bool has(int32_t key) const { return hub.find(key) != hub.end(); }

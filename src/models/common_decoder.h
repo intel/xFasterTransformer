@@ -354,7 +354,7 @@ public:
                 SequenceMeta *sequence = new SequenceMeta(sequenceID, seqLen);
                 sequence->setPastSeqLen(pastSeqLen);
                 sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().forceAdd(sequence->getSequenceID(), sequence);
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
             }
             TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
@@ -364,7 +364,7 @@ public:
                 auto sequence = InputQueue::getInstance().pop();
                 sequence->setPastSeqLen(pastSeqLen);
                 sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().forceAdd(sequence->getSequenceID(), sequence);
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
                 TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
             }
         }
