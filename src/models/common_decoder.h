@@ -351,7 +351,7 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
             if (!SequencePool::getInstance().has(sequenceID)) {
-                SequenceMeta *sequence = new SequenceMeta(sequenceID, seqLen);
+                SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
                 sequence->setPastSeqLen(pastSeqLen);
                 sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
                 SequencePool::getInstance().add(sequence->getSequenceID(), sequence);

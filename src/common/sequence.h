@@ -39,7 +39,7 @@
 
 namespace xft {
 
-// The Sequence is one sequence of batch inputs and includes the generated tokens.
+// The SequenceMeta is one sequence of batch inputs and includes the generated tokens.
 class SequenceMeta {
 public:
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> _inputTokens)
@@ -110,6 +110,94 @@ private:
 //     SequenceMeta *sequence;
 // };
 
+
+//    SequencePool
+//    ┌──────┬──────┬──────┐
+//    │      │      │  ◄───┼──┬─ SequenceMeta
+//    ├──────┼──────┼──────┤  │
+//    │      │      │  ◄───┼──┘
+//    └──────┴──────┴──────┘
+class SequencePool {
+public:
+    static SequencePool &getInstance() {
+        static SequencePool instance;
+        return instance;
+    }
+
+    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen,
+            std::vector<int32_t> inputTokens = std::vector<int32_t>()) {
+        auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen, inputTokens);
+        return sequenceMeta;
+    }
+
+    bool add(int32_t sequenceID, SequenceMeta *sequence, bool force = false) {
+        bool isSuccess = false;
+        if (force) {
+            auto it = hub.find(sequenceID);
+            if (it != hub.end()) { 
+                remove(it->first);
+            }
+
+            hub[sequenceID] = sequence;
+            isSuccess = true;
+        } else {
+            bool exist = has(sequenceID);
+            if (!exist) {
+                hub[sequenceID] = sequence;
+                isSuccess = true;
+            }
+        }
+
+        return isSuccess;
+    }
+
+    bool has(int32_t sequenceID) const { return hub.find(sequenceID) != hub.end(); }
+
+    SequenceMeta *get(int32_t sequenceID) const {
+        auto it = hub.find(sequenceID);
+        if (it != hub.end()) {
+            return it->second;
+        } else {
+            return nullptr;
+        }
+    }
+
+    bool remove(int32_t sequenceID, bool deep = false) {
+        bool isSuccess = false;
+        if (has(sequenceID)) {
+            if (deep == true) {
+                auto it = hub.find(sequenceID);
+                if (it != hub.end()) { 
+                    delete it->second;
+                }
+            }
+            isSuccess = hub.erase(sequenceID);
+        }
+
+        return isSuccess;
+    }
+
+    bool replace(int32_t sequenceID, SequenceMeta *newSequenceMeta) {
+        bool isSuccess = false;
+        auto it = hub.find(sequenceID);
+        if (it != hub.end()) {
+            remove(it->first);
+            hub[sequenceID] = newSequenceMeta;
+            isSuccess = true;
+        }
+
+        return isSuccess;
+    }
+
+private:
+    SequencePool() {}
+
+    std::unordered_map<int32_t, SequenceMeta *> hub;
+
+    //mgr
+};
+
+
 class InputQueue {
 public:
     static InputQueue &getInstance() {
@@ -173,68 +261,6 @@ private:
     TaskWaitingQueue() {}
 
     std::queue<SequenceMeta *> queue;
-};
-
-
-class SequencePool {
-public:
-    static SequencePool &getInstance() {
-        static SequencePool instance;
-        return instance;
-    }
-
-    bool add(int32_t key, SequenceMeta *sequence, bool force = false) {
-        bool isSuccess = false;
-        if (force) {
-            auto it = hub.find(key);
-            if (it != hub.end()) { delete it->second; }
-
-            hub[key] = sequence;
-            isSuccess = true;
-        } else {
-            bool exist = has(key);
-            if (!exist) {
-                hub[key] = sequence;
-                isSuccess = true;
-            }
-        }
-
-        return isSuccess;
-    }
-
-    bool has(int32_t key) const { return hub.find(key) != hub.end(); }
-
-    SequenceMeta *get(int32_t key) const {
-        auto it = hub.find(key);
-        if (it != hub.end()) {
-            return it->second;
-        } else {
-            return nullptr;
-        }
-    }
-
-    void remove(int32_t key) {
-        if (has(key)) { hub.erase(key); }
-    }
-
-    bool replace(int32_t oldKey, SequenceMeta *newSequence) {
-        bool ret = false;
-        auto it = hub.find(oldKey);
-        if (it != hub.end()) {
-            delete it->second;
-            it->second = newSequence;
-            ret = true;
-        }
-
-        return ret;
-    }
-
-private:
-    SequencePool() {}
-
-    std::unordered_map<int32_t, SequenceMeta *> hub;
-
-    //mgr
 };
 
 } // namespace xft
