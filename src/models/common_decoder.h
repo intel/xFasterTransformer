@@ -351,19 +351,19 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
             if (!SamplePool<AttnInT>::getInstance().has(sampleID)) {
-                SampleMeta<AttnInT> *prompt = new SampleMeta<AttnInT>(sampleID, seqLen, hiddenSize);
-                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                SamplePool<AttnInT>::getInstance().insert(prompt->getSampleID(), prompt);
+                SampleMeta<AttnInT> *sample = new SampleMeta<AttnInT>(sampleID, seqLen, hiddenSize);
+                sample->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
+                SamplePool<AttnInT>::getInstance().forceAdd(sample->getSampleID(), sample);
             }
             TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(sampleID));
         }
 
         if (!InputQueue<AttnInT>::getInstance().empty()) {
             if (!TaskWaitingQueue<AttnInT>::getInstance().isFull()) {
-                auto prompt = InputQueue<AttnInT>::getInstance().pop();
-                prompt->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
-                SamplePool<AttnInT>::getInstance().insert(prompt->getSampleID(), prompt);
-                TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(prompt->getSampleID()));
+                auto sample = InputQueue<AttnInT>::getInstance().pop();
+                sample->ResetKVCache(hiddenSize, pastSeqLen, 0, embBuf, this->kvCacheMgr.get());
+                SamplePool<AttnInT>::getInstance().forceAdd(sample->getSampleID(), sample);
+                TaskWaitingQueue<AttnInT>::getInstance().push(SamplePool<AttnInT>::getInstance().get(sample->getSampleID()));
             }
         }
 

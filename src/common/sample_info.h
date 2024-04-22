@@ -152,7 +152,7 @@ public:
 
     bool isFull() {
         bool full = false;
-        if (this->size() >= 4) full = true;
+        if (this->size() >= Env::getInstance().getMaxRequestNum()) { full = true; }
         return full;
     }
 
@@ -180,18 +180,14 @@ public:
 
     bool add(int32_t key, SampleMeta<T> *sample) {
         bool exist = has(key);
-        if (!exist) {
-            hub[key] = sample;
-        }
+        if (!exist) { hub[key] = sample; }
 
         return exist;
     }
 
     void forceAdd(int32_t key, SampleMeta<T> *sample) {
         auto it = hub.find(key);
-        if (it != hub.end()) {
-            delete it->second;
-        }
+        if (it != hub.end()) { delete it->second; }
 
         hub[key] = sample;
     }
@@ -208,9 +204,7 @@ public:
     }
 
     void remove(int32_t key) {
-        if (has(key)) {
-            hub.erase(key);
-        }
+        if (has(key)) { hub.erase(key); }
     }
 
     bool replace(int32_t oldKey, SampleMeta<T> *newSample) {

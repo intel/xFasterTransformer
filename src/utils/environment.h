@@ -41,6 +41,9 @@ public:
     // get Engine Kind and Index
     int getPipelineStage() { return pipelineStageValue; }
 
+    // get Engine Kind and Index
+    int getMaxRequestNum() { return maxRequestNumValue; }
+
     // get AMX Threshold M
     int getAMXThresholdM() { return AMXThresholdMValue; }
 
@@ -72,6 +75,9 @@ private:
 
         // init Pipeline Parallel
         initPipelineStage();
+
+        // init Max request number
+        initMaxRequestNum();
 
         // init Engine Kind and Index
         initEngineKindIndex();
@@ -170,6 +176,21 @@ private:
 #endif
         } else {
             pipelineStageValue = 1;
+        }
+    }
+
+    // Max request number
+    int maxRequestNumValue = 1;
+    void initMaxRequestNum() {
+        char *xft_max_request_num_value = getenv("XFT_MAX_REQUEST_NUM");
+        if (xft_max_request_num_value != NULL) {
+            int value = atoi(xft_max_request_num_value);
+            if (value >= 1)
+                maxRequestNumValue = value;
+            else
+                printf("[ERROR] XFT_MAX_REQUEST_NUM value need to be greater than 0.\n");
+        } else {
+            maxRequestNumValue = 1;
         }
     }
 
