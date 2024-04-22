@@ -467,7 +467,7 @@ int main(int argc, char **argv) {
         }
         auto result = model.finalize();
 
-        if (true) {
+        if (isMaster) {
             std::cout << "\n[INFO] Final output is: " << std::endl;
             std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
             for (auto str : sent) {

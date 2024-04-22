@@ -145,7 +145,7 @@ std::vector<int32_t> Model::generate() {
     if (isNewInput) {
         static int i = 0;
         i++;
-        if (i > 3) {
+        if (i > 1) {
             isNewInput = false;
             i = 0;
         }

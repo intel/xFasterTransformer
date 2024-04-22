@@ -190,38 +190,13 @@ public:
         }
     }
 
-    std::vector<PromptMeta<T> *> getAll() {
-        std::vector<PromptMeta<T> *> metas;
-        for (const auto &pair : hub) {
-            metas.push_back(pair.second);
-        }
-        return metas;
-    }
-
     void remove(int32_t key) { hub.erase(key); }
 
     void modify(int32_t oldKey, PromptMeta<T> *newPrompt) {
         auto it = hub.find(oldKey);
-        if (it != hub.end()) { it->second = newPrompt; }
-    }
-
-    bool isUpdated(int32_t key) const {
-        auto it = hub.find(key);
         if (it != hub.end()) {
-            return it->second.hiddenStatesReceived;
-        } else {
-            printf("error: key not found\n");
-            return false;
-        }
-    }
-
-    bool setOld(int32_t key) {
-        auto it = hub.find(key);
-        if (it != hub.end()) {
-            it->second.hiddenStatesReceived = false;
-        } else {
-            printf("error: key not found\n");
-            return false;
+            delete it->second;
+            it->second = newPrompt;
         }
     }
 
