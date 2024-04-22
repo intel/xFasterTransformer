@@ -84,8 +84,6 @@ private:
     int32_t pastSeqLen;
     std::vector<int32_t> inputTokens; // input tokens + next tokens
     std::vector<int32_t> nextTokens; // next tokens
-
-    // Indicates whether the sequence is in the prefill phase
     int32_t step;
 
 #ifdef PIPELINE_PARALLEL
