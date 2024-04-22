@@ -213,12 +213,16 @@ public:
         }
     }
 
-    void replace(int32_t oldKey, SampleMeta<T> *newSample) {
+    bool replace(int32_t oldKey, SampleMeta<T> *newSample) {
+        bool ret = false;
         auto it = hub.find(oldKey);
         if (it != hub.end()) {
             delete it->second;
             it->second = newSample;
+            ret = true;
         }
+
+        return ret;
     }
 
 private:
