@@ -48,7 +48,7 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
                     int32_t sequenceID;
                     MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
                             MPI_STATUS_IGNORE);
-                    TimeLine t("GreedySearch.MPI_Recv.sequence" + std::to_string(sequenceID));
+                    TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
                     MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
                             predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     if (SequencePool::getInstance().has(sequenceID)) {
@@ -64,7 +64,7 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = this->search(result);
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
-            TimeLine t("GreedySearch.MPI_Send.sequence" + std::to_string(ctx->sequenceID));
+            TimeLine t("GreedySearch.Seq" + std::to_string(ctx->sequenceID) + ".MPI_Send");
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
             MPI_Send(&ctx->sequenceID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);

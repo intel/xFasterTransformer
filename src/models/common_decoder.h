@@ -346,7 +346,7 @@ public:
             int count = batchSize * inputSeqLen * hiddenSize;
             int32_t sequenceID;
             MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TimeLine t("Decoder.MPI_Recv." + std::to_string(sequenceID));
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
@@ -375,7 +375,7 @@ public:
         if (!TaskWaitingQueue::getInstance().empty()) {
             runningTask = TaskWaitingQueue::getInstance().pop();
             ctx->sequenceID = runningTask->getSequenceID();
-            TimeLine t("Decoder.step." + std::to_string(ctx->sequenceID));
+            TimeLine t("Decoder.Seq" + std::to_string(ctx->sequenceID) + ".Step");
 #endif
 
         // Decoder: forward
@@ -435,10 +435,10 @@ public:
 
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
-            TimeLine t("Decoder.MPI_Send");
+            int32_t sequenceID = runningTask->getSequenceID();
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;
-            int32_t sequenceID = runningTask->getSequenceID();
             MPI_Send(&sequenceID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file

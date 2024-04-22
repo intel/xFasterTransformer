@@ -42,7 +42,7 @@ namespace xft {
 // The SequenceMeta is one sequence of batch inputs and includes the generated tokens.
 class SequenceMeta {
 public:
-    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> _inputTokens)
+    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> &_inputTokens)
         : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), step(0) {
         inputTokens.resize(_inputSeqLen);
         inputTokens.assign(_inputTokens.begin(), _inputTokens.end());
@@ -102,13 +102,19 @@ private:
 #endif
 };
 
-// For beam searcher
-// class SequenceGroupMeta {
-// public:
-//     SequenceGroupMeta(int32_t num_beams) { sequence = new SequenceMeta[num_beams]; }
 
-//     SequenceMeta *sequence;
-// };
+// For beam searcher
+class SequenceGroupMeta {
+public:
+    SequenceGroupMeta(int32_t _num_beams, std::vector<SequenceMeta *> &seq) {
+        num_beams = _num_beams;
+        sequences = seq;
+    }
+
+private:
+    int32_t num_beams;
+    std::vector<SequenceMeta *> sequences;
+};
 
 
 //    SequencePool
@@ -125,8 +131,13 @@ public:
     }
 
     SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen,
-            std::vector<int32_t> inputTokens = std::vector<int32_t>()) {
+            std::vector<int32_t> &inputTokens) {
         auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen, inputTokens);
+        return sequenceMeta;
+    }
+
+    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen) {
+        auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen);
         return sequenceMeta;
     }
 
@@ -135,7 +146,7 @@ public:
         if (force) {
             auto it = hub.find(sequenceID);
             if (it != hub.end()) { 
-                remove(it->first);
+                remove(it->first, true);
             }
 
             hub[sequenceID] = sequence;
@@ -181,7 +192,7 @@ public:
         bool isSuccess = false;
         auto it = hub.find(sequenceID);
         if (it != hub.end()) {
-            remove(it->first);
+            remove(it->first, true);
             hub[sequenceID] = newSequenceMeta;
             isSuccess = true;
         }
@@ -193,11 +204,10 @@ private:
     SequencePool() {}
 
     std::unordered_map<int32_t, SequenceMeta *> hub;
-
-    //mgr
 };
 
 
+// Manage input sequenceMeta
 class InputQueue {
 public:
     static InputQueue &getInstance() {
@@ -217,12 +227,12 @@ public:
     bool empty() { return queue.empty(); }
 
     SequenceMeta *pop() {
-        auto buffer = queue.front();
+        auto seq = queue.front();
         queue.pop();
-        return buffer;
+        return seq;
     }
 
-    void push(SequenceMeta *buffer) { queue.push(buffer); }
+    void push(SequenceMeta *seq) { queue.push(seq); }
 
 private:
     InputQueue() {}
@@ -232,6 +242,7 @@ private:
 };
 
 
+// Manage executive sequenceMeta
 class TaskWaitingQueue {
 public:
     static TaskWaitingQueue &getInstance() {
@@ -250,12 +261,12 @@ public:
     }
 
     SequenceMeta *pop() {
-        auto buffer = queue.front();
+        auto seq = queue.front();
         queue.pop();
-        return buffer;
+        return seq;
     }
 
-    void push(SequenceMeta *buffer) { queue.push(buffer); }
+    void push(SequenceMeta *seq) { queue.push(seq); }
 
 private:
     TaskWaitingQueue() {}
