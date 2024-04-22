@@ -64,7 +64,7 @@ struct DecoderContext {
     int inputSeqLen;
     // For custom usage
     int reserved1;
-    int promptID;
+    int sampleID;
 
     // Model structure configuration
     int vocabSize;

@@ -151,9 +151,8 @@ std::vector<int32_t> Model::generate() {
         }
         // TODO: Create it when request input
         if (this->isMaster()) {
-            int promptID = InputQueue<float>::getInstance().createPromptID();
-            int tokenID = InputQueue<float>::getInstance().createTokenID();
-            InputQueue<float>::getInstance().push(new PromptMeta<float>(promptID, tokenID, batchSize, seqLen, inputIds));
+            int sampleID = InputQueue<float>::getInstance().createSampleID();
+            InputQueue<float>::getInstance().push(new SampleMeta<float>(sampleID, seqLen, inputIds));
         }
         return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
     } else {
