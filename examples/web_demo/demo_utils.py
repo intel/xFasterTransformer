@@ -201,5 +201,9 @@ class ChatDemo:
         response = self.process_response(response)
         print(f"Query is : {query.strip()}")
         print(f"Response is : {response}")
-        print(f"Latency:\t{latency:.2f} ms")
-        print(f"Througput:\t{throughput:.2f} tokens/s")
+        if len(time_cost) > 1:
+            total_cost = sum(time_cost[1:])
+            latency = total_cost * 1000 / len(time_cost[1:])
+            throughput = (len(time_cost[1:]) * batch_size) / total_cost
+            print(f"Latency:\t{latency:.2f} ms")
+            print(f"Througput:\t{throughput:.2f} tokens/s")

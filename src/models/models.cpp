@@ -29,6 +29,7 @@
 #include "llama.h"
 #include "opt_decoder.h"
 #include "qwen.h"
+#include "qwen2.h"
 #include "searcher.h"
 #include "timeline.h"
 #include "yarn_llama.h"

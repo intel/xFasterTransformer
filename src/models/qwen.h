@@ -22,10 +22,10 @@
 #include "token_embedding.h"
 
 template <typename WeiT, typename KVCacheT>
-class Qwen : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT> {
+class QwenLLM : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT> {
 public:
-    Qwen(const std::string &modelPath);
-    ~Qwen();
+    QwenLLM(const std::string &modelPath);
+    ~QwenLLM();
 
     void prepareAttnMask(int *ids, int step);
     void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
@@ -40,4 +40,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_MODEL(Qwen, qwen)
+REGISTER_MODEL(QwenLLM, qwen)
