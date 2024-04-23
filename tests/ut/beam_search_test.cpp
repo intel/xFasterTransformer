@@ -38,7 +38,7 @@ TEST(BeamSearchTest, BeamScorerFinalizeTest) {
 
 TEST(BeamSearchTest, BeamSearchTest) {
     const char *modelPath = "/data/1-gpu";
-    OptDecoder<float16_t> decoder(modelPath);
+    OptDecoder<float16_t, float16_t> decoder(modelPath);
     const int seqLen = 22;
     const int batchSize = 2;
     const int beamSize = 3;

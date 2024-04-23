@@ -21,9 +21,8 @@
 #include "rotary_embedding_qwen.h"
 #include "token_embedding.h"
 
-// TODO: Need to check FP16 KV Cache
-template <typename WeiT>
-class Qwen : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+template <typename WeiT, typename KVCacheT>
+class Qwen : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT> {
 public:
     Qwen(const std::string &modelPath);
     ~Qwen();
@@ -41,18 +40,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(Qwen, qwen, float)
-REGISTER_DECODER(Qwen, qwen, float16_t)
-REGISTER_DECODER(Qwen, qwen, bfloat16_t)
-REGISTER_DECODER(Qwen, qwen, int8_t)
-REGISTER_DECODER(Qwen, qwen, w8a8_t)
-REGISTER_DECODER(Qwen, qwen, uint4x2_t)
-REGISTER_DECODER(Qwen, qwen, nf4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, nf4x2_t)
+REGISTER_MODEL(Qwen, qwen)

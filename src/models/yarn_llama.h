@@ -14,16 +14,16 @@
 // ============================================================================
 #pragma once
 
+#include "attn_rope_scaling.h"
 #include "common_decoder.h"
 #include "mlp_llama.h"
 #include "rms_norm.h"
-#include "attn_rope_scaling.h"
 #include "token_embedding.h"
 #include "yarn_scaled_rotary_embedding.h"
 
-template <typename WeiT>
-class YaRNLlama
-    : public CommonDecoder<RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+template <typename WeiT, typename KVCacheT>
+class YaRNLlama : public CommonDecoder<RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm>,
+                          LlamaMLP<WeiT>, KVCacheT> {
 public:
     YaRNLlama(const std::string &modelPath);
     ~YaRNLlama();
@@ -41,18 +41,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(YaRNLlama, yarn_llama, float)
-REGISTER_DECODER(YaRNLlama, yarn_llama, float16_t)
-REGISTER_DECODER(YaRNLlama, yarn_llama, bfloat16_t)
-REGISTER_DECODER(YaRNLlama, yarn_llama, int8_t)
-REGISTER_DECODER(YaRNLlama, yarn_llama, w8a8_t)
-REGISTER_DECODER(YaRNLlama, yarn_llama, uint4x2_t)
-REGISTER_DECODER(YaRNLlama, yarn_llama, nf4x2_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(YaRNLlama, yarn_llama, w8a8_t, nf4x2_t)
+REGISTER_MODEL(YaRNLlama, yarn_llama)

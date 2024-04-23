@@ -83,6 +83,6 @@ private:
 
 class AutoModel : public Model {
 public:
-    AutoModel(std::string modelPath, xft::DataType datatype);
+    AutoModel(std::string modelPath, xft::DataType dataType, xft::DataType KVCacheDataType = xft::DataType::fp16);
 };
 } // namespace xft

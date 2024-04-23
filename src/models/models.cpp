@@ -258,7 +258,7 @@ bool Model::setStopWords(std::vector<std::vector<int>> stopWordsList) {
     }
 }
 
-AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
+AutoModel::AutoModel(std::string modelPath, xft::DataType dataType, xft::DataType KVCacheDataType) : Model() {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
 
@@ -269,10 +269,11 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType datatype) : Model() {
     std::string modeltype = *reader.Sections().begin();
     setVocabSize(reader.GetInteger(modeltype, "vocab_size"));
 
-    if (datatype != xft::DataType::unknown) {
-        setDecoder(DecoderFactory::Create(modeltype + "-" + xft::getTypeIdName(datatype), modelPath));
+    if (dataType != xft::DataType::unknown) {
+        setDecoder(DecoderFactory::Create(
+                modeltype + "-" + xft::getTypeIdName(dataType) + "-" + xft::getTypeIdName(KVCacheDataType), modelPath));
     } else {
-        printf("Unsupported data type.\n");
+        printf("Unsupported data type or KV cache data type.\n");
         exit(-1);
     }
 }

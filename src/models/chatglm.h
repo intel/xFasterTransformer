@@ -22,8 +22,8 @@
 #include "rope_2d.h"
 #include "token_embedding.h"
 
-template <typename WeiT>
-class ChatGLM : public CommonDecoder<ChatGlmAttention<WeiT, RotaryEmbedding2D, LayerNorm>, ChatGlmMLP<WeiT>> {
+template <typename WeiT, typename KVCacheT>
+class ChatGLM : public CommonDecoder<ChatGlmAttention<WeiT, RotaryEmbedding2D, LayerNorm>, ChatGlmMLP<WeiT>, KVCacheT> {
 public:
     ChatGLM(const std::string &modelPath);
     ~ChatGLM();
@@ -66,18 +66,4 @@ private:
     int posBufSize;
 };
 
-REGISTER_DECODER(ChatGLM, chatglm, float)
-REGISTER_DECODER(ChatGLM, chatglm, float16_t)
-REGISTER_DECODER(ChatGLM, chatglm, bfloat16_t)
-REGISTER_DECODER(ChatGLM, chatglm, int8_t)
-REGISTER_DECODER(ChatGLM, chatglm, w8a8_t)
-REGISTER_DECODER(ChatGLM, chatglm, uint4x2_t)
-REGISTER_DECODER(ChatGLM, chatglm, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM, chatglm, w8a8_t, nf4x2_t)
+REGISTER_MODEL(ChatGLM, chatglm)

@@ -19,13 +19,13 @@
 #include "allocator.h"
 #include "chatglm2.h"
 
-template <typename WeiT>
-ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
+template <typename WeiT, typename KVCacheT>
+ChatGLM2<WeiT, KVCacheT>::ChatGLM2(const std::string &modelPath, const std::string &modelType)
     : CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                             typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
             ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                     typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
-            typename TypeSelector<WeiT>::KVCacheType>(modelPath, modelType) {
+            KVCacheT>(modelPath, modelType) {
     this->positionIds = nullptr;
     this->posBufSize = 0;
 
@@ -40,20 +40,20 @@ ChatGLM2<WeiT>::ChatGLM2(const std::string &modelPath, const std::string &modelT
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-ChatGLM2<WeiT>::~ChatGLM2() {
+template <typename WeiT, typename KVCacheT>
+ChatGLM2<WeiT, KVCacheT>::~ChatGLM2() {
     delete embedding;
 
     if (positionIds) { free(positionIds); }
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -70,8 +70,8 @@ void ChatGLM2<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //     attention_mask = (attention_mask < 0.5).bool()
 //
 //     return attention_mask
-template <typename WeiT>
-void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -105,23 +105,23 @@ void ChatGLM2<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
-template <typename WeiT>
-void ChatGLM2<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void ChatGLM2<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
@@ -135,8 +135,8 @@ void ChatGLM2<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output,
 // batch_size, seq_length = input_ids.shape
 // position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
 // return position_ids
-template <typename WeiT>
-int *ChatGLM2<WeiT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
+template <typename WeiT, typename KVCacheT>
+int *ChatGLM2<WeiT, KVCacheT>::getPositionIds(int *ids, int batchSize, int seqLen, int step) {
     // Prepare buffer
     int sizeNeeded = (batchSize * seqLen + 63) / 64 * 64; // position_ids + block_position_ids
     if (posBufSize < sizeNeeded) {

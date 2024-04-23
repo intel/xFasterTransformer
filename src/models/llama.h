@@ -21,7 +21,7 @@
 #include "token_embedding.h"
 #include "type_selector.h"
 
-template <typename WeiT, typename KVCacheT = typename TypeSelector<WeiT>::KVCacheType>
+template <typename WeiT, typename KVCacheT>
 class LlamaLLM
     : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
@@ -49,18 +49,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(LlamaLLM, llama, float)
-REGISTER_DECODER(LlamaLLM, llama, float16_t)
-REGISTER_DECODER(LlamaLLM, llama, bfloat16_t)
-REGISTER_DECODER(LlamaLLM, llama, int8_t)
-REGISTER_DECODER(LlamaLLM, llama, w8a8_t)
-REGISTER_DECODER(LlamaLLM, llama, uint4x2_t)
-REGISTER_DECODER(LlamaLLM, llama, nf4x2_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(LlamaLLM, llama, w8a8_t, nf4x2_t)
+REGISTER_MODEL(LlamaLLM, llama)
