@@ -371,11 +371,12 @@ public:
 
         while(TaskWaitingQueue::getInstance().empty());
 
-        SequenceMeta *runningTask;
+        SequenceMeta *runningTask = nullptr;
+        int32_t sequenceID = -1;
         if (!TaskWaitingQueue::getInstance().empty()) {
             runningTask = TaskWaitingQueue::getInstance().pop();
-            ctx->sequenceID = runningTask->getSequenceID();
-            TimeLine t("Decoder.Seq" + std::to_string(ctx->sequenceID) + ".Step");
+            sequenceID = runningTask->getSequenceID();
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
         // Decoder: forward
@@ -435,7 +436,6 @@ public:
 
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
-            int32_t sequenceID = runningTask->getSequenceID();
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;

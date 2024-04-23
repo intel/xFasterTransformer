@@ -43,20 +43,36 @@ namespace xft {
 class SequenceMeta {
 public:
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> &_inputTokens)
-        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), step(0) {
+        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), pastSeqLen(0), step(0) {
         inputTokens.resize(_inputSeqLen);
         inputTokens.assign(_inputTokens.begin(), _inputTokens.end());
         nextTokens.resize(_inputSeqLen);
+        setPastSeqLen(getPastSeqLen());
     }
 
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
-        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), inputTokens(_inputSeqLen, 0), step(0) {
+        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), inputTokens(_inputSeqLen, 0), pastSeqLen(0), step(0) {
         nextTokens.resize(_inputSeqLen);
     }
 
     ~SequenceMeta() {}
 
     int32_t getSequenceID() const { return sequenceID; }
+
+    // For first tokens
+    void stepForward() {
+        if (getStep() == 0) {
+            setPastSeqLen(inputTokens.size());
+            setStep(getStep() + 1);
+        }
+    }
+
+    // For next token
+    void stepForward(int32_t token) {
+        addNextToken(token);
+        setPastSeqLen(getPastSeqLen() + 1);
+        setStep(getStep() + 1);
+    }
 
     // Get the input tokens in sequence
     int32_t getInputSeqLen() const { return inputSeqLen; }
@@ -68,11 +84,15 @@ public:
     void setPastSeqLen(int32_t _pastSeqLen) { pastSeqLen = _pastSeqLen; }
 
     // For next tokens
-    void addNextToken(int32_t token) { nextTokens.push_back(token); }
+    void addNextToken(int32_t token) {
+        nextTokens.clear();
+        nextTokens.push_back(token);
+        inputTokens.push_back(token);
+    }
 
     int32_t getLatestToken() const { return nextTokens.back(); }
 
-    const int32_t *getTotalTokens() const { return nextTokens.data(); }
+    const int32_t *getTotalTokens() const { return getInputTokens(); }
 
     int32_t getStep() const { return step; }
 
@@ -96,10 +116,9 @@ public:
 
 private:
     int32_t hiddenSize;
-    void* hiddenStates;
+    void *hiddenStates;
 #endif
 };
-
 
 // For beam searcher
 class SequenceGroupMeta {
@@ -113,7 +132,6 @@ private:
     int32_t num_beams;
     std::vector<SequenceMeta *> sequences;
 };
-
 
 //    SequencePool
 //    ┌──────┬──────┬──────┐
@@ -137,8 +155,7 @@ public:
         return id;
     }
 
-    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen,
-            std::vector<int32_t> &inputTokens) {
+    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen, std::vector<int32_t> &inputTokens) {
         auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen, inputTokens);
         return sequenceMeta;
     }
@@ -152,9 +169,7 @@ public:
         bool isSuccess = false;
         if (force) {
             auto it = hub.find(sequenceID);
-            if (it != hub.end()) { 
-                remove(it->first, true);
-            }
+            if (it != hub.end()) { remove(it->first, true); }
 
             hub[sequenceID] = sequence;
             isSuccess = true;
@@ -185,9 +200,7 @@ public:
         if (has(sequenceID)) {
             if (deep == true) {
                 auto it = hub.find(sequenceID);
-                if (it != hub.end()) { 
-                    delete it->second;
-                }
+                if (it != hub.end()) { delete it->second; }
             }
             isSuccess = hub.erase(sequenceID);
         }
@@ -214,7 +227,6 @@ private:
     std::unordered_map<int32_t, SequenceMeta *> hub;
 };
 
-
 // Manage input sequenceMeta
 class InputQueue {
 public:
@@ -238,7 +250,6 @@ private:
 
     std::queue<SequenceMeta *> queue;
 };
-
 
 // Manage executive sequenceMeta
 class TaskWaitingQueue {
