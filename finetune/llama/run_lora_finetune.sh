@@ -28,6 +28,7 @@ export KMP_AFFINITY=granularity=fine,compact,1,0
 CORES=`lscpu | grep Core | awk '{print $4}'`
 export OMP_NUM_THREADS=$CORES
 
+export LD_PRELOAD=../../3rdparty/mklml/lib/libiomp5.so
 export LD_PRELOAD=../../3rdparty/jemalloc/install_dir/lib/libjemalloc.so:$LD_PRELOAD
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,metadata_thp:auto,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
 if [ -z "${MODEL_PATH}" ]; then

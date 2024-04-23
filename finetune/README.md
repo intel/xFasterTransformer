@@ -1,7 +1,8 @@
-# PyTorch LLAMA2 7B lora apalca finetuning
+# PyTorch LLM finetuning guide
 
 ## Description
-This document is a guide for running LLaMA2 7B lora finetuning using PyTorch on CPU.
+This document is a guide for running LLM LoRA finetuning using PyTorch on CPU.
+Both single socket and multi-ranks distributed are supported.
 
 ## Step-by-step run guide
 ### Prepare dependency
@@ -20,7 +21,7 @@ conda install jemalloc
 ```
 From source:
 ```
-cd ../../3rdparty
+cd ../3rdparty
 git clone https://github.com/jemalloc/jemalloc.git 
 cd jemalloc
 git checkout c8209150f9d219a137412b06431c9d52839c7272
@@ -28,7 +29,7 @@ git checkout c8209150f9d219a137412b06431c9d52839c7272
 ./configure --prefix=your_absolute_path(e.g. /home/xxx/xFasterTransformer/3rdparty/jemalloc/install_dir)
 make
 make install
-cd ../../finetune/llama
+cd ../finetune/llama
 ```
 ## Quick Start Scripts (single socket)
 ### Env vars

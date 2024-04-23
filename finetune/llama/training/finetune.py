@@ -271,7 +271,7 @@ def train(
             group_by_length=group_by_length,
             report_to="wandb" if use_wandb else None,
             run_name=wandb_run_name if use_wandb else None,
-            no_cuda=True,
+            use_cpu=True,
             use_ipex=False,
             max_steps=max_steps,
             ddp_backend="ccl",
