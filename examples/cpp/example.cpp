@@ -297,6 +297,9 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"bf16_nf4", xft::DataType::bf16_nf4}, {"w8a8_int8", xft::DataType::w8a8_int8},
         {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
 
+std::map<std::string, xft::DataType> KVCacheDataTypeMap
+        = {{"fp32", xft::DataType::fp32}, {"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
+
 std::string getModelType(std::string &modelPath) {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
@@ -316,6 +319,7 @@ int main(int argc, char **argv) {
     args.add<std::string>("input", 'i', "input prompt, invalid for Opt model.", false,
             "Once upon a time, there existed a little girl who liked to have adventures.");
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16");
+    args.add<std::string>("kv_cache_dtype", '\0', "kv cache data type", false, "fp16");
     args.add<int>("input_len", 'l', "input token size", false, -1);
     args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
     args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
@@ -338,12 +342,22 @@ int main(int argc, char **argv) {
 
     std::string dtype_name = args.get<std::string>("dtype");
     xft::DataType dtype = xft::DataType::fp16;
+    std::string kv_cache_dtype_name = args.get<std::string>("kv_cache_dtype");
+    xft::DataType KVCacheDataType = xft::DataType::fp16;
 
     auto it = dataTypeMap.find(dtype_name);
     if (it != dataTypeMap.end()) {
         dtype = it->second;
     } else {
         std::cout << "[Error] Unsupport dtype index: " << dtype_name << std::endl;
+        return 0;
+    }
+
+    it = KVCacheDataTypeMap.find(kv_cache_dtype_name);
+    if (it != KVCacheDataTypeMap.end()) {
+        KVCacheDataType = it->second;
+    } else {
+        std::cout << "[Error] Unsupport KV cache dtype index: " << kv_cache_dtype_name << std::endl;
         return 0;
     }
 
@@ -364,7 +378,7 @@ int main(int argc, char **argv) {
     std::string inputPrompt = args.get<std::string>("input");
     std::vector<int> input = tokenizer->encode(inputPrompt);
 
-    xft::AutoModel model(modelPath, dtype);
+    xft::AutoModel model(modelPath, dtype, KVCacheDataType);
     bool isMaster = model.isMaster();
     int secondIdCount = 0;
 
@@ -401,6 +415,7 @@ int main(int argc, char **argv) {
         std::cout << "[INFO] Model path is " << modelPath << std::endl;
         std::cout << "[INFO] Token path is " << tokenPath << std::endl;
         std::cout << "[INFO] Data type is " << dtype_name << std::endl;
+        std::cout << "[INFO] KV cache data type is " << kv_cache_dtype_name << std::endl;
         std::cout << "[INFO] inputSize is " << inputSize << std::endl;
         std::cout << "[INFO] outputLen is " << outputLen << std::endl;
         std::cout << "[INFO] num_beams is " << numBeams << std::endl;

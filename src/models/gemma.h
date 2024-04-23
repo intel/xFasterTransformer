@@ -21,13 +21,13 @@
 #include "token_embedding_gemma.h"
 #include "type_selector.h"
 
-template <typename WeiT>
+template <typename WeiT, typename KVCacheT>
 class GemmaLLM
     : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
               LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
-              typename TypeSelector<WeiT>::KVCacheType> {
+              KVCacheT> {
 public:
     GemmaLLM(const std::string &modelPath);
     ~GemmaLLM();
@@ -49,18 +49,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(GemmaLLM, gemma, float)
-REGISTER_DECODER(GemmaLLM, gemma, float16_t)
-REGISTER_DECODER(GemmaLLM, gemma, bfloat16_t)
-REGISTER_DECODER(GemmaLLM, gemma, int8_t)
-REGISTER_DECODER(GemmaLLM, gemma, w8a8_t)
-REGISTER_DECODER(GemmaLLM, gemma, uint4x2_t)
-REGISTER_DECODER(GemmaLLM, gemma, nf4x2_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(GemmaLLM, gemma, w8a8_t, nf4x2_t)
+REGISTER_MODEL(GemmaLLM, gemma)

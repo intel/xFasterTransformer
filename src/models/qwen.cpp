@@ -16,9 +16,9 @@
 
 #include "qwen.h"
 
-template <typename WeiT>
-QwenLLM<WeiT>::QwenLLM(const std::string &modelPath)
-    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
+template <typename WeiT, typename KVCacheT>
+QwenLLM<WeiT, KVCacheT>::QwenLLM(const std::string &modelPath)
+    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT>(modelPath, "qwen") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -30,18 +30,18 @@ QwenLLM<WeiT>::QwenLLM(const std::string &modelPath)
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-QwenLLM<WeiT>::~QwenLLM() {
+template <typename WeiT, typename KVCacheT>
+QwenLLM<WeiT, KVCacheT>::~QwenLLM() {
     delete embedding;
 }
 
-template <typename WeiT>
-void QwenLLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT>
-void QwenLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -66,8 +66,8 @@ void QwenLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //             expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
 //         )
 //     return combined_attention_mask
-template <typename WeiT>
-void QwenLLM<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -100,13 +100,13 @@ void QwenLLM<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void QwenLLM<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void QwenLLM<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 

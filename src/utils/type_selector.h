@@ -21,7 +21,6 @@ struct TypeSelector {
     using InType = float;
     using ImType = float; // intermediate data type, default in float
     using OutType = float;
-    using KVCacheType = float16_t;
 };
 
 // Specialization for bfloat16_t
@@ -30,5 +29,4 @@ struct TypeSelector<bfloat16_t> {
     using InType = bfloat16_t;
     using ImType = bfloat16_t;
     using OutType = bfloat16_t;
-    using KVCacheType = float16_t;
 };

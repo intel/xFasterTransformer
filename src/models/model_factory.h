@@ -31,7 +31,7 @@ public:
         if (it != GetRegistry().end()) {
             return it->second(modelPath);
         } else {
-            printf("Unsupported model type or data type.\n");
+            printf("Unsupported model type, data type or KV cache data type.\n");
             exit(-1);
         }
     }
@@ -50,15 +50,53 @@ public:
     }
 };
 
+#define REGISTER_DECODER(CLASS, NAME, T, CacheT)             \
+    template class CLASS<T, CacheT>;                         \
+    static DecoderRegister decoder_##CLASS##_##T##_##CacheT( \
+            #NAME "-" #T "-" #CacheT, [](const std::string &modelPath) { return new CLASS<T, CacheT>(modelPath); });
 
-// When implementing a new model, you need to add the corresponding model header file in `models.cpp`.
-// Otherwise, the model registration mechanism won't be able to find the corresponding model.
-#define REGISTER_DECODER(CLASS, NAME, T)          \
-    template class CLASS<T>;                      \
-    static DecoderRegister decoder_##CLASS##_##T( \
-            #NAME "-" #T, [](const std::string &modelPath) { return new CLASS<T>(modelPath); });
+#define REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, CacheT)                                                 \
+    template class HybridModel<CLASS, T1, T2, CacheT>;                                                     \
+    static DecoderRegister hybridModel_##CLASS##_##T1##_##T2##_##CacheT(#NAME "-" #T1 "-" #T2 "-" #CacheT, \
+            [](const std::string &modelPath) { return new HybridModel<CLASS, T1, T2, CacheT>(modelPath); });
 
-#define REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2)                                  \
-    template class HybridModel<CLASS, T1, T2>;                                      \
-    static DecoderRegister hybridModel_##CLASS##_##T1##_##T2(#NAME "-" #T1 "-" #T2, \
-            [](const std::string &modelPath) { return new HybridModel<CLASS, T1, T2>(modelPath); });
+#define REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, T) \
+    REGISTER_DECODER(CLASS, NAME, T, float)            \
+    REGISTER_DECODER(CLASS, NAME, T, float16_t)        \
+    REGISTER_DECODER(CLASS, NAME, T, int8_t)
+
+#define REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, T1, T2) \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, float)            \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, float16_t)        \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, int8_t)
+
+// Kernels in BF16 PATH not support FP32 KVCache
+#define REGISTER_DECODER_ALL_TYPE(CLASS, NAME)             \
+    REGISTER_DECODER(CLASS, NAME, bfloat16_t, float16_t)   \
+    REGISTER_DECODER(CLASS, NAME, bfloat16_t, int8_t)      \
+    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, float16_t) \
+    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, int8_t)    \
+    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, w8a8_t)    \
+    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, uint4x2_t) \
+    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, nf4x2_t)
+
+#define REGISTER_HYBRID_MODEL_ALL_TYPE(CLASS, NAME)                      \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, float16_t) \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, float16_t)    \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, float16_t)    \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, float16_t) \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, float16_t)   \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, int8_t)    \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, int8_t)       \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, int8_t)       \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, int8_t)    \
+    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, int8_t)      \
+    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, int8_t)     \
+    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, uint4x2_t)  \
+    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, nf4x2_t)
+
+// Please register the model in your header file; 
+// registering it in the .cpp file will not take effect.
+#define REGISTER_MODEL(CLASS, NAME)        \
+    REGISTER_DECODER_ALL_TYPE(CLASS, NAME) \
+    REGISTER_HYBRID_MODEL_ALL_TYPE(CLASS, NAME)

@@ -21,8 +21,9 @@
 #include "rotary_embedding.h"
 #include "token_embedding.h"
 
-template <typename WeiT>
-class Baichuan : public CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+template <typename WeiT, typename KVCacheT>
+class Baichuan
+    : public CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT> {
 public:
     Baichuan(const std::string &modelPath);
     ~Baichuan();
@@ -41,18 +42,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(Baichuan, baichuan, float)
-REGISTER_DECODER(Baichuan, baichuan, float16_t)
-REGISTER_DECODER(Baichuan, baichuan, bfloat16_t)
-REGISTER_DECODER(Baichuan, baichuan, int8_t)
-REGISTER_DECODER(Baichuan, baichuan, w8a8_t)
-REGISTER_DECODER(Baichuan, baichuan, uint4x2_t)
-REGISTER_DECODER(Baichuan, baichuan, nf4x2_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Baichuan, baichuan, w8a8_t, nf4x2_t)
+REGISTER_MODEL(Baichuan, baichuan)

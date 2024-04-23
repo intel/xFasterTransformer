@@ -17,8 +17,8 @@ from typing import Union, List
 
 
 class AutoModel:
-    def __init__(self, path, dtype: str = "fp16"):
-        if dtype in [
+    def __init__(self, path, dtype: str = "fp16", kv_cache_dtype: str = "fp16"):
+        if dtype not in [
             "fp16",
             "bf16",
             "int8",
@@ -34,16 +34,23 @@ class AutoModel:
             "w8a8_int4",
             "w8a8_nf4",
         ]:
-            self.model = torch.classes.xfastertransformer.AutoModel(path, dtype)
-        else:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
+
+        if kv_cache_dtype not in [
+            "fp32",
+            "fp16",
+            "int8",
+        ]:
+            raise Exception(f"{self.__class__.__name__} don't support KV cache data type: {kv_cache_dtype}.")
+
+        self.model = torch.classes.xfastertransformer.AutoModel(path, dtype, kv_cache_dtype)
 
     def __call__(self, inputs, **kwargs):
         return self.model.forward(inputs)
 
     @classmethod
-    def from_pretrained(cls, path, dtype: str = "fp16"):
-        return cls(path, dtype)
+    def from_pretrained(cls, path, dtype: str = "fp16", kv_cache_dtype: str = "fp16"):
+        return cls(path, dtype, kv_cache_dtype)
 
     @property
     def rank(self):

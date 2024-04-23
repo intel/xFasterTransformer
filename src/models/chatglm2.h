@@ -22,13 +22,13 @@
 #include "rotary_embedding_chatglm2.h"
 #include "token_embedding.h"
 
-template <typename WeiT>
+template <typename WeiT, typename KVCacheT>
 class ChatGLM2
     : public CommonDecoder<Attention<WeiT, ChatGLM2RotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
               ChatGLM2MLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType, RmsNorm, true>,
-              typename TypeSelector<WeiT>::KVCacheType> {
+              KVCacheT> {
 public:
     ChatGLM2(const std::string &modelPath, const std::string &modelType = "chatglm2");
     ~ChatGLM2();
@@ -59,18 +59,4 @@ private:
     int posBufSize;
 };
 
-REGISTER_DECODER(ChatGLM2, chatglm2, float)
-REGISTER_DECODER(ChatGLM2, chatglm2, float16_t)
-REGISTER_DECODER(ChatGLM2, chatglm2, bfloat16_t)
-REGISTER_DECODER(ChatGLM2, chatglm2, int8_t)
-REGISTER_DECODER(ChatGLM2, chatglm2, w8a8_t)
-REGISTER_DECODER(ChatGLM2, chatglm2, uint4x2_t)
-REGISTER_DECODER(ChatGLM2, chatglm2, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM2, chatglm2, w8a8_t, nf4x2_t)
+REGISTER_MODEL(ChatGLM2, chatglm2)
