@@ -27,18 +27,18 @@
 _test_case=$(
     cat <<EOF
 
-# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | -in  | -out |
-# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | ---- | ---- |
-# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |    llama-2-7b |   √  |   √  |   ×  |   ×  |   ×  |   × | 2016 |  32  |
-# |   chatglm3-6b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |  baichuan2-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# | baichuan2-13b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |       qwen-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |    qwen2-0_5b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |    qwen2-1_8b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |      gemma-2b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
-# |      gemma-7b |   √  |   √  |   ×  |   ×  |   ×  |   × |  32  |  32  |
+# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | fp16(kv) | int8(kv) | -in  | -out |
+# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | -------- | -------- | ---- | ---- |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |  √  |     √    |     √    |  32  |  32  |
+# |    llama-2-7b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    | 2016 |  32  |
+# |   chatglm3-6b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |  baichuan2-7b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# | baichuan2-13b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |       qwen-7b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |    qwen2-0_5b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |    qwen2-1_8b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |      gemma-2b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
+# |      gemma-7b |   √  |   √  |   ×  |   ×  |   ×  |  ×  |     √    |     √    |  32  |  32  |
 
 # llama-2-7b with short prompt & full data type:
 bash run_benchmark.sh -m llama-2-7b -d fp16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
@@ -105,17 +105,17 @@ EOF
 rls_test_case=$(
     cat <<EOF
 
-# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | -in  | -out |
-# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | ---- | ---- |
-# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |   √ | 2016 |  32  |
-# |   llama-2-13b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |   chatglm3-6b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |  baichuan2-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# | baichuan2-13b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |     qwen-1_8b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |       qwen-7b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
-# |      qwen-14b |   √  |   √  |   √  |   √  |   √  |   √ |  32  |  32  |
+# |  model_name   | fp16 | bf16 | int8 | w8a8 | int4 | nf4 | fp16(kv) | int8(kv) | -in  | -out |
+# | ------------- | ---- | ---- | ---- | ---- | ---- | --- | -------- | -------- | ---- | ---- |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |    llama-2-7b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     √    | 2016 |  32  |
+# |   llama-2-13b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |   chatglm3-6b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |  baichuan2-7b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# | baichuan2-13b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |     qwen-1_8b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |       qwen-7b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
+# |      qwen-14b |   √  |   √  |   √  |   √  |   √  |  √  |    √     |     ×    |  32  |  32  |
 
 # llama-2-7b with short prompt & full data type:
 bash run_benchmark.sh -m llama-2-7b -d fp16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
@@ -166,8 +166,8 @@ bash run_benchmark.sh -m llama-2-13b -d fp16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 
 bash run_benchmark.sh -m llama-2-13b -d bf16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m llama-2-13b -d int8 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
 bash run_benchmark.sh -m llama-2-13b -d w8a8 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
-bash run_benchmark.sh -m llama-2-13b -d int4 -kvd fp16 -i 1 -w 0 -in 32 -out-kvd fp16  32 -s 1
-bash run_benchmark.sh -m llama-2-13b -d nf4  -kvd fp16 -i 1 -w 0 -in 32 -out-kvd fp16  32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d int4 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
+bash run_benchmark.sh -m llama-2-13b -d nf4  -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 1
 
 bash run_benchmark.sh -m llama-2-13b -d fp16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 2
 bash run_benchmark.sh -m llama-2-13b -d bf16 -kvd fp16 -i 1 -w 0 -in 32 -out 32 -s 2
