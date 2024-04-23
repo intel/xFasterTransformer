@@ -70,6 +70,8 @@ DTYPE_LIST = [
     "w8a8_nf4",
 ]
 
+KVCACHE_DTYPE_LIST = ["fp32", "fp16", "int8"]
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default=None, help="Model name")
 parser.add_argument("--token_in", type=str, default="32", help="Input Token Len")
@@ -80,6 +82,7 @@ parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
 parser.add_argument("--iteration", type=int, default=3, help=" Benchmakr Iterations")
 parser.add_argument("--warmup", type=int, default=1, help="Warm up Iterations")
 parser.add_argument("--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("--kv_cache_dtype", type=str, choices=KVCACHE_DTYPE_LIST, default="fp16", help="KV cache dtype")
 parser.add_argument("--token_path", type=str, default=None, help="Path to token file")
 parser.add_argument("--model_path", type=str, default=None, help="Path to model file")
 parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
@@ -158,7 +161,9 @@ if __name__ == "__main__":
 
         print("[INFO] xfastertransformer is not installed in pip, using source code.")
 
-    model = xfastertransformer.AutoModel.from_pretrained(args.model_path, dtype=args.dtype)
+    model = xfastertransformer.AutoModel.from_pretrained(
+        args.model_path, dtype=args.dtype, kv_cache_dtype=args.kv_cache_dtype
+    )
     input_prompts = []
     if model.rank == 0:
         # input prompt
