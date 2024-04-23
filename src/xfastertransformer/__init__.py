@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ _import_structure = {
         "OPTConvert",
         "BaichuanConvert",
         "QwenConvert",
+        "Qwen2Convert",
         "YaRNLlamaConvert",
         "DeepseekConvert",
     ],
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from .tools import OPTConvert
     from .tools import BaichuanConvert
     from .tools import QwenConvert
+    from .tools import Qwen2Convert
     from .tools import YaRNLlamaConvert
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule

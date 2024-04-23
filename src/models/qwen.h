@@ -23,10 +23,10 @@
 
 // TODO: Need to check FP16 KV Cache
 template <typename WeiT>
-class Qwen : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
+class QwenLLM : public CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float> {
 public:
-    Qwen(const std::string &modelPath);
-    ~Qwen();
+    QwenLLM(const std::string &modelPath);
+    ~QwenLLM();
 
     void prepareAttnMask(int *ids, int step);
     void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
@@ -41,18 +41,18 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DECODER(Qwen, qwen, float)
-REGISTER_DECODER(Qwen, qwen, float16_t)
-REGISTER_DECODER(Qwen, qwen, bfloat16_t)
-REGISTER_DECODER(Qwen, qwen, int8_t)
-REGISTER_DECODER(Qwen, qwen, w8a8_t)
-REGISTER_DECODER(Qwen, qwen, uint4x2_t)
-REGISTER_DECODER(Qwen, qwen, nf4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(Qwen, qwen, w8a8_t, nf4x2_t)
+REGISTER_DECODER(QwenLLM, qwen, float)
+REGISTER_DECODER(QwenLLM, qwen, float16_t)
+REGISTER_DECODER(QwenLLM, qwen, bfloat16_t)
+REGISTER_DECODER(QwenLLM, qwen, int8_t)
+REGISTER_DECODER(QwenLLM, qwen, w8a8_t)
+REGISTER_DECODER(QwenLLM, qwen, uint4x2_t)
+REGISTER_DECODER(QwenLLM, qwen, nf4x2_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, bfloat16_t, float16_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, bfloat16_t, int8_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, bfloat16_t, w8a8_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, bfloat16_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, bfloat16_t, nf4x2_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, w8a8_t, int8_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, w8a8_t, uint4x2_t)
+REGISTER_HYBRID_MODEL(QwenLLM, qwen, w8a8_t, nf4x2_t)

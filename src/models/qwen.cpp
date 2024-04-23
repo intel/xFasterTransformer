@@ -17,7 +17,7 @@
 #include "qwen.h"
 
 template <typename WeiT>
-Qwen<WeiT>::Qwen(const std::string &modelPath)
+QwenLLM<WeiT>::QwenLLM(const std::string &modelPath)
     : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(modelPath, "qwen") {
     // Context
     DecoderContext *ctx = this->getContext();
@@ -31,17 +31,17 @@ Qwen<WeiT>::Qwen(const std::string &modelPath)
 }
 
 template <typename WeiT>
-Qwen<WeiT>::~Qwen() {
+QwenLLM<WeiT>::~QwenLLM() {
     delete embedding;
 }
 
 template <typename WeiT>
-void Qwen<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+void QwenLLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
 template <typename WeiT>
-void Qwen<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+void QwenLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -67,7 +67,7 @@ void Qwen<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //         )
 //     return combined_attention_mask
 template <typename WeiT>
-void Qwen<WeiT>::prepareAttnMask(int *ids, int step) {
+void QwenLLM<WeiT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -101,12 +101,12 @@ void Qwen<WeiT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT>
-void Qwen<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+void QwenLLM<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
 template <typename WeiT>
-void Qwen<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+void QwenLLM<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 

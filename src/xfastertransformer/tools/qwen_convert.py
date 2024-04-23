@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,12 +19,10 @@ import numpy as np
 import os
 import torch
 
-from pathlib import Path
-
 from transformers import AutoModelForCausalLM, AutoConfig
 from transformers.generation import GenerationConfig
 
-from .convert import BaseModelConvert
+from .convert import BaseModelConvert, get_name_and_param
 
 
 class QwenConvert(BaseModelConvert):
@@ -118,22 +116,6 @@ class QwenConvert(BaseModelConvert):
 
         from typing import TYPE_CHECKING, Any, Callable, ContextManager, Iterator, Sequence, TypeVar, cast
 
-        def _get_name_and_param(model_dir: Path):
-            all_files = os.listdir(model_dir)
-            safetensors_files = [f for f in all_files if f.endswith('.safetensors')]
-            num_parts = len(safetensors_files)
-            for part_name in (f"model-{n:05}-of-{num_parts:05}.safetensors" for n in range(1, num_parts + 1)):
-                ctx: ContextManager[Any]
-                from safetensors import safe_open
-
-                ctx = cast(
-                    ContextManager[Any],
-                    safe_open(Path(model_dir) / part_name, framework="pt", device="cpu"),
-                )
-                with ctx as model_part:
-                    for name in model_part.keys():
-                        yield name, model_part.get_tensor(name)
-
         # load the model
         gen_config = GenerationConfig.from_pretrained(input_dir, trust_remote_code=True, resume_download=True)
         hf_config, _ = AutoConfig.from_pretrained(
@@ -203,7 +185,7 @@ class QwenConvert(BaseModelConvert):
 
         print("Processing ...")
         pool = multiprocessing.Pool(processes)
-        for name, param in _get_name_and_param(input_dir):
+        for name, param in get_name_and_param(input_dir):
             param = param.half()
             if "embed" in name or "lm_head" in name:
                 pass
