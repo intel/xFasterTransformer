@@ -17,25 +17,10 @@
 #include "chatglm2.h"
 
 // ChatGLM3 and ChatGLM2 have the same structure, so ChatGLM3 utilizes the implementation of ChatGLM2.
-template <typename WeiT>
-class ChatGLM3 : public ChatGLM2<WeiT> {
+template <typename WeiT, typename KVCacheT>
+class ChatGLM3 : public ChatGLM2<WeiT, KVCacheT> {
 public:
-    ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT>(modelPath, "chatglm3") {}
+    ChatGLM3(const std::string &modelPath) : ChatGLM2<WeiT, KVCacheT>(modelPath, "chatglm3") {}
 };
 
-REGISTER_DECODER(ChatGLM3, chatglm3, float)
-REGISTER_DECODER(ChatGLM3, chatglm3, float16_t)
-REGISTER_DECODER(ChatGLM3, chatglm3, bfloat16_t)
-REGISTER_DECODER(ChatGLM3, chatglm3, int8_t)
-REGISTER_DECODER(ChatGLM3, chatglm3, w8a8_t)
-REGISTER_DECODER(ChatGLM3, chatglm3, uint4x2_t)
-REGISTER_DECODER(ChatGLM3, chatglm3, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, float16_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, w8a8_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, bfloat16_t, nf4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, int8_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, uint4x2_t)
-REGISTER_HYBRID_MODEL(ChatGLM3, chatglm3, w8a8_t, nf4x2_t)
-
+REGISTER_MODEL(ChatGLM3, chatglm3)

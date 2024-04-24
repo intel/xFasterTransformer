@@ -92,6 +92,10 @@ while [ -n "$1" ]; do
         csv=$2
         shift 2
         ;;
+    -kvd | --kv_cache_dtype)
+        kv_cache_dtype=$2
+        shift 2
+        ;;
     "")
         shift
         break
@@ -104,6 +108,7 @@ if [ "${model_name}" == "" ]; then
     exit 1
 fi
 dtype=${dtype:-bf16}
+kv_cache_dtype=${kv_cache_dtype:-fp16}
 sockets=${sockets:-1}
 batch_size=${batch_size:-1}
 input_tokens=${input_tokens:-32}
@@ -112,7 +117,7 @@ beam_width=${beam_width:-1}
 iter=${iter:-10}
 warmup=${warmup:-2}
 
-Info "You are using model ${model_name}, dtype ${dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
+Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
 Warning "The mapping method for CPU IDs in the cloud server environment is different,
         for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
@@ -128,6 +133,7 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --prompt_path "${SCRIPT_DIR}"/prompt.json \
     --model_name "${model_name}" \
     --dtype "${dtype}" \
+    --kv_cache_dtype "${kv_cache_dtype}" \
     --batch_size "${batch_size}" \
     --token_in ${input_tokens}	\
     --token_out ${output_tokens} \

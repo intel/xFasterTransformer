@@ -24,40 +24,50 @@
 
 struct TorchAutoModel : torch::CustomClassHolder {
 public:
-    TorchAutoModel(std::string modelPath, std::string dtype) {
-        xft::DataType datatype;
+    TorchAutoModel(std::string modelPath, std::string dtype, std::string KVCacheDtype) {
+        xft::DataType dataType;
         if (dtype == "fp16") {
-            datatype = xft::DataType::fp16;
+            dataType = xft::DataType::fp16;
         } else if (dtype == "bf16") {
-            datatype = xft::DataType::bf16;
+            dataType = xft::DataType::bf16;
         } else if (dtype == "int8") {
-            datatype = xft::DataType::int8;
+            dataType = xft::DataType::int8;
         } else if (dtype == "int4") {
-            datatype = xft::DataType::int4;
+            dataType = xft::DataType::int4;
         } else if (dtype == "w8a8") {
-            datatype = xft::DataType::w8a8;
+            dataType = xft::DataType::w8a8;
         } else if (dtype == "nf4") {
-            datatype = xft::DataType::nf4;
+            dataType = xft::DataType::nf4;
         } else if (dtype == "bf16_fp16") {
-            datatype = xft::DataType::bf16_fp16;
+            dataType = xft::DataType::bf16_fp16;
         } else if (dtype == "bf16_int8") {
-            datatype = xft::DataType::bf16_int8;
+            dataType = xft::DataType::bf16_int8;
         } else if (dtype == "bf16_w8a8") {
-            datatype = xft::DataType::bf16_w8a8;
+            dataType = xft::DataType::bf16_w8a8;
         } else if (dtype == "bf16_int4") {
-            datatype = xft::DataType::bf16_int4;
+            dataType = xft::DataType::bf16_int4;
         } else if (dtype == "bf16_nf4") {
-            datatype = xft::DataType::bf16_nf4;
+            dataType = xft::DataType::bf16_nf4;
         } else if (dtype == "w8a8_int8") {
-            datatype = xft::DataType::w8a8_int8;
+            dataType = xft::DataType::w8a8_int8;
         } else if (dtype == "w8a8_int4") {
-            datatype = xft::DataType::w8a8_int4;
+            dataType = xft::DataType::w8a8_int4;
         } else if (dtype == "w8a8_nf4") {
-            datatype = xft::DataType::w8a8_nf4;
+            dataType = xft::DataType::w8a8_nf4;
         } else {
-            throw std::invalid_argument("Invalid DataType");
+            throw std::invalid_argument("Invalid data type.");
         }
-        model = new xft::AutoModel(modelPath, datatype);
+        xft::DataType KVCacheDataType;
+        if (KVCacheDtype == "fp32") {
+            KVCacheDataType = xft::DataType::fp32;
+        } else if (KVCacheDtype == "fp16") {
+            KVCacheDataType = xft::DataType::fp16;
+        } else if (KVCacheDtype == "int8") {
+            KVCacheDataType = xft::DataType::int8;
+        } else {
+            throw std::invalid_argument("Invalid KV cache data type.");
+        }
+        model = new xft::AutoModel(modelPath, dataType, KVCacheDataType);
     };
 
     ~TorchAutoModel() {

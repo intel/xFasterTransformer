@@ -24,9 +24,9 @@
 #include "opt_decoder.h"
 #include "transpose_util.h"
 
-template <typename WeiT>
-OptDecoder<WeiT>::OptDecoder(const std::string &modelPath)
-    : CommonDecoder<Attention<WeiT, QKPO_Dummy, LayerNorm>, MLP<WeiT>>(modelPath, "gpt") {
+template <typename WeiT, typename KVCacheT>
+OptDecoder<WeiT, KVCacheT>::OptDecoder(const std::string &modelPath)
+    : CommonDecoder<Attention<WeiT, QKPO_Dummy, LayerNorm>, MLP<WeiT>, KVCacheT>(modelPath, "gpt") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -38,13 +38,13 @@ OptDecoder<WeiT>::OptDecoder(const std::string &modelPath)
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-OptDecoder<WeiT>::~OptDecoder() {
+template <typename WeiT, typename KVCacheT>
+OptDecoder<WeiT, KVCacheT>::~OptDecoder() {
     delete embedding;
 }
 
-template <typename WeiT>
-void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     int vocabSize = embedding->getVocabSize();
     int embeddingSize = embedding->getEmbeddingSize();
     int maxPos = embedding->getMaxPositions();
@@ -62,14 +62,14 @@ void OptDecoder<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
     free(posEmb);
 }
 
-template <typename WeiT>
-void OptDecoder<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", modelPath + "/model.final_layernorm.bias.bin",
             embedding->getHiddenSize());
 }
 
-template <typename WeiT>
-void OptDecoder<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -102,8 +102,8 @@ void OptDecoder<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void OptDecoder<WeiT>::embeddingForward(int *ids, float *buf, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::embeddingForward(int *ids, float *buf, int batchSize, int seqLen) {
     int pastSeqLen = this->accSeqLen;
     if (pastSeqLen == 0 && this->prefixSharing) { pastSeqLen += this->prefixSeqLen; }
     // Prepare position data for positional embedding
@@ -118,7 +118,7 @@ void OptDecoder<WeiT>::embeddingForward(int *ids, float *buf, int batchSize, int
     embedding->forward(ids, positions, buf, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void OptDecoder<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }

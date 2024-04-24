@@ -16,9 +16,9 @@
 
 #include "yarn_llama.h"
 
-template <typename WeiT>
-YaRNLlama<WeiT>::YaRNLlama(const std::string &modelPath)
-    : CommonDecoder<RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, float>(
+template <typename WeiT, typename KVCacheT>
+YaRNLlama<WeiT, KVCacheT>::YaRNLlama(const std::string &modelPath)
+    : CommonDecoder<RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT>(
             modelPath, "yarn_llama") {
     // Context
     DecoderContext *ctx = this->getContext();
@@ -31,18 +31,18 @@ YaRNLlama<WeiT>::YaRNLlama(const std::string &modelPath)
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-YaRNLlama<WeiT>::~YaRNLlama() {
+template <typename WeiT, typename KVCacheT>
+YaRNLlama<WeiT, KVCacheT>::~YaRNLlama() {
     delete embedding;
 }
 
-template <typename WeiT>
-void YaRNLlama<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT>
-void YaRNLlama<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -50,8 +50,8 @@ void YaRNLlama<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 // def _prepare_decoder_attention_mask(self, attention_mask, input_shape, inputs_embeds, past_key_values_length):
 //     # create causal mask
 //     # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-template <typename WeiT>
-void YaRNLlama<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -84,13 +84,13 @@ void YaRNLlama<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void YaRNLlama<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void YaRNLlama<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 

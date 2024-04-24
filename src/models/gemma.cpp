@@ -16,13 +16,13 @@
 
 #include "gemma.h"
 
-template <typename WeiT>
-GemmaLLM<WeiT>::GemmaLLM(const std::string &modelPath)
+template <typename WeiT, typename KVCacheT>
+GemmaLLM<WeiT, KVCacheT>::GemmaLLM(const std::string &modelPath)
     : CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                             typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
             LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                     typename TypeSelector<WeiT>::OutType>,
-            typename TypeSelector<WeiT>::KVCacheType>(modelPath, "gemma") {
+            KVCacheT>(modelPath, "gemma") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -34,18 +34,18 @@ GemmaLLM<WeiT>::GemmaLLM(const std::string &modelPath)
     setFinalLnWeight(modelPath);
 }
 
-template <typename WeiT>
-GemmaLLM<WeiT>::~GemmaLLM() {
+template <typename WeiT, typename KVCacheT>
+GemmaLLM<WeiT, KVCacheT>::~GemmaLLM() {
     delete embedding;
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::setEmbeddingWeights(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
     embedding->setWeights(modelPath + "/model.wte.bin");
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
     finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
@@ -70,8 +70,8 @@ void GemmaLLM<WeiT>::setFinalLnWeight(const std::string &modelPath) {
 //             expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
 //         )
 //     return combined_attention_mask
-template <typename WeiT>
-void GemmaLLM<WeiT>::prepareAttnMask(int *ids, int step) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
     DecoderContext *ctx = this->getContext();
     int seqLen = ctx->inputSeqLen;
 
@@ -104,22 +104,22 @@ void GemmaLLM<WeiT>::prepareAttnMask(int *ids, int step) {
     }
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
     embedding->forward(ids, output, batchSize, seqLen);
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::lastLayerNormForward(float *input, float *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
-template <typename WeiT>
-void GemmaLLM<WeiT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+template <typename WeiT, typename KVCacheT>
+void GemmaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }

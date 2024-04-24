@@ -47,6 +47,11 @@ Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)
 - 2 (benchmarking on 2 sockets)
 
+Specify data type of kvcache using `-kdv` or `--kv_cache_dtype` from below list:
+- fp32
+- fp16 (default)
+- int8
+
 Specify batch size using `-bs` or `--batch_size`. (default 1)
 Specify input tokens using `-in` or `--input_tokens`. (default 32)
 Specify output tokens using `-out` or `--output_tokens`. (default 32)
