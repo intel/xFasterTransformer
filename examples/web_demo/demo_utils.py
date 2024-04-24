@@ -198,9 +198,6 @@ class ChatDemo:
                 perf_info = f"Latency:\t{latency:.2f} ms\nThrougput:\t{throughput:.2f} tokens/s"
             yield self.post_process_generation(next_token_id, token_list, chatbot, query, history, perf_info)
 
-        total_cost = sum(time_cost[1:])
-        latency = total_cost * 1000 / len(time_cost[1:])
-        throughput = (len(time_cost[1:]) * batch_size) / total_cost
         response = self.tokenizer.decode(token_list, skip_special_tokens=True)
         response = self.process_response(response)
         print(f"Query is : {query.strip()}")
