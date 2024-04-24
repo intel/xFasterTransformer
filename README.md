@@ -54,6 +54,7 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |      ChatGLM3      | &#10004;  | &#10004; |   &#10004;   |
 |       Llama        | &#10004;  | &#10004; |   &#10004;   |
 |       Llama2       | &#10004;  | &#10004; |   &#10004;   |
+|       Llama3       | &#10004;  | &#10004; |   &#10004;   |
 |      Baichuan      | &#10004;  | &#10004; |   &#10004;   |
 |        QWen        | &#10004;  | &#10004; |   &#10004;   |
 |        QWen2       | &#10004;  | &#10004; |   &#10004;   |
