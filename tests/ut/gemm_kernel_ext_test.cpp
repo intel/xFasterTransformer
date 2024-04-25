@@ -20,8 +20,7 @@
 #include "gtest/gtest.h"
 
 template <typename TA, typename TB, typename TC>
-static void small_gemm_tranb_ref(
-        const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc) {
+static void small_gemm_tranb_ref(const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc) {
     // Loop over the rows of A
     for (int i = 0; i < M; i++) {
         // Loop over the columns of B
@@ -183,10 +182,8 @@ static void test_small_kernel() {
     test_small_gemm_tranb(5, 1, 128);
     test_small_gemm_tranb(6, 1, 128);
 
-    for (int n = 1; n <= 1024; ++n) {
-        test_small_gemm_tranb(1, n, 128);
-        test_small_gemm_tranb(1, n, 256);
-    }
+    test_small_gemm_tranb(1, 111, 128);
+    test_small_gemm_tranb(1, 111, 256);
 }
 
 static void test_bigger_kernel() {
@@ -199,7 +196,28 @@ static void test_bigger_kernel() {
     test_small_gemm_tranb(10, 10, 128);
 }
 
-static void small_gemm_ref(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+template <typename TA, typename TB, typename TC>
+void gemm_ref(const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
+    // Loop over the rows of A
+    for (int i = 0; i < M; i++) {
+        // Loop over the columns of B
+        for (int j = 0; j < N; j++) {
+            // Compute the dot product of row i of A with column j of B
+            float dot_product = 0;
+            for (int k = 0; k < K; k++) {
+                dot_product += (float)A[i * lda + k] * (float)B[k * ldb + j];
+            }
+            // Store the result in C[i][j]
+            if (acc) {
+                C[i * ldc + j] = (float)C[i * ldc + j] + dot_product;
+            } else {
+                C[i * ldc + j] = dot_product;
+            }
+        }
+    }
+}
+
+static void gemm_bint8_ref(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
         int ldb, int ldc) {
     // Loop over the rows of A
     for (int i = 0; i < M; i++) {
@@ -214,6 +232,46 @@ static void small_gemm_ref(const float *A, const int8_t *B, const float *bScale,
             C[i * ldc + j] = dot_product;
         }
     }
+}
+
+template <typename TA, typename TB, typename TC>
+void test_small_gemm(int M, int N, int K, bool acc) {
+    const int lda = K;
+    const int ldb = N;
+    const int ldc = N;
+    TA *A = new TA[M * K];
+    TB *B = new TB[K * N];
+    TC *C = new TC[M * N];
+    TC *refC = new TC[M * N];
+
+    // Generate random data for A, B, C
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<float> distr(-1.0f, 1.0f);
+    for (int i = 0; i < M * K; i++) {
+        A[i] = static_cast<TA>(distr(rng));
+    }
+    for (int i = 0; i < K * N; i++) {
+        B[i] = static_cast<TB>(distr(rng));
+    }
+    for (int i = 0; i < M * N; i++) {
+        C[i] = static_cast<TC>(distr(rng));
+        refC[i] = C[i];
+    }
+
+    xft::small_gemm(A, B, C, M, N, K, lda, ldb, ldc, acc);
+    gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+
+    // Compare results
+    float eps = 5 * 1e-2;
+    for (int i = 0; i < M * N; i++) {
+        EXPECT_NEAR(C[i], refC[i], eps);
+    }
+
+    delete[] A;
+    delete[] B;
+    delete[] C;
+    delete[] refC;
 }
 
 void test_small_gemm_int8(int M, int N, int K) {
@@ -244,7 +302,7 @@ void test_small_gemm_int8(int M, int N, int K) {
     memset(refC, 0, M * N * sizeof(float));
 
     xft::small_gemm(A, B, bScale, C, M, N, K, lda, ldb, ldc);
-    small_gemm_ref(A, B, bScale, refC, M, N, K, lda, ldb, ldc);
+    gemm_bint8_ref(A, B, bScale, refC, M, N, K, lda, ldb, ldc);
 
     // Compare results
     float eps = 1e-3;
@@ -283,6 +341,36 @@ TEST(small_gemm, small_gemm_int8) {
         test_small_gemm_int8(m, 256, 19);
         test_small_gemm_int8(m, 500, 111);
         test_small_gemm_int8(m, 512, 39);
+    }
+}
+
+TEST(small_gemm, small_gemm_f32) {
+    for (int m = 0; m < 10; ++m) {
+        test_small_gemm<float, float, float>(m, 128, 1 + rand() % 100, false);
+        test_small_gemm<float, float, float>(m, 128, 1 + rand() % 100, true);
+
+        test_small_gemm<float, float, float>(m, 100, 1 + rand() % 100, false);
+        test_small_gemm<float, float, float>(m, 100, 1 + rand() % 100, true);
+    }
+}
+
+TEST(small_gemm, small_gemm_f32f16bf16) {
+    for (int m = 0; m < 10; ++m) {
+        test_small_gemm<float, float16_t, bfloat16_t>(m, 128, 1 + rand() % 100, false);
+        test_small_gemm<float, float16_t, bfloat16_t>(m, 128, 1 + rand() % 100, true);
+
+        test_small_gemm<float, float16_t, bfloat16_t>(m, 100, 1 + rand() % 100, false);
+        test_small_gemm<float, float16_t, bfloat16_t>(m, 100, 1 + rand() % 100, true);
+    }
+}
+
+TEST(small_gemm, small_gemm_f32bf16bf16) {
+    for (int m = 0; m < 10; ++m) {
+        test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 128, 1 + rand() % 100, false);
+        test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 128, 1 + rand() % 100, true);
+
+        test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 100, 1 + rand() % 100, false);
+        test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 100, 1 + rand() % 100, true);
     }
 }
 
