@@ -71,11 +71,8 @@ void small_sgemm_fixmn(const TA *A, const TB *B, TC *C, int lda, int ldb, int ld
         if constexpr (col == 0) { va[row] = xft::set_avx512((float)(*ADDRESS(A, row, k, lda))); }
 
         if constexpr (row == 0) {
-            if constexpr (col == COLS - 1) {
-                vb = xft::load_avx512(tailMask, ADDRESS(B, k, col * AVX3_F32_NUM, ldb));
-            } else {
-                vb = xft::load_avx512(ADDRESS(B, k, col * AVX3_F32_NUM, ldb));
-            }
+            __mmask16 mask = get_mask<col, COLS>(tailMask);
+            vb = xft::load_avx512(mask, ADDRESS(B, k, col * AVX3_F32_NUM, ldb));
         }
 
         constexpr const int idx = INDEX(row, col, COLS);
