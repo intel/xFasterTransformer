@@ -65,6 +65,10 @@ struct DecoderContext {
     // For custom usage
     int reserved1;
 
+#ifdef PIPELINE_PARALLEL
+    int sequenceID;
+#endif
+
     // Model structure configuration
     int vocabSize;
     int embeddingSize;
