@@ -17,11 +17,17 @@
 #include "chatglm.h"
 #include "chatglm2.h"
 #include "chatglm3.h"
+#include "common_decoder.h"
+#include "datatypes.h"
+#include "gemma.h"
 #include "hybrid_model.h"
 #include "llama.h"
 #include "opt_decoder.h"
+#include "qwen.h"
+#include "qwen2.h"
+#include "yarn_llama.h"
 
-EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
+EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype, std::string kvCacheType = "fp16") {
     std::string configPath = modelPath + "/config.ini";
     INIReader reader = INIReader(configPath);
 
@@ -29,161 +35,40 @@ EvalAutoDecoder::EvalAutoDecoder(std::string modelPath, std::string dtype) {
         printf("Could not load model config.ini.\n");
         exit(-1);
     }
-    std::string modelType = *reader.Sections().begin();
-    vocabSize = reader.GetInteger(modelType, "vocab_size");
+    std::string modeltype = *reader.Sections().begin();
+    vocabSize = reader.GetInteger(modeltype, "vocab_size");
 
-    if (modelType == "gpt") {
-        if (dtype == "fp16") {
-            pdecoder = new OptDecoder<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new OptDecoder<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new OptDecoder<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new OptDecoder<bfloat16_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<OptDecoder, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<OptDecoder, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<OptDecoder, bfloat16_t, uint4x2_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else if (modelType == "llama") {
-        if (dtype == "fp16") {
-            pdecoder = new LlamaLLM<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new LlamaLLM<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new LlamaLLM<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new LlamaLLM<bfloat16_t>(modelPath);
-        } else if (dtype == "nf4") {
-            pdecoder = new LlamaLLM<nf4x2_t>(modelPath);
-        } else if (dtype == "w8a8") {
-            pdecoder = new LlamaLLM<w8a8_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, uint4x2_t>(modelPath);
-        } else if (dtype == "bf16_nf4") {
-            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, nf4x2_t>(modelPath);
-        } else if (dtype == "bf16_w8a8") {
-            pdecoder = new HybridModel<LlamaLLM, bfloat16_t, w8a8_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else if (modelType == "baichuan") {
-        if (dtype == "fp16") {
-            pdecoder = new Baichuan<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new Baichuan<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new Baichuan<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new Baichuan<bfloat16_t>(modelPath);
-        } else if (dtype == "nf4") {
-            pdecoder = new Baichuan<nf4x2_t>(modelPath);
-        } else if (dtype == "w8a8") {
-            pdecoder = new Baichuan<w8a8_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<Baichuan, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<Baichuan, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<Baichuan, bfloat16_t, uint4x2_t>(modelPath);
-        } else if (dtype == "bf16_nf4") {
-            pdecoder = new HybridModel<Baichuan, bfloat16_t, nf4x2_t>(modelPath);
-        } else if (dtype == "bf16_w8a8") {
-            pdecoder = new HybridModel<Baichuan, bfloat16_t, w8a8_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else if (modelType == "chatglm") {
-        if (dtype == "fp16") {
-            pdecoder = new ChatGLM<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new ChatGLM<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new ChatGLM<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new ChatGLM<bfloat16_t>(modelPath);
-        } else if (dtype == "nf4") {
-            pdecoder = new ChatGLM<nf4x2_t>(modelPath);
-        } else if (dtype == "w8a8") {
-            pdecoder = new ChatGLM<w8a8_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<ChatGLM, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<ChatGLM, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<ChatGLM, bfloat16_t, uint4x2_t>(modelPath);
-        } else if (dtype == "bf16_nf4") {
-            pdecoder = new HybridModel<ChatGLM, bfloat16_t, nf4x2_t>(modelPath);
-        } else if (dtype == "bf16_w8a8") {
-            pdecoder = new HybridModel<ChatGLM, bfloat16_t, w8a8_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else if (modelType == "chatglm2") {
-        if (dtype == "fp16") {
-            pdecoder = new ChatGLM2<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new ChatGLM2<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new ChatGLM2<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new ChatGLM2<bfloat16_t>(modelPath);
-        } else if (dtype == "nf4") {
-            pdecoder = new ChatGLM2<nf4x2_t>(modelPath);
-        } else if (dtype == "w8a8") {
-            pdecoder = new ChatGLM2<w8a8_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, uint4x2_t>(modelPath);
-        } else if (dtype == "bf16_nf4") {
-            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, nf4x2_t>(modelPath);
-        } else if (dtype == "bf16_w8a8") {
-            pdecoder = new HybridModel<ChatGLM2, bfloat16_t, w8a8_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else if (modelType == "chatglm3") {
-        if (dtype == "fp16") {
-            pdecoder = new ChatGLM3<float16_t>(modelPath);
-        } else if (dtype == "int8") {
-            pdecoder = new ChatGLM3<int8_t>(modelPath);
-        } else if (dtype == "int4") {
-            pdecoder = new ChatGLM3<uint4x2_t>(modelPath);
-        } else if (dtype == "bf16") {
-            pdecoder = new ChatGLM3<bfloat16_t>(modelPath);
-        } else if (dtype == "nf4") {
-            pdecoder = new ChatGLM3<nf4x2_t>(modelPath);
-        } else if (dtype == "w8a8") {
-            pdecoder = new ChatGLM3<w8a8_t>(modelPath);
-        } else if (dtype == "bf16_fp16") {
-            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, float16_t>(modelPath);
-        } else if (dtype == "bf16_int8") {
-            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, int8_t>(modelPath);
-        } else if (dtype == "bf16_int4") {
-            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, uint4x2_t>(modelPath);
-        } else if (dtype == "bf16_nf4") {
-            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, nf4x2_t>(modelPath);
-        } else if (dtype == "bf16_w8a8") {
-            pdecoder = new HybridModel<ChatGLM3, bfloat16_t, w8a8_t>(modelPath);
-        } else {
-            throw std::invalid_argument("Invalid DataType");
-        }
-    } else {
-        throw std::invalid_argument("Invalid ModelType");
-    }
+    pdecoder = DecoderFactory::Create(modeltype + "-" + getTypeName(dtype) + "-" + getTypeName(kvCacheType), modelPath);
 };
+
+std::string EvalAutoDecoder::getTypeName(std::string dtype) {
+    static const std::unordered_map<std::string, xft::DataType> dtypeMap = {
+            {"fp32", xft::DataType::fp32},
+            {"bf16", xft::DataType::bf16},
+            {"fp16", xft::DataType::fp16},
+            {"int8", xft::DataType::int8},
+            {"w8a8", xft::DataType::w8a8},
+            {"int4", xft::DataType::int4},
+            {"nf4", xft::DataType::nf4},
+            {"bf16_fp16", xft::DataType::bf16_fp16},
+            {"bf16_w8a8", xft::DataType::bf16_w8a8},
+            {"bf16_int8", xft::DataType::bf16_int8},
+            {"bf16_int4", xft::DataType::bf16_int4},
+            {"bf16_nf4", xft::DataType::bf16_nf4},
+            {"w8a8_int8", xft::DataType::w8a8_int8},
+            {"w8a8_int4", xft::DataType::w8a8_int4},
+            {"w8a8_nf4", xft::DataType::w8a8_nf4},
+    };
+
+    xft::DataType xftType;
+    auto it = dtypeMap.find(dtype);
+    if (it != dtypeMap.end()) {
+        xftType = it->second;
+    } else {
+        xftType = xft::DataType::unknown;
+    }
+    return xft::getTypeIdName(xftType);
+}
 
 torch::Tensor EvalAutoDecoder::forward(torch::Tensor &inputIds) {
 
@@ -219,7 +104,7 @@ torch::Tensor EvalAutoDecoder::forward(torch::Tensor &inputIds) {
         int rCount[worldSize];
         std::vector<long unsigned int> recvCount(worldSize, 1);
 
-        messenger.allgatherv((float*)(&sampleSize), 1, (float*)rCount, recvCount);
+        messenger.allgatherv((float *)(&sampleSize), 1, (float *)rCount, recvCount);
 
         for (int i = 0; i < worldSize; ++i) {
             recvCount[i] = batchSize * seqLen * rCount[i];
