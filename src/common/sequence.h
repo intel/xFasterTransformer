@@ -69,7 +69,7 @@ public:
 
     // For next token
     void stepForward(int32_t token) {
-        addNextToken(token);
+        // addNextToken(token);
         setPastSeqLen(getPastSeqLen() + 1);
         setStep(getStep() + 1);
     }
@@ -268,6 +268,8 @@ public:
         if (this->size() >= Env::getInstance().getMaxRequestNum()) { full = true; }
         return full;
     }
+
+    SequenceMeta *front() { return queue.front(); }
 
     SequenceMeta *pop() {
         auto seq = queue.front();

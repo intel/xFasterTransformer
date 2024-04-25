@@ -85,6 +85,21 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
     inputIds.resize(dims[1]);
     if (decoder->getRank() == 0) { inputIds = inputIds_; }
     messenger.broadcast(inputIds.data(), dims[1]);
+
+    if (this->isMaster()) {
+        for (int i = 0; i < 2; ++i) {
+            int sequenceID = SequencePool::getInstance().createSequenceID();
+            InputQueue::getInstance().push(SequencePool::getInstance().createMeta(sequenceID, seqLen, inputIds));
+        }
+
+        while (!InputQueue::getInstance().empty()) {
+            if (!TaskWaitingQueue::getInstance().isFull()) {
+                auto sequence = InputQueue::getInstance().pop();
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
+            }
+        }
+    }
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
@@ -142,12 +157,49 @@ std::vector<int32_t> Model::generate() {
         exit(-1);
     }
 
-    if (isNewInput) {
-        isNewInput = false;
-        return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+    if (this->isMaster()) {
+        while(TaskWaitingQueue::getInstance().empty());
+
+        if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
+            auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+            TaskWaitingQueue::getInstance().front()->stepForward();
+            return token;
+        } else {
+            auto token = searcher->getNextToken();
+            TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
+            return token;
+        }
     } else {
-        return searcher->getNextToken();
+        if (!isNewInput) {
+            while(TaskWaitingQueue::getInstance().empty());
+
+            if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
+                auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+                TaskWaitingQueue::getInstance().front()->stepForward();
+                return token;
+            } else {
+                auto token = searcher->getNextToken();
+                TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
+                return token;
+            }
+        } else {
+            isNewInput = false;
+            auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+            TaskWaitingQueue::getInstance().front()->stepForward();
+            return token;
+        }
     }
+
+    // if (isNewInput) {
+    //     printf("1st\n");
+    //     // TaskWaitingQueue::getInstance().front()->getStep() == 0
+    //     // TaskWaitingQueue::getInstance().front()->stepForward();
+    //     isNewInput = false;
+    //     return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+    // } else {
+    //     printf("2nd\n");
+    //     return searcher->getNextToken();
+    // }
 }
 
 void Model::createSearcher(SearcherConfig &config_) {

@@ -31,11 +31,12 @@
 #include "mlp_chatglm2.h"
 #include "mlp_standard.h"
 #include "model_factory.h"
+#include "sequence.h"
+#include "thread_util.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
-#include "sequence.h"
 
 using namespace xft;
 
@@ -326,8 +327,7 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint(
-                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
@@ -344,22 +344,28 @@ public:
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             int count = batchSize * inputSeqLen * hiddenSize;
-            int32_t sequenceID;
-            MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
-            MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            // TODO: Error: different scope when dynamic loading so file
-            // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-            if (!SequencePool::getInstance().has(sequenceID)) {
-                SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
-                sequence->setPastSeqLen(pastSeqLen);
-                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
-            }
-            TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
+            ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, count, &embBuf, seqLen, hiddenSize, pastSeqLen] {
+                while (true) {
+                    int32_t sequenceID;
+                    MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
+                    MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    // TODO: Error: different scope when dynamic loading so file
+                    // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+                    printf("Decoder.Seq%d.MPI_Recv\n", sequenceID);
+                    fflush(stdout);
+                    if (!SequencePool::getInstance().has(sequenceID)) {
+                        SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
+                        sequence->setPastSeqLen(pastSeqLen);
+                        sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                        SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+                    }
+                    TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
+                }
+            });
         }
 
-        if (!InputQueue::getInstance().empty()) {
+        while (!InputQueue::getInstance().empty()) {
             if (!TaskWaitingQueue::getInstance().isFull()) {
                 auto sequence = InputQueue::getInstance().pop();
                 sequence->setPastSeqLen(pastSeqLen);
@@ -369,13 +375,19 @@ public:
             }
         }
 
-        while(TaskWaitingQueue::getInstance().empty());
+        while (TaskWaitingQueue::getInstance().empty());
 
         SequenceMeta *runningTask = nullptr;
         int32_t sequenceID = -1;
         if (!TaskWaitingQueue::getInstance().empty()) {
             runningTask = TaskWaitingQueue::getInstance().pop();
             sequenceID = runningTask->getSequenceID();
+            ctx->sequenceID = runningTask->getSequenceID();
+            runningTask->setPastSeqLen(pastSeqLen);
+            runningTask->allocBuffer<AttnInT>(hiddenSize, embBuf);
+            printf("Decoder.Seq%d.step\n", sequenceID);
+            fflush(stdout);
+
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
@@ -443,6 +455,8 @@ public:
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
+            printf("Decoder.Seq%d.MPI_Send\n", sequenceID);
+            fflush(stdout);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
 #endif

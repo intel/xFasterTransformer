@@ -51,6 +51,8 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
                     TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
                     MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
                             predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    printf("GreedySearch.Seq%d.MPI_Recv\n", sequenceID);
+                    fflush(stdout);
                     if (SequencePool::getInstance().has(sequenceID)) {
                         auto sequence = SequencePool::getInstance().get(sequenceID);
                         TaskWaitingQueue::getInstance().push(sequence);
@@ -72,6 +74,8 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
                     MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
+            printf("GreedySearch.Seq%d.MPI_Send\n", ctx->sequenceID);
+            fflush(stdout);
         }
     }
 #else
