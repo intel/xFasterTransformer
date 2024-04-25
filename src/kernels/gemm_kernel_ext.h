@@ -28,52 +28,31 @@ void small_gemm_transb(const float *A, const float *B, float *C, int M, int N, i
 void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(
         const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
-void small_gemm_transb(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc);
+void small_gemm_transb(
+        const bfloat16_t *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+void small_gemm_transb(
+        const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc);
-
-// Single thread small gemm with attention mask (skip skippable computation according to attnMask)
-void small_gemm_transb(const float *attnMask, const float *A, const float *B, float *C, int M, int N, int K, int lda,
-        int ldb, int ldc);
-void small_gemm_transb(const float *attnMask, const float *A, const float16_t *B, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc);
-void small_gemm_transb(const float *attnMask, const float *A, const bfloat16_t *B, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc);
-void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const bfloat16_t *B, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc);
-void small_gemm_transb(const float *attnMask, const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K,
         int lda, int ldb, int ldc);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace xft {
 // Single thread small gemm
-template <typename TA, typename TB, typename TC>
-void small_gemm(const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int ldb, int ldc) {
-    printf("Error: small_gemm(%s, %s, %s) is not supported yet!\n", typeid(TA).name(), typeid(TB).name(),
-            typeid(TC).name());
-    exit(-1);
-}
+void small_gemm(
+        const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc = false);
+void small_gemm(
+        const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc = false);
+void small_gemm(const float *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
+void small_gemm(const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
+void small_gemm(const float *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
 
-template <>
-inline void small_gemm(const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
-    xdnn_sgemm_single_thread(false, false, M, N, K, 1.0f, A, lda, B, ldb, 0.0f, C, ldc);
-}
-
-template <>
-inline void small_gemm(const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
-    xdnn_sgemm_f32f16f32_single_thread(false, false, M, N, K, 1.0f, A, lda, (const XDNN_FP16 *)B, ldb, 0.0f, C, ldc);
-}
-
-template <>
-inline void small_gemm(
-        const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc) {
-    small_sgemm_f32f16bf16(false, M, N, K, A, lda, (const XDNN_FP16 *)B, ldb, (XDNN_BF16 *)C, ldc);
-}
-
-void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
-        int ldb, int ldc);
+// INT8 versions
+void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb,
+        int ldc, bool acc = false);
 void small_gemm(const float *A, const int8_t *B, const float *bScale, bfloat16_t *C, int M, int N, int K, int lda,
-        int ldb, int ldc);
+        int ldb, int ldc, bool acc = false);
 } // namespace xft
