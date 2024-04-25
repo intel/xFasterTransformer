@@ -35,6 +35,7 @@
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
+#include "sequence.h"
 
 using namespace xft;
 
@@ -278,7 +279,7 @@ public:
 
         int userSideBS = dims[0];
         int beamSize = dims[1];
-        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as samples are duplicated at step 0
+        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as sequence are duplicated at step 0
         int seqLen = dims[2];
         int pastSeqLen = step == 0 ? 0 : this->accSeqLen;
         int inputSeqLen = seqLen;
@@ -286,6 +287,7 @@ public:
         // Prepare context
         DecoderContext *ctx = this->getContext();
         ctx->resize(batchSize, seqLen, pastSeqLen);
+        int hiddenSize = ctx->hiddenSize;
 
         if (step == 0) {
             // Reset initial and accumulated sequence length at the first step
@@ -314,7 +316,7 @@ public:
         }
 
         AttnInT *embBuf = (AttnInT *)actBuffers->Data();
-        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * ctx->hiddenSize);
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
 
         // Embedding
         this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
@@ -325,8 +327,8 @@ public:
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
         dbg.debugPrint(
-                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
-        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
+                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
         // Prepare attention mask
@@ -341,15 +343,43 @@ public:
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            int count = batchSize * inputSeqLen * hiddenSize;
+            int32_t sequenceID;
+            MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+            if (!SequencePool::getInstance().has(sequenceID)) {
+                SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
+                sequence->setPastSeqLen(pastSeqLen);
+                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+            }
+            TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
+
+        if (!InputQueue::getInstance().empty()) {
+            if (!TaskWaitingQueue::getInstance().isFull()) {
+                auto sequence = InputQueue::getInstance().pop();
+                sequence->setPastSeqLen(pastSeqLen);
+                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
+            }
+        }
+
+        while(TaskWaitingQueue::getInstance().empty());
+
+        SequenceMeta *runningTask = nullptr;
+        int32_t sequenceID = -1;
+        if (!TaskWaitingQueue::getInstance().empty()) {
+            runningTask = TaskWaitingQueue::getInstance().pop();
+            sequenceID = runningTask->getSequenceID();
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
         // Decoder: forward
-        int hiddenSize = ctx->hiddenSize;
         int layers_per_pp_stage = this->decoders.size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
@@ -402,10 +432,14 @@ public:
         }
 
 #ifdef PIPELINE_PARALLEL
+        }
+
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            int count = batchSize * inputSeqLen * hiddenSize;
+            MPI_Send(&sequenceID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
