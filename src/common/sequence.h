@@ -21,7 +21,7 @@
 /*
                            SequencePool
                           ┌──────┬──────┬──────┐
-                          │      │      │  ◄───┼──┬─ SequenceMeta
+                          │      │      │  ◄───┼──┬─ SequenceGroupMeta
                           ├──────┼──────┼──────┤  │
     BatchInputs           │      │      │  ◄───┼──┘
       │                   └▲─┬─▲─┴──────┴──────┘
@@ -44,15 +44,15 @@ class SequenceMeta {
 public:
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> &_inputTokens)
         : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), pastSeqLen(0), step(0) {
-        inputTokens.resize(_inputSeqLen);
+        inputTokens.reserve(_inputSeqLen);
         inputTokens.assign(_inputTokens.begin(), _inputTokens.end());
-        nextTokens.resize(_inputSeqLen);
+        nextTokens.reserve(_inputSeqLen);
         setPastSeqLen(getPastSeqLen());
     }
 
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
         : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), inputTokens(_inputSeqLen, 0), pastSeqLen(0), step(0) {
-        nextTokens.resize(_inputSeqLen);
+        nextTokens.reserve(_inputSeqLen);
     }
 
     ~SequenceMeta() {}
@@ -123,19 +123,30 @@ private:
 // For beam searcher
 class SequenceGroupMeta {
 public:
-    SequenceGroupMeta(int32_t _num_beams, std::vector<SequenceMeta *> &seq) {
-        num_beams = _num_beams;
-        sequences = seq;
+    SequenceGroupMeta(std::vector<SequenceMeta> &seq) {
+        size_per_group = seq.size();
+        sequences.reserve(size_per_group);
+        sequences.assign(seq.begin(), seq.end());
+    }
+
+    int32_t getGroupSize() { return size_per_group; }
+
+    SequenceMeta *get() { return sequences.data(); }
+
+    SequenceMeta *get(int index) { return &sequences[index]; }
+
+    SequenceMeta &operator[](int index) {
+        return sequences[index];
     }
 
 private:
-    int32_t num_beams;
-    std::vector<SequenceMeta *> sequences;
+    int32_t size_per_group;
+    std::vector<SequenceMeta> sequences;
 };
 
 //    SequencePool
 //    ┌──────┬──────┬──────┐
-//    │      │      │  ◄───┼──┬─ SequenceMeta
+//    │      │      │  ◄───┼──┬─ SequenceGroupMeta
 //    ├──────┼──────┼──────┤  │
 //    │      │      │  ◄───┼──┘
 //    └──────┴──────┴──────┘
@@ -155,17 +166,50 @@ public:
         return id;
     }
 
-    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen, std::vector<int32_t> &inputTokens) {
-        auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen, inputTokens);
-        return sequenceMeta;
+    SequenceGroupMeta *newMeta(int32_t sequenceID, int32_t inputSeqLen, std::vector<int32_t> &inputTokens) {
+        std::vector<SequenceMeta> sequence;
+        sequence.emplace_back(SequenceMeta(sequenceID, inputSeqLen, inputTokens));
+
+        auto *group = new SequenceGroupMeta(sequence);
+        return group;
     }
 
-    SequenceMeta *createMeta(int32_t sequenceID, int32_t inputSeqLen) {
-        auto *sequenceMeta = new SequenceMeta(sequenceID, inputSeqLen);
-        return sequenceMeta;
+    SequenceGroupMeta *newMeta(int32_t sequenceID, int32_t inputSeqLen) {
+        std::vector<SequenceMeta> sequence;
+        sequence.emplace_back(SequenceMeta(sequenceID, inputSeqLen));
+
+        auto *group = new SequenceGroupMeta(sequence);
+        return group;
     }
 
-    bool add(int32_t sequenceID, SequenceMeta *sequence, bool force = false) {
+    SequenceGroupMeta *newGroupMeta(std::vector<int32_t> &sequenceIDs, std::vector<int32_t> &inputSeqLens,
+            std::vector<std::vector<int32_t>> &inputTokens) {
+        assert(sequenceIDs.size() == inputSeqLens.size());
+        assert(sequenceIDs.size() == inputTokens.size());
+
+        std::vector<SequenceMeta> sequences;
+        for (int i = 0; i < sequenceIDs.size(); ++i) {
+            sequences.emplace_back(SequenceMeta(sequenceIDs[i], inputSeqLens[i], inputTokens[i]));
+        }
+
+        auto *group = new SequenceGroupMeta(sequences);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(std::vector<int32_t> &sequenceIDs, std::vector<int32_t> &inputSeqLens) {
+        assert(sequenceIDs.size() == inputSeqLens.size());
+
+        std::vector<SequenceMeta> sequences;
+        for (int i = 0; i < sequenceIDs.size(); ++i) {
+            sequences.emplace_back(SequenceMeta(sequenceIDs[i], inputSeqLens[i]));
+        }
+
+        auto *group = new SequenceGroupMeta(sequences);
+        return group;
+    }
+
+    // Use first sequenceID if num_beam = 4
+    bool add(int32_t sequenceID, SequenceGroupMeta *sequence, bool force = false) {
         bool isSuccess = false;
         if (force) {
             auto it = hub.find(sequenceID);
@@ -186,7 +230,7 @@ public:
 
     bool has(int32_t sequenceID) const { return hub.find(sequenceID) != hub.end(); }
 
-    SequenceMeta *get(int32_t sequenceID) const {
+    SequenceGroupMeta *get(int32_t sequenceID) const {
         auto it = hub.find(sequenceID);
         if (it != hub.end()) {
             return it->second;
@@ -208,12 +252,12 @@ public:
         return isSuccess;
     }
 
-    bool replace(int32_t sequenceID, SequenceMeta *newSequenceMeta) {
+    bool replace(int32_t sequenceID, SequenceGroupMeta *sequences) {
         bool isSuccess = false;
         auto it = hub.find(sequenceID);
         if (it != hub.end()) {
             remove(it->first, true);
-            hub[sequenceID] = newSequenceMeta;
+            hub[sequenceID] = sequences;
             isSuccess = true;
         }
 
@@ -224,7 +268,7 @@ private:
     SequencePool() {}
 
     int32_t globalSequenceID = 0;
-    std::unordered_map<int32_t, SequenceMeta *> hub;
+    std::unordered_map<int32_t, SequenceGroupMeta *> hub;
 };
 
 // Manage input sequenceMeta
@@ -237,18 +281,18 @@ public:
 
     bool empty() { return queue.empty(); }
 
-    SequenceMeta *pop() {
+    SequenceGroupMeta *pop() {
         auto seq = queue.front();
         queue.pop();
         return seq;
     }
 
-    void push(SequenceMeta *seq) { queue.push(seq); }
+    void push(SequenceGroupMeta *seq) { queue.push(seq); }
 
 private:
     InputQueue() {}
 
-    std::queue<SequenceMeta *> queue;
+    std::queue<SequenceGroupMeta *> queue;
 };
 
 // Manage executive sequenceMeta
@@ -269,18 +313,18 @@ public:
         return full;
     }
 
-    SequenceMeta *pop() {
+    SequenceGroupMeta *pop() {
         auto seq = queue.front();
         queue.pop();
         return seq;
     }
 
-    void push(SequenceMeta *seq) { queue.push(seq); }
+    void push(SequenceGroupMeta *seq) { queue.push(seq); }
 
 private:
     TaskWaitingQueue() {}
 
-    std::queue<SequenceMeta *> queue;
+    std::queue<SequenceGroupMeta *> queue;
 };
 
 } // namespace xft

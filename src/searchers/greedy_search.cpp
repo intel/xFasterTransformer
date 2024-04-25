@@ -52,8 +52,8 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
                     MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
                             predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     if (SequencePool::getInstance().has(sequenceID)) {
-                        auto sequence = SequencePool::getInstance().get(sequenceID);
-                        TaskWaitingQueue::getInstance().push(sequence);
+                        auto seq = SequencePool::getInstance().get(sequenceID);
+                        TaskWaitingQueue::getInstance().push(seq);
                     } else {
                         printf("Error: should have sequenceID\n");
                         fflush(stdout);

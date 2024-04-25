@@ -351,31 +351,31 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
             if (!SequencePool::getInstance().has(sequenceID)) {
-                SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
-                sequence->setPastSeqLen(pastSeqLen);
-                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+                auto *seqs = SequencePool::getInstance().newMeta(sequenceID, seqLen);
+                seqs->get(0)->setPastSeqLen(pastSeqLen);
+                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
             }
             TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
 
         if (!InputQueue::getInstance().empty()) {
             if (!TaskWaitingQueue::getInstance().isFull()) {
-                auto sequence = InputQueue::getInstance().pop();
-                sequence->setPastSeqLen(pastSeqLen);
-                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
-                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
+                auto *seqs = InputQueue::getInstance().pop();
+                seqs->get(0)->setPastSeqLen(pastSeqLen);
+                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(seqs->get(0)->getSequenceID()));
             }
         }
 
         while(TaskWaitingQueue::getInstance().empty());
 
-        SequenceMeta *runningTask = nullptr;
+        SequenceGroupMeta *runningTask = nullptr;
         int32_t sequenceID = -1;
         if (!TaskWaitingQueue::getInstance().empty()) {
             runningTask = TaskWaitingQueue::getInstance().pop();
-            sequenceID = runningTask->getSequenceID();
+            sequenceID = runningTask->get(0)->getSequenceID();
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
