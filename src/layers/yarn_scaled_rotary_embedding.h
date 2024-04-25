@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include "bfloat16.h"
 #include "transformer_ctx.h"
 
 /*  Sample:
@@ -39,6 +40,8 @@ public:
     ~LlamaYaRNScaledRotaryEmbedding() {}
 
     void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+    void forward(
+            bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
 private:
     void yarnFindRange(int &low, int &high, int betaFast, int betaSlow, int dim, float base, int orgMaxPosEmbed);
