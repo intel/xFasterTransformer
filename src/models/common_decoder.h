@@ -220,7 +220,7 @@ public:
         this->inputTokens = nullptr;
         this->maskSize = 0;
         this->attnMask = nullptr;
-        actBuffers.reset(new hpj::Matrix<float>());
+        actBuffers.reset(new xft::Matrix<float>());
 
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
@@ -620,13 +620,13 @@ public:
     int getInitSeqLen() { return initSeqLen; }
 
     std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>>
+            std::shared_ptr<xft::Matrix<float>>>
     getSharedResources() {
         return std::make_tuple(context, kvCacheMgr, actBuffers);
     }
 
     void setSharedResources(const std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>> &r) {
+            std::shared_ptr<xft::Matrix<float>>> &r) {
         this->context = std::get<0>(r);
         this->kvCacheMgr = std::get<1>(r);
         this->actBuffers = std::get<2>(r);
@@ -1000,7 +1000,7 @@ protected:
     using MlpOutT = typename MlpTypeExtractor<MLP_CLS>::Tout;
 
     // Activation buffers (declared as float, but the actual data type may be different)
-    std::shared_ptr<hpj::Matrix<float>> actBuffers;
+    std::shared_ptr<xft::Matrix<float>> actBuffers;
 
 protected:
     // Components most LLMs may use

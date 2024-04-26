@@ -115,7 +115,7 @@ public:
     }
 
     template <typename T>
-    void dumpMatrix(hpj::Matrix<T> &m, bool print_all = false) {
+    void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
         std::ostringstream oss;
         uint64_t rows = m.Rows();
         uint64_t cols = m.Cols();
