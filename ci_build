@@ -85,10 +85,6 @@ ut() {
         if [ -x "$file" ]; then
 
             #Todo(marvin): delete me when the case is ready.
-            if [[ "$file" == "./beam_search_test" ]]; then
-                Warning "Bypass the fail case of $file."
-                continue
-            fi
             if [[ "$file" == "./rotary_embedding_test" ]]; then
                 Warning "Bypass the fail case of $file."
                 continue
