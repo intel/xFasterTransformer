@@ -109,10 +109,10 @@ struct DecoderContext {
     float *qkScores; // attention score
 
     // Please look into the comments in resize function to see how buffers are arranged
-    hpj::Matrix<float> normBuf; // buf for the first layer norm
-    hpj::Matrix<float> tmpBuf; // tmp buffer, same size as output
-    hpj::Matrix<float> qkvMatMul; // query, key, value
-    hpj::Matrix<float> imOut; // intermediate output
+    xft::Matrix<float> normBuf; // buf for the first layer norm
+    xft::Matrix<float> tmpBuf; // tmp buffer, same size as output
+    xft::Matrix<float> qkvMatMul; // query, key, value
+    xft::Matrix<float> imOut; // intermediate output
 
     MMHelper *mmHelper;
 

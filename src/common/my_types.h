@@ -36,7 +36,7 @@ void *xft_numa_alloc(size_t size);
 void xft_numa_free(void *start, size_t size);
 }
 
-namespace hpj {
+namespace xft {
 
 template <typename T>
 struct is_quantization_type {
@@ -366,4 +366,4 @@ public:
     }
     uint64_t Size() { return size; }
 };
-} // namespace hpj
+} // namespace xft
