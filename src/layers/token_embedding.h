@@ -44,8 +44,8 @@ public:
 
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>
-    void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
-        xft::tokenEmbedding<OutT, T>(output, tokenIds, embTable, batchSize, seqLen, hiddenSize);
+    void forward(int *tokenIds, OutT *output, int tokenSize) {
+        xft::tokenEmbedding<OutT, T>(output, tokenIds, embTable, tokenSize, hiddenSize);
     }
 
     int getVocabSize() { return vocabSize; }

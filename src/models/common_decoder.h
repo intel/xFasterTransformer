@@ -319,7 +319,7 @@ public:
         MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
 
         // Embedding
-        this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
+        this->embeddingForward(ids, embBuf, batchSize * inputSeqLen);
         this->accSeqLen += seqLen;
 
 #ifdef DEBUG
@@ -546,7 +546,7 @@ public:
         MlpOutT *outBuf = (MlpOutT *)(embBuf + 1 * seqLen * ctx->hiddenSize);
 
         // Embedding
-        this->embeddingForward(ids, embBuf, 1, seqLen);
+        this->embeddingForward(ids, embBuf, 1 * seqLen);
 
         // Prepare attention mask
         this->prepareAttnMask(ids, 0);
@@ -949,11 +949,11 @@ protected:
 
     int getStartId() { return startId; }
 
-    virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+    virtual void embeddingForward(int *ids, float *output, int tokenSize) {
         printf("embeddingForward(float) must be implemented.\n");
         exit(-1);
     }
-    virtual void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+    virtual void embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
         printf("embeddingForward(bfloat16_t) must be implemented.\n");
         exit(-1);
     }

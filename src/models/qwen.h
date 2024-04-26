@@ -28,7 +28,7 @@ public:
     ~QwenLLM();
 
     void prepareAttnMask(int *ids, int step);
-    void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
+    void embeddingForward(int *ids, float *output, int tokenSize);
     void lastLayerNormForward(float *input, float *output, int rows);
 
 private:
