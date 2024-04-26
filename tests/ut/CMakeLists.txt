@@ -64,16 +64,6 @@ foreach(src ${sources})
                        ${SRC_DIR}/utils/numa_allocator.cpp
                        ${SRC_DIR}/utils/shm_reduction.cpp
                        ${SRC_DIR}/kernels/gemm_kernel_ext.cpp)
-    elseif(${executable} STREQUAL "beam_search_test")
-        add_executable(beam_search_test
-                       ${src}
-                       ${SRC_DIR}/layers/layer_norm.cpp
-                       ${SRC_DIR}/models/opt_decoder.cpp
-                       ${SRC_DIR}/models/kvcache_manager.cpp
-                       ${SRC_DIR}/searchers/beam_search.cpp
-                       ${SRC_DIR}/utils/numa_allocator.cpp
-                       ${SRC_DIR}/utils/shm_reduction.cpp
-                       ${SRC_DIR}/kernels/gemm_kernel_ext.cpp)
     elseif(${executable} STREQUAL "alibi_embedding_test")
         add_executable(alibi_embedding_test ${src} ${SRC_DIR}/layers/alibi_embedding.cpp)
     elseif(${executable} STREQUAL "rotary_embedding_test")
@@ -102,7 +92,7 @@ foreach(src ${sources})
     target_link_libraries(${executable} PUBLIC xfastertransformer)
 
     # List of executable names and their corresponding libraries
-    set(executables_need_gemm kv_reorder_test beam_search_test small_gemm_test)
+    set(executables_need_gemm kv_reorder_test small_gemm_test)
 
     # Gemm libraries needed for all executables
     foreach(name ${executables_need_gemm})
