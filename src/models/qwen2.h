@@ -34,8 +34,8 @@ public:
 
     void prepareAttnMask(int *ids, int step);
 
-    void embeddingForward(int *ids, float *output, int batchSize, int seqLen);
-    void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen);
+    void embeddingForward(int *ids, float *output, int tokenSize);
+    void embeddingForward(int *ids, bfloat16_t *output, int tokenSize);
 
     void lastLayerNormForward(float *input, float *output, int rows);
     void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
