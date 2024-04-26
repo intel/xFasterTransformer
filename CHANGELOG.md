@@ -1,5 +1,25 @@
 # CHANGELOG
 
+# [Version v1.6.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.6.0)
+v1.6.0 - Llama3 and Qwen2 series models supported.
+
+## Functionality
+- Support Llama3 and Qwen2 series models.
+- Add INT8 KV cache datatype, using `kv_cache_dtype` params to specify, including `int8`, `fp16`(default) and `fp32`.
+- More models enable full BF16 pipline, includes Chatglm2/3 and yarn-llama.
+- Add invokeMLPLLaMA FP16 API.
+- Support logits output using `forward()` api.
+
+## Dependency
+- Bump `transformers` to `4.40.0` to support Llama3 models.
+
+## Performance
+- Update xDNN to release `v1.4.6`
+
+## BUG fix
+- Fix numeric overflow when calculate softmax in sampling.  
+- fix assert bug when concat gate&up.
+
 # [Version v1.5.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.5.0)
 v1.5.0 - Gemma series models supported.
 
