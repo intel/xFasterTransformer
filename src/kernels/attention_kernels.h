@@ -39,6 +39,7 @@
 
 namespace xft {
 
+// T1 could be float, bfloat16_t, float16_t, or std::pair<int8_t *, float *>
 template <typename T1, typename T2>
 void storeKVCache(T1 &dst, T2 *src, int headSize) {
     if constexpr (std::is_same_v<T1, float *> || std::is_same_v<T1, bfloat16_t *> || std::is_same_v<T1, float16_t *>) {
@@ -47,6 +48,55 @@ void storeKVCache(T1 &dst, T2 *src, int headSize) {
         xft::quantize(dst.first, dst.second, src, headSize);
     } else {
         xft::copy(dst.first, src, headSize);
+    }
+}
+
+template <typename T1, typename T2, typename T3>
+void storeKVCache(
+        std::tuple<T1, int, T2> &cacheHead, T3 *kv, int pastSeqLen, int inputSeqLen, int headSize, int kvStride) {
+    auto [baseAddr, stride, scale] = cacheHead;
+    for (int i = 0; i < inputSeqLen; ++i) {
+        auto dst = baseAddr + (i + pastSeqLen) * stride;
+        auto src = kv + i * kvStride;
+        if constexpr (std::is_same_v<T1, int8_t *>) {
+            xft::quantize(dst, scale + pastSeqLen + i, src, headSize);
+        } else {
+            xft::copy(dst, src, headSize);
+        }
+    }
+}
+
+// query: M * headSize, key: N * headSize, score: M * N
+// ldq: leading dimension of query; lds: LD of score
+// keyMat: key matrix, which is a tuple of (addr, strde, scale)
+template <typename T1, typename T2, typename T3, typename T4>
+void gemmQK(T1 *query, const std::tuple<T2, int, T3> &keyMat, T4 *score, int M, int N, int headSize, int ldq,
+        int lds) {
+    auto A = query;
+    auto [B, ldb, scale] = keyMat;
+    auto C = score;
+    const int K = headSize;
+    if constexpr (std::is_same_v<T2, int8_t *>) {
+        small_gemm_transb(A, B, scale, C, M, N, K, ldq, ldb, lds);
+    } else {
+        small_gemm_transb(A, B, C, M, N, K, ldq, ldb, lds);
+    }
+}
+
+// Compute Score * Value
+// score: M * K(keyLen), value: K * headSize, output: M * headSize
+// valueMat: value matrix, which is a tuple of (addr, strde, scale)
+template <typename T1, typename T2, typename T3, typename T4>
+void gemmSV(T1 *score, const std::tuple<T2, int, T3> &valueMat, T4 *output, int M, int headSize, int K, int lds,
+        int ldo) {
+    auto A = score;
+    auto [B, ldv, scale] = valueMat;
+    auto C = output;
+    const int N = headSize;
+    if constexpr (std::is_same_v<T2, int8_t>) {
+        xft::small_gemm(A, B, scale, C, M, N, K, lds, ldv, ldo);
+    } else {
+        xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
     }
 }
 
@@ -431,6 +481,7 @@ inline std::pair<T, T> balance211(T n, U team, U tid) {
 
 /**
  * @brief Cross attention with sharded heads (When #heads is few, need to split each head to use more resources)
+ * @note KV head number is not here because it is handled by getKHead and getVHead by providing the query head index
  * @tparam T1 Query and output data type
  * @param output Output tensor
  * @param query Query tensor
@@ -456,13 +507,14 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
 
     int N = presentSeqLen;
     int splits = threadNum / (batchSize * responsibleHeads);
-    int NB = (N + splits - 1) / splits; // Max block size in one thread
 
     REQUIRES(splits > 1, "Do not call me when splits=%d, threadNum=%d, batchSize=%d, heads=%d\n", splits, threadNum,
             batchSize, responsibleHeads);
 
     // AVX512 is used and the case where headSize is not multiple of 16 hasn't been taken into account
     REQUIRES(headSize % 16 == 0, "Head size (%d) is not supported.", headSize);
+
+    int NB = (N + splits - 1) / splits; // Max block size in one thread
 
     // The first element is for max, the second is for sum, the third is for finish flag
     // [max(xi), sum(exp(xi)), finish_tag] for each thread
@@ -592,6 +644,137 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
                     }
                 }
             } // end for s
+        } // end for i
+    } // end for b
+}
+
+/**
+ * @brief Cross attention with head granularity (including copy key/value to KV Cache)
+ * @note if causal = True, attnMask is not used
+ * @tparam T Data type
+ * @tparam KVCacheT KV cache data type
+ * @tparam Lambda1 Lambda to get head of cached keys, return tuple of (addr, stride, scale)
+ * @tparam Lambda2 Lambda to get head of cached values
+ * @param output Output tensor
+ * @param query Query tensor, in shape of (input_seqlen, head_num, head_size)
+ * @param key Key tensor (not include cached keys)
+ * @param value Value tensor (not include cached values)
+ * @param qHeadNum Query head number
+ * @param kvHeadNum KV head number
+ * @param headSize Head size
+ * @param oStride Output stride
+ * @param qStride Query stride
+ * @param kvStride KV stride
+ * @param batchSize Batch size
+ * @param inputSeqLens Input sequence lengths
+ * @param pastSeqLens Past sequence lengths
+ * @param causal Whether causal attention
+ * @param alibiSlopes Alibi slopes
+ * @param attnMask Attention mask
+ * @param scale Scale factor for softmax
+ * @param threadNum Thread number
+ * @param getKHead Lambda to get head of cached keys
+ * @param getVHead Lambda to get head of cached values
+ */
+template <typename T, typename KVCacheT, typename Lambda1, typename Lambda2>
+void crossAttnByHead(T *output, const T *query, const T *key, const T *value, int qHeadNum, int kvHeadNum, int headSize,
+        int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens, const int *pastSeqLens,
+        bool causal, const float **alibiSlopes, const float **attnMask, const float scale, int threadNum,
+        const Lambda1 &getKHead, const Lambda2 &getVHead) {
+
+    int responsibleHeads = qHeadNum;
+    int groupNum = qHeadNum / kvHeadNum;
+
+    // To get row offset for each sample/sequence inside the batch, and prepare score buffer
+    int inputOffsets[batchSize];
+    size_t scoreSizePerThr = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        scoreSizePerThr = std::max(scoreSizePerThr, (size_t)inputSeqLens[i] * (inputSeqLens[i] + pastSeqLens[i]));
+        inputOffsets[i] = (i > 0 ? inputOffsets[i - 1] + inputSeqLens[i] : 0);
+    }
+
+    scoreSizePerThr = ALIGNED_SIZE(scoreSizePerThr, 16);
+    size_t scoreSize = scoreSizePerThr * threadNum;
+    float *scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * scoreSize);
+
+#pragma omp parallel for collapse(2)
+    for (int b = 0; b < batchSize; ++b) {
+        for (int i = 0; i < responsibleHeads; ++i) {
+            // Copy current key to cached keys (if needed)
+            int kvHdx = i / groupNum;
+            auto keyMatInfo = getKHead(b, kvHdx);
+            auto valueMat = getVHead(b, kvHdx);
+            bool bCopyCache = (i % groupNum == 0);
+
+            // Q * K
+            auto Q = query + inputOffsets[b] * qStride + i * headSize;
+            auto S = scoreBuf + omp_get_thread_num() * scoreSizePerThr;
+
+            const int queryLen = inputSeqLens[b];
+            const int keyLen = pastSeqLens[b] + inputSeqLens[b];
+
+            if (bCopyCache) {
+                int m = queryLen;
+                int n = keyLen;
+                int lda = qStride;
+                int ldc = keyLen;
+
+                // Copy to Key cache and compute Query * Key
+                auto src = key + inputOffsets[b] * kvStride + kvHdx * headSize;
+                storeKVCache(keyMatInfo, src, pastSeqLens[b], inputSeqLens[b], headSize, kvStride);
+
+                gemmQK(Q, keyMatInfo, S, m, n, headSize, lda, ldc);
+            } else {
+                // Note: when KV cache is not copied by me, then 2 times gemm to avoid synchronization
+                int m = queryLen;
+                int n = pastSeqLens[b];
+                int lda = qStride;
+                int ldc = keyLen;
+                gemmQK(Q, keyMatInfo, S, m, n, headSize, lda, ldc);
+
+                int ldb = kvStride;
+                auto B = key + inputOffsets[b] * kvStride + kvHdx * headSize;
+                small_gemm_transb(Q, B, S + n, m, inputSeqLens[b], headSize, lda, ldb, ldc);
+            }
+
+            // Softmax(Q * K)
+            if (causal && alibiSlopes == nullptr) {
+                for (int seq = 0; seq < queryLen; ++seq) {
+                    int elements = pastSeqLens[b] + seq + 1;
+                    small_softmax_f32(S + seq * keyLen, scale, elements);
+                    if (keyLen > elements) {
+                        memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float));
+                    }
+                }
+            }
+            
+            // TODO: other cases
+
+            // Softmax * V
+            if (bCopyCache) {
+                // Copy current value to cached values
+                auto src = value + inputOffsets[b] * kvStride + kvHdx * headSize;
+                storeKVCache(valueMat, src, pastSeqLens[b], inputSeqLens[b], headSize, kvStride);
+
+                int m = queryLen;
+                auto result = output + inputOffsets[b] * oStride + i * headSize;
+                gemmSV(S, valueMat, result, m, headSize, keyLen, keyLen, oStride);
+            } else {
+                // Note: when KV cache is not copied by me, then 2 times gemm to avoid synchronization
+                int m = queryLen;
+                float f32Out[m * headSize]; // accumulate in FP32
+                gemmSV(S, valueMat, f32Out, m, headSize, pastSeqLens[b], keyLen, headSize);
+
+                auto B = value + inputOffsets[b] * kvStride + kvHdx * headSize;
+                small_gemm(S + pastSeqLens[b], B, f32Out, m, headSize, m, keyLen, kvStride, headSize, true);
+
+                // f32Out -> output
+                auto result = output + inputOffsets[b] * oStride + i * headSize;
+                for (int t = 0; t < m; ++t) {
+                    xft::copy(result + t * oStride, f32Out + t * headSize, headSize);
+                }
+            }
+
         } // end for i
     } // end for b
 }
