@@ -35,7 +35,6 @@ constexpr inline __mmask16 get_mask(__mmask16 mask) {
  * @tparam TC The type of C
  * @tparam M The number of rows of A and C
  * @tparam N The number of columns of B and C (must be multiple of 16, could be expanded)
- * @tparam ACC Whether to accumulate to C
  * @tparam N_EXPANDED Whether N is expanded
  * @param A The pointer to A
  * @param B The pointer to B
@@ -47,9 +46,9 @@ constexpr inline __mmask16 get_mask(__mmask16 mask) {
  * @param actualN The actual number of columns of B and C (When N_EXPANDED = false, actualN = N)
  * @param K The number of columns of A and rows of B
 */
-template <typename TC, int M, int N, bool ACC, bool N_EXPANDED = false>
-void small_sgemm_smallm(
-        const float *A, const int8_t *B, const float *bScale, TC *C, int lda, int ldb, int ldc, int actualN, int K) {
+template <typename TC, int M, int N, bool N_EXPANDED = false>
+void small_sgemm_smallm(const float *A, const int8_t *B, const float *bScale, TC *C, int lda, int ldb, int ldc,
+        int actualN, int K, bool acc) {
     constexpr const int AVX3_F32_NUM = 16;
     constexpr const int COLS = N / AVX3_F32_NUM;
 
@@ -103,21 +102,21 @@ void small_sgemm_smallm(
         constexpr const int row = i / COLS;
         constexpr const int col = i % COLS;
         if constexpr (N_EXPANDED) {
-            if constexpr (ACC) {
+            if (acc) {
                 vc[i] = xft::load_avx512(get_mask<N, col>(mask16), ADDRESS(C, row, col * AVX3_F32_NUM, ldc)) + vc[i];
             }
             xft::store_avx512(ADDRESS(C, row, col * AVX3_F32_NUM, ldc), get_mask<N, col>(mask16), vc[i]);
         } else {
-            if constexpr (ACC) { vc[i] = xft::load_avx512(ADDRESS(C, row, col * AVX3_F32_NUM, ldc)) + vc[i]; }
+            if (acc) { vc[i] = xft::load_avx512(ADDRESS(C, row, col * AVX3_F32_NUM, ldc)) + vc[i]; }
             xft::store_avx512(ADDRESS(C, row, col * AVX3_F32_NUM, ldc), 0xffff, vc[i]);
         }
     };
     compile_time_for<M * COLS>::op(store);
 }
 
-template <typename TC, int M, bool ACC>
-void small_sgemm_smallm(
-        const float *A, const int8_t *B, const float *bScale, TC *C, int lda, int ldb, int ldc, int N, int K) {
+template <typename TC, int M>
+void small_sgemm_smallm(const float *A, const int8_t *B, const float *bScale, TC *C, int lda, int ldb, int ldc, int N,
+        int K, bool acc) {
     constexpr const int AVX3_F32_NUM = 16;
     const int COLS = (N + AVX3_F32_NUM - 1) / AVX3_F32_NUM;
 
@@ -160,7 +159,7 @@ void small_sgemm_smallm(
         for (int col = 0; col < COLS; ++col) {
             int i = row * COLS + col;
             __mmask16 mask = (col == COLS - 1 ? mask16 : 0xffff);
-            if constexpr (ACC) { vc[i] = xft::load_avx512(mask, ADDRESS(C, row, col * AVX3_F32_NUM, ldc)) + vc[i]; }
+            if (acc) { vc[i] = xft::load_avx512(mask, ADDRESS(C, row, col * AVX3_F32_NUM, ldc)) + vc[i]; }
             xft::store_avx512(ADDRESS(C, row, col * AVX3_F32_NUM, ldc), mask, vc[i]);
         }
     }
@@ -170,56 +169,55 @@ void small_sgemm_smallm(
  * @brief Small GEMM kernel designed for LLM for Score * V (Score = Softmax(Q*Kᵀ)), where V is int8_t
 */
 template <typename T>
-void small_gemm_int8(
-        const float *A, const int8_t *B, const float *bScale, T *C, int M, int N, int K, int lda, int ldb, int ldc) {
+void small_gemm_int8(const float *A, const int8_t *B, const float *bScale, T *C, int M, int N, int K, int lda, int ldb,
+        int ldc, bool acc) {
     if (M == 1) {
         if (N == 128) {
-            small_sgemm_smallm<T, 1, 128, false>(A, B, bScale, C, lda, ldb, ldc, N, K);
+            small_sgemm_smallm<T, 1, 128>(A, B, bScale, C, lda, ldb, ldc, N, K, acc);
         } else if (N == 256) {
-            small_sgemm_smallm<T, 1, 256, false>(A, B, bScale, C, lda, ldb, ldc, N, K);
+            small_sgemm_smallm<T, 1, 256>(A, B, bScale, C, lda, ldb, ldc, N, K, acc);
         } else {
             int n = 0;
             for (; n + 255 < N; n += 256) {
-                small_sgemm_smallm<T, 1, 256, false>(A, B + n, bScale, C + n, lda, ldb, ldc, 256, K);
+                small_sgemm_smallm<T, 1, 256>(A, B + n, bScale, C + n, lda, ldb, ldc, 256, K, acc);
             }
-            if (n < N) { small_sgemm_smallm<T, 1, false>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K); }
+            if (n < N) { small_sgemm_smallm<T, 1>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K, acc); }
         }
     } else if (M == 2) {
         int n = 0;
         for (; n + 127 < N; n += 128) {
-            small_sgemm_smallm<T, 2, 128, false>(A, B + n, bScale, C + n, lda, ldb, ldc, 128, K);
+            small_sgemm_smallm<T, 2, 128>(A, B + n, bScale, C + n, lda, ldb, ldc, 128, K, acc);
         }
-        if (n < N) { small_sgemm_smallm<T, 2, false>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K); }
+        if (n < N) { small_sgemm_smallm<T, 2>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K, acc); }
     } else if (M == 3) {
         int n = 0;
         for (; n + 127 < N; n += 128) {
-            small_sgemm_smallm<T, 3, 128, false>(A, B + n, bScale, C + n, lda, ldb, ldc, 128, K);
+            small_sgemm_smallm<T, 3, 128>(A, B + n, bScale, C + n, lda, ldb, ldc, 128, K, acc);
         }
-        if (n < N) { small_sgemm_smallm<T, 3, false>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K); }
+        if (n < N) { small_sgemm_smallm<T, 3>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K, acc); }
     } else if (M == 4) {
         int n = 0;
         for (; n + 95 < N; n += 96) {
-            small_sgemm_smallm<T, 4, 96, false>(A, B + n, bScale, C + n, lda, ldb, ldc, 96, K);
+            small_sgemm_smallm<T, 4, 96>(A, B + n, bScale, C + n, lda, ldb, ldc, 96, K, acc);
         }
-        if (n < N) { small_sgemm_smallm<T, 4, false>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K); }
+        if (n < N) { small_sgemm_smallm<T, 4>(A, B + n, bScale, C + n, lda, ldb, ldc, N - n, K, acc); }
     } else {
         int m = 0;
         for (; m + 2 < M; m += 3) {
             int n = 0;
             for (; n + 127 < N; n += 128) {
-                small_sgemm_smallm<T, 3, 128, false>(
-                        A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, 128, K);
+                small_sgemm_smallm<T, 3, 128>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, 128, K, acc);
             }
             if (n < N) {
-                small_sgemm_smallm<T, 3, false>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, N - n, K);
+                small_sgemm_smallm<T, 3>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, N - n, K, acc);
             }
         }
         if (m < M) {
 
 #define HANDLE_CASE_N128(ROWS) \
-    small_sgemm_smallm<T, ROWS, 128, false>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, 128, K);
+    small_sgemm_smallm<T, ROWS, 128>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, 128, K, acc);
 #define HANDLE_CASE(ROWS) \
-    small_sgemm_smallm<T, ROWS, false>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, N - n, K);
+    small_sgemm_smallm<T, ROWS>(A + m * lda, B + n, bScale, C + m * ldc + n, lda, ldb, ldc, N - n, K, acc);
 
             int n = 0;
             for (; n + 127 < N; n += 128) {
@@ -240,13 +238,13 @@ void small_gemm_int8(
 
 namespace xft {
 void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb,
-        int ldc) {
-    small_gemm_int8<float>(A, B, bScale, C, M, N, K, lda, ldb, ldc);
+        int ldc, bool acc) {
+    small_gemm_int8<float>(A, B, bScale, C, M, N, K, lda, ldb, ldc, acc);
 }
 
 void small_gemm(const float *A, const int8_t *B, const float *bScale, bfloat16_t *C, int M, int N, int K, int lda,
-        int ldb, int ldc) {
-    small_gemm_int8<bfloat16_t>(A, B, bScale, C, M, N, K, lda, ldb, ldc);
+        int ldb, int ldc, bool acc) {
+    small_gemm_int8<bfloat16_t>(A, B, bScale, C, M, N, K, lda, ldb, ldc, acc);
 }
 
 } // namespace xft
