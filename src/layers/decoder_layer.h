@@ -112,13 +112,13 @@ public:
     }
 
 private:
-    void copyWeights(hpj::Matrix<float> &w, int start_col, int end_col, const float *data) {
-        hpj::Matrix<float> subW(w, 0, w.Rows(), start_col, end_col - start_col);
+    void copyWeights(xft::Matrix<float> &w, int start_col, int end_col, const float *data) {
+        xft::Matrix<float> subW(w, 0, w.Rows(), start_col, end_col - start_col);
         copyWeights(subW, data);
     }
 
     // Copy the transposed weight into the non-transposed matrix
-    void copyWeights(hpj::Matrix<float> &w, const float *data) {
+    void copyWeights(xft::Matrix<float> &w, const float *data) {
         for (int j = 0; j < w.Cols(); ++j) {
             for (int i = 0; i < w.Rows(); ++i) {
                 w(i, j) = *data++;
@@ -126,7 +126,7 @@ private:
         }
     }
 
-    void copyTransposed(hpj::Matrix<float> &dst, hpj::Matrix<float> &src) {
+    void copyTransposed(xft::Matrix<float> &dst, xft::Matrix<float> &src) {
         dst.Resize(src.Cols(), src.Rows());
         for (int i = 0; i < dst.Rows(); ++i) {
             for (int j = 0; j < dst.Cols(); ++j) {
@@ -136,7 +136,7 @@ private:
     }
 
     // Add bias to matrix
-    void biasAdd(hpj::Matrix<float> &m, hpj::Vector<float> &bias) {
+    void biasAdd(xft::Matrix<float> &m, xft::Vector<float> &bias) {
         float *pbias = bias.Data();
 #pragma omp parallel for
         for (int i = 0; i < m.Rows(); ++i) {

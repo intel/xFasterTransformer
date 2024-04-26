@@ -35,7 +35,7 @@ extern bool enableSkipMsk();
 class DecoderUtil {
 public:
 #if __AVX512F__
-    static void rmsNorm(hpj::Matrix<float> &x, hpj::Matrix<float> &y, hpj::Vector<float> &normWeight, float epsilon) {
+    static void rmsNorm(xft::Matrix<float> &x, xft::Matrix<float> &y, xft::Vector<float> &normWeight, float epsilon) {
         TimeLine t("DecoderUtil::rmsNorm");
         float *pweight = normWeight.Data();
         int size = x.Cols();
@@ -86,7 +86,7 @@ public:
     }
 
     static void layerNorm(
-            hpj::Matrix<float> &x, hpj::Matrix<float> &y, hpj::Vector<float> &gamma, hpj::Vector<float> &beta) {
+            xft::Matrix<float> &x, xft::Matrix<float> &y, xft::Vector<float> &gamma, xft::Vector<float> &beta) {
         TimeLine t("DecoderUtil::layerNorm");
         float *pgamma = gamma.Data();
         float *pbeta = beta.Data();
@@ -147,7 +147,7 @@ public:
     }
 
     // Layer norm for small matrix with just a one Rrow
-    static void LayerNormOneRow(hpj::Matrix<float> &x, hpj::Matrix<float> &y, float *pgamma, float *pbeta, int size) {
+    static void LayerNormOneRow(xft::Matrix<float> &x, xft::Matrix<float> &y, float *pgamma, float *pbeta, int size) {
         TimeLine t("DecoderUtil::LayerNormOneRow");
         constexpr int BLKSIZE = 128;
         const int splitSize = (size > BLKSIZE && size % BLKSIZE == 0) ? BLKSIZE : size; // size of each split
@@ -209,8 +209,8 @@ public:
         }
     }
 #else
-    static void layerNorm(DecoderContext *ctx, hpj::Matrix<float> &x, hpj::Matrix<float> &y, hpj::Vector<float> &gamma,
-            hpj::Vector<float> &beta) {
+    static void layerNorm(DecoderContext *ctx, xft::Matrix<float> &x, xft::Matrix<float> &y, xft::Vector<float> &gamma,
+            xft::Vector<float> &beta) {
         TimeLine t("DecoderUtil::layerNorm");
         assert(x.Rows() == ctx->batchSize * ctx->inputSeqLen);
         assert(x.Cols() == ctx->hiddenSize);
@@ -471,7 +471,7 @@ public:
 
     // compute silu on the left half and then add it with the right half
     template <typename T1, typename T2>
-    static void siluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
+    static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst) {
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
         int M = src.Rows();
@@ -497,7 +497,7 @@ public:
 
     // compute gelu on the left half and then add it with the right half
     template <typename T1, typename T2>
-    static void geluSum(hpj::Matrix<T1> &src, hpj::Matrix<T2> &dst) {
+    static void geluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst) {
         const __m512 c1 = _mm512_set1_ps(0.044715f);
         const __m512 c2 = _mm512_set1_ps(0.7978845608f);
         const __m512 vone = _mm512_set1_ps(1.0f);
