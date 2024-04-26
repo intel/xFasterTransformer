@@ -16,7 +16,7 @@
 
 TORCH_LIBRARY(evaluation, m) {
     m.class_<EvalAutoDecoder>("EvalAutoDecoder")
-            .def(torch::init<std::string, std::string>())
+            .def(torch::init<std::string, std::string, std::string>())
             .def("get_rank", &EvalAutoDecoder::getRank)
             .def("forward_logits_all", &EvalAutoDecoder::forward);
 }
