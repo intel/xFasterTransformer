@@ -104,8 +104,8 @@ void ChatGLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT, typename KVCacheT>
-void ChatGLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
-    embedding->forward(ids, output, batchSize, seqLen);
+void ChatGLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
 }
 
 template <typename WeiT, typename KVCacheT>

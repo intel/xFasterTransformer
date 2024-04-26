@@ -31,13 +31,11 @@ namespace xft {
  * @param output Pointer to the output array where embeddings will be stored.
  * @param tokenId Pointer to the array containing token IDs.
  * @param weight Pointer to the array containing token weights for embedding lookup.
- * @param batchSize Number of sequences in the batch.
+ * @param tokenSize Total number of tokens in the input array.
  * @param seqLen Length of each sequence (number of tokens).
  * @param hiddenSize Size of the hidden dimension for each token embedding.
  */
 template <typename OutT, typename weiT>
-void tokenEmbedding(OutT *output, const int *tokenId, const weiT *weight, const int batchSize, const int seqLen,
-        const int hiddenSize);
-
+void tokenEmbedding(OutT *output, const int *tokenId, const weiT *weight, const int tokenSize, const int hiddenSize);
 
 } // namespace xft

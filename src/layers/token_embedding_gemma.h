@@ -43,14 +43,14 @@ public:
 
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>
-    void forward(int *tokenIds, OutT *output, int batchSize, int seqLen) {
+    void forward(int *tokenIds, OutT *output, int tokenSize) {
         __m512 vdim = _mm512_set1_ps(sqrtf(this->hiddenSize));
         constexpr int kStep = 16;
         int blockSize = hiddenSize / kStep;
         int remainder = hiddenSize % kStep;
 
 #pragma omp parallel for
-        for (int i = 0; i < batchSize * seqLen; ++i) {
+        for (int i = 0; i < tokenSize; ++i) {
             int id = tokenIds[i];
             auto src = this->embTable + id * hiddenSize;
             auto dst = output + i * hiddenSize;
