@@ -339,11 +339,11 @@ public:
         t1.release();
 
 #ifdef PIPELINE_PARALLEL
+        int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
+        int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
         if (ctx->ppSize > 1 && ctx->ppRank > 0 && enabledBackgroundSync == false) {
             enabledBackgroundSync = true;
-            int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
-            int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
             // int64_t count = batchSize * inputSeqLen * hiddenSize;
             ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, seqLen, hiddenSize, pastSeqLen, this] {
                 while (true) {
@@ -351,7 +351,6 @@ public:
                     MPI_Recv(&recvBuf, 2, MPI_INT64_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     int32_t sequenceID = recvBuf[0];
                     int64_t count = recvBuf[1];
-                    MPI_Recv(this->actBuffers->Data(), count, MPI_FLOAT, prev_world_rank, curr_world_rank + 1000, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
                     // MPI_Status status;
                     // MPI_Probe(prev_world_rank, curr_world_rank, MPI_COMM_WORLD, &status);
@@ -371,6 +370,7 @@ public:
                     TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
                     if (!SequencePool::getInstance().has(sequenceID)) {
                         SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
+                        sequence->setHiddenStatesSize(count);
                         // sequence->setPastSeqLen(pastSeqLen);
                         // sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
                         SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
@@ -400,6 +400,7 @@ public:
             ctx->sequenceID = runningTask->getSequenceID();
             // runningTask->setPastSeqLen(pastSeqLen);
             // runningTask->allocBuffer<AttnInT>(hiddenSize, embBuf);
+            MPI_Recv(embBuf, TaskWaitingQueue::getInstance().front()->getHiddenStatesSize(), MPI_FLOAT, prev_world_rank, curr_world_rank + 1000, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             printf("Decoder.Seq%d.step\n", sequenceID);
             fflush(stdout);
 

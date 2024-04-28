@@ -114,8 +114,13 @@ public:
         memcpy(hiddenStates, _hiddenStates, sizeof(T) * getInputSeqLen() * hiddenSize);
     }
 
+    int32_t getHiddenStatesSize() const { return hiddenStatesSize; }
+
+    void setHiddenStatesSize(int32_t _hiddenStatesSize) { hiddenStatesSize = _hiddenStatesSize; }
+
 private:
     int32_t hiddenSize;
+    int64_t hiddenStatesSize;
     void *hiddenStates;
 #endif
 };

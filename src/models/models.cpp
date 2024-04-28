@@ -166,6 +166,7 @@ std::vector<int32_t> Model::generate() {
             TaskWaitingQueue::getInstance().pop();
             return token;
         } else {
+            isNewInput = false;
             auto token = searcher->getNextToken();
             TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
             TaskWaitingQueue::getInstance().pop();
