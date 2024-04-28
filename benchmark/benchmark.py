@@ -37,7 +37,7 @@ import csv
 def check_and_update_csv(file_path: str, data: dict):
     file_exists = os.path.exists(file_path)
 
-    with open(file_path, mode="a" if file_exists else "w", newline="") as csvfile:
+    with open(file_path, mode="a" if file_exists else "w", newline="", encoding='utf-8-sig') as csvfile:
         fieldnames = data.keys()
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
