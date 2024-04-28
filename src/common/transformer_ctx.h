@@ -66,7 +66,7 @@ struct DecoderContext {
     int reserved1;
 
 #ifdef PIPELINE_PARALLEL
-    int sequenceID;
+    int32_t sequenceID;
 #endif
 
     // Model structure configuration

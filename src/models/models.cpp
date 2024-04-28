@@ -163,10 +163,12 @@ std::vector<int32_t> Model::generate() {
         if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
             auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
             TaskWaitingQueue::getInstance().front()->stepForward();
+            TaskWaitingQueue::getInstance().pop();
             return token;
         } else {
             auto token = searcher->getNextToken();
             TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
+            TaskWaitingQueue::getInstance().pop();
             return token;
         }
     } else {
@@ -176,16 +178,19 @@ std::vector<int32_t> Model::generate() {
             if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
                 auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
                 TaskWaitingQueue::getInstance().front()->stepForward();
+                TaskWaitingQueue::getInstance().pop();
                 return token;
             } else {
                 auto token = searcher->getNextToken();
                 TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
+                TaskWaitingQueue::getInstance().pop();
                 return token;
             }
         } else {
             isNewInput = false;
             auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
             TaskWaitingQueue::getInstance().front()->stepForward();
+            TaskWaitingQueue::getInstance().pop();
             return token;
         }
     }

@@ -47,7 +47,7 @@ private:
     std::vector<std::vector<int>> cachedRepetVec;
     std::vector<int> doneBatch;
 
-    bool enabledBackgroundSync;
+    bool enabledBackgroundSync = false;
     int batchSize;
     int step;
     int curLen;

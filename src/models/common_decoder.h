@@ -340,24 +340,39 @@ public:
 
 #ifdef PIPELINE_PARALLEL
         // if current pipeline parallel stage rank isn't the first stage, should receive previous stage data
-        if (ctx->ppSize > 1 && ctx->ppRank > 0) {
+        if (ctx->ppSize > 1 && ctx->ppRank > 0 && enabledBackgroundSync == false) {
+            enabledBackgroundSync = true;
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * hiddenSize;
-            ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, count, &embBuf, seqLen, hiddenSize, pastSeqLen] {
+            // int64_t count = batchSize * inputSeqLen * hiddenSize;
+            ThreadPool::getInstance().addTask([curr_world_rank, prev_world_rank, seqLen, hiddenSize, pastSeqLen, this] {
                 while (true) {
-                    int32_t sequenceID;
-                    MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
-                    MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    int64_t recvBuf[2] = {0, 0};
+                    MPI_Recv(&recvBuf, 2, MPI_INT64_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    int32_t sequenceID = recvBuf[0];
+                    int64_t count = recvBuf[1];
+                    MPI_Recv(this->actBuffers->Data(), count, MPI_FLOAT, prev_world_rank, curr_world_rank + 1000, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    // MPI_Status status;
+                    // MPI_Probe(prev_world_rank, curr_world_rank, MPI_COMM_WORLD, &status);
+                    // int number_amount;
+                    // MPI_Get_count(&status, MPI_FLOAT, &number_amount);
+                    // printf("Decoder.probe.%d\n", number_amount);
+                    // fflush(stdout);
+                    // float recvBuf[number_amount] = {0.0f};
+                    // MPI_Recv(&recvBuf, number_amount, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    // int32_t sequenceID = recvBuf[0];
+                    // int64_t count = recvBuf[1];
+                    printf("Decoder.Seq%d.MPI_Recv%d\n", sequenceID, count);
+                    fflush(stdout);
+                    // memcpy(this->actBuffers->Data(), recvBuf + 2, count * sizeof(float));
                     // TODO: Error: different scope when dynamic loading so file
                     // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
-                    printf("Decoder.Seq%d.MPI_Recv\n", sequenceID);
-                    fflush(stdout);
+                    TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
                     if (!SequencePool::getInstance().has(sequenceID)) {
                         SequenceMeta *sequence = SequencePool::getInstance().createMeta(sequenceID, seqLen);
-                        sequence->setPastSeqLen(pastSeqLen);
-                        sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                        // sequence->setPastSeqLen(pastSeqLen);
+                        // sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
                         SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
                     }
                     TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
@@ -368,8 +383,8 @@ public:
         while (!InputQueue::getInstance().empty()) {
             if (!TaskWaitingQueue::getInstance().isFull()) {
                 auto sequence = InputQueue::getInstance().pop();
-                sequence->setPastSeqLen(pastSeqLen);
-                sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                // sequence->setPastSeqLen(pastSeqLen);
+                // sequence->allocBuffer<AttnInT>(hiddenSize, embBuf);
                 SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
                 TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
             }
@@ -380,11 +395,11 @@ public:
         SequenceMeta *runningTask = nullptr;
         int32_t sequenceID = -1;
         if (!TaskWaitingQueue::getInstance().empty()) {
-            runningTask = TaskWaitingQueue::getInstance().pop();
+            runningTask = TaskWaitingQueue::getInstance().front();
             sequenceID = runningTask->getSequenceID();
             ctx->sequenceID = runningTask->getSequenceID();
-            runningTask->setPastSeqLen(pastSeqLen);
-            runningTask->allocBuffer<AttnInT>(hiddenSize, embBuf);
+            // runningTask->setPastSeqLen(pastSeqLen);
+            // runningTask->allocBuffer<AttnInT>(hiddenSize, embBuf);
             printf("Decoder.Seq%d.step\n", sequenceID);
             fflush(stdout);
 
@@ -450,12 +465,16 @@ public:
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * hiddenSize;
-            MPI_Send(&sequenceID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
-            MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
+            int64_t count = batchSize * inputSeqLen * hiddenSize;
+            int64_t sendBuf[2] = {sequenceID, count};
+            MPI_Send(&sendBuf, 2, MPI_INT64_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
+            MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank + 1000, MPI_COMM_WORLD);
+            // float sendBuf[2 + count] = {(float)sequenceID, (float)count};
+            // memcpy(sendBuf + 2, embBuf, count * sizeof(float));
+            // MPI_Send(&sendBuf, 2 + count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
-            printf("Decoder.Seq%d.MPI_Send\n", sequenceID);
+            printf("Decoder.Seq%d.MPI_Send%d\n", sequenceID, count);
             fflush(stdout);
             return std::tuple<float *, int, int>(nullptr, 0, 0);
         }
@@ -1029,6 +1048,8 @@ private:
 
     int startId;
     int endId;
+
+    bool enabledBackgroundSync = false;
 
 #ifdef DEBUG
     Debugger dbg;

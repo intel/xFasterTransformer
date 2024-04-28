@@ -45,12 +45,16 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
             ThreadPool::getInstance().addTask([predictor_world_rank, this] {
                 while (true) {
-                    int32_t sequenceID;
-                    MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
+                    int32_t recvBuf[2];
+                    MPI_Recv(&recvBuf, 2, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
                             MPI_STATUS_IGNORE);
-                    TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
-                    MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
-                            predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    int32_t sequenceID = recvBuf[0];
+                    this->nextTokens[0] = recvBuf[1];
+                    // MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
+                    //         MPI_STATUS_IGNORE);
+                    // TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
+                    // MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
+                    //         predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     printf("GreedySearch.Seq%d.MPI_Recv\n", sequenceID);
                     fflush(stdout);
                     if (SequencePool::getInstance().has(sequenceID)) {
@@ -69,9 +73,11 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             TimeLine t("GreedySearch.Seq" + std::to_string(ctx->sequenceID) + ".MPI_Send");
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Send(&ctx->sequenceID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
-            MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
-                    MPI_COMM_WORLD);
+            int32_t sendBuf[2] = {ctx->sequenceID, nextTokens[0]};
+            MPI_Send(&sendBuf, 2, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
+            // MPI_Send(&ctx->sequenceID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
+            // MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
+            //         MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
             printf("GreedySearch.Seq%d.MPI_Send\n", ctx->sequenceID);
