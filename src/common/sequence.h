@@ -225,6 +225,14 @@ public:
         return isSuccess;
     }
 
+    void clear() {
+        for (auto &it : hub) {
+            delete it.second;
+        }
+        hub.clear();
+        globalSequenceID = 0;
+    }
+
 private:
     SequencePool() {}
 
@@ -249,6 +257,12 @@ public:
     }
 
     void push(SequenceMeta *seq) { queue.push(seq); }
+
+    void clear() {
+        while (!queue.empty()) {
+            queue.pop();
+        }
+    }
 
 private:
     InputQueue() {}
@@ -283,6 +297,12 @@ public:
     }
 
     void push(SequenceMeta *seq) { queue.push(seq); }
+
+    void clear() {
+        while (!queue.empty()) {
+            queue.pop();
+        }
+    }
 
 private:
     TaskWaitingQueue() {}

@@ -56,7 +56,7 @@ public:
         condition.notify_one();
     }
 
-    ~ThreadPool() {
+    void clear() {
         stop = true;
         condition.notify_all();
         for (std::thread &worker : workers) {

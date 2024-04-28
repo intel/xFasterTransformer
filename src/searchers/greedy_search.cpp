@@ -21,7 +21,7 @@
 using namespace xft;
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
-    : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
+    : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty), enabledBackgroundSync(false) {
     eosTokenId = config.eosTokenId == -1 ? decoder.getEndId() : config.eosTokenId;
     padTokenId = config.padTokenId == -1 ? eosTokenId : config.padTokenId;
     if (repetitionPenalty <= 0) {
@@ -39,7 +39,6 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
     // Messenger &messenger = decoder.getMessenger();
 
     if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
-        this->nextTokens = std::vector<int>(batchSize, 0);
         if (ctx->ppSize > 1 && ctx->ppRank == 0 && enabledBackgroundSync == false) {
             enabledBackgroundSync = true;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
@@ -52,11 +51,9 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
                     this->nextTokens[0] = recvBuf[1];
                     // MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
                     //         MPI_STATUS_IGNORE);
-                    // TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
+                    TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
                     // MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
                     //         predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    printf("GreedySearch.Seq%d.MPI_Recv\n", sequenceID);
-                    fflush(stdout);
                     if (SequencePool::getInstance().has(sequenceID)) {
                         auto sequence = SequencePool::getInstance().get(sequenceID);
                         TaskWaitingQueue::getInstance().push(sequence);
@@ -80,8 +77,6 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
             //         MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // messenger.worldSendINT32(this->nextTokens.data(), batchSize, embedding_world_rank, predictor_world_rank);
-            printf("GreedySearch.Seq%d.MPI_Send\n", ctx->sequenceID);
-            fflush(stdout);
         }
     }
 #else
@@ -112,6 +107,8 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
     std::copy(ids, ids + batchSize * seqLen, output.begin());
 
     int64_t dims[3] = {batchSize, 1, seqLen};
+    if (this->nextTokens.size() != batchSize)
+        this->nextTokens.resize(batchSize, 0);
 
     std::tuple<float *, int, int> result = decoder.forward(ids, dims, this->step++);
 
@@ -122,6 +119,8 @@ std::vector<int> GreedySearch::getNextToken(int *ids, int batchSize, int seqLen)
 std::vector<int> GreedySearch::getNextToken() {
     TimeLine t("Next Token");
     int64_t dims[3] = {batchSize, 1, 1};
+    if (this->nextTokens.size() != batchSize)
+        this->nextTokens.resize(batchSize, 0);
 
     std::tuple<float *, int, int> result = decoder.forward(nextTokens.data(), dims, this->step++);
 

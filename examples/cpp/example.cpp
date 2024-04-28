@@ -441,15 +441,11 @@ int main(int argc, char **argv) {
         if (!model.isDone()) {
             Timer t(isMaster, "[INFO] First token");
             firstIds = model.generate();
-            printf("firstIds[0]: %d\n", firstIds[0]);
-            fflush(stdout);
         }
 
         Timer timerSecond;
         if (!model.isDone()) {
             secondIds = model.generate();
-            printf("secondIds[0]: %d\n", secondIds[0]);
-            fflush(stdout);
             secondIdCount++;
         }
 

@@ -130,6 +130,11 @@ void Model::config(SearcherConfig &config_, const std::vector<std::vector<int>> 
     // Slaves get exit flags and exit directly
     if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
+    InputQueue::getInstance().clear();
+    TaskWaitingQueue::getInstance().clear();
+    SequencePool::getInstance().clear();
+    // ThreadPool::getInstance().clear();
+
     createSearcher(configuration);
     setStopWords(stopWordsList_);
 }
@@ -157,55 +162,26 @@ std::vector<int32_t> Model::generate() {
         exit(-1);
     }
 
-    if (this->isMaster()) {
+    std::vector<int> token;
+    if (!this->isMaster() && isNewInput) {
+        isNewInput = false;
+        token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+        TaskWaitingQueue::getInstance().front()->stepForward();
+    } else {
         while(TaskWaitingQueue::getInstance().empty());
 
         if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
-            auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
-            TaskWaitingQueue::getInstance().front()->stepForward();
-            TaskWaitingQueue::getInstance().pop();
-            return token;
-        } else {
             isNewInput = false;
-            auto token = searcher->getNextToken();
+            token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+            TaskWaitingQueue::getInstance().front()->stepForward();
+        } else {
+            token = searcher->getNextToken();
             TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
-            TaskWaitingQueue::getInstance().pop();
-            return token;
-        }
-    } else {
-        if (!isNewInput) {
-            while(TaskWaitingQueue::getInstance().empty());
-
-            if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
-                auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
-                TaskWaitingQueue::getInstance().front()->stepForward();
-                TaskWaitingQueue::getInstance().pop();
-                return token;
-            } else {
-                auto token = searcher->getNextToken();
-                TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
-                TaskWaitingQueue::getInstance().pop();
-                return token;
-            }
-        } else {
-            isNewInput = false;
-            auto token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
-            TaskWaitingQueue::getInstance().front()->stepForward();
-            TaskWaitingQueue::getInstance().pop();
-            return token;
         }
     }
 
-    // if (isNewInput) {
-    //     printf("1st\n");
-    //     // TaskWaitingQueue::getInstance().front()->getStep() == 0
-    //     // TaskWaitingQueue::getInstance().front()->stepForward();
-    //     isNewInput = false;
-    //     return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
-    // } else {
-    //     printf("2nd\n");
-    //     return searcher->getNextToken();
-    // }
+    TaskWaitingQueue::getInstance().pop();
+    return token;
 }
 
 void Model::createSearcher(SearcherConfig &config_) {
