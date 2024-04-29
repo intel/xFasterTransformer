@@ -94,8 +94,8 @@ void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int to
 }
 
 template <typename WeiT, typename KVCacheT>
-void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
-    embedding->forward(ids, output, batchSize, seqLen);
+void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
 }
 
 template <typename WeiT, typename KVCacheT>
