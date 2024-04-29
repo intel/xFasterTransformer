@@ -333,6 +333,7 @@ public:
 
         // Prepare attention mask
         this->prepareAttnMask(ids, step + this->prefixSharing);
+        // prepareAttnMeta
 
         // Token position ids, note: different models may have different impl.
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
@@ -392,6 +393,7 @@ public:
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
+            // attnMeta (inputSeqLens, pastSeqLens, seqStartLoc, is_prompt(useSelfAttn), causal, attnMask)
             this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
