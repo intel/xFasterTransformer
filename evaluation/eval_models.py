@@ -55,6 +55,7 @@ class CausalDecoderLM(HFLM):
         max_length: Optional[int] = None,
         device: Optional[str] = "cpu",
         dtype: Optional[Union[str, torch.dtype]] = "bf16",
+        kvtype: Optional[Union[str, torch.dtype]] = "fp16",
         batch_size: Optional[Union[int, str]] = 1,
         max_batch_size: Optional[int] = 64,
         trust_remote_code: Optional[bool] = False,
@@ -77,7 +78,7 @@ class CausalDecoderLM(HFLM):
 
         self.AUTO_MODEL_CLASS = transformers.AutoModelForCausalLM
 
-        self._model = torch.classes.evaluation.EvalAutoDecoder(weights, dtype)
+        self._model = torch.classes.evaluation.EvalAutoDecoder(weights, dtype, kvtype)
 
         self.tokenizer = AutoTokenizer.from_pretrained(pretrained, use_fast=False, padding_side='left', trust_remote_code=trust_remote_code)
 

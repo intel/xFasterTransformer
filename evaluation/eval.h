@@ -20,13 +20,14 @@
 
 struct EvalAutoDecoder : torch::CustomClassHolder {
 public:
-    EvalAutoDecoder(std::string modelPath, std::string dtype);
+    EvalAutoDecoder(std::string modelPath, std::string dtype, std::string kvCacheType);
 
     torch::Tensor forward(torch::Tensor &inputIds);
 
     int64_t getRank();
 
 private:
+    std::string getTypeName(std::string dtype);
     AbstractDecoder *pdecoder;
     int vocabSize;
 };

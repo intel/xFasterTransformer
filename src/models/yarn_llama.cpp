@@ -18,12 +18,16 @@
 
 template <typename WeiT, typename KVCacheT>
 YaRNLlama<WeiT, KVCacheT>::YaRNLlama(const std::string &modelPath)
-    : CommonDecoder<RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT>(
-            modelPath, "yarn_llama") {
+    : CommonDecoder<
+            RopeScalingAttention<WeiT, LlamaYaRNScaledRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+            LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType>,
+            KVCacheT>(modelPath, "yarn_llama") {
     // Context
     DecoderContext *ctx = this->getContext();
 
-    // Embedding (no need position embed)
+    // Embedding
     embedding = new TokenEmbedding<float16_t>(ctx);
     setEmbeddingWeights(modelPath);
 
@@ -90,7 +94,16 @@ void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int to
 }
 
 template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+    embedding->forward(ids, output, batchSize, seqLen);
+}
+
+template <typename WeiT, typename KVCacheT>
 void YaRNLlama<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
+template <typename WeiT, typename KVCacheT>
+void YaRNLlama<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
