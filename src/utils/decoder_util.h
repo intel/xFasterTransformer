@@ -247,7 +247,7 @@ public:
 #endif
 
     // General version
-    static void computeSoftmax(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+    static void computeSoftmax(float *data, const float *attnMask, int size, float scale) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
         __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
 
@@ -256,7 +256,7 @@ public:
         // maxVal is used to avoid exp(x) = inf
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vmax = _mm512_set1_ps(maxVal);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        __m512 vfactor = _mm512_set1_ps(scale);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
@@ -334,7 +334,7 @@ public:
     }
 
     // Softmax: skip the calculation when attention mask is the lowest value
-    static void softmaxSkipMask(DecoderContext *ctx, float *data, const float *attnMask, int size) {
+    static void softmaxSkipMask(float *data, const float *attnMask, int size, float scale) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
         __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
 
@@ -345,7 +345,7 @@ public:
         float maxVal = std::numeric_limits<float>::lowest();
         __m512 vlowest = _mm512_set1_ps(maxVal);
         __m512 vmax = _mm512_set1_ps(maxVal);
-        __m512 vfactor = _mm512_set1_ps(ctx->attFactor);
+        __m512 vfactor = _mm512_set1_ps(scale);
 
         int i = 0;
         for (i = 0; i < vecs; ++i) {
@@ -393,31 +393,6 @@ public:
             __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
             vx = vx * vrsum;
             _mm512_mask_storeu_ps(data + i * 16, k, vx);
-        }
-    }
-
-    // input and output are both in qkScores
-    // attnMask: attention mask with the shape of (bs, 1, queryLen, keyLen)
-    // Note: the source has the shape of (bs, attHeadNum/num_spit, queryLen, keyLen)
-    static void computeSoftmax(DecoderContext *ctx, const float *attnMask, int queryLen, int keyLen, int stride = -1) {
-        TimeLine t("DecoderUtil::computeSoftmax");
-        const int batchStride = queryLen * keyLen;
-        if (stride == -1) { stride = keyLen; }
-
-        auto range = SplitUtil::getTaskRange(ctx->attHeadNum, ctx->numSplit, ctx->splitIdx);
-        int responsibleHeads = range.second - range.first;
-
-#pragma omp parallel for collapse(2)
-        for (int b = 0; b < ctx->batchSize; ++b) {
-            for (int i = 0; i < responsibleHeads; ++i) {
-                int idx = b * responsibleHeads + i;
-                float *result = ctx->qkScores + idx * queryLen * stride;
-
-                for (int seq = 0; seq < queryLen; ++seq) {
-                    computeSoftmax(ctx, result, attnMask + b * batchStride + seq * keyLen, keyLen);
-                    result += stride;
-                }
-            }
         }
     }
 
