@@ -24,6 +24,15 @@ project(dependency NONE)
 
 include(ExternalProject)
 
+set(SP_BUILD_OPTIONS -DSPM_ENABLE_SHARED=OFF)
+if(WITH_GPU)
+    set(SP_BUILD_OPTIONS "${SP_BUILD_OPTIONS};-DCMAKE_CXX_FLAGS=-D_GLIBCXX_USE_CXX11_ABI=1")
+else()
+    set(SP_BUILD_OPTIONS "${SP_BUILD_OPTIONS};-DCMAKE_CXX_FLAGS=-D_GLIBCXX_USE_CXX11_ABI=0")
+endif()
+
+set(SP_3rdparty_DIR "${CMAKE_SOURCE_DIR}/3rdparty/sentencepiece")
+
 # cmake-format: off
 ExternalProject_Add(sentencepiece_lib
   URL               https://github.com/google/sentencepiece/releases/download/v0.1.99/sentencepiece-0.1.99.tar.gz
@@ -31,7 +40,7 @@ ExternalProject_Add(sentencepiece_lib
   TIMEOUT           60
   SOURCE_DIR        ./sentencepiece-prefix
   BINARY_DIR        ./sentencepiece-prefix
-  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "build" && ${CMAKE_COMMAND} -E chdir "build" ${CMAKE_COMMAND} -DSPM_ENABLE_SHARED=OFF -DCMAKE_CXX_FLAGS=-D_GLIBCXX_USE_CXX11_ABI=0 -DCMAKE_INSTALL_PREFIX=${CMAKE_SOURCE_DIR}/3rdparty/sentencepiece ../sentencepiece
+  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory "build" && ${CMAKE_COMMAND} -E chdir "build" ${CMAKE_COMMAND} ${SP_BUILD_OPTIONS} -DCMAKE_INSTALL_PREFIX=${SP_3rdparty_DIR} ../sentencepiece
   BUILD_COMMAND     ${CMAKE_COMMAND} -E chdir "build" make -j 
   INSTALL_COMMAND   ${CMAKE_COMMAND} -E chdir "build" make install
   TEST_COMMAND      ""
