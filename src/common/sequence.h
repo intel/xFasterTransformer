@@ -19,8 +19,8 @@
 #include <queue>
 #include <unordered_map>
 
-#include "sampling_params.h"
 #include "environment.h"
+#include "sampling_params.h"
 
 /*
                            SequencePool
@@ -329,7 +329,7 @@ public:
 
     bool isFull() {
         bool full = false;
-        if (this->size() >= Env::getInstance().getMaxRequestNum()) { full = true; }
+        if (this->size() >= MaxRequestNum) { full = true; }
         return full;
     }
 
