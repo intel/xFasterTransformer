@@ -67,6 +67,8 @@ public:
             printf("Not supported yet: QHeads=%d, KVHeads=%d\n", ctx->attHeadNum, ctx->kvHeadNum);
             exit(-1);
         }
+
+        alibiSlopes = nullptr;
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
@@ -699,8 +701,14 @@ protected:
         int kvCols = respKVHeads * headSize;
         int qkvCols = qCols + kvCols * 2;
         float scale = ctx->attFactor;
-        int srcLen = ctx->inputSeqLen;
-        int tgtLen = pastSeqLen + srcLen;
+
+        int totalTokenSize = 0;
+        int inputSeqLens[batchSize], pastSeqLens[batchSize];
+        for (int i = 0; i < batchSize; ++i) {
+            inputSeqLens[i] = ctx->inputSeqLen;
+            pastSeqLens[i] = pastSeqLen;
+            totalTokenSize += inputSeqLens[i];
+        }
 
         // TODO: kv dtype conversion for prefixSharing
         AttnT *k, *v;
@@ -710,22 +718,21 @@ protected:
             //Timer tmc(true, "convert KV matrix into bf16");
             kvStride = kvCols * 2;
             AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
-                    "flashKVBuf", batchSize * srcLen * kvStride * sizeof(AttnT));
-#pragma omp parallel for collapse(3)
-            for (uint64_t b = 0; b < batchSize; ++b)
-                for (uint64_t seq = 0; seq < srcLen; ++seq)
-                    for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
-                        const ImT *srcPtr = key.Data() + b * srcLen * qkvCols + seq * qkvCols + i;
-                        AttnT *dstPtr = kvBuf + b * srcLen * kvStride + seq * kvStride + i;
-                        if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
-                            bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
-                        } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
-                            bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
-                        } else {
-                            printf("Not supported Type in Flash Attention yet\n");
-                            exit(-1);
-                        }
+                    "flashKVBuf", totalTokenSize * kvStride * sizeof(AttnT));
+#pragma omp parallel for collapse(2)
+            for (uint64_t seq = 0; seq < totalTokenSize; ++seq)
+                for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
+                    const ImT *srcPtr = key.Data() + seq * qkvCols + i;
+                    AttnT *dstPtr = kvBuf + seq * kvStride + i;
+                    if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
+                        bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
+                        bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else {
+                        printf("Not supported Type in Flash Attention yet\n");
+                        exit(-1);
                     }
+                }
 
             k = kvBuf;
             v = kvBuf + kvCols;
@@ -736,107 +743,12 @@ protected:
         }
 
         // [batch, src, head, headsize]
-        scaledDpAttention<AttnT>(query.Data(), k, v, attnMask, scale, batchSize, srcLen, tgtLen, respQHeads,
-                respKVHeads, headSize, result.Data(), query.Stride(), kvStride, result.Stride());
+        xft::selfScaledDpAttention<ImT, AttnT>(result.Data(), query.Data(), k, v, respQHeads, respKVHeads, headSize,
+                result.Stride(), query.Stride(), kvStride, batchSize, inputSeqLens, pastSeqLens, true, alibiSlopes,
+                attnMask, scale, ctx->numThreads);
 
         // copy current key/values to cache
         copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
-    }
-
-    // scaled dot-product attention: bmm1 + softmax + bmm2
-    template <typename AttnT>
-    void scaledDpAttention(const ImT *query, const AttnT *key, const AttnT *value, const float *attnMask, float scale,
-            int batchSize, int srcLen, int tgtLen, int numQHead, int numKVHead, int headSize, ImT *output, int qStride,
-            int kvStride, int stride) {
-        // output = trans(softmax(query * trans(key)) * value)
-        int nth = omp_get_max_threads();
-        // closest value of power of 2
-        int minBlk = (int)std::pow(2, int(std::log2(srcLen / 2)));
-        // Split sequence to make sure a moderate sync frequency and the intermediate
-        // result [srcSeq * tgtSeq] in cache. The current block size is derived from practical experience.
-        int srcBlk = std::min(256, minBlk);
-        int tgtBlk = std::min(512, tgtLen);
-        float refac = scale;
-        int numGroup = numQHead / numKVHead;
-
-        int numArr = 7;
-        int arrStride = (4 + tgtBlk + 2 * headSize) * srcBlk;
-        float *thrBuf = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", sizeof(float) * nth * arrStride);
-        float **thrPtrBuf
-                = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", sizeof(float *) * nth * numArr);
-
-        float **preSum = thrPtrBuf;
-        float **sum = thrPtrBuf + nth;
-        float **preMax = thrPtrBuf + nth * 2;
-        float **max = thrPtrBuf + nth * 3;
-        float **qkArr = thrPtrBuf + nth * 4;
-        float **expQkvArr = thrPtrBuf + nth * 5;
-        float **qArr = thrPtrBuf + nth * 6;
-
-        for (int i = 0; i < nth; ++i) {
-            preSum[i] = thrBuf + srcBlk * i;
-            sum[i] = thrBuf + srcBlk * nth + srcBlk * i;
-            preMax[i] = thrBuf + srcBlk * nth * 2 + srcBlk * i;
-            max[i] = thrBuf + srcBlk * nth * 3 + srcBlk * i;
-            qkArr[i] = thrBuf + srcBlk * nth * 4 + srcBlk * tgtBlk * i;
-            expQkvArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk) + srcBlk * headSize * i;
-            qArr[i] = thrBuf + srcBlk * nth * (4 + tgtBlk + headSize) + srcBlk * headSize * i;
-        }
-
-#pragma omp parallel for collapse(3) schedule(dynamic)
-        for (uint64_t i = 0; i < batchSize; ++i) {
-            for (int j = 0; j < numQHead; ++j) {
-                for (int m = 0; m < srcLen; m += srcBlk) {
-                    int tid = omp_get_thread_num();
-
-                    int qRealBlk = std::min(srcBlk, srcLen - m);
-                    uint64_t srcOff = i * srcLen * qStride + j * headSize;
-                    uint64_t outOff = i * srcLen * stride + j * headSize;
-                    const ImT *qbuf = query + srcOff + m * qStride;
-                    AttnT *q = (AttnT *)qArr[tid];
-                    ImT *out = output + outOff + m * stride;
-
-                    // reset out
-                    for (int ii = 0; ii < qRealBlk; ++ii) {
-#pragma omp simd
-                        for (int jj = 0; jj < headSize; ++jj) {
-                            out[ii * stride + jj] = 0; // reset output
-                            q[ii * headSize + jj] = (AttnT)(qbuf[ii * qStride + jj]); // reset output
-                        }
-                    }
-                    // reset sum
-#pragma omp simd
-                    for (int ii = 0; ii < qRealBlk; ++ii) {
-                        preSum[tid][ii] = 0;
-                        sum[tid][ii] = 0;
-                        preMax[tid][ii] = std::numeric_limits<float>::lowest();
-                        max[tid][ii] = std::numeric_limits<float>::lowest();
-                    }
-
-                    uint64_t tgtOff = i * tgtLen * kvStride + (j / numGroup) * headSize;
-                    const float *attnMsk = getMask(attnMask, i, j, srcLen, tgtLen) + m * tgtLen;
-                    const AttnT *k = key + tgtOff;
-                    const AttnT *v = value + tgtOff;
-                    // split the target len dimension
-                    for (int b = 0; b < tgtLen; b += tgtBlk) {
-                        int kvRealBlk = std::min(tgtBlk, tgtLen - b);
-                        // TODO: mask out
-                        if (enableSkipMsk() && DecoderUtil::skipMskAttn(attnMsk + b, qRealBlk, kvRealBlk, tgtLen)) {
-                            // printf("Skip bs %d head %d src %d tgt %d\n", i, j, m, b);
-                            break;
-                        }
-
-                        const AttnT *kBlk = k + b * kvStride;
-                        const AttnT *vBlk = v + b * kvStride;
-
-                        DecoderUtil::incrementalTileAttention(q, kBlk, vBlk, attnMsk + b, qRealBlk, headSize, kvRealBlk,
-                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], refac, qkArr[tid], expQkvArr[tid],
-                                out, headSize, kvStride, kvStride, stride);
-                    }
-                }
-            }
-        }
-        return;
     }
 
 private:
@@ -903,6 +815,9 @@ protected:
     // layerNorm param
     NORM_CLS norm;
     int layerId;
+
+    // Alibi Slopes
+    float *alibiSlopes;
 
     // The responsible head in the global view
     // If in single instance, startQHead=startKVHead=0, and endQHead-startQHead=qHeadNum
