@@ -24,12 +24,20 @@ struct SamplingMeta {
     std::vector<int> cachedRepetVec;
     SearcherConfig config;
 
-    SamplingMeta() { done = false; }
+    SamplingMeta() : done(false) {}
 
     SamplingMeta(SearcherConfig config, std::vector<std::vector<int>> stopWordsList_)
-        : config(config), stopWordsList(stopWordsList_) {
-        done = false;
-        // TODO: stopWordsIndex is not initialized
+        : done(false), config(config), stopWordsList(stopWordsList_) {
+        // Remove empty words, eos id, and words containing non-positive elements.
+        for (auto it = stopWordsList.rbegin(); it != stopWordsList.rend(); ++it) {
+            if ((*it).empty() || ((*it).size() == 1 && (*it)[0] == config.eosTokenId)) {
+                stopWordsList.erase(std::next(it).base());
+                continue;
+            }
+            for (auto x : *it) {
+                if (x <= 0) { stopWordsList.erase(std::next(it).base()); }
+            }
+        }
     }
 };
 
