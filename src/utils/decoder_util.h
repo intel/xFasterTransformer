@@ -532,10 +532,10 @@ public:
 
     // need to do for res.
     template <typename ImT>
-    static void softmaxTile(float *AB, ImT *ABout, float *sum, float *max, float *preSum, float *preMax, float refac,
+    static void softmaxTile(float *AB, ImT *ABout, float *sum, float *max, float *preSum, float *preMax, float scale,
             const float *attnMask, int m, int k, int attnMskStride) {
         float maxVal = std::numeric_limits<float>::lowest();
-        __m512 vrefac = _mm512_set1_ps(refac);
+        __m512 vscale = _mm512_set1_ps(scale);
         for (int i = 0; i < m; ++i) {
             float *buf = AB + i * k;
             ImT *obuf = ABout + i * k;
@@ -548,7 +548,7 @@ public:
                 __m512 vx = xft::load_avx512(mask, buf + off);
                 __m512 vmask = xft::load_avx512(mask, attnMsk + off);
 
-                vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vrefac + vmask);
+                vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vscale + vmask);
             }
             float _max = _mm512_reduce_max_ps(vmax);
 
@@ -566,7 +566,7 @@ public:
 
                 __m512 vx = xft::load_avx512(mask, buf + off);
                 __m512 vmask = xft::load_avx512(mask, attnMsk + off);
-                vx = BertUtil::vexp(vx * vrefac + vmask - vmax);
+                vx = BertUtil::vexp(vx * vscale + vmask - vmax);
 
                 xft::store_avx512(obuf + off, mask, vx);
 
@@ -588,6 +588,135 @@ public:
 
                 xft::store_avx512(obuf + off, mask, vx);
             }
+        }
+    }
+
+    template <typename ImT>
+    static void alibiSoftmax(ImT *buf, float scale, float headSlope, int elements) {
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vpos = _mm512_set_ps(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+        __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vscale = _mm512_set1_ps(scale);
+        for (int off = 0; off < elements; off += 16) {
+            int remain = elements - off;
+            __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+            __m512 vx = xft::load_avx512(mask, buf + off);
+            // compute avx512 var vmask that is pos * alibiSlopes[hidx]
+            __m512 vpositions = _mm512_add_ps(vpos, _mm512_set1_ps(off));
+            __m512 vmask = _mm512_mul_ps(vpositions, _mm512_set1_ps(headSlope));
+            vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vscale + vmask);
+        }
+        float _max = _mm512_reduce_max_ps(vmax);
+
+        // exp and get sum
+        __m512 vsum = _mm512_set1_ps(0);
+        vmax = _mm512_set1_ps(_max);
+        for (int off = 0; off < elements; off += 16) {
+            int remain = elements - off;
+            __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+            __m512 vx = xft::load_avx512(mask, buf + off);
+            // compute avx512 var vmask that is pos * alibiSlopes[hidx]
+            __m512 vpositions = _mm512_add_ps(vpos, _mm512_set1_ps(off));
+            __m512 vmask = _mm512_mul_ps(vpositions, _mm512_set1_ps(headSlope));
+            vx = BertUtil::vexp(vx * vscale + vmask - vmax);
+
+            xft::store_avx512(buf + off, mask, vx);
+
+            vsum = _mm512_mask_add_ps(vsum, mask, vsum, vx);
+        }
+        float _sum = _mm512_reduce_add_ps(vsum);
+
+        // Compute exp/sum(exp) and store
+        __m512 vrsum = _mm512_set1_ps(1.0f / _sum);
+        for (int off = 0; off < elements; off += 16) {
+            int remain = elements - off;
+            __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+            __m512 vx = xft::load_avx512(mask, buf + off);
+            vx = vx * vrsum;
+
+            xft::store_avx512(buf + off, mask, vx);
+        }
+    }
+
+    template <typename ImT>
+    static void softmaxTileCausal(float *AB, ImT *ABout, float *sum, float *max, float *preSum, float *preMax,
+            float scale, float headSlope, int qLoc, int kLoc, int tRows, int tCols) {
+        // build-in mask softmax computing
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vscale = _mm512_set1_ps(scale);
+
+        __m512 vpos = _mm512_set_ps(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+        vpos = _mm512_add_ps(vpos, _mm512_set1_ps(kLoc));
+
+        for (int i = 0; i < tRows; ++i) {
+            float *buf = AB + i * tCols;
+            ImT *obuf = ABout + i * tCols;
+            int k = qLoc + i + 1 - kLoc;
+            k = std::max(k, 0);
+            k = std::min(k, tCols);
+            // max val for avoiding inf and nan
+            __m512 vmax = _mm512_set1_ps(maxVal);
+            for (int off = 0; off < k; off += 16) {
+                int remain = k - off;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                __m512 vx = xft::load_avx512(mask, buf + off);
+
+                if (headSlope != 0) {
+                    // compute avx512 var vmask that is pos * alibiSlopes[hidx]
+                    __m512 vpositions = _mm512_add_ps(vpos, _mm512_set1_ps(off));
+                    __m512 vmask = _mm512_mul_ps(vpositions, _mm512_set1_ps(headSlope));
+                    vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vscale + vmask);
+                } else {
+                    vmax = _mm512_mask_max_ps(vmax, mask, vmax, vx * vscale);
+                }
+            }
+            float _max = _mm512_reduce_max_ps(vmax);
+
+            _max = _max > max[i] ? _max : max[i];
+            __m512 merr = _mm512_set1_ps(max[i] - _max);
+            merr = BertUtil::vexp(merr);
+            max[i] = _max;
+
+            // exp and get sum
+            __m512 vsum = _mm512_set1_ps(0);
+            vmax = _mm512_set1_ps(_max);
+            for (int off = 0; off < k; off += 16) {
+                int remain = k - off;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+                __m512 vx = xft::load_avx512(mask, buf + off);
+                if (headSlope != 0) {
+                    // compute avx512 var vmask that is pos * alibiSlopes[hidx]
+                    __m512 vpositions = _mm512_add_ps(vpos, _mm512_set1_ps(off));
+                    __m512 vmask = _mm512_mul_ps(vpositions, _mm512_set1_ps(headSlope));
+                    vx = BertUtil::vexp(vx * vscale + vmask - vmax);
+                } else {
+                    vx = BertUtil::vexp(vx * vscale - vmax);
+                }
+
+                xft::store_avx512(obuf + off, mask, vx);
+
+                vsum = _mm512_mask_add_ps(vsum, mask, vsum, vx);
+            }
+            float _sum = _mm512_reduce_add_ps(vsum);
+            float fac = _mm512_cvtss_f32(merr);
+            sum[i] = sum[i] * fac + _sum;
+            _sum = sum[i];
+
+            // Compute exp/sum(exp) and store
+            __m512 vrsum = _mm512_set1_ps(1.0f / _sum);
+            for (int off = 0; off < k; off += 16) {
+                int remain = k - off;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+                __m512 vx = xft::load_avx512(mask, obuf + off);
+                vx = vx * vrsum;
+
+                xft::store_avx512(obuf + off, mask, vx);
+            }
+            if (tCols > k) { memset(obuf + k, 0, (tCols - k) * sizeof(ImT)); }
         }
     }
 
@@ -619,11 +748,23 @@ public:
     // preSum = sum
     template <typename T, typename ImT>
     static void incrementalTileAttention(const T *A, const T *B, const T *C, const float *attnMask, int m, int n, int k,
-            int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float refac, float *AB,
+            int attnMskStride, float *preSum, float *sum, float *preMax, float *max, float scale, float *AB,
             float *expABC, ImT *output, int qStride, int kStride, int vStride, int stride) {
         sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
         // TODO:optimize
-        softmaxTile(AB, (T *)AB, sum, max, preSum, preMax, refac, attnMask, m, k, attnMskStride);
+        softmaxTile(AB, (T *)AB, sum, max, preSum, preMax, scale, attnMask, m, k, attnMskStride);
+
+        sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
+        updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
+    }
+
+    template <typename T, typename ImT>
+    static void incrementalTileAttentionCausal(const T *A, const T *B, const T *C, float headSlope, int srcLoc,
+            int tgtLoc, int m, int n, int k, float *preSum, float *sum, float *preMax, float *max, float scale,
+            float *AB, float *expABC, ImT *output, int qStride, int kStride, int vStride, int stride) {
+        sgemm(A, B, AB, m, k, n, qStride, kStride, k, false, true);
+        // TODO:optimize
+        softmaxTileCausal(AB, (T *)AB, sum, max, preSum, preMax, scale, headSlope, srcLoc, tgtLoc, m, k);
 
         sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
