@@ -333,6 +333,7 @@ public:
 
         // Prepare attention mask
         this->prepareAttnMask(ids, step + this->prefixSharing);
+        // prepareAttnMeta
 
         // Token position ids, note: different models may have different impl.
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
@@ -392,6 +393,7 @@ public:
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
+            // attnMeta (inputSeqLens, pastSeqLens, seqStartLoc, is_prompt(useSelfAttn), causal, attnMask)
             this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
@@ -520,6 +522,21 @@ public:
 
         return std::tuple<float *, int, int>(
                 finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
+    }
+
+    std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
+        // Assume input has been synced with master in higher level.
+        TimeLine t("Decoder.forward");
+        TimeLine t1("Decoder.embedding");
+
+        int batchSize = seqs.size();
+        int userSideBS = seqs.size();
+        int step = seqs[0]->getStep();
+
+        // TODO
+        throw std::logic_error("Method not implemented");
+        return std::tuple<float *, int, int>(nullptr, 0, 0);
     }
 
     void setPrefix(int *ids, int seqLen) {
