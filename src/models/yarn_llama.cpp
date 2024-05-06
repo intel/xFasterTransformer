@@ -108,4 +108,4 @@ void YaRNLlama<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16
     finalLN.forward(input, output, rows);
 }
 
-REGISTER_MODEL(YaRNLlama, yarn_llama)
+IMPLEMENT_MODEL(YaRNLlama, yarn_llama)

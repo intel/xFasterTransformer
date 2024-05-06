@@ -124,4 +124,4 @@ void GemmaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_
     finalLN.forward(input, output, rows);
 }
 
-REGISTER_MODEL(GemmaLLM, gemma)
+IMPLEMENT_MODEL(GemmaLLM, gemma)

@@ -174,4 +174,4 @@ void Baichuan<WeiT,KVCacheT>::lastLayerNormForward(float *input, float *output, 
     finalLN.forward(input, output, rows);
 }
 
-REGISTER_MODEL(Baichuan, baichuan)
+IMPLEMENT_MODEL(Baichuan, baichuan)

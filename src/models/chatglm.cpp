@@ -217,4 +217,4 @@ void ChatGLM<WeiT, KVCacheT>::setPrefix(int *ids, int seqLen) {
     exit(-1);
 }
 
-REGISTER_MODEL(ChatGLM, chatglm)
+IMPLEMENT_MODEL(ChatGLM, chatglm)

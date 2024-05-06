@@ -50,53 +50,63 @@ public:
     }
 };
 
+#define IMPLEMENT_DECODER(CLASS, NAME, T, CacheT) \
+    template class CLASS<T, CacheT>;
+
+#define IMPLEMENT_HYBRID_MODEL(CLASS, NAME, T1, T2, CacheT) \
+    template class HybridModel<CLASS, T1, T2, CacheT>;
+
 #define REGISTER_DECODER(CLASS, NAME, T, CacheT)             \
-    template class CLASS<T, CacheT>;                         \
     static DecoderRegister decoder_##CLASS##_##T##_##CacheT( \
             #NAME "-" #T "-" #CacheT, [](const std::string &modelPath) { return new CLASS<T, CacheT>(modelPath); });
 
 #define REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, CacheT)                                                 \
-    template class HybridModel<CLASS, T1, T2, CacheT>;                                                     \
     static DecoderRegister hybridModel_##CLASS##_##T1##_##T2##_##CacheT(#NAME "-" #T1 "-" #T2 "-" #CacheT, \
             [](const std::string &modelPath) { return new HybridModel<CLASS, T1, T2, CacheT>(modelPath); });
 
-#define REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, T) \
-    REGISTER_DECODER(CLASS, NAME, T, float)            \
-    REGISTER_DECODER(CLASS, NAME, T, float16_t)        \
-    REGISTER_DECODER(CLASS, NAME, T, int8_t)
+#define DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, T) \
+    KIND##_DECODER(CLASS, NAME, T, float)            \
+    KIND##_DECODER(CLASS, NAME, T, float16_t)        \
+    KIND##_DECODER(CLASS, NAME, T, int8_t)
 
-#define REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, T1, T2) \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, float)            \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, float16_t)        \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, T1, T2, int8_t)
+#define HYBRID_MODEL_ALL_CACHETYPE(KIND, CLASS, NAME, T1, T2) \
+    KIND##_HYBRID_MODEL(CLASS, NAME, T1, T2, float)            \
+    KIND##_HYBRID_MODEL(CLASS, NAME, T1, T2, float16_t)        \
+    KIND##_HYBRID_MODEL(CLASS, NAME, T1, T2, int8_t)
 
 // Kernels in BF16 PATH not support FP32 KVCache
-#define REGISTER_DECODER_ALL_TYPE(CLASS, NAME)             \
-    REGISTER_DECODER(CLASS, NAME, bfloat16_t, float16_t)   \
-    REGISTER_DECODER(CLASS, NAME, bfloat16_t, int8_t)      \
-    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, float16_t) \
-    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, int8_t)    \
-    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, w8a8_t)    \
-    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, uint4x2_t) \
-    REGISTER_DECODER_ALL_CACHETYPE(CLASS, NAME, nf4x2_t)
+#define DECODER_ALL_TYPE(KIND, CLASS, NAME)             \
+    KIND##_DECODER(CLASS, NAME, bfloat16_t, float16_t)   \
+    KIND##_DECODER(CLASS, NAME, bfloat16_t, int8_t)      \
+    DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, float16_t) \
+    DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, int8_t)    \
+    DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, w8a8_t)    \
+    DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, uint4x2_t) \
+    DECODER_ALL_CACHETYPE(KIND, CLASS, NAME, nf4x2_t)
 
-#define REGISTER_HYBRID_MODEL_ALL_TYPE(CLASS, NAME)                      \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, float16_t) \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, float16_t)    \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, float16_t)    \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, float16_t) \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, float16_t)   \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, int8_t)    \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, int8_t)       \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, int8_t)       \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, int8_t)    \
-    REGISTER_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, int8_t)      \
-    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, int8_t)     \
-    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, uint4x2_t)  \
-    REGISTER_HYBRID_MODEL_ALL_CACHETYPE(CLASS, NAME, w8a8_t, nf4x2_t)
+#define HYBRID_MODEL_ALL_TYPE(KIND, CLASS, NAME)                      \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, float16_t) \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, float16_t)    \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, float16_t)    \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, float16_t) \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, float16_t)   \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, float16_t, int8_t)    \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, int8_t, int8_t)       \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, w8a8_t, int8_t)       \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, uint4x2_t, int8_t)    \
+    KIND##_HYBRID_MODEL(CLASS, NAME, bfloat16_t, nf4x2_t, int8_t)      \
+    HYBRID_MODEL_ALL_CACHETYPE(KIND, CLASS, NAME, w8a8_t, int8_t)     \
+    HYBRID_MODEL_ALL_CACHETYPE(KIND, CLASS, NAME, w8a8_t, uint4x2_t)  \
+    HYBRID_MODEL_ALL_CACHETYPE(KIND, CLASS, NAME, w8a8_t, nf4x2_t)
 
-// Please register the model in your header file; 
-// registering it in the .cpp file will not take effect.
-#define REGISTER_MODEL(CLASS, NAME)        \
-    REGISTER_DECODER_ALL_TYPE(CLASS, NAME) \
-    REGISTER_HYBRID_MODEL_ALL_TYPE(CLASS, NAME)
+// Please implement the model in your header file;
+// implementing it in the .cpp file will not take effect.
+#define MODEL(KIND, CLASS, NAME)        \
+    DECODER_ALL_TYPE(KIND, CLASS, NAME) \
+    HYBRID_MODEL_ALL_TYPE(KIND, CLASS, NAME)
+
+#define IMPLEMENT_MODEL(CLASS, NAME) \
+    MODEL(IMPLEMENT, CLASS, NAME)
+
+#define REGISTER_MODEL(CLASS, NAME) \
+    MODEL(REGISTER, CLASS, NAME)

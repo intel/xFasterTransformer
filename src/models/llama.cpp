@@ -124,4 +124,4 @@ void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_
     finalLN.forward(input, output, rows);
 }
 
-REGISTER_MODEL(LlamaLLM, llama)
+IMPLEMENT_MODEL(LlamaLLM, llama)

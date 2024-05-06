@@ -46,3 +46,5 @@ private:
     OptEmbedding<float16_t> *embedding;
     LayerNorm finalLN;
 };
+
+REGISTER_MODEL(OptDecoder, opt)

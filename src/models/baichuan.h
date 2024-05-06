@@ -41,3 +41,5 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
+
+REGISTER_MODEL(Baichuan, baichuan)

@@ -50,3 +50,5 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
+
+REGISTER_MODEL(YaRNLlama, yarn_llama)

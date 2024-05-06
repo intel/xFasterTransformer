@@ -123,4 +123,4 @@ void OptDecoder<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *outpu
     finalLN.forward(input, output, rows);
 }
 
-REGISTER_MODEL(OptDecoder, gpt)
+IMPLEMENT_MODEL(OptDecoder, opt)
