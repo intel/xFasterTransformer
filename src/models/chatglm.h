@@ -65,5 +65,3 @@ private:
     int *positionIds;
     int posBufSize;
 };
-
-REGISTER_MODEL(ChatGLM, chatglm)

@@ -122,3 +122,5 @@ template <typename WeiT, typename KVCacheT>
 void OptDecoder<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
+REGISTER_MODEL(OptDecoder, gpt)

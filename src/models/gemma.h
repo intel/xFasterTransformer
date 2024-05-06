@@ -48,5 +48,3 @@ private:
     GemmaTokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
-
-REGISTER_MODEL(GemmaLLM, gemma)

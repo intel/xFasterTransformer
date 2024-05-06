@@ -48,5 +48,3 @@ private:
     TokenEmbedding<float16_t> *embedding;
     RmsNorm finalLN;
 };
-
-REGISTER_MODEL(Qwen2LLM, qwen2)

@@ -173,3 +173,5 @@ template <typename WeiT, typename KVCacheT>
 void Baichuan<WeiT,KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
+REGISTER_MODEL(Baichuan, baichuan)

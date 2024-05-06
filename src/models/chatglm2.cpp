@@ -175,3 +175,4 @@ int *ChatGLM2<WeiT, KVCacheT>::getPositionIds(int *ids, int batchSize, int seqLe
     return positionIds;
 }
 
+REGISTER_MODEL(ChatGLM2, chatglm2)
