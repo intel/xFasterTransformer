@@ -530,13 +530,67 @@ public:
         TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
 
-        int batchSize = seqs.size();
-        int userSideBS = seqs.size();
-        int step = seqs[0]->getStep();
+        // Prepare input
+        int totInputSeqLen = 0;
+        std::vector<int> allInputIds;
+        for (auto seq : seqs) {
+            totInputSeqLen += seq->getInputSeqLen();
+            auto ids = seq->getInputTokens();
+            allInputIds.insert(allInputIds.end(), ids.begin(), ids.end());
+        }
 
-        // TODO
-        throw std::logic_error("Method not implemented");
-        return std::tuple<float *, int, int>(nullptr, 0, 0);
+        // Prepare context
+        DecoderContext *ctx = this->getContext();
+        ctx->resize(totInputSeqLen);
+
+        int batchSize = seqs.size();
+        int hiddenSize = ctx->hiddenSize;
+
+        AttnInT *embBuf = (AttnInT *)actBuffers->Data();
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + totInputSeqLen * hiddenSize);
+
+        // Embedding
+        this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
+
+        // TODO: Decoder layers
+
+        // Prepare input for final Layer Norm (only care about the last row of the result)
+        // Shape of embBuf: (bs, seqLen, hiddenSize)
+        MlpOutT *lnIn = embBuf;
+        auto logitRows = totInputSeqLen;
+        if (!logitsAll) {
+            // TODO: copy needed data
+        }
+
+#ifdef DEBUG
+        dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
+        dbg.debugPrint("LayerNorm In:\n");
+
+        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize);
+#endif
+
+        // Last normalization layer
+        MlpOutT *lnOut = embBuf;
+        lastLayerNormForward(lnIn, lnOut, logitRows);
+
+#ifdef DEBUG
+        dbg.debugPrint("LayerNorm Out:\n");
+        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
+#endif
+
+        // Predictor
+        float *finalOut = (float *)outBuf;
+        this->predictor->forward(ctx, lnOut, finalOut, logitRows);
+
+#ifdef DEBUG
+        auto splitSize = this->predictor->getSplitSize();
+        dbg.debugPrint("finalOut:\n");    
+        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
+#endif
+
+        return std::tuple<float *, int, int>(
+                finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
     }
 
     void setPrefix(int *ids, int seqLen) {
