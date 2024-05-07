@@ -534,9 +534,9 @@ public:
         int totInputSeqLen = 0;
         std::vector<int> allInputIds;
         for (auto seq : seqs) {
-            // TODO: maybe not correct
             totInputSeqLen += seq->getInputSeqLen();
-            allInputIds.emplace_back(seq->getLatestToken());
+            auto ids = seq->getInputTokens();
+            allInputIds.insert(allInputIds.end(), ids.begin(), ids.end());
         }
 
         // Prepare context

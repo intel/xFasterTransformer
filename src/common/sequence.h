@@ -67,63 +67,71 @@ private:
 // The SequenceMeta is one sequence of batch inputs and includes the generated tokens.
 class SequenceMeta {
 public:
-    SequenceMeta(std::vector<int32_t> &_inputTokens)
+    SequenceMeta(std::vector<int32_t> &_promptTokens)
         : sequenceID(SequenceIDManager::getInstance().createSequenceID())
-        , inputSeqLen(_inputTokens.size())
-        , inputTokens(_inputTokens)
+        , inputSeqLen(_promptTokens.size())
         , pastSeqLen(0)
-        , step(0) {
-        nextTokens.reserve(inputSeqLen);
-        setPastSeqLen(getPastSeqLen());
-    }
+        , promptTokens(_promptTokens)
+        , step(0) {}
 
     SequenceMeta(int32_t _inputSeqLen)
         : sequenceID(SequenceIDManager::getInstance().createSequenceID())
         , inputSeqLen(_inputSeqLen)
-        , inputTokens(_inputSeqLen, 0)
         , pastSeqLen(0)
-        , step(0) {
-        nextTokens.reserve(_inputSeqLen);
-    }
+        , promptTokens(_inputSeqLen, 0)
+        , step(0) {}
 
     ~SequenceMeta() {}
 
     int32_t getSequenceID() const { return sequenceID; }
 
-    // For first tokens
-    void stepForward() {
+    // Step forward given the generated token ID
+    void stepForward(int32_t genToken) {
+        inputSeqLen = 1;
         if (getStep() == 0) {
-            setPastSeqLen(inputTokens.size());
-            setStep(getStep() + 1);
+            setPastSeqLen(promptTokens.size());
+        } else {
+            setPastSeqLen(getPastSeqLen() + 1);
         }
-    }
-
-    // For next token
-    void stepForward(int32_t token) {
-        addNextToken(token);
-        setPastSeqLen(getPastSeqLen() + 1);
+        addNextToken(genToken);
         setStep(getStep() + 1);
     }
 
-    // Get the input tokens in sequence
+    // Step forward given the candidate token IDs (for verification)
+    void stepForward(const std::vector<int32_t> &candidateIDs) {
+        inputSeqLen = candidateIDs.size();
+        if (getStep() == 0) {
+            setPastSeqLen(promptTokens.size());
+        } else {
+            setPastSeqLen(getPastSeqLen() + 1);
+        }
+        generatedTokens.insert(generatedTokens.end(), candidateIDs.begin(), candidateIDs.end());
+        setStep(getStep() + 1);
+    }
+
+    // Get current input sequence length
     int32_t getInputSeqLen() const { return inputSeqLen; }
 
-    const int32_t *getInputTokens() const { return inputTokens.data(); }
+    const std::vector<int32_t> getInputTokens() const {
+        if (getStep() == 0) {
+            return promptTokens;
+        } else {
+            return std::vector<int32_t>(generatedTokens.end() - inputSeqLen, generatedTokens.end());
+        }
+    }
 
     int32_t getPastSeqLen() const { return pastSeqLen; }
 
     void setPastSeqLen(int32_t _pastSeqLen) { pastSeqLen = _pastSeqLen; }
 
     // For next tokens
-    void addNextToken(int32_t token) {
-        nextTokens.clear();
-        nextTokens.push_back(token);
-        inputTokens.push_back(token);
+    void addNextToken(int32_t token) { generatedTokens.push_back(token); }
+
+    const std::vector<int32_t> getTotalTokens() const {
+        std::vector<int32_t> totalTokens = promptTokens;
+        totalTokens.insert(totalTokens.end(), generatedTokens.begin(), generatedTokens.end());
+        return totalTokens;
     }
-
-    int32_t getLatestToken() const { return nextTokens.back(); }
-
-    const int32_t *getTotalTokens() const { return getInputTokens(); }
 
     int32_t getStep() const { return step; }
 
@@ -133,8 +141,8 @@ private:
     int32_t sequenceID;
     int32_t inputSeqLen;
     int32_t pastSeqLen;
-    std::vector<int32_t> inputTokens; // input tokens + next tokens
-    std::vector<int32_t> nextTokens; // next tokens
+    std::vector<int32_t> promptTokens; // prompt tokens (user's input)
+    std::vector<int32_t> generatedTokens; // all generated tokens
     int32_t step;
 
 #ifdef PIPELINE_PARALLEL
