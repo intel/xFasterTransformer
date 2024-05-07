@@ -74,8 +74,7 @@ public:
         sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
         WeiT *input_data = sycl::malloc_device<WeiT>(K * N, *gpu_queue);
         weight.Assign(input_data, K, N, N);
-        gpu_queue->memcpy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT))
-                .wait();
+        gpu_queue->memcpy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT)).wait();
 #else
         weight.Resize(K, N);
         ctx->mmHelper->packWeight(true, quantizedWeight, weight);

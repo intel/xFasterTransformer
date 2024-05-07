@@ -295,8 +295,9 @@ public:
             }
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
 #ifdef GPU
-            sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
-            gpu_queue->memcpy(qkvMatMul.Data(), query.Data(), ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float)).wait();
+            sycl::queue *q = static_cast<sycl::queue *>(ctx->device);
+            int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
+            q->memcpy(qkvMatMul.Data(), query.Data(), size).wait();
 #endif
         }
         t3.release();

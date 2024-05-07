@@ -28,8 +28,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     ctx->GetAttr("rope_theta", &this->base, 10000);
     ctx->GetAttr("rope_type", &this->rope_type, std::to_string(-1));
 
-    if (this->rope_type == "linear") 
-        ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
+    if (this->rope_type == "linear") ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
 
     inv_freq_size = (dim + 1) / 2;
 
@@ -138,31 +137,32 @@ void LlamaRotaryEmbedding::forward(
     const int half_head_size = (head_size + 1) / 2;
     using namespace sycl;
 
-    auto rope_kernel = [](sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
-            const int kHeads, const int seq_size, const int head_size, const int half, float *query, float *key,
-            int qStride, int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
-        size_t idx_bs_seq = item.get_global_id(0);
-        size_t idx_head_num = item.get_global_id(1);
-        size_t idx_half_head_dim = item.get_global_id(2);
+    auto rope_kernel
+            = [](sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads, const int kHeads,
+                      const int seq_size, const int head_size, const int half, float *query, float *key, int qStride,
+                      int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
+                  size_t idx_bs_seq = item.get_global_id(0);
+                  size_t idx_head_num = item.get_global_id(1);
+                  size_t idx_half_head_dim = item.get_global_id(2);
 
-        size_t pos = positionIds[idx_bs_seq % seq_size];
-        float cos = embCos[pos * half + idx_half_head_dim];
-        float sin = embSin[pos * half + idx_half_head_dim];
+                  size_t pos = positionIds[idx_bs_seq % seq_size];
+                  float cos = embCos[pos * half + idx_half_head_dim];
+                  float sin = embSin[pos * half + idx_half_head_dim];
 
-        float *q = query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
-        float *k = key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
+                  float *q = query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
+                  float *k = key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
 
-        if (idx_head_num < qHeads) {
-            auto q1 = q[0];
-            q[0] = q1 * cos - q[half] * sin;
-            q[half] = q[half] * cos + q1 * sin;
-        }
-        if (idx_head_num < kHeads) {
-            auto k1 = k[0];
-            k[0] = k1 * cos - k[half] * sin;
-            k[half] = k[half] * cos + k1 * sin;
-        }
-    };
+                  if (idx_head_num < qHeads) {
+                      auto q1 = q[0];
+                      q[0] = q1 * cos - q[half] * sin;
+                      q[half] = q[half] * cos + q1 * sin;
+                  }
+                  if (idx_head_num < kHeads) {
+                      auto k1 = k[0];
+                      k[0] = k1 * cos - k[half] * sin;
+                      k[half] = k[half] * cos + k1 * sin;
+                  }
+              };
 
     // Reorder input
     sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
@@ -177,10 +177,11 @@ void LlamaRotaryEmbedding::forward(
 
         cgh.parallel_for<class kernel_rope>(
                 sycl::nd_range(globalSize, workGroupSize), [=, this](sycl::nd_item<3> item) {
-                    rope_kernel(item, embCos, embSin, qHeads, kHeads, seqLen, head_size, half_head_size,
-                            query, key, qStride, kStride, position);
+                    rope_kernel(item, embCos, embSin, qHeads, kHeads, seqLen, head_size, half_head_size, query, key,
+                            qStride, kStride, position);
                 });
-    }).wait();
+    });
+    gpu_queue->wait();
 }
 
 #else

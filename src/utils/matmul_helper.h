@@ -441,8 +441,8 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+            GEMMVERBOSE(
+                    "onednn_gemm_compute", onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute",
                     xdnn_hgemm_f32f16f32_compute(
@@ -1411,9 +1411,9 @@ private:
     }
 
     template <typename Tin, typename Twei, typename Tout, typename Tbias = float, typename Tres = float>
-    void onednn_gemm_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
-            const Twei *packedB, float beta, Tout *C, int ldc, const Tbias *bias = nullptr,
-            const Tres *res = nullptr, int ldres = -1, const matmul_kinds postAlg = matmul_kinds::Basic) {
+    void onednn_gemm_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda, const Twei *packedB,
+            float beta, Tout *C, int ldc, const Tbias *bias = nullptr, const Tres *res = nullptr, int ldres = -1,
+            const matmul_kinds postAlg = matmul_kinds::Basic) {
         TimeLine t("onednn_gemm_compute");
         TimeLine t1("onednn_gemm_compute.create_primitive");
         using namespace dnnl;
@@ -1548,7 +1548,8 @@ private:
                     matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
             } else {
                 if (bias != nullptr)
-                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, bias_md, output_md, matmul_attr);
+                    matmul_pd
+                            = new matmul::primitive_desc(*engine, input_md, weight_md, bias_md, output_md, matmul_attr);
                 else
                     matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
             }
@@ -1635,35 +1636,34 @@ private:
             }
 
             // Create primitive descriptor and primitive.
-            switch (postAlg)
-            {
-            case matmul_kinds::Basic:
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
-                break;
-            case matmul_kinds::Silu:{
-                const float post_alpha = 1.0f;
-                const float post_beta = 0.0f;
-                post_ops matmul_ops;
-                matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
-                primitive_attr matmul_attr;
-                matmul_attr.set_post_ops(matmul_ops);
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
-                break;
-            }
-            case matmul_kinds::Gelu:{
-                const float post_alpha = 1.0f;
-                const float post_beta = 0.0f;
-                post_ops matmul_ops;
-                matmul_ops.append_eltwise(algorithm::eltwise_gelu_tanh, post_alpha, post_beta);
-                primitive_attr matmul_attr;
-                matmul_attr.set_post_ops(matmul_ops);
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
-                break;
-            }
-            default:
-                printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
-                exit(-1);
-                break;
+            switch (postAlg) {
+                case matmul_kinds::Basic:
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
+                    break;
+                case matmul_kinds::Silu: {
+                    const float post_alpha = 1.0f;
+                    const float post_beta = 0.0f;
+                    post_ops matmul_ops;
+                    matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
+                    primitive_attr matmul_attr;
+                    matmul_attr.set_post_ops(matmul_ops);
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                    break;
+                }
+                case matmul_kinds::Gelu: {
+                    const float post_alpha = 1.0f;
+                    const float post_beta = 0.0f;
+                    post_ops matmul_ops;
+                    matmul_ops.append_eltwise(algorithm::eltwise_gelu_tanh, post_alpha, post_beta);
+                    primitive_attr matmul_attr;
+                    matmul_attr.set_post_ops(matmul_ops);
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                    break;
+                }
+                default:
+                    printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
+                    exit(-1);
+                    break;
             }
             matmul_prim = new matmul(*matmul_pd);
             // Cache primitive_desc and matmul
