@@ -349,8 +349,11 @@ public:
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             using dt = dnnl::memory::data_type;
+            dnnl::engine eng(dnnl::engine::kind::cpu, 0);
+            dnnl::stream stm(eng);
+
             auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
-            dnnl::memory B_mem({{K, N}, dt::s8, tag}, *this->engine, src.Data());
+            dnnl::memory B_mem({{K, N}, dt::s8, tag}, eng, src.Data());
             dnnl::memory::desc desc({K, N}, dt::s8, get_onednn_weight_layout(dt::s8));
 
             // When converting to oneDNN blocked memory format, padded dims can be larger than [K, N]
@@ -360,11 +363,9 @@ public:
             weight.Resize(dims[0], dims[1]);
             weight.Resize(K, N);
 
-            dnnl::engine engine(dnnl::engine::kind::cpu, 0);
-            dnnl::stream stream(engine);
-            dnnl::memory packedB_mem(desc, engine, weight.Data());
-            dnnl::reorder(B_mem, packedB_mem).execute(stream, B_mem, packedB_mem);
-            stream.wait();
+            dnnl::memory packedB_mem(desc, eng, weight.Data());
+            dnnl::reorder(B_mem, packedB_mem).execute(stm, B_mem, packedB_mem);
+            stm.wait();
         }
 
         // INT4

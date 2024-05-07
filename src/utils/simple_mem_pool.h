@@ -79,7 +79,7 @@ public:
     }
 
     // Free allocated memory based on name
-    void *freeBuffer(const std::string &name, void *device = nullptr) {
+    void freeBuffer(const std::string &name, void *device = nullptr) {
         auto it = memoryMap.find(name);
 
         if (it != memoryMap.end()) {
