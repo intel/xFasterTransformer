@@ -47,4 +47,4 @@ private:
     LayerNorm finalLN;
 };
 
-REGISTER_MODEL(OptDecoder, opt)
+REGISTER_MODEL(OptDecoder, gpt)
