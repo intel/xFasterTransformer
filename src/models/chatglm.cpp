@@ -216,3 +216,5 @@ void ChatGLM<WeiT, KVCacheT>::setPrefix(int *ids, int seqLen) {
     printf("[ERROR] ChatGLM doesn't support prefix sharing.\n");
     exit(-1);
 }
+
+IMPLEMENT_MODEL(ChatGLM, chatglm)

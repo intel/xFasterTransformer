@@ -21,6 +21,8 @@ class Messenger;
 
 class AbstractDecoder {
 public:
+    virtual ~AbstractDecoder() {}
+
     // Forward function with the input IDs with shape of dims - (batchSize, beamSize, seqLen)
     // Return the decoding result, split offset, and split size
     // The returned result is a split representing the possibilities of next token, like the shadow part in below graph

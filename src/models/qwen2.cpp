@@ -123,3 +123,5 @@ template <typename WeiT, typename KVCacheT>
 void Qwen2LLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
+IMPLEMENT_MODEL(Qwen2LLM, qwen2)

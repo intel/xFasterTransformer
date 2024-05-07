@@ -40,11 +40,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -mavx512f -mavx512bw -mavx512vl -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512bw -mavx512vl -fPIC")
 if(WITH_GPU)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl -fsycl-device-code-split=per_kernel -lOpenCL -D_GLIBCXX_USE_CXX11_ABI=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -qopenmp -fsycl -fsycl-device-code-split=per_kernel -lOpenCL -D_GLIBCXX_USE_CXX11_ABI=1")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -D_GLIBCXX_USE_CXX11_ABI=0")
 endif()
 
 # GCC>=10.1 should support avx512bf16, but need to double check as some versions have issues

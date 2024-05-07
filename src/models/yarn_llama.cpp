@@ -107,3 +107,5 @@ template <typename WeiT, typename KVCacheT>
 void YaRNLlama<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
+IMPLEMENT_MODEL(YaRNLlama, yarn_llama)

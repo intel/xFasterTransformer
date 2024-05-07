@@ -19,6 +19,8 @@
 
 class AbstractSearcher {
 public:
+    virtual ~AbstractSearcher() {}
+
     // First call to get NextToken, return {batchSize, numBeams}. For
     // greadySearch, numBeams = 1.
     virtual std::vector<int> getNextToken(int *ids, int batchSize, int seqLen) = 0;

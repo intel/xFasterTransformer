@@ -110,3 +110,4 @@ void QwenLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, 
     finalLN.forward(input, output, rows);
 }
 
+IMPLEMENT_MODEL(QwenLLM, qwen)
