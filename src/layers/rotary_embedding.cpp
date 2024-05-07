@@ -42,6 +42,19 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
         llamaCalEmb(inv_freq, max_position_embeddings);
+#ifdef GPU
+        if (device != nullptr) {
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+            float *emb_cos_bak = emb_cos;
+            float *emb_sin_bak = emb_sin;
+            emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, gpu_queue);
+            emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, gpu_queue);
+            gpu_queue->memcpy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
+            gpu_queue->memcpy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
+            ctx->freeBuffer(emb_cos_str);
+            ctx->freeBuffer(emb_sin_str);
+        }
+#endif
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
@@ -111,6 +124,66 @@ void LlamaRotaryEmbedding::llamaCalEmb(const float *inv_freq, const int max_posi
 //   |     |        |     |
 //   |_____|        |_____|
 //  head_size/2    head_size/2
+
+#ifdef GPU
+
+void LlamaRotaryEmbedding::forward(
+        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    const int batchSize = qkShape[0];
+    const int seqLen = qkShape[1];
+    const int qHeads = qkShape[2];
+    const int kHeads = qkShape[4];
+    const int head_num = std::max(qHeads, kHeads);
+    const int head_size = qkShape[3];
+    const int half_head_size = (head_size + 1) / 2;
+    using namespace sycl;
+
+    auto rope_kernel = [](sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads,
+            const int kHeads, const int seq_size, const int head_size, const int half, float *query, float *key,
+            int qStride, int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
+        size_t idx_bs_seq = item.get_global_id(0);
+        size_t idx_head_num = item.get_global_id(1);
+        size_t idx_half_head_dim = item.get_global_id(2);
+
+        size_t pos = positionIds[idx_bs_seq % seq_size];
+        float cos = embCos[pos * half + idx_half_head_dim];
+        float sin = embSin[pos * half + idx_half_head_dim];
+
+        float *q = query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
+        float *k = key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
+
+        if (idx_head_num < qHeads) {
+            auto q1 = q[0];
+            q[0] = q1 * cos - q[half] * sin;
+            q[half] = q[half] * cos + q1 * sin;
+        }
+        if (idx_head_num < kHeads) {
+            auto k1 = k[0];
+            k[0] = k1 * cos - k[half] * sin;
+            k[half] = k[half] * cos + k1 * sin;
+        }
+    };
+
+    // Reorder input
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    float *embCos = emb_cos;
+    float *embSin = emb_sin;
+
+    sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
+    gpu_queue->submit([&](sycl::handler &cgh) {
+        sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
+        sycl::range<3> globalSize(batchSize * seqLen, head_num, half_head_size);
+        sycl::range<3> workGroupSize(1, 1, 1);
+
+        cgh.parallel_for<class kernel_rope>(
+                sycl::nd_range(globalSize, workGroupSize), [=, this](sycl::nd_item<3> item) {
+                    rope_kernel(item, embCos, embSin, qHeads, kHeads, seqLen, head_size, half_head_size,
+                            query, key, qStride, kStride, position);
+                });
+    }).wait();
+}
+
+#else
 
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
@@ -214,3 +287,5 @@ void LlamaRotaryEmbedding::forward(
         }
     }
 }
+
+#endif // GPU

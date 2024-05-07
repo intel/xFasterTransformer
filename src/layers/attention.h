@@ -294,6 +294,10 @@ public:
                 std::iota(posIds.begin(), posIds.end(), pastSeqLen);
             }
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
+#ifdef GPU
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
+            gpu_queue->memcpy(qkvMatMul.Data(), query.Data(), ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float)).wait();
+#endif
         }
         t3.release();
 

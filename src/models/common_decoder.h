@@ -638,10 +638,17 @@ protected:
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize,
                     ppRank, ropeParamsPtr, useLogN, useNTK));
 
+            int engineIdx = 0;
             if (env.getEngineKind() == xft::DeviceKind::iGPU && env.getEngineIndex() < 0) // Sequential assignment
-                this->context->mmHelper = new MMHelper(env.getEngineKind(), ppRank * tpSize + tpRank);
+                engineIdx = ppRank * tpSize + tpRank;
             else // assignment through the user
-                this->context->mmHelper = new MMHelper(env.getEngineKind(), env.getEngineIndex());
+                engineIdx = env.getEngineIndex();
+
+            this->context->mmHelper = new MMHelper(env.getEngineKind(), engineIdx);
+#ifdef GPU
+            auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+            this->context->device = new sycl::queue(devices[this->context->mmHelper->getEngineCount() + engineIdx]);
+#endif
         }
 
         return this->context.get();

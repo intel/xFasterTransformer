@@ -59,14 +59,27 @@ public:
 
         int K = inputSize;
         int N = this->splitSize;
-        weight.Resize(K, N);
+
         scaleWeight.Resize(N);
         zeroWeight.Resize(N);
 
         hpj::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
+#ifdef GPU
+        hpj::Matrix<WeiT> tWeight;
+        tWeight.Resize(K, N);
+        ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);
+
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
+        WeiT *input_data = sycl::malloc_device<WeiT>(K * N, *gpu_queue);
+        weight.Assign(input_data, K, N, N);
+        gpu_queue->memcpy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT))
+                .wait();
+#else
+        weight.Resize(K, N);
         ctx->mmHelper->packWeight(true, quantizedWeight, weight);
+#endif
 
         // Copy Bias
         if (b) {

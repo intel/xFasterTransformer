@@ -275,8 +275,7 @@ private:
         }
     }
 
-    template <typename T1, typename T2>
-    void catGateUpProj(DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
+    void catGateUpProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output, hpj::Matrix<ImT> &siluBuf) {
         TimeLine t("catGateUpProj");
 
         assert(input.Rows() == output.Rows());
@@ -286,12 +285,12 @@ private:
         int M = input.Rows(), N = output.Cols(), K = input.Cols();
         int lda = input.Stride(), ldc = output.Stride();
 
-        const T1 *A = input.Data();
+        const InT *A = input.Data();
         const WeiT *B = catWeights.Data();
         const float *scaleB = catWeightsScale.Data();
         const float *zeroB = catWeightsZero.Data();
         const float *sumB = catWeightsSum.Data();
-        T2 *C = output.Data();
+        ImT *C = output.Data();
 
         ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
 

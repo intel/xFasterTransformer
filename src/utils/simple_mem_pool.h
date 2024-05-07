@@ -46,7 +46,7 @@ public:
     }
 
     // Allocate or reallocate memory buffer based on name and size
-    void *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
+    void *getBuffer(const std::string &name, size_t size, void *device = nullptr, size_t alignment = 64) {
         if (size == 0) {
             // std::cout << "[Warning] Try to allocate 0 bytes for buffer:" << name << std::endl;
             return nullptr;
@@ -65,7 +65,7 @@ public:
         }
 
         // Allocate new aligned buffer
-        void *buffer = xft::alloc(size, alignment);
+        void *buffer = xft::alloc(size, alignment, device);
         if (buffer == nullptr) {
             // Allocation failed
             std::cerr << "Memory allocation failed for buffer:" << name << " size:" << size << std::endl;
@@ -76,6 +76,15 @@ public:
         memoryMap[name] = std::make_pair(buffer, size);
 
         return buffer;
+    }
+
+    // Free allocated memory based on name
+    void *freeBuffer(const std::string &name, void *device = nullptr) {
+        auto it = memoryMap.find(name);
+
+        if (it != memoryMap.end()) {
+            xft::dealloc(it->second.first, device);
+        }
     }
 
     // Destructor to free all allocated memory on program termination

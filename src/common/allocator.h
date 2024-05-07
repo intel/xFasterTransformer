@@ -18,6 +18,10 @@
 #include <sys/mman.h>
 #include "environment.h"
 
+#ifdef GPU
+#include <CL/sycl.hpp>
+#endif
+
 namespace xft {
 
 constexpr size_t g_thp_threshold = (size_t)2 * 1024 * 1024;
@@ -26,10 +30,17 @@ static inline bool is_thp_alloc(size_t nbytes) {
     return (Env::getInstance().getTHPEnabled() && (nbytes >= g_thp_threshold));
 }
 
-static inline void *alloc(size_t nbytes, size_t alignment = 64) {
+static inline void *alloc(size_t nbytes, size_t alignment = 64, void *device = nullptr) {
     if (nbytes == 0) { return nullptr; }
 
     void *data;
+
+#ifdef GPU
+    if (device != nullptr) {
+        data = sycl::malloc_device<char>(nbytes, *static_cast<sycl::queue *>(device));
+        return data;
+    }
+#endif
 
     int err = posix_memalign(&data, alignment, nbytes);
     if (err != 0) {
@@ -47,4 +58,17 @@ static inline void *alloc(size_t nbytes, size_t alignment = 64) {
 
     return data;
 }
+
+static inline void dealloc(void *data, void *device = nullptr) {
+#ifdef GPU
+    if (device != nullptr) {
+        sycl::free(data, *static_cast<sycl::queue *>(device));
+        return;
+    }
+#endif
+
+    free(data);
+    return;
+}
+
 } // namespace xft
