@@ -24,7 +24,7 @@ class KVCacheMgrImplBase {
 public:
     virtual ~KVCacheMgrImplBase() = default;
     virtual bool delSequence(int seqID) = 0;
-    virtual bool addSequence(int seqID, int prefixId = 0) = 0;
+    virtual bool addSequence(int seqID, int prefixId = -1) = 0;
     virtual bool reorderCache(const std::vector<int> &seqIDs, const std::vector<int> &prevSeqIDs) = 0;
     virtual bool addPrefix(int prefixId, int seqID) = 0;
     virtual bool prepareCache(const std::vector<int> &seqIDs) = 0;
@@ -67,7 +67,7 @@ public:
         return true;
     }
 
-    bool addSequence(int seqID, int prefixId = 0) override {
+    bool addSequence(int seqID, int prefixId = -1) override {
         // Fail if already exist
         if (sequenceCaches.find(seqID) != sequenceCaches.end()) { return false; }
 
@@ -124,7 +124,7 @@ public:
             readyList.push_back(it->second);
         }
 
-        readyCaches == std::move(readyList);
+        readyCaches = std::move(readyList);
 
         return true;
     }
@@ -188,7 +188,7 @@ public:
 
     bool delSequence(int seqID) { return cacheMgrImpl->delSequence(seqID); }
 
-    bool addSequence(int seqID, int prefixId = 0) { return cacheMgrImpl->addSequence(seqID, prefixId); }
+    bool addSequence(int seqID, int prefixId = -1) { return cacheMgrImpl->addSequence(seqID, prefixId); }
 
     bool reorderCache(const std::vector<int> &seqIDs, const std::vector<int> &prevSeqIDs) {
         return cacheMgrImpl->reorderCache(seqIDs, prevSeqIDs);
