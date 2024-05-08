@@ -87,6 +87,7 @@ private:
     int vocabSize;
     SearcherConfig configuration;
     bool isNewInput;
+    std::vector<SequenceGroupMeta *> workingGroup;
 };
 
 class AutoModel : public Model {

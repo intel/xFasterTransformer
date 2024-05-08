@@ -85,6 +85,10 @@ public:
 
     int32_t getSequenceID() const { return sequenceID; }
 
+    std::vector<int32_t> getPromptTokens() const { return promptTokens; }
+
+    std::vector<int32_t> getGeneratedTokens() const { return generatedTokens; }
+
     // Step forward given the generated token ID
     void stepForward(int32_t genToken) {
         inputSeqLen = 1;
@@ -112,7 +116,7 @@ public:
     // Get current input sequence length
     int32_t getInputSeqLen() const { return inputSeqLen; }
 
-    const std::vector<int32_t> getInputTokens() const {
+    std::vector<int32_t> getInputTokens() const {
         if (getStep() == 0) {
             return promptTokens;
         } else {
@@ -127,7 +131,7 @@ public:
     // For next tokens
     void addNextToken(int32_t token) { generatedTokens.push_back(token); }
 
-    const std::vector<int32_t> getTotalTokens() const {
+    std::vector<int32_t> getTotalTokens() const {
         std::vector<int32_t> totalTokens = promptTokens;
         totalTokens.insert(totalTokens.end(), generatedTokens.begin(), generatedTokens.end());
         return totalTokens;
@@ -185,6 +189,14 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
+    SequenceGroupMeta(std::vector<int32_t> &_inputTokens) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_inputTokens));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
     int32_t getGroupID() { return groupID; }
 
     int32_t getGroupSize() { return samplingMeta.config.numBeams; }
@@ -199,6 +211,8 @@ public:
     SequenceMeta &operator[](int index) { return sequences[index]; }
 
     bool isDone() { return samplingMeta.done; }
+
+    SamplingMeta *getSamplingMeta() { return &samplingMeta; }
 
 private:
     // using 1st sequence ID as group ID.
@@ -356,7 +370,5 @@ private:
 
     int32_t MaxRequestNum;
 };
-
-static std::vector<SequenceGroupMeta *> workingGroup;
 
 } // namespace xft
