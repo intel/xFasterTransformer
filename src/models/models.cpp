@@ -341,6 +341,11 @@ std::vector<int32_t> Model::generate() {
             // Check stop status
             stopCheck(result, workingGroup);
 
+            // Step forward on all seqs
+            for (int i = 0; i < workingGroup.size(); i++) {
+                workingGroup[i]->get(0)->stepForward(result[i]);
+            }
+
             return result;
         }
         throw std::logic_error("Method not implemented");
