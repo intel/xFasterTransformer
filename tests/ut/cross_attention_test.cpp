@@ -237,7 +237,7 @@ static void testCrossAttnByHead(int qHeadNum, int kvHeadNum, int headSize, int t
     Timer timer("xft::crossAttnByHead");
     xft::crossAttnByHead<bfloat16_t, float16_t>(
             output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride, kvStride, batchSize,
-            inputSeqLen, pastSeqLens, true, nullptr, nullptr, scale, threadNum,
+            inputSeqLen, pastSeqLens, true, nullptr, scale, threadNum,
             [&](int b, int kvHdx) {
                 return std::make_tuple(keyCaches[b] + kvHdx * headSize, kvHeadNum * headSize, nullptr);
             },
