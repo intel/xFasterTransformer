@@ -124,6 +124,8 @@ public:
         }
     }
 
+    int getTotalLen() const { return promptTokens.size() + generatedTokens.size(); }
+
     int32_t getPastSeqLen() const { return pastSeqLen; }
 
     void setPastSeqLen(int32_t _pastSeqLen) { pastSeqLen = _pastSeqLen; }
