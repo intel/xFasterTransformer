@@ -33,6 +33,7 @@
 #include "searcher.h"
 #include "timeline.h"
 #include "yarn_llama.h"
+#include "sequence.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -85,6 +86,21 @@ void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
     inputIds.resize(dims[1]);
     if (decoder->getRank() == 0) { inputIds = inputIds_; }
     messenger.broadcast(inputIds.data(), dims[1]);
+
+    if (this->isMaster()) {
+        for (int i = 0; i < 2; ++i) {
+            int sequenceID = SequencePool::getInstance().createSequenceID();
+            InputQueue::getInstance().push(SequencePool::getInstance().createMeta(sequenceID, seqLen, inputIds));
+        }
+
+        while (!InputQueue::getInstance().empty()) {
+            if (!TaskWaitingQueue::getInstance().isFull()) {
+                auto sequence = InputQueue::getInstance().pop();
+                SequencePool::getInstance().add(sequence->getSequenceID(), sequence);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequence->getSequenceID()));
+            }
+        }
+    }
 }
 
 void Model::config(int maxLen_, int numBeams_, int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_,
@@ -115,6 +131,11 @@ void Model::config(SearcherConfig &config_, const std::vector<std::vector<int>> 
     // Slaves get exit flags and exit directly
     if (decoder->getRank() > 0 && configuration.numBeams == 0) { exit(0); }
 
+    InputQueue::getInstance().clear();
+    TaskWaitingQueue::getInstance().clear();
+    SequencePool::getInstance().clear();
+    // ThreadPool::getInstance().clear();
+
     createSearcher(configuration);
     setStopWords(stopWordsList_);
 }
@@ -142,12 +163,26 @@ std::vector<int32_t> Model::generate() {
         exit(-1);
     }
 
-    if (isNewInput) {
+    std::vector<int> token;
+    if (!this->isMaster() && isNewInput) {
         isNewInput = false;
-        return searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+        token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+        TaskWaitingQueue::getInstance().front()->stepForward();
     } else {
-        return searcher->getNextToken();
+        while(TaskWaitingQueue::getInstance().empty());
+
+        if (TaskWaitingQueue::getInstance().front()->getStep() == 0) {
+            isNewInput = false;
+            token = searcher->getNextToken(inputIds.data(), batchSize, inputIds.size() / batchSize);
+            TaskWaitingQueue::getInstance().front()->stepForward();
+        } else {
+            token = searcher->getNextToken();
+            TaskWaitingQueue::getInstance().front()->stepForward(token[0]);
+        }
     }
+
+    TaskWaitingQueue::getInstance().pop();
+    return token;
 }
 
 void Model::createSearcher(SearcherConfig &config_) {
