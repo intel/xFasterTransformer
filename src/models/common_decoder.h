@@ -253,6 +253,7 @@ public:
         if (this->inputTokens) free(this->inputTokens);
         if (this->attnMask) free(this->attnMask);
 
+        delete this->decoderBlock;
         delete this->predictor;
     }
 

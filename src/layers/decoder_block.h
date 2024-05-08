@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -76,7 +76,8 @@ public:
             totInSeqLen += seqs[i]->getInputSeqLen();
         }
 
-        kvCacheMgr.prepareCache(seqIDs);
+        // TODO: check and prepare KV cache only needed
+        // kvCacheMgr.prepareCache(seqIDs);
 
         // All layers forward
         int layersOnDuty = this->decoders.size();
