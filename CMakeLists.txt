@@ -218,6 +218,6 @@ add_subdirectory(examples/cpp)
 add_subdirectory(tests)
 
 option(XFT_BUILD_EVALUATION "Build xfastertransformer evalution tests" OFF)
-if(XFT_BUILD_EVALUATION OR XFT_BUILD_TESTS)
+if(XFT_BUILD_EVALUATION)
 add_subdirectory(evaluation)
 endif()
