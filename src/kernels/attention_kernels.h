@@ -670,7 +670,6 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
  * @param pastSeqLens Past sequence lengths
  * @param causal Whether causal attention
  * @param alibiSlopes Alibi slopes
- * @param attnMask Attention mask
  * @param scale Scale factor for softmax
  * @param threadNum Thread number
  * @param getKHead Lambda to get head of cached keys
@@ -679,8 +678,8 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
 template <typename T, typename KVCacheT, typename Lambda1, typename Lambda2>
 void crossAttnByHead(T *output, const T *query, const T *key, const T *value, int qHeadNum, int kvHeadNum, int headSize,
         int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens, const int *pastSeqLens,
-        bool causal, const float **alibiSlopes, const float **attnMask, const float scale, int threadNum,
-        const Lambda1 &getKHead, const Lambda2 &getVHead) {
+        bool causal, const float *alibiSlopes, const float scale, int threadNum, const Lambda1 &getKHead,
+        const Lambda2 &getVHead) {
 
     int responsibleHeads = qHeadNum;
     int groupNum = qHeadNum / kvHeadNum;
@@ -738,7 +737,7 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
             }
 
             // Softmax(Q * K)
-            if (causal && alibiSlopes == nullptr) {
+            if (alibiSlopes == nullptr) {
                 for (int seq = 0; seq < queryLen; ++seq) {
                     int elements = pastSeqLens[b] + seq + 1;
                     small_softmax_f32(S + seq * keyLen, scale, elements);
