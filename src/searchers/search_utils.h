@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include "sequence.h"
 
 // Insert an element into a sorted vector while maintaining the order
 void insertAndSort(std::vector<int> &targetVector, int num);
@@ -22,3 +23,8 @@ void repetitionPenaltyLogitsProcess(float penalty, float *logits, int sampleOffs
 
 void stopWordsCheck(std::vector<int> &nextTokenIds, std::vector<std::vector<int>> &stopWordsList,
         std::vector<std::vector<int>> &stopWordsIndex, std::vector<int> &doneBatch);
+
+namespace xft {
+void repetitionPenaltyLogitsProcess(
+        float *logits, int sampleOffset, int sampleSize, std::vector<SequenceGroupMeta *> &seqGroups);
+} // namespace xft

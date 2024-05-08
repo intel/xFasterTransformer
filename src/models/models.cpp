@@ -214,9 +214,9 @@ void Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherC
         inputQueue.push(group);
     }
 
-    xft::workingGroup.clear();
+    workingGroup.clear();
     while (!inputQueue.empty()) {
-        xft::workingGroup.push_back(inputQueue.pop());
+        workingGroup.push_back(inputQueue.pop());
     }
 }
 
@@ -243,7 +243,7 @@ bool Model::isDone() {
         }
         return !isNewInput && searcher->isDone();
     }
-    for (auto x : xft::workingGroup) {
+    for (auto x : workingGroup) {
         if (!x->isDone()) { return false; }
     }
     return true;
@@ -290,6 +290,10 @@ std::vector<int32_t> Model::generate() {
         }
     } else {
         // TODO
+        std::tuple<float *, int, int> result = forward(false);
+        float *outBuf = std::get<0>(result);
+        int sampleOffset = std::get<1>(result);
+        int sampleSize = std::get<2>(result);
         throw std::logic_error("Method not implemented");
         return {};
     }
