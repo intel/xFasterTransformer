@@ -30,6 +30,8 @@
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "qwen2.h"
+#include "sampling.h"
+#include "search_utils.h"
 #include "searcher.h"
 #include "sequence.h"
 #include "timeline.h"
@@ -249,6 +251,21 @@ bool Model::isDone() {
     return true;
 }
 
+std::vector<int32_t> Model::finalize() {
+    // TODO: Deprecate the following Path
+    if (searcher != nullptr) {
+        return searcher->finalize();
+    } else {
+        std::vector<int32_t> result;
+        // TODO: Unequal-length input & output
+        for (auto x : workingGroup) {
+            std::vector<int32_t> seq = x->get(0)->getTotalTokens();
+            result.insert(result.end(), seq.begin(), seq.end());
+        }
+        return result;
+    }
+}
+
 std::tuple<float *, int, int> Model::forward(bool logits_all) {
     // TODO: Deprecate the following Path
     if (searcher != nullptr) {
@@ -275,6 +292,8 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
     return decoder->forward(workingSeqs, logits_all);
 }
 
+// We assume all gen kwargs in the batch are the same
+// and all sequences are all prompts(step==0) or all decodes(step>0)
 std::vector<int32_t> Model::generate() {
     // TODO: Deprecate the following Path
     if (searcher != nullptr) {
@@ -294,11 +313,47 @@ std::vector<int32_t> Model::generate() {
         float *outBuf = std::get<0>(result);
         int sampleOffset = std::get<1>(result);
         int sampleSize = std::get<2>(result);
+
+        // Assume all gen kwargs in the batch are the same
+        auto &config = workingGroup[0]->getSamplingMeta()->config;
+
+        if (config.numBeams != 1) {
+            // TODO: BeamSearch
+            throw std::logic_error("Beam Search Method not implemented");
+        } else {
+
+            // Logits processor
+            // Repetition penalty
+            if (config.repetitionPenalty != 1.0) {
+                repetitionPenaltyLogitsProcess(outBuf, sampleOffset, sampleSize, workingGroup);
+            }
+
+            std::vector<int> result;
+
+            if (config.doSample) {
+                //TODO: samling
+                throw std::logic_error("Sampling Method not implemented");
+            } else {
+                // Greedy search
+                result = greedySearch(outBuf, sampleOffset, sampleSize, batchSize);
+            }
+
+            // Check stop status
+            stopCheck(result, workingGroup);
+
+            // Step forward on all seqs
+            for (int i = 0; i < workingGroup.size(); i++) {
+                workingGroup[i]->get(0)->stepForward(result[i]);
+            }
+
+            return result;
+        }
         throw std::logic_error("Method not implemented");
         return {};
     }
 }
 
+// TODO: Deprecate the following function
 void Model::createSearcher(SearcherConfig &config_) {
     if (searcher != nullptr) { delete searcher; }
 

@@ -17,6 +17,7 @@
 #include <vector>
 #include "messenger.h"
 #include "search_utils.h"
+#include "timeline.h"
 
 // Insert an element into a sorted vector while maintaining the order
 void insertAndSort(std::vector<int> &targetVector, int num) {
@@ -102,6 +103,7 @@ namespace xft {
 // TODO: support num_beams > 1 (beam search)
 void repetitionPenaltyLogitsProcess(
         float *logits, int sampleOffset, int sampleSize, std::vector<SequenceGroupMeta *> &seqGroups) {
+    TimeLine t("RepetitionPenaltyLogitsProcess");
     bool multiRank = Messenger::getInstance().getSize() > 1;
 
     std::vector<int> groupIndex;
