@@ -468,6 +468,7 @@ public:
 
         // Apply post operations on query and key
         TimeLine t3("QKPO");
+        // TODO: call into rotary embedding
         // int qheads = this->endQHead - this->startQHead;
         // int kheads = this->endKVHead - this->startKVHead;
         // int qkShape[7] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads, ctx->maxSeqLength, pastSeqLen};
