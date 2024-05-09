@@ -26,6 +26,7 @@
 #include "datatypes.h"
 #include "gemma.h"
 #include "hybrid_model.h"
+#include "kvcache_mgr.h"
 #include "llama.h"
 #include "opt_decoder.h"
 #include "qwen.h"
@@ -75,6 +76,7 @@ void Model::exitSlaves() {
 
 // TODO: deprecate the following function
 void Model::input(std::vector<int32_t> &inputIds_, int batchSize_) {
+    // TODO: remove new_input flag
     isNewInput = true;
     Messenger &messenger = decoder->getMessenger();
     int dims[2];
@@ -156,7 +158,7 @@ void syncStopWordsList(std::vector<std::vector<int>> &stopWordsList) {
     }
 }
 
-void Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, int maxLen_, int numBeams_,
+std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, int maxLen_, int numBeams_,
         int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_, int eosTokenId_, int padTokenId_,
         bool doSample_, float temperature_, int topK_, float topP_, float repetitionPenalty_,
         const std::vector<std::vector<int>> &stopWordsList_) {
@@ -173,12 +175,11 @@ void Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, int maxLe
     configuration.topP = topP_;
     configuration.repetitionPenalty = repetitionPenalty_;
 
-    this->set_input(inputIds_, batchSize_, configuration, stopWordsList_);
+    return this->set_input(inputIds_, batchSize_, configuration, stopWordsList_);
 }
 
-void Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherConfig &config_,
+std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherConfig &config_,
         const std::vector<std::vector<int>> &stopWordsList_) {
-    // TODO: remove new_input flag
     if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
     if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
     SamplingMeta samplingMeta(config_, stopWordsList_);
@@ -209,17 +210,110 @@ void Model::set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherC
         seqLen = inputIds_.size() / batchSize_;
     }
 
+    std::vector<int> seqIDs;
+
     SequencePool &seqPool = SequencePool::getInstance();
-    InputQueue &inputQueue = InputQueue::getInstance();
+    KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
+    workingGroup.clear();
     for (int i = 0; i < batchSize; i++) {
         auto group = seqPool.newGroupMeta(inputIds, samplingMeta);
-        inputQueue.push(group);
+        workingGroup.push_back(group);
+        seqIDs.push_back(group->getGroupID());
+        // TODO: inin KVCache for beamsearch
+        kvCacheMgr.addSequence(group->getGroupID());
     }
 
+    return seqIDs;
+}
+
+std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, int maxLen_, int numBeams_,
+        int numBeamHypsToKeep_, float lenPenalty_, bool doEarlyStopping_, int eosTokenId_, int padTokenId_,
+        bool doSample_, float temperature_, int topK_, float topP_, float repetitionPenalty_,
+        const std::vector<std::vector<int>> &stopWordsList_) {
+    configuration.maxLen = maxLen_;
+    configuration.numBeams = numBeams_;
+    configuration.numBeamHypsToKeep = numBeamHypsToKeep_;
+    configuration.lenPenalty = lenPenalty_;
+    configuration.doEarlyStopping = doEarlyStopping_;
+    configuration.eosTokenId = eosTokenId_;
+    configuration.padTokenId = padTokenId_;
+    configuration.doSample = doSample_;
+    configuration.temperature = temperature_;
+    configuration.topK = topK_;
+    configuration.topP = topP_;
+    configuration.repetitionPenalty = repetitionPenalty_;
+
+    return this->set_input(inputIds_, configuration, stopWordsList_);
+}
+
+std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, SearcherConfig &config_,
+        const std::vector<std::vector<int>> &stopWordsList_) {
+    if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
+    if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
+    SamplingMeta samplingMeta(config_, stopWordsList_);
+
+    Messenger &messenger = Messenger::getInstance();
+
+    batchSize = inputIds_.size();
+
+    std::vector<int> seqIDs;
+    SequencePool &seqPool = SequencePool::getInstance();
+    KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     workingGroup.clear();
-    while (!inputQueue.empty()) {
-        workingGroup.push_back(inputQueue.pop());
+
+    // Sync input and sampling param in distributed mode.
+    if (messenger.getSize() > 1) {
+        // [batch size, inputIds size]
+        std::vector<int> seqLens;
+        int dims[2];
+        if (isMaster()) {
+            inputIds.clear();
+            for (auto &ids : inputIds_) {
+                seqLens.push_back(ids.size());
+                inputIds.insert(inputIds.end(), ids.begin(), ids.end());
+            }
+            dims[0] = batchSize;
+            dims[1] = inputIds.size();
+        }
+
+        messenger.broadcast(dims, 2);
+        batchSize = dims[0];
+
+        inputIds.resize(dims[1]);
+
+        messenger.broadcast(seqLens.data(), batchSize);
+        messenger.broadcast(inputIds.data(), dims[1]);
+
+        messenger.broadcast((int *)&samplingMeta.config, sizeof(SearcherConfig) / sizeof(int));
+
+        syncStopWordsList(samplingMeta.stopWordsList);
+
+        if (!isMaster()) {
+            auto it = inputIds.begin();
+            for (int i = 0; i < batchSize; i++) {
+                std::vector<int32_t> input_(it, it + seqLens[i]);
+                auto group = seqPool.newGroupMeta(input_, samplingMeta);
+                workingGroup.push_back(group);
+                seqIDs.push_back(group->getGroupID());
+                // TODO: inin KVCache for beamsearch
+                kvCacheMgr.addSequence(group->getGroupID());
+
+                it += seqLens[i];
+            }
+
+            return seqIDs;
+        }
     }
+
+    for (int i = 0; i < batchSize; i++) {
+        auto group = seqPool.newGroupMeta(inputIds, samplingMeta);
+        workingGroup.push_back(group);
+        seqIDs.push_back(group->getGroupID());
+        // TODO: inin KVCache for beamsearch
+        kvCacheMgr.addSequence(group->getGroupID());
+    }
+
+    return seqIDs;
 }
 
 // TODO: Deprecate the following function
@@ -262,6 +356,13 @@ std::vector<int32_t> Model::finalize() {
             std::vector<int32_t> seq = x->get(0)->getTotalTokens();
             result.insert(result.end(), seq.begin(), seq.end());
         }
+        // Clear KVCache
+        KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
+        for (auto x : workingGroup) {
+            kvCacheMgr.delSequence(x->getGroupID());
+        }
+        workingGroup.clear();
+
         return result;
     }
 }
@@ -285,6 +386,31 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         if (x->getGroupSize() > 1 && x->getStep() > 1) {
             for (int32_t i = 1; i < x->getGroupSize(); i++) {
                 workingSeqs.push_back(x->get(i));
+            }
+        }
+    }
+
+    return decoder->forward(workingSeqs, logits_all);
+}
+
+std::tuple<float *, int, int> Model::forward(const std::vector<int> &seqIDs, bool logits_all) {
+    // TODO:Sync IDs in distributed mode.
+    // Assume that all sequences in the group are all prompts or all decodes.
+    // Prepare input data for the decoder.
+    SequencePool &seqPool = SequencePool::getInstance();
+    std::vector<SequenceMeta *> workingSeqs;
+    for (auto &x : seqIDs) {
+        SequenceGroupMeta *group = seqPool.get(x);
+        if (group == nullptr) {
+            // TODO: Address error
+            printf("Sequence ID %d not found.\n", x);
+            continue;
+        }
+
+        workingSeqs.push_back(group->get(0));
+        if (group->getGroupSize() > 1 && group->getStep() > 1) {
+            for (int32_t i = 1; i < group->getGroupSize(); i++) {
+                workingSeqs.push_back(group->get(i));
             }
         }
     }
