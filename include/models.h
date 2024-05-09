@@ -36,17 +36,28 @@ public:
 
     void config(SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
-    void set_input(std::vector<int32_t> &inputIds_, int batchSize_, int maxLen_ = -1, int numBeams_ = 1,
+    // Return the sequences' IDs in the order of the input batch
+    std::vector<int> set_input(std::vector<int32_t> &inputIds_, int batchSize_, int maxLen_ = -1, int numBeams_ = 1,
             int numBeamHypsToKeep_ = 1, float lenPenalty_ = 1.0, bool doEarlyStopping_ = false, int eosTokenId_ = -1,
             int padTokenId_ = -1, bool doSample_ = false, float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0,
             float repetitionPenalty_ = 1.0, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
-    void set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherConfig &config_,
+    std::vector<int> set_input(std::vector<int32_t> &inputIds_, int batchSize_, SearcherConfig &config_,
             const std::vector<std::vector<int>> &stopWordsList_ = {});
+
+    std::vector<int> set_input(std::vector<std::vector<int32_t>> &inputIds_, SearcherConfig &config_,
+            const std::vector<std::vector<int>> &stopWordsList_ = {});
+
+    std::vector<int> set_input(std::vector<std::vector<int32_t>> &inputIds_, int maxLen_ = -1, int numBeams_ = 1,
+            int numBeamHypsToKeep_ = 1, float lenPenalty_ = 1.0, bool doEarlyStopping_ = false, int eosTokenId_ = -1,
+            int padTokenId_ = -1, bool doSample_ = false, float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0,
+            float repetitionPenalty_ = 1.0, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
     bool isDone();
 
     std::tuple<float *, int, int> forward(bool logits_all = true);
+
+    std::tuple<float *, int, int> forward(const std::vector<int> &seqIDs, bool logits_all = true);
 
     std::vector<int32_t> generate();
 
