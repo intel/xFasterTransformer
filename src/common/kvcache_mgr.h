@@ -24,7 +24,7 @@ class KVCacheMgrImplBase {
 public:
     virtual ~KVCacheMgrImplBase() = default;
     virtual bool delSequence(int seqID) = 0;
-    virtual bool addSequence(int seqID, int prefixId = -1) = 0;
+    virtual bool addSequence(int seqID, int maxSeqLen = -1, int prefixId = -1) = 0;
     virtual bool reorderCache(const std::vector<int> &seqIDs, const std::vector<int> &prevSeqIDs) = 0;
     virtual bool addPrefix(int prefixId, int seqID) = 0;
     virtual bool prepareCache(const std::vector<int> &seqIDs) = 0;
@@ -35,20 +35,25 @@ public:
 template <typename T>
 class KVCacheMgrImpl : public KVCacheMgrImplBase {
 public:
-    KVCacheMgrImpl(int layers) { this->layers = layers; }
+    KVCacheMgrImpl(int maxSeqLen, int headNum, int headSize, int layers) {
+        this->maxSeqLen_ = maxSeqLen;
+        this->headNum_ = headNum;
+        this->headSize_ = headSize;
+        this->layers_ = layers;
+    }
 
     ~KVCacheMgrImpl() {
         // Free resource in cachePool (readyCaches are in cachePool too)
         for (auto &it : sequenceCaches) {
-            delete it.second;
+            delete[] it.second;
         }
         // Free resource in prefixCaches
         for (auto &it : prefixCaches) {
-            delete it.second;
+            delete[] it.second;
         }
         // Free resource in freeCaches
         for (auto &it : freeCaches) {
-            delete it;
+            delete[] it;
         }
     }
 
@@ -67,7 +72,7 @@ public:
         return true;
     }
 
-    bool addSequence(int seqID, int prefixId = -1) override {
+    bool addSequence(int seqID, int maxSeqLen = -1, int prefixId = -1) override {
         // Fail if already exist
         if (sequenceCaches.find(seqID) != sequenceCaches.end()) { return false; }
 
@@ -77,7 +82,12 @@ public:
             cache = freeCaches.back();
             freeCaches.pop_back();
         } else {
-            cache = new KVCacheTensor<T>[2 * layers];
+            cache = new KVCacheTensor<T>[2 * layers_];
+        }
+
+        auto maxLen = maxSeqLen > 0 ? maxSeqLen : this->maxSeqLen_;
+        for (int i = 0; i < 2 * layers_; ++i) {
+            cache[i].resize(maxLen, 1, headNum_, headSize_);
         }
 
         sequenceCaches.insert({seqID, cache});
@@ -101,9 +111,9 @@ public:
         if (sequenceCaches.find(seqID) == sequenceCaches.end()) { return false; }
 
         // Create a new one
-        KVCacheTensor<T> *cache = new KVCacheTensor<T>[2 * layers];
+        KVCacheTensor<T> *cache = new KVCacheTensor<T>[2 * layers_];
 
-        for (int i = 0; i < 2 * layers; i++) {
+        for (int i = 0; i < 2 * layers_; i++) {
             // TODO: add from method in KVCacheTensor
             //cache[i].from(sequenceCaches[seqID][i]);
         }
@@ -168,7 +178,10 @@ private:
     // List of pending free caches, each element is for a sample
     std::vector<KVCacheTensor<T> *> freeCaches;
 
-    int layers;
+    int maxSeqLen_;
+    int headNum_;
+    int headSize_;
+    int layers_;
 };
 
 class KVCacheMgr {
@@ -178,17 +191,21 @@ public:
         return inst;
     }
 
-    void configure(int layers, DataType dataType) {
+    void configure(int maxSeqLen, int headNum, int headSize, int layers, DataType dataType) {
         switch (dataType) {
-            case DataType::int8: cacheMgrImpl = new KVCacheMgrImpl<int8_t>(layers); break;
-            case DataType::fp16: cacheMgrImpl = new KVCacheMgrImpl<float16_t>(layers); break;
-            default: cacheMgrImpl = new KVCacheMgrImpl<float16_t>(layers); break;
+            case DataType::int8: cacheMgrImpl = new KVCacheMgrImpl<int8_t>(maxSeqLen, headNum, headSize, layers); break;
+            case DataType::fp16:
+                cacheMgrImpl = new KVCacheMgrImpl<float16_t>(maxSeqLen, headNum, headSize, layers);
+                break;
+            default: cacheMgrImpl = new KVCacheMgrImpl<float16_t>(maxSeqLen, headNum, headSize, layers); break;
         }
     }
 
     bool delSequence(int seqID) { return cacheMgrImpl->delSequence(seqID); }
 
-    bool addSequence(int seqID, int prefixId = -1) { return cacheMgrImpl->addSequence(seqID, prefixId); }
+    bool addSequence(int seqID, int maxSeqLen = -1, int prefixId = -1) {
+        return cacheMgrImpl->addSequence(seqID, maxSeqLen, prefixId);
+    }
 
     bool reorderCache(const std::vector<int> &seqIDs, const std::vector<int> &prevSeqIDs) {
         return cacheMgrImpl->reorderCache(seqIDs, prevSeqIDs);
