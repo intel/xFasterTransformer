@@ -12,19 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
+#include "decoder_layer.h"
 #include "attention.h"
 #include "kvcache_manager.h"
 #include "layers_attention.h"
+#include "layers_mlp.h"
+#include "mlp_llama.h"
 #include "rms_norm.h"
 
 #include <unordered_map>
 
 namespace xft {
 
-void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
+void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int maxSeqLength, int pastSeqLen, int currentSeqLen, int step,
-        int hiddenSize, void *output, int outputStride, const void *input, int inputStride, const void *queryWeight,
-        const void *keyWeight, const void *valueWeight, const void *attnOutWeight, const void *queryBias = nullptr,
+        int hiddenSize, int intermediateSize, void *output, int outputStride, const void *input, int inputStride,
+        const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
+        const void *valueWeight, const void *attnOutWeight, const float *ln2Gamma, const float *ln2Beta,
+        const void *gateWeight, const void *upWeight, const void *downWeight, const void *queryBias = nullptr,
         const void *keyBias = nullptr, const void *valueBias = nullptr, const void *attnOutBias = nullptr) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
@@ -77,39 +82,38 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
     };
 
     if (dt == DataType::bf16) {
-        static std::unordered_map<std::string, Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm> *>
-                llama_attention_hub;
-
+        using DECODER = Decoder<Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<bfloat16_t>>;
+        static std::unordered_map<std::string, DECODER *> llama_layer_hub;
         static DecoderContext *ctx;
         static KVCacheManager<float> *kvCacheMgr;
 
-        if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->attHeadSize != attHeadDim))) {
+        if (ctx == nullptr
+                || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
             if (ctx != nullptr) delete ctx;
-            printf(">> create context: %d %d\n", hiddenSize, attHeadDim);
-            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0,
-                    maxPositions, maxPosEmbed, maxSeqLength, 0, 1);
+            printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
+            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, "silu", 1e-6,
+                    0, 0, maxPositions, maxPosEmbed, maxSeqLength, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
-            kvCacheMgr = new KVCacheManager<float>(1);
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
         std::stringstream weights_addr;
-        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight;
-        std::string llama_attention_key = weights_addr.str();
-        Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm> *llama_attention;
+        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight << "_" << attnOutWeight << "_"
+                     << gateWeight << "_" << upWeight << "_" << downWeight;
+        std::string llama_layer_key = weights_addr.str();
+        DECODER *llama_layer;
 
-        auto it_created = llama_attention_hub.find(llama_attention_key);
-        if (it_created == llama_attention_hub.end()) {
-            llama_attention = new Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>(1, ctx);
-            llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
-                    (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, nullptr,
-                    nullptr, false);
-
-            llama_attention_hub[llama_attention_key] = llama_attention;
-            printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
+        auto it_created = llama_layer_hub.find(llama_layer_key);
+        if (it_created == llama_layer_hub.end()) {
+            llama_layer = new DECODER(ctx, 0);
+            llama_layer->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, queryBias, (float *)keyWeight, nullptr, nullptr, keyBias,
+                    (float *)valueWeight, nullptr, nullptr, valueBias, (float *)attnOutWeight, nullptr, nullptr, attnOutBias, ln1Gamma,
+                    ln1Beta, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr, nullptr, nullptr, ln2Gamma,
+                    ln2Beta, (float *)downWeight, nullptr, nullptr, false);
+            llama_layer_hub[llama_layer_key] = llama_layer;
+            printf(">> create llama_layer_key: %s\n", llama_layer_key.c_str());
         } else {
-            llama_attention = it_created->second;
+            llama_layer = it_created->second;
         }
 
         ctx->resize(batchSize, inputSeqLen, pastSeqLen);
@@ -118,9 +122,18 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         float *attnMask = prepareAttnMask(ctx, step);
         KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
         KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
+        float *attnOut = (float *)(ctx->tmpBuf.Data());
 
-        llama_attention->forward(ctx, (float *)input, actBuffers.Data(), (float *)output, attnMask, presentKey,
-                presentValue, inputSeqLen, pastSeqLen, step == 0, false, nullptr);
+        llama_layer->forwardAttention(ctx, (float *)const_cast<void *>(input), outBuf, attnOut, attnMask,
+                presentKey, // presentKey,
+                presentValue, // presentValue,
+                inputSeqLen, // inputSeqLen,
+                pastSeqLen, // pastSeqLen
+                step == 0, // useSelfAttn,
+                true, // doLnBefore,
+                positionIds);
+
+        llama_layer->forwardFFN(ctx, attnOut, (float *)output, inputStride, outputStride, true);
     } else if (dt == DataType::fp16) {
     }
 }
