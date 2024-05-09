@@ -105,6 +105,14 @@ public:
                 useSelfAttn, doLnBefore, positionIds);
     }
 
+    template <typename InT, typename OutT, typename KVCacheT>
+    void forwardAttention(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, InT *input, OutT *output,
+            size_t totInSeqLen, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
+            std::vector<KVCacheTensor<KVCacheT> *> &valueCaches) {
+        TimeLine t("Decoder.forwardAttention");
+        attn.forward(ctx, seqs, input, output, totInSeqLen, keyCaches, valueCaches);
+    }
+
     template <typename InT, typename OutT>
     void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true) {
         TimeLine t("Decoder.forwardFFN");
