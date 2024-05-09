@@ -240,9 +240,7 @@ if __name__ == "__main__":
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
         print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
-        print(
-            f"Throughput without 1st token:\t{1000 / np.percentile(next_token_times, 90) * args.batch_size:.2f} tokens/s"
-        )
+        print(f"Throughput without 1st token:\t{1000 / np.mean(next_token_times) * args.batch_size:.2f} tokens/s")
         print("=" * 120, "\n" * 3)
 
         if args.csv != "":
@@ -262,7 +260,7 @@ if __name__ == "__main__":
                 "2nd_min(ms)": round(np.min(next_token_times), 2),
                 "2nd_P90(ms)": round(np.percentile(next_token_times, 90), 2),
                 "2nd_avg(ms)": round(np.mean(next_token_times), 2),
-                "throughput_wo_1st (tokens/s)": round(1000 / np.percentile(next_token_times, 90) * args.batch_size, 2),
+                "throughput_wo_1st (tokens/s)": round(1000 / np.mean(next_token_times) * args.batch_size, 2),
                 **arg_dict,
                 "Fake_model": True if os.environ.get("XFT_FAKE_MODEL", "-1") == "1" else False,
                 "Response": response,

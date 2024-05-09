@@ -123,3 +123,5 @@ template <typename WeiT, typename KVCacheT>
 void GemmaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
+
+IMPLEMENT_MODEL(GemmaLLM, gemma)

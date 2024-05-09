@@ -37,6 +37,7 @@
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
+#include "sequence.h"
 
 using namespace xft;
 
@@ -312,7 +313,8 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.debugPrint(
+                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
@@ -510,7 +512,7 @@ public:
     }
 
     std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
-        // Assume all sequences are all prompts(step==0) or all decodes(step>0)
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
         // Assume input has been synced with master in higher level.
         TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
@@ -571,7 +573,7 @@ public:
 
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
-        dbg.debugPrint("finalOut:\n");
+        dbg.debugPrint("finalOut:\n");    
         dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
 #endif
 

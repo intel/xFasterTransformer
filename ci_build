@@ -74,7 +74,7 @@ svr_info() {
 build() {
     pip install -r requirements.txt
     Info "Running build function with arguments: $@"
-    rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=1 -DPython_EXECUTABLE=$(which python) .. && make -j
+    rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=ON -DXFT_BUILD_EVALUATION=ON -DPython_EXECUTABLE=$(which python) .. && make -j
 }
 
 ut() {
