@@ -22,15 +22,11 @@
 #include "gtest/gtest.h"
 
 template <typename T>
-static void compareAttentionLLaMA(int attHeadDim, int attHeadNum, int kvHeadNum, int maxPositions, int maxPosEmbed,
-        int maxSeqLength, int hiddenSize, const float *ln1Gamma, const float *ln1Beta, const void *queryWeight,
-        const void *keyWeight, const void *valueWeight, const void *attnOutWeight) {
-    int batchSize = 1;
-    int inputSeqLen = 18;
-    int pastSeqLen = 0;
-    int currentSeqLen = inputSeqLen;
-    int step = 0;
-
+static void compareAttentionLLaMA(int step, int batchSize, int inputSeqLen, int pastSeqLen, int currentSeqLen,
+        int attHeadDim, int attHeadNum, int kvHeadNum, int maxPositions, int maxPosEmbed, int maxSeqLength,
+        int hiddenSize, const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
+        const void *valueWeight, const void *attnOutWeight) {
+    // Create input
     float *input = (float *)aligned_alloc(64, batchSize * inputSeqLen * hiddenSize * sizeof(float));
     float *ourOutput = (float *)aligned_alloc(64, batchSize * inputSeqLen * hiddenSize * sizeof(float));
     memset(ourOutput, 0, batchSize * inputSeqLen * hiddenSize * sizeof(float));
@@ -93,8 +89,25 @@ void test_AttentionLLaMA(void) {
         oProj[i] = static_cast<float>(0.5f * rand() / RAND_MAX);
     }
 
-    compareAttentionLLaMA<T>(attHeadDim, attHeadNum, kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize,
-            ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize, qkvProj + kvSize, oProj);
+    int step = 0;
+    int batchSize = 1;
+    int inputSeqLen = 18;
+    int pastSeqLen = 0;
+    int currentSeqLen = inputSeqLen;
+    int nextTokenNum = 1;
+
+    compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
+            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            qkvProj + kvSize, oProj);
+    pastSeqLen += inputSeqLen;
+    currentSeqLen = nextTokenNum;
+    compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
+            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            qkvProj + kvSize, oProj);
+    pastSeqLen += nextTokenNum;
+    compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
+            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            qkvProj + kvSize, oProj);
 
     free(ln1Gamma);
     free(ln1Beta);
