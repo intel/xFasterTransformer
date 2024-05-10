@@ -77,7 +77,7 @@ public:
         }
 
         // TODO: check and prepare KV cache only needed
-        // kvCacheMgr.prepareCache(seqIDs);
+        kvCacheMgr.prepareCache(seqIDs);
 
         // All layers forward
         int layersOnDuty = this->decoders.size();
