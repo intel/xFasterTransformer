@@ -93,7 +93,7 @@ void gemmSV(T1 *score, const std::tuple<T2, int, T3> &valueMat, T4 *output, int 
     auto [B, ldv, scale] = valueMat;
     auto C = output;
     const int N = headSize;
-    if constexpr (std::is_same_v<T2, int8_t>) {
+    if constexpr (std::is_same_v<T2, int8_t *>) {
         xft::small_gemm(A, B, scale, C, M, N, K, lds, ldv, ldo);
     } else {
         xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
