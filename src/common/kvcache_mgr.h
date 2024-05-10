@@ -85,7 +85,8 @@ public:
             cache = new KVCacheTensor<T>[2 * layers_];
         }
 
-        auto maxLen = maxSeqLen > 0 ? maxSeqLen : this->maxSeqLen_;
+        // User specified maxSeqLen needs to be <= model's configured maxSeqLen
+        auto maxLen = maxSeqLen > 0 ? std::min(maxSeqLen, maxSeqLen_) : maxSeqLen_;
         for (int i = 0; i < 2 * layers_; ++i) {
             cache[i].resize(maxLen, 1, headNum_, headSize_);
         }
