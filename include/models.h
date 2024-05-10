@@ -53,11 +53,13 @@ public:
             int padTokenId_ = -1, bool doSample_ = false, float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0,
             float repetitionPenalty_ = 1.0, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
+    // Only used for model.forward()
+    std::vector<int> set_input(
+            std::vector<std::vector<int32_t>> &inputIds_, std::vector<int> seqIDs = {}, int maxLen = -1);
+
     bool isDone();
 
     std::tuple<float *, int, int> forward(bool logits_all = true);
-
-    std::tuple<float *, int, int> forward(const std::vector<int> &seqIDs, bool logits_all = true);
 
     std::vector<int32_t> generate();
 
@@ -74,6 +76,10 @@ public:
     void setVocabSize(int vocabSize) { this->vocabSize = vocabSize; }
 
     int getVocabSize() { return this->vocabSize; }
+
+    void initMaxSeqLen();
+
+    int getMaxSeqLen() { return maxSeqLen; }
 
     SearcherConfig getConfig() { return configuration; }
 
@@ -96,6 +102,7 @@ private:
     int batchSize;
     int seqLen;
     int vocabSize;
+    int maxSeqLen;
     SearcherConfig configuration;
     bool isNewInput;
     std::vector<SequenceGroupMeta *> workingGroup;
