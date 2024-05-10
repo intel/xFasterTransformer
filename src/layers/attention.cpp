@@ -23,9 +23,10 @@ namespace xft {
 
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int maxSeqLength, int pastSeqLen, int currentSeqLen, int step,
-        int hiddenSize, void *output, int outputStride, const void *input, int inputStride, const void *queryWeight,
-        const void *keyWeight, const void *valueWeight, const void *attnOutWeight, const void *queryBias = nullptr,
-        const void *keyBias = nullptr, const void *valueBias = nullptr, const void *attnOutBias = nullptr) {
+        int hiddenSize, void *output, int outputStride, const void *input, int inputStride, const float *ln1Gamma,
+        const float *ln1Beta, const void *queryWeight, const void *keyWeight, const void *valueWeight,
+        const void *attnOutWeight, const void *queryBias, const void *keyBias, const void *valueBias,
+        const void *attnOutBias) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -100,12 +101,11 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
 
         auto it_created = llama_attention_hub.find(llama_attention_key);
         if (it_created == llama_attention_hub.end()) {
-            llama_attention = new Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>(1, ctx);
+            llama_attention = new Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>(0, ctx);
             llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
                     (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, nullptr,
-                    nullptr, false);
-
+                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, ln1Gamma,
+                    ln1Beta, false);
             llama_attention_hub[llama_attention_key] = llama_attention;
             printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
         } else {
@@ -116,6 +116,10 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         hpj::Matrix<float> actBuffers;
         actBuffers.Resize(batchSize * inputSeqLen * 2, hiddenSize);
         float *attnMask = prepareAttnMask(ctx, step);
+
+        int workers = 1;
+        int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
+        kvCacheMgr->resize(maxPositions, batchSize, headsPerSplit, attHeadDim);
         KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
         KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
 
