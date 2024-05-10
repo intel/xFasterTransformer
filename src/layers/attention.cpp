@@ -23,9 +23,9 @@ namespace xft {
 
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
-        int outputStride, const void *input, int inputStride, const float *ln1Gamma, const float *ln1Beta,
-        const void *queryWeight, const void *keyWeight, const void *valueWeight, const void *attnOutWeight,
-        const void *queryBias, const void *keyBias, const void *valueBias, const void *attnOutBias) {
+        int outputStride, const void *input, int inputStride, const void *queryWeight, const void *keyWeight,
+        const void *valueWeight, const void *attnOutWeight, const void *queryBias, const void *keyBias,
+        const void *valueBias, const void *attnOutBias) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -94,7 +94,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
         std::stringstream weights_addr;
-        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight;
+        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight << "_" << attnOutWeight << "_" << dt
+                     << "_" << attHeadDim << "_" << attHeadNum << "_" << kvHeadNum;
         std::string llama_attention_key = weights_addr.str();
         Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm> *llama_attention;
 
@@ -103,8 +104,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             llama_attention = new Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>(0, ctx);
             llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
                     (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, ln1Gamma,
-                    ln1Beta, false);
+                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, false, nullptr,
+                    nullptr, false);
             llama_attention_hub[llama_attention_key] = llama_attention;
             printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
         } else {
@@ -123,7 +124,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
 
         llama_attention->forward(ctx, (float *)input, actBuffers.Data(), (float *)output, attnMask, presentKey,
-                presentValue, inputSeqLen, pastSeqLen, step == 0, false, nullptr);
+                presentValue, inputSeqLen, pastSeqLen, step == 0, false, false, nullptr);
     } else if (dt == DataType::fp16) {
         static std::unordered_map<std::string, Attention<float16_t, LlamaRotaryEmbedding, RmsNorm> *>
                 llama_attention_hub;
@@ -142,7 +143,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
         std::stringstream weights_addr;
-        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight;
+        weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight << "_" << attnOutWeight << "_" << dt
+                     << "_" << attHeadDim << "_" << attHeadNum << "_" << kvHeadNum;
         std::string llama_attention_key = weights_addr.str();
         Attention<float16_t, LlamaRotaryEmbedding, RmsNorm> *llama_attention;
 
@@ -151,8 +153,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             llama_attention = new Attention<float16_t, LlamaRotaryEmbedding, RmsNorm>(0, ctx);
             llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
                     (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, ln1Gamma,
-                    ln1Beta, false);
+                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, false, nullptr,
+                    nullptr, false);
             llama_attention_hub[llama_attention_key] = llama_attention;
             printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
         } else {
@@ -171,7 +173,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
 
         llama_attention->forward(ctx, (float *)input, actBuffers.Data(), (float *)output, attnMask, presentKey,
-                presentValue, inputSeqLen, pastSeqLen, step == 0, false, nullptr);
+                presentValue, inputSeqLen, pastSeqLen, step == 0, false, false, nullptr);
     }
 }
 
