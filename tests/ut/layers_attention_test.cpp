@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@
 
 template <typename T>
 static void compareAttentionLLaMA(int step, int batchSize, int inputSeqLen, int pastSeqLen, int currentSeqLen,
-        int attHeadDim, int attHeadNum, int kvHeadNum, int maxPositions, int maxPosEmbed, int maxSeqLength,
-        int hiddenSize, const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
+        int attHeadDim, int attHeadNum, int kvHeadNum, int maxPositions, int maxPosEmbed, int hiddenSize,
+        const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
         const void *valueWeight, const void *attnOutWeight) {
     // Create input
     float *input = (float *)aligned_alloc(64, batchSize * inputSeqLen * hiddenSize * sizeof(float));
@@ -48,9 +48,9 @@ static void compareAttentionLLaMA(int step, int batchSize, int inputSeqLen, int 
 
     auto start = std::chrono::high_resolution_clock::now();
     invokeAttentionLLaMA(dt, batchSize, inputSeqLen, attHeadDim, attHeadNum, kvHeadNum, maxPositions, maxPosEmbed,
-            maxSeqLength, pastSeqLen, currentSeqLen, step, hiddenSize, (void *)ourOutput, hiddenSize,
-            (const void *)input, hiddenSize, ln1Gamma, ln1Beta, (const void *)queryWeight, (const void *)keyWeight,
-            (const void *)valueWeight, (const void *)attnOutWeight);
+            pastSeqLen, currentSeqLen, step, hiddenSize, (void *)ourOutput, hiddenSize, (const void *)input, hiddenSize,
+            ln1Gamma, ln1Beta, (const void *)queryWeight, (const void *)keyWeight, (const void *)valueWeight,
+            (const void *)attnOutWeight);
     auto end = std::chrono::high_resolution_clock::now();
     float during_time = std::chrono::duration<float>(end - start).count();
     printf("[ RUNTIME  ] XFT::invokeAttentionLLaMA %.6f sec\n", during_time);
@@ -63,7 +63,6 @@ template <typename T>
 void test_AttentionLLaMA(void) {
     int maxPosEmbed = 4096;
     int maxPositions = maxPosEmbed;
-    int maxSeqLength = maxPosEmbed;
     int hiddenSize = 4096;
     int attHeadNum = 32;
     int attHeadDim = hiddenSize / attHeadNum;
@@ -97,16 +96,16 @@ void test_AttentionLLaMA(void) {
     int nextTokenNum = 1;
 
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj);
     pastSeqLen += inputSeqLen;
     currentSeqLen = nextTokenNum;
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj);
     pastSeqLen += nextTokenNum;
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, maxSeqLength, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj);
 
     free(ln1Gamma);

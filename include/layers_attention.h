@@ -59,10 +59,10 @@ void invokeAttention(DataType dt,
         int *block_tables, int *block_nums, int *context_lens, int layer_id, bool is_prefill, int *slot_mapping);
 
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
-        int maxPositions, int maxPosEmbed, int maxSeqLength, int pastSeqLen, int currentSeqLen, int step,
-        int hiddenSize, void *output, int outputStride, const void *input, int inputStride, const float *ln1Gamma,
-        const float *ln1Beta, const void *queryWeight, const void *keyWeight, const void *valueWeight,
-        const void *attnOutWeight, const void *queryBias = nullptr, const void *keyBias = nullptr,
-        const void *valueBias = nullptr, const void *attnOutBias = nullptr);
+        int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
+        int outputStride, const void *input, int inputStride, const float *ln1Gamma, const float *ln1Beta,
+        const void *queryWeight, const void *keyWeight, const void *valueWeight, const void *attnOutWeight,
+        const void *queryBias = nullptr, const void *keyBias = nullptr, const void *valueBias = nullptr,
+        const void *attnOutBias = nullptr);
 
 } // namespace xft

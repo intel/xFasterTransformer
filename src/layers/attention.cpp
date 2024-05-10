@@ -22,11 +22,10 @@
 namespace xft {
 
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
-        int maxPositions, int maxPosEmbed, int maxSeqLength, int pastSeqLen, int currentSeqLen, int step,
-        int hiddenSize, void *output, int outputStride, const void *input, int inputStride, const float *ln1Gamma,
-        const float *ln1Beta, const void *queryWeight, const void *keyWeight, const void *valueWeight,
-        const void *attnOutWeight, const void *queryBias, const void *keyBias, const void *valueBias,
-        const void *attnOutBias) {
+        int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
+        int outputStride, const void *input, int inputStride, const float *ln1Gamma, const float *ln1Beta,
+        const void *queryWeight, const void *keyWeight, const void *valueWeight, const void *attnOutWeight,
+        const void *queryBias, const void *keyBias, const void *valueBias, const void *attnOutBias) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -88,7 +87,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, attHeadDim);
             ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0,
-                    maxPositions, maxPosEmbed, maxSeqLength, 0, 1);
+                    maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             kvCacheMgr = new KVCacheManager<float>(1);
         }
@@ -136,7 +135,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, attHeadDim);
             ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0,
-                    maxPositions, maxPosEmbed, maxSeqLength, 0, 1);
+                    maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             kvCacheMgr = new KVCacheManager<float>(1);
         }
