@@ -18,6 +18,7 @@
 #include <cstring>
 #include <iostream>
 #include "bfloat16.h"
+#include "rotary_embedding_kernels.h"
 #include "transformer_ctx.h"
 
 /*  Sample:
@@ -43,6 +44,11 @@ public:
     void forward(
             bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
+    void forward(float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
+            int *positionIds);
+    void forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
+            int *positionIds);
+
 private:
     void yarnFindRange(int &low, int &high, int betaFast, int betaSlow, int dim, float base, int orgMaxPosEmbed);
     void yarnLinearRampMask(float *invFreqMask, int low, int high, int dim, float extraFactor);
@@ -50,4 +56,10 @@ private:
 
 private:
     static bool initialized;
+    int dim = -1;
+    int maxSeqLenCached = -1;
+    int invFreqSize = -1;
+    float *invFreq;
+    float *embCos = nullptr;
+    float *embSin = nullptr;
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,25 +13,18 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
-#include <cmath>
-#include <cstring>
-#include <iostream>
-using namespace std;
 
-// 2D rotary embedding for ChatGLM
-class RotaryEmbedding2D {
-public:
-    RotaryEmbedding2D(const int dim, const int max_position_embeddings = 2048, const float base = 10000);
+#include "bfloat16.h"
 
-    ~RotaryEmbedding2D() {}
+namespace xft {
 
-    void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *positions);
-    void forward(float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
-            int *positionIds);
+void llamaSetCosSinCache(const float *invFreq, float *embCos, float *embSin, int invFreqSize,
+        int max_position_embeddings = 2048, float scale = 1.0);
 
-private:
-    void prepareEmbedding();
+void llamaApplyRotaryPosEmbed(float *query, float *key, float *embCos, float *embSin, int qStride, int kStride, int dim,
+        int totSeqLen, int qHeads, int kHeads, const int *positionIds);
 
-private:
-    static bool initialized;
-};
+void llamaApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+} // namespace xft

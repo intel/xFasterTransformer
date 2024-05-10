@@ -326,3 +326,15 @@ void QwenRotaryEmbedding::forward(
         }
     }
 }
+
+void QwenRotaryEmbedding::forward(
+        float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    printf("Unsupported QwenRotaryEmbedding in cb mode !\n");
+    exit(1);
+}
+
+void QwenRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
+        int qHeads, int kHeads, int *positionIds) {
+    printf("Unsupported QwenRotaryEmbedding in cb mode !\n");
+    exit(1);
+}

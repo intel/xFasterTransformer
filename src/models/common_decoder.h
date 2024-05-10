@@ -38,13 +38,14 @@
 #include "transformer_ctx.h"
 #include "transpose_util.h"
 #include "weight_util.h"
-#include "sequence.h"
 
 using namespace xft;
 
 struct QKPO_Dummy {
     QKPO_Dummy(int dim, int maxPos) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
+    void forward(float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
+            int *positionIds) {};
 };
 
 // To get data types in MLP class
@@ -316,8 +317,7 @@ public:
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint(
-                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
@@ -360,7 +360,7 @@ public:
             }
         }
 
-        while(TaskWaitingQueue::getInstance().empty());
+        while (TaskWaitingQueue::getInstance().empty());
 
         SequenceGroupMeta *runningTask = nullptr;
         int32_t sequenceID = -1;
@@ -581,7 +581,7 @@ public:
 
 #ifdef DEBUG
         auto splitSize = this->predictor->getSplitSize();
-        dbg.debugPrint("finalOut:\n");    
+        dbg.debugPrint("finalOut:\n");
         dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
 #endif
 
