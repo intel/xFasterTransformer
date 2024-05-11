@@ -613,14 +613,15 @@ protected:
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
 
-        int tokenSizes[ctx->batchSize];
-        for (int i = 0; i < ctx->batchSize; ++i) {
+        int batchSize = seqs.size();
+        int tokenSizes[batchSize];
+        for (int i = 0; i < batchSize; ++i) {
             tokenSizes[i] = seqs[i]->getInputSeqLen();
         }
 
         xft::selfAttention(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
-                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), ctx->batchSize, tokenSizes,
+                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, tokenSizes,
                 ctx->attFactor, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); },
                 [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); });
@@ -630,7 +631,26 @@ protected:
     void fusedAttention(DecoderContext *ctx, xft::Matrix<T> &query, xft::Matrix<T> &key, xft::Matrix<T> &value,
             xft::Matrix<T> &result, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, std::vector<xft::SequenceMeta *> &seqs) {
-        // TODO: implement fusedAttention
+        int responsibleQHeads = this->endQHead - this->startQHead;
+        int responsibleKVHeads = this->endKVHead - this->startKVHead;
+
+        int batchSize = seqs.size();
+
+        // TODO: move to AttentionBlock
+        int inputSeqLens[batchSize];
+        int pastSeqLens[batchSize];
+        for (int i = 0; i < batchSize; ++i) {
+            inputSeqLens[i] = seqs[i]->getInputSeqLen();
+            pastSeqLens[i] = seqs[i]->getPastSeqLen();
+        }
+
+        // TODO: non-causal case handle
+        xft::crossAttnByHead<T, KVCacheT>(
+                result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
+                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, inputSeqLens, pastSeqLens,
+                true, nullptr, ctx->attFactor, ctx->numThreads,
+                [&](int b, int headIdx) { return keyCaches[b]->getHead(0, headIdx); },
+                [&](int b, int headIdx) { return valueCaches[b]->getHead(0, headIdx); });
     }
 
     int getMBlockSize(int inputSeqLen, int headSize, int minVal = 6) {
