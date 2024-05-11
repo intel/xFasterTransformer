@@ -61,8 +61,8 @@ public:
 
     int size() const { return this->decoders.size(); }
 
-    template <typename InT, typename OutT>
-    void forward(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, InT *input, OutT *output) {
+    template <typename T>
+    void forward(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, T *inputBuf, T *outputBuf) {
         using AttnOutT = typename AttnTypeExtractor<ATTN_CLS>::Tout;
 
         Messenger &messenger = Messenger::getInstance();
@@ -81,6 +81,10 @@ public:
 
         // All layers forward
         int layersOnDuty = this->decoders.size();
+        auto input = inputBuf;
+        auto output = outputBuf;
+        AttnOutT *attnOut = (AttnOutT *)(ctx->tmpBuf.Data());
+
         for (int i = 0; i < layersOnDuty; ++i) {
             int workers = messenger.getSize();
 
@@ -90,6 +94,7 @@ public:
             std::vector<KVCacheTensor<KVCacheT> *> keyCachesVec(keyCaches.size());
             std::vector<KVCacheTensor<KVCacheT> *> valueCachesVec(valueCaches.size());
 
+            // TODO: better method?
             for (int j = 0; j < keyCaches.size(); ++j) {
                 keyCachesVec[j] = static_cast<KVCacheTensor<KVCacheT> *>(keyCaches[j]);
             }
@@ -97,8 +102,6 @@ public:
             for (int j = 0; j < valueCaches.size(); ++j) {
                 valueCachesVec[j] = static_cast<KVCacheTensor<KVCacheT> *>(valueCaches[j]);
             }
-
-            AttnOutT *attnOut = (AttnOutT *)(ctx->tmpBuf.Data());
 
             this->decoders[i]->forwardAttention(ctx, seqs, input, attnOut, totInSeqLen, keyCachesVec, valueCachesVec);
 
@@ -120,6 +123,14 @@ public:
                     this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
                 }
             }
+
+            // Update the input/output for the next layer
+            std::swap(input, output);
+        }
+
+        // Copy final result to the output buffer
+        if (inputBuf != outputBuf && layersOnDuty % 2 == 0) {
+            std::memcpy(outputBuf, inputBuf, totInSeqLen * ctx->hiddenSize * sizeof(T));
         }
     }
 
