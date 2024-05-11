@@ -53,6 +53,9 @@ public:
             int padTokenId_ = -1, bool doSample_ = false, float temperature_ = 1.0, int topK_ = 50, float topP_ = 1.0,
             float repetitionPenalty_ = 1.0, const std::vector<std::vector<int>> &stopWordsList_ = {});
 
+    std::vector<int> set_input(std::vector<std::vector<int32_t>> &inputIds_, std::vector<int> seqIDs,
+            SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_ = {});
+
     // Only used for model.forward()
     std::vector<int> set_input(
             std::vector<std::vector<int32_t>> &inputIds_, std::vector<int> seqIDs = {}, int maxLen = -1);

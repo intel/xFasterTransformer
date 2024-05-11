@@ -266,7 +266,7 @@ public:
         return group;
     }
 
-    SequenceGroupMeta *newGroupMeta(int32_t inputSeqLen, ) {
+    SequenceGroupMeta *newGroupMeta(int32_t inputSeqLen) {
         auto *group = new SequenceGroupMeta(inputSeqLen);
         this->add(group);
         return group;
