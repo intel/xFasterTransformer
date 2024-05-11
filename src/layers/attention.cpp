@@ -24,8 +24,8 @@ namespace xft {
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
         int outputStride, const void *input, int inputStride, const void *queryWeight, const void *keyWeight,
-        const void *valueWeight, const void *attnOutWeight, const void *queryBias, const void *keyBias,
-        const void *valueBias, const void *attnOutBias) {
+        const void *valueWeight, const void *attnOutWeight, const float *queryBias, const float *keyBias,
+        const float *valueBias, const float *attnOutBias) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -89,6 +89,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0,
                     maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
+            if (kvCacheMgr != nullptr) delete kvCacheMgr;
             kvCacheMgr = new KVCacheManager<float>(1);
         }
 
@@ -102,10 +103,10 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         auto it_created = llama_attention_hub.find(llama_attention_key);
         if (it_created == llama_attention_hub.end()) {
             llama_attention = new Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>(0, ctx);
-            llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
-                    (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, false, nullptr,
-                    nullptr, false);
+            llama_attention->setWeights(ctx, (const float *)queryWeight, nullptr, nullptr, queryBias,
+                    (const float *)keyWeight, nullptr, nullptr, keyBias, (const float *)valueWeight, nullptr, nullptr,
+                    valueBias, (const float *)attnOutWeight, nullptr, nullptr, attnOutBias, false, nullptr, nullptr,
+                    false);
             llama_attention_hub[llama_attention_key] = llama_attention;
             printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
         } else {
@@ -138,6 +139,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
             ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0,
                     maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
+            if (kvCacheMgr != nullptr) delete kvCacheMgr;
             kvCacheMgr = new KVCacheManager<float>(1);
         }
 
@@ -151,10 +153,10 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         auto it_created = llama_attention_hub.find(llama_attention_key);
         if (it_created == llama_attention_hub.end()) {
             llama_attention = new Attention<float16_t, LlamaRotaryEmbedding, RmsNorm>(0, ctx);
-            llama_attention->setWeights(ctx, (float *)queryWeight, nullptr, nullptr, (float *)queryBias,
-                    (float *)keyWeight, nullptr, nullptr, (float *)keyBias, (float *)valueWeight, nullptr, nullptr,
-                    (float *)valueBias, (float *)attnOutWeight, nullptr, nullptr, (float *)attnOutBias, false, nullptr,
-                    nullptr, false);
+            llama_attention->setWeights(ctx, (const float *)queryWeight, nullptr, nullptr, queryBias,
+                    (const float *)keyWeight, nullptr, nullptr, keyBias, (const float *)valueWeight, nullptr, nullptr,
+                    valueBias, (const float *)attnOutWeight, nullptr, nullptr, attnOutBias, false, nullptr, nullptr,
+                    false);
             llama_attention_hub[llama_attention_key] = llama_attention;
             printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
         } else {
@@ -163,7 +165,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
 
         ctx->resize(batchSize, inputSeqLen, pastSeqLen);
         hpj::Matrix<float> actBuffers;
-        actBuffers.Resize(batchSize * inputSeqLen * 2, hiddenSize);
+        actBuffers.Resize(batchSize * inputSeqLen, hiddenSize);
         float *attnMask = prepareAttnMask(ctx, step);
 
         int workers = 1;
