@@ -86,7 +86,7 @@ public:
             bool trans = true) {
         attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
                 valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
-                ln1Gamma, ln1Beta, trans);
+                true, ln1Gamma, ln1Beta, trans);
 
         mlp.setWeights(ctx, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma,
                 ln2Beta, fc3Weight, fc3Scales, fc3Zeros, trans);
@@ -102,7 +102,7 @@ public:
         static_assert(sizeof(ImT) >= sizeof(Ttarget), "Intermediate buffer is NOT big enough!");
 
         attn.forward(ctx, input, (Ttarget *)imBuf, output, attnMask, presentKey, presentValue, inputSeqLen, pastSeqLen,
-                useSelfAttn, doLnBefore, positionIds);
+                useSelfAttn, doLnBefore, false, positionIds);
     }
 
     template <typename InT, typename OutT, typename KVCacheT>

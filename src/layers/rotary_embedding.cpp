@@ -22,13 +22,13 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     const std::string emb_cos_str = "emb_cos";
     const std::string emb_sin_str = "emb_sin";
 
-    // dim: equals to head size
-    ctx->GetAttr("size_per_head", &this->dim);
-    ctx->GetAttr("max_pos_seq_len", &this->max_position_embeddings, 2048);
+    this->dim = ctx->attHeadSize;
+    this->max_position_embeddings = ctx->maxPosEmbed;
     ctx->GetAttr("rope_theta", &this->base, 10000);
     ctx->GetAttr("rope_type", &this->rope_type, std::to_string(-1));
 
-    if (this->rope_type == "linear") ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
+    if (this->rope_type == "linear")
+        ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
 
     inv_freq_size = (dim + 1) / 2;
 
