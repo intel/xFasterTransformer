@@ -274,11 +274,10 @@ public:
         auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
         int imCols = range.second - range.first;
 
-        uint64_t normSize = (uint64_t)batchSize * inputSeqLen * hiddenSize;
-        uint64_t qkvSize = (uint64_t)batchSize * inputSeqLen * qkvCols;
-        uint64_t imOutSize = (uint64_t)batchSize * inputSeqLen * imCols * mlpFactor;
-
-        uint64_t tmpBufSize = (uint64_t)batchSize * inputSeqLen * hiddenSize;
+        uint64_t normSize = (uint64_t)totalInSeqLen * hiddenSize;
+        uint64_t qkvSize = (uint64_t)totalInSeqLen * qkvCols;
+        uint64_t imOutSize = (uint64_t)totalInSeqLen * imCols * mlpFactor;
+        uint64_t tmpBufSize = (uint64_t)totalInSeqLen * hiddenSize;
 
         size1 = normSize;
         size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
@@ -294,10 +293,10 @@ public:
         }
 
         // Assign the buffer
-        normBuf.Assign(this->rawBuffer, batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        tmpBuf.Assign(this->rawBuffer + size1 + size2, batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        imOut.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, imCols, imCols);
-        qkvMatMul.Assign(this->rawBuffer + size1, batchSize * inputSeqLen, qkvCols, qkvCols);
+        normBuf.Assign(this->rawBuffer, totalInSeqLen, hiddenSize, hiddenSize);
+        tmpBuf.Assign(this->rawBuffer + size1 + size2, totalInSeqLen, hiddenSize, hiddenSize);
+        imOut.Assign(this->rawBuffer + size1, totalInSeqLen, imCols, imCols);
+        qkvMatMul.Assign(this->rawBuffer + size1, totalInSeqLen, qkvCols, qkvCols);
     }
 
     // TODO: deprecate it
