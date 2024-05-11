@@ -468,22 +468,23 @@ public:
 
         // Apply post operations on query and key
         TimeLine t3("QKPO");
-        // TODO: call into rotary embedding
-        // int qheads = this->endQHead - this->startQHead;
-        // int kheads = this->endKVHead - this->startKVHead;
-        // int qkShape[7] = {ctx->batchSize, ctx->inputSeqLen, qheads, headSize, kheads, ctx->maxSeqLength, pastSeqLen};
-        // if (positionIds != nullptr) {
-        //     qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, positionIds);
-        // } else if (ctx->maxPosEmbed > 0) {
-        //     // Use the default position ids
-        //     std::vector<int> posIds(ctx->inputSeqLen);
-        //     if (inputSeqLen == 1) {
-        //         posIds[0] = pastSeqLen;
-        //     } else {
-        //         std::iota(posIds.begin(), posIds.end(), pastSeqLen);
-        //     }
-        //     qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
-        // }
+        if (ctx->maxPosEmbed > 0) {
+            int qheads = this->endQHead - this->startQHead;
+            int kheads = this->endKVHead - this->startKVHead;
+            int totInputSeqLen = 0;
+            for (auto seq : seqs) {
+                totInputSeqLen += seq->getInputSeqLen();
+            }
+            // Use the default position ids
+            std::vector<int> posIds(totInputSeqLen);
+            int loc = 0;
+            for (auto seq : seqs) {
+                std::iota(posIds.begin() + loc, posIds.begin() + loc + seq->getInputSeqLen(), seq->getPastSeqLen());
+                loc += seq->getInputSeqLen();
+            }
+            qkpo.forward(query.Data(), key.Data(), totInputSeqLen, query.Stride(), key.Stride(), qheads, kheads,
+                    posIds.data());
+        }
         t3.release();
 
 #ifdef DEBUG
