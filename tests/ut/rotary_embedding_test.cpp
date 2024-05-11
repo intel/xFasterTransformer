@@ -28,17 +28,30 @@ static bool compare(const float *result, const float *ground_truth, const int si
 TEST(RotrayEmbedding, RotrayEmbeddingTest) {
     int bs = 2, seq = 2, headnum = 2, dim = 2;
     int max_len = 10;
-    int qkshape[5] = {bs, seq, headnum, dim, headnum};
-    int pos_ids[2] = {1, 0};
     int stride = bs * seq, size = bs * seq * headnum * dim;
-    LlamaRotaryEmbedding RotrayEmbeddingTest(dim, max_len);
-    float q[16] = {4, 4, 4, 4, 3, 2, 1, 1, 4, 4, 2, 1, 4, 1, 3, 0};
-    float k[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+
+    float q_input[16] = {4, 4, 4, 4, 3, 2, 1, 1, 4, 4, 2, 1, 4, 1, 3, 0};
+    float k_input[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     float q_groundtruth[16]
             = {-1.20467, 5.52709, -1.20467, 5.52709, 3, 2, 1, 1, -1.20467, 5.52709, 0.239134, 2.22324, 4, 1, 3, 0};
     float k_groundtruth[16]
             = {-0.301169, 1.38177, -0.301169, 1.38177, 1, 1, 1, 1, -0.301169, 1.38177, -0.301169, 1.38177, 1, 1, 1, 1};
+    float q[16], k[16];
+
+    LlamaRotaryEmbedding RotrayEmbeddingTest(dim, max_len);
+   
+    memcpy(q, q_input, sizeof(float) * 16); 
+    memcpy(k, k_input, sizeof(float) * 16); 
+    int qkshape[5] = {bs, seq, headnum, dim, headnum};
+    int pos_ids[2] = {1, 0};
     RotrayEmbeddingTest.forward(q, k, stride, stride, qkshape, pos_ids);
+    EXPECT_TRUE(compare(q, q_groundtruth, size));
+    EXPECT_TRUE(compare(k, k_groundtruth, size));
+
+    memcpy(q, q_input, sizeof(float) * 16); 
+    memcpy(k, k_input, sizeof(float) * 16); 
+    int posIds[bs * seq] = {1, 0, 1, 0};
+    RotrayEmbeddingTest.forward(q, k, bs * seq, stride, stride, headnum, headnum, posIds);
     EXPECT_TRUE(compare(q, q_groundtruth, size));
     EXPECT_TRUE(compare(k, k_groundtruth, size));
 }
@@ -46,30 +59,44 @@ TEST(RotrayEmbedding, RotrayEmbeddingTest) {
 TEST(RotrayEmbedding, BF16Test) {
     int bs = 2, seq = 2, headnum = 2, dim = 2;
     int max_len = 10;
-    int qkshape[5] = {bs, seq, headnum, dim, headnum};
-    int pos_ids[2] = {1, 0};
     int stride = bs * seq, size = bs * seq * headnum * dim;
 
-    float q_fp32[16] = {4, 4, 4, 4, 3, 2, 1, 1, 4, 4, 2, 1, 4, 1, 3, 0};
-    float k_fp32[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    float q_input[16] = {4, 4, 4, 4, 3, 2, 1, 1, 4, 4, 2, 1, 4, 1, 3, 0};
+    float k_input[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     float q_groundtruth[16]
             = {-1.20467, 5.52709, -1.20467, 5.52709, 3, 2, 1, 1, -1.20467, 5.52709, 0.239134, 2.22324, 4, 1, 3, 0};
     float k_groundtruth[16]
             = {-0.301169, 1.38177, -0.301169, 1.38177, 1, 1, 1, 1, -0.301169, 1.38177, -0.301169, 1.38177, 1, 1, 1, 1};
-
-    bfloat16_t q[16];
-    bfloat16_t k[16];
-    bfloat16_t::cvt_float_to_bfloat16(q_fp32, q, 16);
-    bfloat16_t::cvt_float_to_bfloat16(k_fp32, k, 16);
+    float q_output[16], k_output[16];
 
     LlamaRotaryEmbedding RotrayEmbeddingTest(dim, max_len);
+    bfloat16_t q[16];
+    bfloat16_t k[16];
+
+    // forward 1
+    bfloat16_t::cvt_float_to_bfloat16(q_input, q, 16);
+    bfloat16_t::cvt_float_to_bfloat16(k_input, k, 16);
+    int qkshape[5] = {bs, seq, headnum, dim, headnum};
+    int pos_ids[2] = {1, 0};
     RotrayEmbeddingTest.forward(q, k, stride, stride, qkshape, pos_ids);
 
-    bfloat16_t::cvt_bfloat16_to_float(q, q_fp32, 16);
-    bfloat16_t::cvt_bfloat16_to_float(k, k_fp32, 16);
+    bfloat16_t::cvt_bfloat16_to_float(q, q_output, 16);
+    bfloat16_t::cvt_bfloat16_to_float(k, k_output, 16);
 
-    EXPECT_TRUE(compare(q_fp32, q_groundtruth, size, 0.01));
-    EXPECT_TRUE(compare(k_fp32, k_groundtruth, size, 0.01));
+    EXPECT_TRUE(compare(q_output, q_groundtruth, size, 0.01));
+    EXPECT_TRUE(compare(k_output, k_groundtruth, size, 0.01));
+
+    // forward 2
+    bfloat16_t::cvt_float_to_bfloat16(q_input, q, 16);
+    bfloat16_t::cvt_float_to_bfloat16(k_input, k, 16);
+    int posIds[bs * seq] = {1, 0, 1, 0};
+    RotrayEmbeddingTest.forward(q, k, bs * seq, stride, stride, headnum, headnum, posIds);
+
+    bfloat16_t::cvt_bfloat16_to_float(q, q_output, 16);
+    bfloat16_t::cvt_bfloat16_to_float(k, k_output, 16);
+
+    EXPECT_TRUE(compare(q_output, q_groundtruth, size, 0.01));
+    EXPECT_TRUE(compare(k_output, k_groundtruth, size, 0.01));
 }
 
 int main(int argc, char **argv) {
