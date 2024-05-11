@@ -549,13 +549,17 @@ public:
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
 
         // Decoder block (all layers)
-        decoderBlock->forward(ctx, seqs, embBuf, outBuf);
+        decoderBlock->forward(ctx, seqs, embBuf, embBuf);
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
-        // Shape of embBuf: (bs, seqLen, hiddenSize)
+        // Shape of embBuf: (total_input_seqlen, hiddenSize)
         MlpOutT *lnIn = embBuf;
-        if (!logitsAll) {
-            // TODO: copy needed data
+        if (logitRows != totInputSeqLen) {
+            int offset = -1;
+            for (int b = 0; b < batchSize; ++b) {
+                offset += seqs[b]->getInputSeqLen();
+                memcpy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT));
+            }
         }
 
 #ifdef DEBUG
