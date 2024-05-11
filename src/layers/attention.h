@@ -423,7 +423,7 @@ public:
         xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
 #ifdef DEBUG
-        dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
+        dbg.debugPrint("---- DecoderLayer.forward ----\n");
         dbg.debugPrint("input:\n");
         dbg.dumpMatrix(inputBuffer);
 #endif
