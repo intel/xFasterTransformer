@@ -321,7 +321,7 @@ int main(int argc, char **argv) {
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16");
     args.add<std::string>("kv_cache_dtype", '\0', "kv cache data type", false, "fp16");
     args.add<int>("input_len", 'l', "input token size", false, -1);
-    args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
+    args.add<int>("output_len", 'o', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
     args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
     args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
