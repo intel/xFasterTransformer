@@ -113,7 +113,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         }
 
         ctx->resize(batchSize, inputSeqLen, pastSeqLen);
-        hpj::Matrix<float> actBuffers;
+        xft::Matrix<float> actBuffers;
         actBuffers.Resize(batchSize * inputSeqLen * 2, hiddenSize);
         float *attnMask = prepareAttnMask(ctx, step);
 
@@ -162,7 +162,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         }
 
         ctx->resize(batchSize, inputSeqLen, pastSeqLen);
-        hpj::Matrix<float> actBuffers;
+        xft::Matrix<float> actBuffers;
         actBuffers.Resize(batchSize * inputSeqLen * 2, hiddenSize);
         float *attnMask = prepareAttnMask(ctx, step);
 
