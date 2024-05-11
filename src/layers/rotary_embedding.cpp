@@ -28,8 +28,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     ctx->GetAttr("rope_theta", &this->base, 10000);
     ctx->GetAttr("rope_type", &this->rope_type, std::to_string(-1));
 
-    if (this->rope_type == "linear") 
-        ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
+    if (this->rope_type == "linear") ctx->GetAttr("scaling_factor", &this->scaling_factor, 1.0f);
 
     inv_freq_size = (dim + 1) / 2;
 
@@ -38,10 +37,12 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
 
     if (!ctx->cached(inv_freq_str)) {
         inv_freq = ctx->getBuffer<float>(inv_freq_str, inv_freq_size);
+
         for (size_t i = 0; i < inv_freq_size; i++) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
+            inv_freq[i] /= this->scaling_factor;
         }
-        llamaCalEmb(inv_freq, max_position_embeddings);
+        xft::llamaSetCosSinCache(inv_freq, emb_cos, emb_sin, inv_freq_size, max_position_embeddings);
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
@@ -49,42 +50,20 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
 }
 
 // This API is deprecated, will delete after all rotary embed code refactor.
-LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {}
+LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
+    this->dim = dim;
+    inv_freq_size = (dim + 1) / 2;
 
-void LlamaRotaryEmbedding::llamaCalEmb(const float *inv_freq, const int max_position_embeddings) {
-#pragma omp parallel for
-    for (size_t i = 0; i < max_position_embeddings; i++) {
-        float *pcos = emb_cos + i * inv_freq_size;
-        float *psin = emb_sin + i * inv_freq_size;
-
-        for (size_t j = 0; j < inv_freq_size; j++) {
-            float tmp = i * inv_freq[j] / this->scaling_factor;
-            float cos_tmp = std::cos(tmp);
-            float sin_tmp = std::sin(tmp);
-
-            pcos[j] = cos_tmp;
-            psin[j] = sin_tmp;
-        }
+    inv_freq = (float *)malloc(inv_freq_size * sizeof(float));
+    emb_cos = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
+    emb_sin = (float *)xft::alloc(max_position_embeddings * inv_freq_size * sizeof(float));
+    for (size_t i = 0; i < inv_freq_size; i++) {
+        inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
     }
+
+    xft::llamaSetCosSinCache(inv_freq, emb_cos, emb_sin, inv_freq_size, max_position_embeddings);
 }
 
-// def rotate_half(x):
-//     """Rotates half the hidden dims of the input."""
-//     x1 = x[..., : x.shape[-1] // 2]
-//     x2 = x[..., x.shape[-1] // 2 :]
-//     return torch.cat((-x2, x1), dim=-1)
-// def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
-//     # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
-//     cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
-//     sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
-//     cos = cos[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-//     sin = sin[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-//     q_embed = (q * cos) + (rotate_half(q) * sin)
-//     k_embed = (k * cos) + (rotate_half(k) * sin)
-//     return q_embed, k_embed
-//
-// qk_shape: 4 values of [batch_size, seq_len, head_num, head_size]
-// position_ids: an array in the size of seq_len
 // query and key is the matrix like below:
 //
 //   |<------------------------------ head_num * head_size --------------------------------->|
@@ -213,4 +192,16 @@ void LlamaRotaryEmbedding::forward(
             }
         }
     }
+}
+
+void LlamaRotaryEmbedding::forward(
+        float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    xft::llamaApplyRotaryPosEmbed(
+            query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void LlamaRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
+        int qHeads, int kHeads, int *positionIds) {
+    xft::llamaApplyRotaryPosEmbed(
+            query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }

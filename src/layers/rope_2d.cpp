@@ -185,3 +185,9 @@ void RotaryEmbedding2D::forward(
         } // end bs
     } // end head
 }
+
+void RotaryEmbedding2D::forward(
+        float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    printf("Unsupported RotaryEmbedding2D in cb mode!\n");
+    exit(1);
+}

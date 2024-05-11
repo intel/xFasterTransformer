@@ -198,3 +198,15 @@ void ChatGLM2RotaryEmbedding::forward(
         }
     }
 }
+
+void ChatGLM2RotaryEmbedding::forward(
+        float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    printf("Unsupported ChatGLM2RotaryEmbedding in cb mode !\n");
+    exit(1);
+}
+
+void ChatGLM2RotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
+        int qHeads, int kHeads, int *positionIds) {
+    printf("Unsupported ChatGLM2RotaryEmbedding in cb mode !\n");
+    exit(1);
+}

@@ -84,13 +84,6 @@ ut() {
     for file in ./*; do
         if [ -x "$file" ]; then
 
-            #Todo(marvin): delete me when the case is ready.
-            if [[ "$file" == "./rotary_embedding_test" ]]; then
-                Warning "Bypass the fail case of $file."
-                continue
-            fi
-            ##################################################
-
             if [[ "$file" != *_test ]]; then
                 Warning "$file is not ending with '_test', skip current loop."
                 continue
