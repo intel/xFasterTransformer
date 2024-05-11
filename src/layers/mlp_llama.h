@@ -112,9 +112,10 @@ public:
 
     // Forward for FFN (Feed Forward Network)
     void forward(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride,
-            bool doLnBefore = true /*not used*/) {
+            bool doLnBefore = true /*not used*/, int totInSeqLen = 0) {
         TimeLine t("LlamaMLP");
-        const int M = ctx->batchSize * ctx->inputSeqLen;
+
+        const int M = totInSeqLen == 0 ? ctx->batchSize * ctx->inputSeqLen : totInSeqLen;
         const int hiddenSize = ctx->hiddenSize;
 
         static_assert(sizeof(ctx->normBuf.Data()[0]) >= sizeof(ImT), "normBuff is not big enough!");

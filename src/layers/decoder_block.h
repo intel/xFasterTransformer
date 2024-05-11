@@ -114,10 +114,10 @@ public:
                 std::exit(-1);
             } else {
                 if (messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true);
+                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
                     messenger.reduceAdd(output, output, totInSeqLen * ctx->hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true);
+                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
                 }
             }
         }
