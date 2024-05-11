@@ -76,7 +76,7 @@ public:
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
             const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
             const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
-            const float *attnOutBias, const float *gamma1, const float *beta1, bool trans = true) {
+            const float *attnOutBias, bool doLNorm, const float *gamma1, const float *beta1, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int headSize = ctx->attHeadSize;
 
@@ -188,7 +188,8 @@ public:
         }
 
         // LayerNorm
-        this->norm.setWeight(gamma1, beta1, hiddenSize);
+        if (doLNorm)
+            this->norm.setWeight(gamma1, beta1, hiddenSize);
     }
 
 #ifdef DEBUG
@@ -207,6 +208,7 @@ public:
      * - useSelfAttn: use self attention or not, self attention is used to gen first token
      * - doLnBefore: Do layer norm before or not. If true, will do layer norm as the first step
      *               currently only support doLnBefore=true
+     * - doLnAfter: Do layer norm before or not. If true, will do layer norm as the first step
      *  _________                _________                _________                _________                _________                
      * |_________|------------->|_________|------------->|_________|------------->|_________|------------->|_________|
      *              layerNorm                QKV Linear                  MHA                   out Linear             
@@ -215,7 +217,7 @@ public:
     template <typename KVCacheT>
     void forward(DecoderContext *ctx, InT *input, ImT *imBuf, OutT *output, const float *attnMask,
             KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
-            bool useSelfAttn, bool doLnBefore, int *positionIds = nullptr) {
+            bool useSelfAttn, bool doLnBefore, bool doLnAfter, int *positionIds = nullptr) {
 
         auto hiddenSize = ctx->hiddenSize;
         hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
@@ -382,7 +384,7 @@ public:
         dbg.dumpMatrix(outBuffer);
 #endif
 
-        if (!doLnBefore) {
+        if (doLnAfter) {
             TimeLine t6("result.layer_norm");
             norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef DEBUG
