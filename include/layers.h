@@ -18,7 +18,7 @@
 
 namespace xft {
 
-void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
+void invokeLayerLLaMA(DataType dt, ActivationType at, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize,
         int intermediateSize, void *output, int outputStride, const void *input, int inputStride, const float *ln1Gamma,
         const float *ln1Beta, const void *queryWeight, const void *keyWeight, const void *valueWeight,

@@ -48,7 +48,7 @@ static void compareLayerLLaMA(int step, int batchSize, int inputSeqLen, int past
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    invokeLayerLLaMA(dt, batchSize, inputSeqLen, attHeadDim, attHeadNum, kvHeadNum, maxPositions, maxPosEmbed,
+    invokeLayerLLaMA(dt, xft::ActivationType::SILU, batchSize, inputSeqLen, attHeadDim, attHeadNum, kvHeadNum, maxPositions, maxPosEmbed,
             pastSeqLen, currentSeqLen, step, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize, input,
             hiddenSize, ln1Gamma, ln1Beta, queryWeight, keyWeight, valueWeight, attnOutWeight, ln2Gamma, ln2Beta, gateW,
             upW, downW);

@@ -24,7 +24,7 @@
 
 namespace xft {
 
-void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
+void invokeLayerLLaMA(DataType dt, ActivationType at, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize,
         int intermediateSize, void *output, int outputStride, const void *input, int inputStride, const float *ln1Gamma,
         const float *ln1Beta, const void *queryWeight, const void *keyWeight, const void *valueWeight,
@@ -81,6 +81,18 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
         return mask;
     };
 
+    std::string actType;
+    if (at == ActivationType::SILU)
+        actType = "silu";
+    else if (at == ActivationType::RELU)
+        actType = "relu";
+    else if (at == ActivationType::GELU)
+        actType = "gelu";
+    else if (at == ActivationType::SWIGLU)
+        actType = "swiglu";
+    else
+        printf(">> unsupported activation type\n");
+
     if (dt == DataType::bf16) {
         using DECODER = Decoder<Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<bfloat16_t>>;
         static std::unordered_map<std::string, DECODER *> llama_layer_hub;
@@ -91,7 +103,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
             if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
-            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, "silu", 1e-6,
+            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, actType, 1e-6,
                     0, 0, maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
@@ -153,7 +165,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
             if (ctx != nullptr) delete ctx;
             printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
-            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, "silu", 1e-6,
+            ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, actType, 1e-6,
                     0, 0, maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
