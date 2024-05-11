@@ -110,7 +110,7 @@ void AttentionLLaMAImpl(DataType dt, int batchSize, int inputSeqLen, int attHead
     }
 
     ctx->resize(batchSize, inputSeqLen, pastSeqLen);
-    hpj::Matrix<float> actBuffers;
+    xft::Matrix<float> actBuffers;
     actBuffers.Resize(batchSize * inputSeqLen, hiddenSize);
     float *attnMask = prepareAttnMask(ctx, step);
 
