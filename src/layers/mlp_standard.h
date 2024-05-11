@@ -76,9 +76,10 @@ public:
 #endif
 
     // Forward for FFN (Feed Forward Network)
-    void forward(DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore) {
+    void forward(DecoderContext *ctx, float *input, float *output, int iStride, int oStride, bool doLnBefore,
+            int totInSeqLen = 0) {
         TimeLine t("StandardMLP");
-        int M = ctx->batchSize * ctx->inputSeqLen;
+        int M = totInSeqLen == 0 ? ctx->batchSize * ctx->inputSeqLen : totInSeqLen;
         xft::Matrix<float> outBuffer(output, M, ctx->hiddenSize, ctx->hiddenSize);
 
         auto &resultBuffer1 = outBuffer;
