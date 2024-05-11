@@ -81,7 +81,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
                 llama_attention_hub;
 
         static DecoderContext *ctx;
-        static KVCacheManager<float> *kvCacheMgr;
+        static KVCacheManager<float16_t> *kvCacheMgr;
 
         if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->attHeadSize != attHeadDim))) {
             if (ctx != nullptr) delete ctx;
@@ -90,7 +90,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
                     maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
-            kvCacheMgr = new KVCacheManager<float>(1);
+            kvCacheMgr = new KVCacheManager<float16_t>(1);
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
@@ -121,8 +121,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         int workers = 1;
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
         kvCacheMgr->resize(maxPositions, batchSize, headsPerSplit, attHeadDim);
-        KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
-        KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
+        KVCacheTensor<float16_t> &presentKey = kvCacheMgr->getKey(0);
+        KVCacheTensor<float16_t> &presentValue = kvCacheMgr->getValue(0);
 
         llama_attention->forward(ctx, (float *)input, actBuffers.Data(), (float *)output, attnMask, presentKey,
                 presentValue, inputSeqLen, pastSeqLen, step == 0, false, false, nullptr);
@@ -131,7 +131,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
                 llama_attention_hub;
 
         static DecoderContext *ctx;
-        static KVCacheManager<float> *kvCacheMgr;
+        static KVCacheManager<float16_t> *kvCacheMgr;
 
         if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->attHeadSize != attHeadDim))) {
             if (ctx != nullptr) delete ctx;
@@ -140,7 +140,7 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
                     maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
-            kvCacheMgr = new KVCacheManager<float>(1);
+            kvCacheMgr = new KVCacheManager<float16_t>(1);
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
@@ -171,8 +171,8 @@ void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHe
         int workers = 1;
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
         kvCacheMgr->resize(maxPositions, batchSize, headsPerSplit, attHeadDim);
-        KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
-        KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
+        KVCacheTensor<float16_t> &presentKey = kvCacheMgr->getKey(0);
+        KVCacheTensor<float16_t> &presentValue = kvCacheMgr->getValue(0);
 
         llama_attention->forward(ctx, (float *)input, actBuffers.Data(), (float *)output, attnMask, presentKey,
                 presentValue, inputSeqLen, pastSeqLen, step == 0, false, false, nullptr);

@@ -85,7 +85,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
         using DECODER = Decoder<Attention<bfloat16_t, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<bfloat16_t>>;
         static std::unordered_map<std::string, DECODER *> llama_layer_hub;
         static DecoderContext *ctx;
-        static KVCacheManager<float> *kvCacheMgr;
+        static KVCacheManager<float16_t> *kvCacheMgr;
 
         if (ctx == nullptr
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
@@ -95,7 +95,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
                     0, 0, maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
-            kvCacheMgr = new KVCacheManager<float>(1);
+            kvCacheMgr = new KVCacheManager<float16_t>(1);
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
@@ -128,8 +128,8 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
         int workers = 1;
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
         kvCacheMgr->resize(maxPositions, batchSize, headsPerSplit, attHeadDim);
-        KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
-        KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
+        KVCacheTensor<float16_t> &presentKey = kvCacheMgr->getKey(0);
+        KVCacheTensor<float16_t> &presentValue = kvCacheMgr->getValue(0);
 
         float *attnOut = (float *)(ctx->tmpBuf.Data());
 
@@ -147,7 +147,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
         using DECODER = Decoder<Attention<float16_t, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<float16_t>>;
         static std::unordered_map<std::string, DECODER *> llama_layer_hub;
         static DecoderContext *ctx;
-        static KVCacheManager<float> *kvCacheMgr;
+        static KVCacheManager<float16_t> *kvCacheMgr;
 
         if (ctx == nullptr
                 || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
@@ -157,7 +157,7 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
                     0, 0, maxPositions, maxPosEmbed, -1, 0, 1);
             ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
             if (kvCacheMgr != nullptr) delete kvCacheMgr;
-            kvCacheMgr = new KVCacheManager<float>(1);
+            kvCacheMgr = new KVCacheManager<float16_t>(1);
         }
 
         // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
@@ -190,8 +190,8 @@ void invokeLayerLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDi
         int workers = 1;
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
         kvCacheMgr->resize(maxPositions, batchSize, headsPerSplit, attHeadDim);
-        KVCacheTensor<float> &presentKey = kvCacheMgr->getKey(0);
-        KVCacheTensor<float> &presentValue = kvCacheMgr->getValue(0);
+        KVCacheTensor<float16_t> &presentKey = kvCacheMgr->getKey(0);
+        KVCacheTensor<float16_t> &presentValue = kvCacheMgr->getValue(0);
 
         float *attnOut = (float *)(ctx->tmpBuf.Data());
 
