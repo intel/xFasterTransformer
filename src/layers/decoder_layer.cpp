@@ -34,6 +34,7 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
         const void *gateWeight, const void *upWeight, const void *downWeight, const float *queryBias = nullptr,
         const float *keyBias = nullptr, const float *valueBias = nullptr, const float *attnOutBias = nullptr) {
 
+    // TODO: will deprecate attention mask in future, so need to change this
     auto prepareAttnMask = [&](DecoderContext *ctx, int step) {
         int seqLen = ctx->inputSeqLen;
         int accSeqLen = pastSeqLen + currentSeqLen;
