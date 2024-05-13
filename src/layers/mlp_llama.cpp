@@ -28,17 +28,30 @@ void MLPLLaMAImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize,
     static std::unordered_map<std::string, MLP *> llama_mlp_hub;
     static DecoderContext *ctx;
 
+    std::string actType;
+    if (at == ActivationType::SILU)
+        actType = "silu";
+    else if (at == ActivationType::RELU)
+        actType = "relu";
+    else if (at == ActivationType::GELU)
+        actType = "gelu";
+    else if (at == ActivationType::SWIGLU)
+        actType = "swiglu";
+    else
+        printf(">> unsupported activation type\n");
+
     if (ctx == nullptr
             || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
         if (ctx != nullptr) delete ctx;
         printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
-        ctx = new DecoderContext(1, hiddenSize, 1, 1, 1, intermediateSize, "silu", 1e-6, 0, 0, 0, 0, 0, 0, 1);
+        ctx = new DecoderContext(1, hiddenSize, 1, 1, 1, intermediateSize, actType, 1e-6, 0, 0, 0, 0, 0, 0, 1);
         ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
     }
 
     // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
     std::stringstream weights_addr;
-    weights_addr << gateWeight << "_" << upWeight << "_" << downWeight;
+    weights_addr << gateWeight << "_" << upWeight << "_" << downWeight << "_" << dt << "_" << at;
+
     std::string llama_mlp_key = weights_addr.str();
     MLP *llama_mlp;
 
