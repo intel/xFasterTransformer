@@ -1014,7 +1014,7 @@ protected:
         int vocabSize = ctx->vocabSize;
 
         // Convert final output buffer size into units of hiddenSize
-        int outRows = std::ceil(logitRows * vocabSize / hiddenSize);
+        int outRows = std::ceil(1.0f * logitRows * vocabSize / hiddenSize);
 
         this->actBuffers->Resize(totInputSeqLen + outRows, hiddenSize);
     }
