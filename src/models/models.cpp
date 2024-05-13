@@ -187,6 +187,7 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize
         const std::vector<std::vector<int>> &stopWordsList_) {
     if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
     if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
+    if (config_.maxLen < 0) { config_.maxLen = this->maxSeqLen; }
     SamplingMeta samplingMeta(config_, stopWordsList_);
 
     Messenger &messenger = Messenger::getInstance();
@@ -215,6 +216,7 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize
         seqLen = inputIds_.size() / batchSize_;
     }
 
+    samplingMeta.config.maxLen = std::max(samplingMeta.config.maxLen, seqLen);
     std::vector<int> seqIDs;
 
     SequencePool &seqPool = SequencePool::getInstance();
@@ -225,7 +227,7 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize
         workingGroup.push_back(group);
         seqIDs.push_back(group->getGroupID());
         // TODO: inin KVCache for beamsearch
-        kvCacheMgr.addSequence(group->getGroupID());
+        kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
     }
 
     return seqIDs;
@@ -255,6 +257,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
         const std::vector<std::vector<int>> &stopWordsList_) {
     if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
     if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
+    if (config_.maxLen < 0) { config_.maxLen = this->maxSeqLen; }
     SamplingMeta samplingMeta(config_, stopWordsList_);
 
     Messenger &messenger = Messenger::getInstance();
@@ -265,16 +268,21 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     SequencePool &seqPool = SequencePool::getInstance();
     KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     workingGroup.clear();
+    std::vector<int> seqLens;
+    if (isMaster()) {
+        for (auto &ids : inputIds_) {
+            seqLens.push_back(ids.size());
+            samplingMeta.config.maxLen = std::max(samplingMeta.config.maxLen, (int)ids.size());
+        }
+    }
 
     // Sync input and sampling param in distributed mode.
     if (messenger.getSize() > 1) {
         // [batch size, inputIds size]
-        std::vector<int> seqLens;
         int dims[2];
         if (isMaster()) {
             inputIds.clear();
             for (auto &ids : inputIds_) {
-                seqLens.push_back(ids.size());
                 inputIds.insert(inputIds.end(), ids.begin(), ids.end());
             }
             dims[0] = batchSize;
@@ -301,7 +309,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
                 workingGroup.push_back(group);
                 seqIDs.push_back(group->getGroupID());
                 // TODO: inin KVCache for beamsearch
-                kvCacheMgr.addSequence(group->getGroupID());
+                kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
 
                 it += seqLens[i];
             }
@@ -315,7 +323,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
         workingGroup.push_back(group);
         seqIDs.push_back(group->getGroupID());
         // TODO: inin KVCache for beamsearch
-        kvCacheMgr.addSequence(group->getGroupID());
+        kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
     }
 
     return seqIDs;
@@ -325,6 +333,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
         SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_) {
     if (config_.eosTokenId == -1) { config_.eosTokenId = decoder->getEndId(); }
     if (config_.padTokenId == -1) { config_.padTokenId = config_.eosTokenId; }
+    if (config_.maxLen < 0) { config_.maxLen = this->maxSeqLen; }
     config_.maxLen = std::min(config_.maxLen, this->maxSeqLen);
 
     SamplingMeta samplingMeta(config_, stopWordsList_);
@@ -345,11 +354,15 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     if (seqIDs.empty()) {
         // Prompt(1st token)
         // Create seq meta for inputs and return seq IDs
+        for (auto &ids : inputIds_) {
+            samplingMeta.config.maxLen = std::max(samplingMeta.config.maxLen, (int)ids.size());
+        }
+
         for (int i = 0; i < batchSize; i++) {
             auto group = seqPool.newGroupMeta(inputIds_[i], samplingMeta);
             workingGroup.push_back(group);
             seqIDs.push_back(group->getGroupID());
-            kvCacheMgr.addSequence(group->getGroupID(), config_.maxLen);
+            kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
         }
     } else {
         // Decode(next token)
@@ -382,7 +395,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     workingGroup.clear();
     batchSize = inputIds_.size();
 
-    maxLen = std::min(maxLen, this->maxSeqLen);
+    maxLen = maxLen < 0 ? this->maxSeqLen : std::min(maxLen, this->maxSeqLen);
 
     if (messenger.getSize() > 1) {
         // TODO: Sync input and sampling param in distributed mode.
@@ -391,6 +404,10 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     if (seqIDs.empty()) {
         // Prompt(1st token)
         // Create seq meta for inputs and return seq IDs
+        for (auto &ids : inputIds_) {
+            maxLen = std::max(maxLen, (int)ids.size());
+        }
+
         for (int i = 0; i < batchSize; i++) {
             auto group = seqPool.newGroupMeta(inputIds_[i]);
             workingGroup.push_back(group);
