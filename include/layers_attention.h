@@ -61,7 +61,7 @@ void invokeAttention(DataType dt,
 void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
         int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
         int outputStride, const void *input, int inputStride, const void *queryWeight, const void *keyWeight,
-        const void *valueWeight, const void *attnOutWeight, const void *queryBias = nullptr,
-        const void *keyBias = nullptr, const void *valueBias = nullptr, const void *attnOutBias = nullptr);
+        const void *valueWeight, const void *attnOutWeight, const float *queryBias = nullptr,
+        const float *keyBias = nullptr, const float *valueBias = nullptr, const float *attnOutBias = nullptr);
 
 } // namespace xft
