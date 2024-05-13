@@ -388,8 +388,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < 2; ++i) { // some next tokens
         inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)}};
-        seqs = {seqIDs[0]};
-        model.set_input(inputIDs, seqs, config);
+        model.set_input(inputIDs, {seqIDs[0]}, config);
         auto ret = model.generate();
         for (auto id : ret) {
             generatedTokens[0].emplace_back(id);
@@ -410,9 +409,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 2; ++i) {
         inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
                 {generatedTokens[1].at(generatedTokens[1].size() - 1)}};
-        seqs = {seqIDs[0], seqIDs[1]};
-
-        model.set_input(inputIDs, seqs, config);
+        model.set_input(inputIDs, {seqIDs[0], seqIDs[1]}, config);
         auto ret = model.generate();
         assert(ret.size() == 2);
         for (int j = 0; j < 2; ++j) {
@@ -420,23 +417,51 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Print out values inside generatedTokens[0]
-    std::cout << "Generated Tokens [0]: ";
-    for (auto id : generatedTokens[0]) {
-        std::cout << id << " ";
+    // 3rd sequence: first token generation
+    inputIDs = {input};
+    seqs.clear();
+    ret = model.set_input(inputIDs, seqs, config);
+    seqIDs[2] = ret[0];
+    ret = model.generate();
+    for (auto id : ret) {
+        generatedTokens[2].emplace_back(id);
     }
-    std::cout << std::endl;
-    std::vector<std::string> strs = tokenizer->batchDecode(generatedTokens[0], 1);
-    std::cout << strs[0] << std::endl;
 
-    // Print out values inside generatedTokens[1]
-    std::cout << "Generated Tokens [1]: ";
-    for (auto id : generatedTokens[1]) {
-        std::cout << id << " ";
+    // Batching together to generate some tokens for 3 sequences
+    for (int i = 0; i < 2; ++i) {
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
+                {generatedTokens[1].at(generatedTokens[1].size() - 1)},
+                {generatedTokens[2].at(generatedTokens[2].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[0], seqIDs[1], seqIDs[2]}, config);
+        auto ret = model.generate();
+        assert(ret.size() == 3);
+        for (int j = 0; j < 3; ++j) {
+            generatedTokens[j].emplace_back(ret[j]);
+        }
     }
-    std::cout << std::endl;
-    strs = tokenizer->batchDecode(generatedTokens[1], 1);
-    std::cout << strs[0] << std::endl;
+
+    // Suppose sequence 0 finished
+    for (int i = 0; i < 2; ++i) {
+        inputIDs = {{generatedTokens[1].at(generatedTokens[1].size() - 1)},
+                {generatedTokens[2].at(generatedTokens[2].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[1], seqIDs[2]}, config);
+        auto ret = model.generate();
+        assert(ret.size() == 2);
+        for (int j = 0; j < 2; ++j) {
+            generatedTokens[j + 1].emplace_back(ret[j]);
+        }
+    }
+
+    // Print out values inside generatedTokens
+    for (int i = 0; i < 3; ++i) {
+        std::cout << "Generated Tokens [" << i << "]: ";
+        for (auto id : generatedTokens[i]) {
+            std::cout << id << " ";
+        }
+        std::cout << std::endl;
+        std::vector<std::string> strs = tokenizer->batchDecode(generatedTokens[i], 1);
+        std::cout << strs[0] << std::endl;
+    }
 
     return 0;
 }
