@@ -101,14 +101,14 @@ static void compareMLPLLaMA(
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    invokeMLPLLaMA(dt, xft::ActivationType::SILU, numTokens, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize,
-            (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
+    invokeMLPLLaMA(dt, xft::ActivationType::SILU, numTokens, hiddenSize, intermediateSize, (void *)ourOutput,
+            hiddenSize, (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
     auto end = std::chrono::high_resolution_clock::now();
     float during_time = std::chrono::duration<float>(end - start).count();
     printf("[ RUNTIME  ] XFT::invokeMLPLLaMA %.6f sec\n", during_time);
 
-    refMLPLLaMA<T>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize,
-            (const float *)input, hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
+    refMLPLLaMA<T>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize, (const float *)input,
+            hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
 
     for (int i = 0; i < numTokens * hiddenSize; ++i) {
         EXPECT_EQ(std::abs(refOutput[i] - ourOutput[i]) > 0.01

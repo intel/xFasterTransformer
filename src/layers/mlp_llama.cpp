@@ -20,8 +20,9 @@
 namespace xft {
 
 template <typename DataT>
-void MLPLLaMAImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, void *output, int outputStride,
-        const void *input, int inputStride, const void *gateWeight, const void *upWeight, const void *downWeight) {
+void MLPLLaMAImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, void *output,
+        int outputStride, const void *input, int inputStride, const void *gateWeight, const void *upWeight,
+        const void *downWeight) {
 
     using MLP = LlamaMLP<DataT>;
     static std::unordered_map<std::string, MLP *> llama_mlp_hub;
