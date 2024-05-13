@@ -18,7 +18,7 @@
 
 namespace xft {
 
-void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediateSize, void *output,
+void invokeMLPLLaMA(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, void *output,
         int outputStride, const void *input, int inputStride, const void *gateWeight, const void *upWeight,
         const void *downWeight);
 
