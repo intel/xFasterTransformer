@@ -91,19 +91,10 @@ public:
             std::vector<void *> keyCaches = kvCacheMgr.getKey(i);
             std::vector<void *> valueCaches = kvCacheMgr.getValue(i);
 
-            std::vector<KVCacheTensor<KVCacheT> *> keyCachesVec(keyCaches.size());
-            std::vector<KVCacheTensor<KVCacheT> *> valueCachesVec(valueCaches.size());
-
-            // TODO: better method?
-            for (int j = 0; j < keyCaches.size(); ++j) {
-                keyCachesVec[j] = static_cast<KVCacheTensor<KVCacheT> *>(keyCaches[j]);
-            }
-
-            for (int j = 0; j < valueCaches.size(); ++j) {
-                valueCachesVec[j] = static_cast<KVCacheTensor<KVCacheT> *>(valueCaches[j]);
-            }
-
-            this->decoders[i]->forwardAttention(ctx, seqs, input, attnOut, totInSeqLen, keyCachesVec, valueCachesVec);
+            // Reinterpret the keyCaches and valueCaches to the correct type
+            this->decoders[i]->forwardAttention(ctx, seqs, input, attnOut, totInSeqLen,
+                    *reinterpret_cast<std::vector<KVCacheTensor<KVCacheT> *> *>(&keyCaches),
+                    *reinterpret_cast<std::vector<KVCacheTensor<KVCacheT> *> *>(&valueCaches));
 
             // Merge the result of attention
             // When attention and FFN/MLP are in parallel, do not need to reduce after attention
