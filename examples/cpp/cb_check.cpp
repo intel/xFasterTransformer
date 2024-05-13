@@ -371,11 +371,15 @@ int main(int argc, char **argv) {
     }
 
     SearcherConfig config;
+    config.maxLen = 128;
     std::vector<std::vector<int>> generatedTokens(3);
     int seqIDs[3];
+    std::vector<std::vector<int>> inputIDs;
+    std::vector<int> seqs;
 
     // 1st sequence: generate some tokens
-    auto ret = model.set_input(input, 1, config);
+    inputIDs = {input};
+    auto ret = model.set_input(inputIDs, seqs, config);
     seqIDs[0] = ret[0];
     ret = model.generate(); // 1st token
     for (auto id : ret) {
@@ -383,8 +387,8 @@ int main(int argc, char **argv) {
     }
 
     for (int i = 0; i < 2; ++i) { // some next tokens
-        std::vector<std::vector<int>> inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)}};
-        std::vector<int> seqs = {seqIDs[0]};
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)}};
+        seqs = {seqIDs[0]};
         model.set_input(inputIDs, seqs, config);
         auto ret = model.generate();
         for (auto id : ret) {
@@ -393,7 +397,9 @@ int main(int argc, char **argv) {
     }
 
     // 2nd sequence: first token generation
-    ret = model.set_input(input, 1, config);
+    inputIDs = {input};
+    seqs.clear();
+    ret = model.set_input(inputIDs, seqs, config);
     seqIDs[1] = ret[0];
     ret = model.generate();
     for (auto id : ret) {
@@ -402,9 +408,9 @@ int main(int argc, char **argv) {
 
     // Batching together to generate some tokens for both sequences
     for (int i = 0; i < 2; ++i) {
-        std::vector<std::vector<int>> inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
                 {generatedTokens[1].at(generatedTokens[1].size() - 1)}};
-        std::vector<int> seqs = {seqIDs[0], seqIDs[1]};
+        seqs = {seqIDs[0], seqIDs[1]};
 
         model.set_input(inputIDs, seqs, config);
         auto ret = model.generate();
@@ -429,6 +435,8 @@ int main(int argc, char **argv) {
         std::cout << id << " ";
     }
     std::cout << std::endl;
+    strs = tokenizer->batchDecode(generatedTokens[1], 1);
+    std::cout << strs[0] << std::endl;
 
     return 0;
 }
