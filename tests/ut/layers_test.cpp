@@ -48,10 +48,10 @@ static void compareLayerLLaMA(int step, int batchSize, int inputSeqLen, int past
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    invokeLayerLLaMA(dt, xft::ActivationType::SILU, batchSize, inputSeqLen, attHeadDim, attHeadNum, kvHeadNum, maxPositions, maxPosEmbed,
-            pastSeqLen, currentSeqLen, step, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize, input,
-            hiddenSize, ln1Gamma, ln1Beta, queryWeight, keyWeight, valueWeight, attnOutWeight, ln2Gamma, ln2Beta, gateW,
-            upW, downW);
+    invokeLayerLLaMA(dt, xft::ActivationType::SILU, xft::NormType::RMS, batchSize, inputSeqLen, attHeadDim, attHeadNum,
+            kvHeadNum, maxPositions, maxPosEmbed, pastSeqLen, currentSeqLen, step, hiddenSize, intermediateSize,
+            (void *)ourOutput, hiddenSize, input, hiddenSize, ln1Gamma, ln1Beta, queryWeight, keyWeight, valueWeight,
+            attnOutWeight, ln2Gamma, ln2Beta, gateW, upW, downW);
     auto end = std::chrono::high_resolution_clock::now();
     float during_time = std::chrono::duration<float>(end - start).count();
     printf("[ RUNTIME  ] XFT::invokeLayerLLaMA %.6f sec\n", during_time);

@@ -41,7 +41,7 @@ enum DeviceKind {
 
 enum NormType {
     RMS = 0,
-    Layer,
+    LN,
 };
 
 enum ActivationType {
