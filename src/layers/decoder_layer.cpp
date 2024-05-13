@@ -17,6 +17,7 @@
 #include "kvcache_manager.h"
 #include "layer_norm.h"
 #include "layers_attention.h"
+#include "layers_decoder.h"
 #include "layers_mlp.h"
 #include "mlp_llama.h"
 #include "rms_norm.h"
@@ -31,8 +32,8 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
         int hiddenSize, int intermediateSize, void *output, int outputStride, const void *input, int inputStride,
         const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
         const void *valueWeight, const void *attnOutWeight, const float *ln2Gamma, const float *ln2Beta,
-        const void *gateWeight, const void *upWeight, const void *downWeight, const float *queryBias = nullptr,
-        const float *keyBias = nullptr, const float *valueBias = nullptr, const float *attnOutBias = nullptr) {
+        const void *gateWeight, const void *upWeight, const void *downWeight, const float *queryBias,
+        const float *keyBias, const float *valueBias, const float *attnOutBias) {
 
     // TODO: will deprecate attention mask in future, so need to change this
     auto prepareAttnMask = [&](DecoderContext *ctx, int step) {
@@ -162,8 +163,8 @@ void invokeLayerLLaMA(DataType dt, ActivationType at, NormType nt, int batchSize
         int hiddenSize, int intermediateSize, void *output, int outputStride, const void *input, int inputStride,
         const float *ln1Gamma, const float *ln1Beta, const void *queryWeight, const void *keyWeight,
         const void *valueWeight, const void *attnOutWeight, const float *ln2Gamma, const float *ln2Beta,
-        const void *gateWeight, const void *upWeight, const void *downWeight, const float *queryBias = nullptr,
-        const float *keyBias = nullptr, const float *valueBias = nullptr, const float *attnOutBias = nullptr) {
+        const void *gateWeight, const void *upWeight, const void *downWeight, const float *queryBias,
+        const float *keyBias, const float *valueBias, const float *attnOutBias) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 

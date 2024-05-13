@@ -18,7 +18,7 @@
 
 #include "bfloat16.h"
 #include "float16.h"
-#include "layers.h"
+#include "layers_decoder.h"
 #include "gtest/gtest.h"
 
 template <typename T>

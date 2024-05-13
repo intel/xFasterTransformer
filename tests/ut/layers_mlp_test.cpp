@@ -101,7 +101,7 @@ static void compareMLPLLaMA(
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    invokeMLPLLaMA(dt, numTokens, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize,
+    invokeMLPLLaMA(dt, xft::ActivationType::SILU, numTokens, hiddenSize, intermediateSize, (void *)ourOutput, hiddenSize,
             (const void *)input, hiddenSize, (const void *)gateW, (const void *)upW, (const void *)downW);
     auto end = std::chrono::high_resolution_clock::now();
     float during_time = std::chrono::duration<float>(end - start).count();
