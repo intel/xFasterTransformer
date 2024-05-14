@@ -495,7 +495,7 @@ std::vector<int> Model::set_input(
     return seqIDs;
 }
 
-bool Model::freeSeqs(std::vector<int> seqIDs) {
+bool Model::freeSeqs(std::vector<int> &seqIDs) {
     // TODO: Sync
     KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     SequencePool &seqPool = SequencePool::getInstance();

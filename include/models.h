@@ -102,7 +102,7 @@ public:
 
     bool setStopWords(std::vector<std::vector<int>> stopWordsList);
 
-    bool freeSeqs(std::vector<int> seqIDs);
+    bool freeSeqs(std::vector<int> &seqIDs);
 
 private:
     AbstractDecoder *decoder;
