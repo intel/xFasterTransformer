@@ -439,6 +439,74 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     return seqIDs;
 }
 
+std::vector<int> Model::set_input(
+        std::vector<int32_t> &inputIds_, int batchSize_, std::vector<int> seqIDs, int maxLen) {
+    Messenger &messenger = Messenger::getInstance();
+    SequencePool &seqPool = SequencePool::getInstance();
+    KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
+    workingGroup.clear();
+    batchSize = batchSize_;
+    seqLen = inputIds_.size() / batchSize;
+
+    maxLen = maxLen < 0 ? this->maxSeqLen : std::min(maxLen, this->maxSeqLen);
+    maxLen = std::max(maxLen, seqLen);
+
+    if (messenger.getSize() > 1) {
+        // TODO: Sync input and sampling param in distributed mode.
+        // [batch_size, total_length, seqID_size, maxLen]
+    }
+    if (seqIDs.empty()) {
+        // Prompt(1st token)
+        // Create seq meta for inputs and return seq IDs
+        for (int i = 0; i < batchSize; i++) {
+            std::vector<int32_t> inputTokens(inputIds_.begin() + i * seqLen, inputIds_.begin() + (i + 1) * seqLen);
+            auto group = seqPool.newGroupMeta(inputTokens);
+            workingGroup.push_back(group);
+            seqIDs.push_back(group->getGroupID());
+            kvCacheMgr.addSequence(group->getGroupID(), maxLen);
+        }
+    } else {
+        // Decode(next token)
+        // Update seq meta with inputs and return seq IDs
+        if (inputIds_.size() != seqIDs.size()) {
+            printf("[ERROR] Input size and seqIDs size mismatch.\n");
+            exit(-1);
+        }
+        if (inputIds_.size() != batchSize_) {
+            printf("[ERROR] Input size and batch size mismatch.\n");
+            exit(-1);
+        }
+        for (int i = 0; i < batchSize; i++) {
+            auto group = seqPool.get(seqIDs[i]);
+            if (group == nullptr) {
+                // TODO: Address beam search case.
+                printf("[ERROR] Sequence ID %d not found.\n", seqIDs[i]);
+                exit(-1);
+            }
+            group->get(0)->stepForward(inputIds_[i]);
+            workingGroup.push_back(group);
+            if (!kvCacheMgr.exist(seqIDs[i])) {
+                printf("[ERROR] Sequence ID %d not found in KVCache.\n", seqIDs[i]);
+                exit(-1);
+            }
+        }
+    }
+
+    return seqIDs;
+}
+
+bool Model::freeSeqs(std::vector<int> seqIDs) {
+    // TODO: Sync
+    KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
+    SequencePool &seqPool = SequencePool::getInstance();
+    bool ret = true;
+    for (auto &id : seqIDs) {
+        ret = ret && kvCacheMgr.delSequence(id);
+        ret = ret && seqPool.remove(id);
+    }
+    return ret;
+}
+
 // TODO: Deprecate the following function
 void Model::config(SearcherConfig &config_, const std::vector<std::vector<int>> &stopWordsList_) {
     isNewInput = true;
@@ -481,8 +549,10 @@ std::vector<int32_t> Model::finalize() {
         }
         // Clear KVCache
         KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
+        SequencePool &seqPool = SequencePool::getInstance();
         for (auto x : workingGroup) {
             kvCacheMgr.delSequence(x->getGroupID());
+            seqPool.remove(x->getGroupID());
         }
         workingGroup.clear();
 

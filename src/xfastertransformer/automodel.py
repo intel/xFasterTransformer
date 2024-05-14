@@ -48,6 +48,15 @@ class AutoModel:
     def __call__(self, inputs, **kwargs):
         return self.model.forward(inputs)
 
+    def set_input_cb(self, input_ids, seq_ids, max_length):
+        return self.model.set_input_cb(input_ids, seq_ids, max_length)
+
+    def forward_cb(self):
+        return self.model.forward_cb()
+
+    def free_seqs(self, seq_ids):
+        return self.model.free_seqs(seq_ids)
+
     @classmethod
     def from_pretrained(cls, path, dtype: str = "fp16", kv_cache_dtype: str = "fp16"):
         return cls(path, dtype, kv_cache_dtype)
