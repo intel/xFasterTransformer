@@ -298,7 +298,7 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
 
 std::map<std::string, xft::DataType> KVCacheDataTypeMap
-        = {{"fp32", xft::DataType::fp32}, {"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
+        = {{"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
 
 std::string getModelType(std::string &modelPath) {
     std::string configPath = modelPath + "/config.ini";

@@ -15,7 +15,7 @@ if [ "${USE_XFT}" -eq 1 ]; then
 MODEL_PATH=/data/models/Llama-2-7b-chat-cpu/
 MODEL_TYPE=llama # llama gpt(for opt) chatglm chatglm2/3 baichuan
 DTYPE=bf16 #fp16, bf16, int8, int4
-KVCacheTYPE=fp16 #fp32, fp16, int8
+KVCacheTYPE=fp16 #fp16, int8
 
 FIRST_TOKEN_WEIGHT_LOCATION=$1 NEXT_TOKEN_WEIGHT_LOCATION=$2 numactl -N $1 -m $2 python eval.py \
     --model ${MODEL_TYPE} \
