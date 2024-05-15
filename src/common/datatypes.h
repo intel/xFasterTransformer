@@ -22,7 +22,7 @@
 #include "uint4x2.h"
 
 namespace xft {
-std::string getTypeIdName(xft::DataType dtype) {
+inline std::string getTypeIdName(xft::DataType dtype) {
     switch (dtype) {
         case xft::DataType::fp32: return "float";
         case xft::DataType::bf16: return "bfloat16_t";
@@ -42,5 +42,32 @@ std::string getTypeIdName(xft::DataType dtype) {
         case xft::DataType::unknown: return "unknown";
     }
     return std::string("unknown");
+}
+
+// Get DataType according to c++ types
+template <typename T>
+inline DataType getDataType() {
+    static_assert(sizeof(T) == 0, "Unsupported type");
+    return DataType::unknown;
+}
+
+template <>
+inline DataType getDataType<float>() {
+    return DataType::fp32;
+}
+
+template <>
+inline DataType getDataType<bfloat16_t>() {
+    return DataType::bf16;
+}
+
+template <>
+inline DataType getDataType<float16_t>() {
+    return DataType::fp16;
+}
+
+template <>
+inline DataType getDataType<int8_t>() {
+    return int8;
 }
 } // namespace xft

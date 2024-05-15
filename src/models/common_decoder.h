@@ -22,6 +22,7 @@
 #include "INIReader.h"
 #include "abstract_decoder.h"
 #include "attention.h"
+#include "datatypes.h"
 #include "debugger.h"
 #include "decoder_block.h"
 #include "decoder_layer.h"
@@ -168,7 +169,7 @@ public:
         const int attHeadNum = reader.GetInteger(modelType, "head_num");
         // Use the same head number for the default multi-head attention
         const int kvHeadNum = reader.GetInteger(modelType, "kv_head_num", attHeadNum);
-        const int size_per_head = reader.GetInteger(modelType, "size_per_head");
+        const int headSize = reader.GetInteger(modelType, "size_per_head");
         const int imSize = reader.GetInteger(modelType, "inter_size");
         const int layers = reader.GetInteger(modelType, "num_layer");
         const int vocabSize = reader.GetInteger(modelType, "vocab_size");
@@ -180,7 +181,7 @@ public:
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
         const bool useLogN = reader.GetInteger(modelType, "use_logn_attn", true);
         const bool useNTK = reader.GetInteger(modelType, "use_dynamic_ntk", true);
-        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * size_per_head);
+        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * headSize);
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
@@ -225,7 +226,7 @@ public:
         actBuffers.reset(new xft::Matrix<float>());
 
         // Context
-        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
+        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                 epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK,
                 ropeParamsPtr);
 
@@ -239,6 +240,8 @@ public:
         }
 
         decoderBlock = new DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL>(ctx, modelPath, layers, dt);
+        auto maxSeqLen = maxSeqLength > 0 ? maxSeqLength : maxPositions;
+        KVCacheMgr::instance().configure(maxSeqLen, kvHeadNum, headSize, layers, getDataType<KVCacheT>());
 
         // Predictor
         int workers = messenger.getSize();
@@ -517,6 +520,12 @@ public:
         TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
 
+        if (unlikely(seqs.empty())) { return std::tuple<float *, int, int>(nullptr, 0, 0); }
+
+        DecoderContext *ctx = this->getContext();
+        int batchSize = seqs.size();
+        int hiddenSize = ctx->hiddenSize;
+
         // Prepare input
         int totInputSeqLen = 0;
         std::vector<int> allInputIds;
@@ -527,11 +536,11 @@ public:
         }
 
         // Prepare context
-        DecoderContext *ctx = this->getContext();
         ctx->resize(totInputSeqLen);
 
-        int batchSize = seqs.size();
-        int hiddenSize = ctx->hiddenSize;
+        // Prepare buffers
+        int logitRows = (!logitsAll && seqs[0]->getStep() == 0) ? seqs.size() : totInputSeqLen;
+        prepareBuffer(ctx, totInputSeqLen, logitRows);
 
         AttnInT *embBuf = (AttnInT *)actBuffers->Data();
         MlpOutT *outBuf = (MlpOutT *)(embBuf + totInputSeqLen * hiddenSize);
@@ -545,7 +554,6 @@ public:
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
         MlpOutT *lnIn = embBuf;
-        auto logitRows = totInputSeqLen;
         if (!logitsAll) {
             // TODO: copy needed data
         }
@@ -995,6 +1003,16 @@ protected:
         int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
         this->kvCacheMgr->resize(prefix ? this->prefixSeqLen : maxPositions, userSideBS * beamSize, headsPerSplit,
                 ctx->attHeadSize, prefix);
+    }
+
+    void prepareBuffer(DecoderContext *ctx, int totInputSeqLen, int logitRows) {
+        int hiddenSize = ctx->hiddenSize;
+        int vocabSize = ctx->vocabSize;
+
+        // Convert final output buffer size into units of hiddenSize
+        int outRows = std::ceil(logitRows * vocabSize / hiddenSize);
+
+        this->actBuffers->Resize(totInputSeqLen + outRows, hiddenSize);
     }
 
     float *getAttnMask(int sizeRequired) {
