@@ -588,13 +588,10 @@ protected:
         // How many blocks in M dimension
         int mBlockNum = (ctx->inputSeqLen + mBlockSize - 1) / mBlockSize;
 
-        // To get score buffer according to openmp thread ID or not (see below)
-        float *scoreBuf = ctx->qkScores;
+        // To get score buffer according to openmp thread num
         int scoreStride = pastSeqLen > 0 ? (pastSeqLen + ctx->inputSeqLen + 15) / 16 * 16 : ctx->inputSeqLen;
         auto bufSizeRequired = ctx->numThreads * mBlockSize * scoreStride;
-        if (bufSizeRequired > ctx->getScoreCapacity()) {
-            scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * bufSizeRequired);
-        }
+        float *scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * bufSizeRequired);
 
 #pragma omp parallel for collapse(3)
         for (int b = 0; b < batchSize; ++b) {
@@ -627,7 +624,7 @@ protected:
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Q * K, first head:\n");
-                        auto p = ctx->qkScores;
+                        auto p = scoreBuf;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0] * ctx->attFactor, p[1] * ctx->attFactor,
                                 p[2] * ctx->attFactor, p[n - 3] * ctx->attFactor, p[n - 2] * ctx->attFactor,
                                 p[n - 1] * ctx->attFactor);
@@ -640,7 +637,7 @@ protected:
 #ifdef DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K), first head:\n");
-                        auto p = ctx->qkScores;
+                        auto p = scoreBuf;
                         dbg.debugPrint("%f, %f, %f ... %f %f %f\n", p[0], p[1], p[2], p[keyLen - 3], p[keyLen - 2],
                                 p[keyLen - 1]);
                     }
