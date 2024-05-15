@@ -23,10 +23,10 @@
 #include "token_embedding_kernels.h"
 
 template <typename OutT, typename WeiT>
-static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, const int batchSize, const int seqLen) {
+static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, const int tokenSize) {
     WeiT *embTable = (WeiT *)aligned_alloc(64, vocabSize * hiddenSize * sizeof(WeiT));
-    int *tokenId = (int *)aligned_alloc(64, batchSize * seqLen * sizeof(int));
-    OutT *output = (OutT *)aligned_alloc(64, batchSize * seqLen * hiddenSize * sizeof(OutT));
+    int *tokenId = (int *)aligned_alloc(64, tokenSize * sizeof(int));
+    OutT *output = (OutT *)aligned_alloc(64, tokenSize * hiddenSize * sizeof(OutT));
 
     for (int i = 0; i < vocabSize; i++) {
         for (int j = 0; j < hiddenSize; j++) {
@@ -34,13 +34,13 @@ static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, 
         }
     }
 
-    for (int i = 0; i < batchSize * seqLen; i++) {
+    for (int i = 0; i < tokenSize; i++) {
         tokenId[i] = rand() % vocabSize;
     }
 
-    xft::tokenEmbedding<OutT, WeiT>(output, tokenId, embTable, batchSize, seqLen, hiddenSize);
+    xft::tokenEmbedding<OutT, WeiT>(output, tokenId, embTable, tokenSize, hiddenSize);
 
-    for (int i = 0; i < batchSize * seqLen; i++) {
+    for (int i = 0; i < tokenSize; i++) {
         int id = tokenId[i];
         for (int j = 0; j < hiddenSize; j++) {
             EXPECT_FLOAT_EQ(float(output[i * hiddenSize + j]), float(embTable[id * hiddenSize + j]));
@@ -54,18 +54,18 @@ static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, 
 
 #define UT_EMBEDDING(MN, OutT, WeiT, VS, HS, BS, SL)                               \
     TEST(TokenEmbeddingKernel, MN##_BS##BS##_Lens##SL##_OutT##OutT##_WeiT##WeiT) { \
-        TestTokenEmbeddingKernel<OutT, WeiT>(VS, HS, BS, SL);                      \
+        TestTokenEmbeddingKernel<OutT, WeiT>((VS), (HS), (BS) * (SL));             \
     }
 
 UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 1, 64);
 UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 1, 256);
 UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 1, 512);
-UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 512, 512);
+UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 8, 512);
 
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 64);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 256);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 512);
-UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 512, 512);
+UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 8, 512);
 
 // UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 64);
 // UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 256);

@@ -47,8 +47,7 @@ public:
     }
 
     // TODO: mask is not considered
-    // tokenIds and positions are 2-dimension array with batchSize rows, and seqLen cols
-    void forward(int *tokenIds, int *positions, float *output, int batchSize, int seqLen) {
+    void forward(int *tokenIds, int *positions, float *output, int tokenSize) {
         if (embeddingSize != hiddenSize) {
             printf("Not supported yet: embeddingSize != hiddenSize\n");
             exit(-1);
@@ -57,24 +56,19 @@ public:
         int row = 0;
 
         if constexpr (std::is_same_v<T, float16_t>) {
-            for (int i = 0; i < batchSize; ++i) {
-                for (int j = 0; j < seqLen; ++j) {
-                    // Embedding
-                    int id = tokenIds[i * seqLen + j];
-                    float16_t::cvt_float16_to_float(
-                            embTable + id * embeddingSize, output + row * hiddenSize, embeddingSize);
+            for (int i = 0; i < tokenSize; ++i) {
+                // Embedding
+                int id = tokenIds[i];
+                float16_t::cvt_float16_to_float(embTable + id * embeddingSize, output + i * hiddenSize, embeddingSize);
 
-                    // Positional embedding
-                    int pos = positions[i * seqLen + j];
-                    // # OPT is set up so that if padding_idx is specified then offset the embedding ids by 2
-                    // # and adjust num_embeddings appropriately. Other models don't have this hack
-                    // Do not add the offset if the embedding table is already handled it (like FasterTransformer)
-                    //pos += 2;
-                    float16_t::float_add_float16(output + row * hiddenSize, positionalTable + pos * hiddenSize,
-                            output + row * hiddenSize, hiddenSize);
-
-                    row += 1;
-                }
+                // Positional embedding
+                int pos = positions[i];
+                // # OPT is set up so that if padding_idx is specified then offset the embedding ids by 2
+                // # and adjust num_embeddings appropriately. Other models don't have this hack
+                // Do not add the offset if the embedding table is already handled it (like FasterTransformer)
+                //pos += 2;
+                float16_t::float_add_float16(output + i * hiddenSize, positionalTable + pos * hiddenSize,
+                        output + i * hiddenSize, hiddenSize);
             }
         } else {
             printf("Type %s not supported!\n", typeid(T).name());
