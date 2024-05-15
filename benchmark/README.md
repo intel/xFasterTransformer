@@ -48,7 +48,6 @@ Please choose `-s` or `--sockets` as follows:
 - 2 (benchmarking on 2 sockets)
 
 Specify data type of kvcache using `-kdv` or `--kv_cache_dtype` from below list:
-- fp32
 - fp16 (default)
 - int8
 

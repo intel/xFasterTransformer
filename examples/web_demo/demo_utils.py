@@ -62,7 +62,7 @@ XFT_DTYPE_LIST = [
     "w8a8_nf4",
 ]
 
-XFT_KVCACHE_DTYPE_LIST = ["fp32", "fp16", "int8"]
+XFT_KVCACHE_DTYPE_LIST = ["fp16", "int8"]
 
 
 def check_transformers_version_compatibility(token_path):

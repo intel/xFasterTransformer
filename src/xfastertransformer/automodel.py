@@ -37,7 +37,6 @@ class AutoModel:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
 
         if kv_cache_dtype not in [
-            "fp32",
             "fp16",
             "int8",
         ]:

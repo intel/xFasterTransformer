@@ -58,9 +58,7 @@ public:
             throw std::invalid_argument("Invalid data type.");
         }
         xft::DataType KVCacheDataType;
-        if (KVCacheDtype == "fp32") {
-            KVCacheDataType = xft::DataType::fp32;
-        } else if (KVCacheDtype == "fp16") {
+        if (KVCacheDtype == "fp16") {
             KVCacheDataType = xft::DataType::fp16;
         } else if (KVCacheDtype == "int8") {
             KVCacheDataType = xft::DataType::int8;
