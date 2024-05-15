@@ -132,7 +132,7 @@ public:
                     kvResponsibleCols * sizeof(float));
         }
 
-        hpj::Matrix<WeiT> convertedqkvWeight;
+        xft::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
         ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
@@ -162,7 +162,7 @@ public:
 
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
-        hpj::Matrix<WeiT> convertedWeight;
+        xft::Matrix<WeiT> convertedWeight;
         ctx->mmHelper->convertWeight(trans, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, attnOutWeight, attnOutScale,
                 attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedWeight,
                 attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
@@ -220,9 +220,9 @@ public:
             bool useSelfAttn, bool doLnBefore, bool doLnAfter, int *positionIds = nullptr) {
 
         auto hiddenSize = ctx->hiddenSize;
-        hpj::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        hpj::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        hpj::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        xft::Matrix<InT> inputBuffer(input, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        xft::Matrix<ImT> imBuffer(imBuf, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        xft::Matrix<OutT> outBuffer(output, ctx->batchSize * inputSeqLen, hiddenSize, hiddenSize);
 
         float epsilon = ctx->epsilon;
         int headSize = ctx->attHeadSize;
@@ -234,7 +234,7 @@ public:
 
         int qkvStride = qkvCols;
         auto &qkvMatMul = ctx->qkvMatMul;
-        hpj::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
+        xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
 #ifdef DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
@@ -267,9 +267,9 @@ public:
         }
         t2.release();
 
-        hpj::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
-        hpj::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
-        hpj::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
+        xft::Matrix<ImT> query(qkvGroupMatMul, 0, inputBuffer.Rows(), 0, qCols);
+        xft::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
+        xft::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
 #ifdef DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
@@ -320,7 +320,7 @@ public:
         }
 
         // For multiple nodes inference, not the whole result buffer
-        hpj::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
@@ -397,8 +397,8 @@ public:
 
 protected:
     template <typename KVCacheT>
-    void selfAttentionBF16(DecoderContext *ctx, hpj::Matrix<bfloat16_t> &query, hpj::Matrix<bfloat16_t> &key,
-            hpj::Matrix<bfloat16_t> &value, hpj::Matrix<bfloat16_t> &result, KVCacheTensor<KVCacheT> &presentKey,
+    void selfAttentionBF16(DecoderContext *ctx, xft::Matrix<bfloat16_t> &query, xft::Matrix<bfloat16_t> &key,
+            xft::Matrix<bfloat16_t> &value, xft::Matrix<bfloat16_t> &result, KVCacheTensor<KVCacheT> &presentKey,
             KVCacheTensor<KVCacheT> &presentValue) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
@@ -447,7 +447,7 @@ protected:
 
     // Copy all keys and values to KV cache
     template <typename KVCacheT>
-    void copyKVCache(DecoderContext *ctx, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
+    void copyKVCache(DecoderContext *ctx, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
             KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int pastSeqLen) {
         int batchSize = ctx->batchSize;
         int headSize = ctx->attHeadSize;
@@ -475,7 +475,7 @@ protected:
     // Copy one head from key or value to K cache or V cache
     // bdx: batch index; hdx: head index
     template <typename KVCacheT>
-    void copyKVCache(DecoderContext *ctx, hpj::Matrix<ImT> &kv, KVCacheTensor<KVCacheT> &presentKV, int pastSeqLen,
+    void copyKVCache(DecoderContext *ctx, xft::Matrix<ImT> &kv, KVCacheTensor<KVCacheT> &presentKV, int pastSeqLen,
             int bdx, int hdx) {
         for (int seq = 0; seq < ctx->inputSeqLen; ++seq) {
             auto src = kv.Row(bdx * ctx->inputSeqLen + seq) + hdx * ctx->attHeadSize;
@@ -529,8 +529,8 @@ protected:
 
     // Note: the result here is still the intermediate result from the whole attention scope
     template <typename KVCacheT>
-    void fusedAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
-            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+    void fusedAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
+            xft::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
             const float *attnMask, int pastSeqLen) {
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
@@ -574,8 +574,8 @@ protected:
     }
 
     template <typename KVCacheT>
-    void slimAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
-            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+    void slimAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
+            xft::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
             const float *attnMask, int pastSeqLen, int mBlockSize, bool kvCopied) {
         // How many heads this task should do
         int responsibleHeads = this->endQHead - this->startQHead;
@@ -668,8 +668,8 @@ protected:
 
     // When #heads is very few, need to shard each head to use more resources
     template <typename KVCacheT>
-    void crossAttnShardHead(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key,
-            hpj::Matrix<ImT> &value, hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
+    void crossAttnShardHead(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key,
+            xft::Matrix<ImT> &value, xft::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey,
             KVCacheTensor<KVCacheT> &presentValue, const float *attnMask, int pastSeqLen) {
         const int responsibleHeads = this->endQHead - this->startQHead;
         const int batchSize = ctx->batchSize;
@@ -684,8 +684,8 @@ protected:
     }
 
     template <typename KVCacheT>
-    void flashAttention(DecoderContext *ctx, hpj::Matrix<ImT> &query, hpj::Matrix<ImT> &key, hpj::Matrix<ImT> &value,
-            hpj::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
+    void flashAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
+            xft::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
             const float *attnMask, int pastSeqLen) {
 #if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
         using AttnT = bfloat16_t;
@@ -886,18 +886,18 @@ protected:
     }
 
     // query, key, value weighs
-    hpj::Matrix<WeiT> qkvWeight;
-    hpj::Vector<float> qkvWeightScale; // if weight is int8
-    hpj::Vector<float> qkvWeightZero; // if weight is int8
-    hpj::Vector<float> qkvWeightSum; // if weight is int8
+    xft::Matrix<WeiT> qkvWeight;
+    xft::Vector<float> qkvWeightScale; // if weight is int8
+    xft::Vector<float> qkvWeightZero; // if weight is int8
+    xft::Vector<float> qkvWeightSum; // if weight is int8
     // query, key, value bias
-    hpj::Vector<float> qkvBias;
+    xft::Vector<float> qkvBias;
 
-    hpj::Matrix<WeiT> attnOutputWeight;
-    hpj::Vector<float> attnOutputWeightScale; // if weight is int8
-    hpj::Vector<float> attnOutputWeightZero; // if weight is int8
-    hpj::Vector<float> attnOutputWeightSum; // if weight is int8
-    hpj::Vector<float> attnOutputBias;
+    xft::Matrix<WeiT> attnOutputWeight;
+    xft::Vector<float> attnOutputWeightScale; // if weight is int8
+    xft::Vector<float> attnOutputWeightZero; // if weight is int8
+    xft::Vector<float> attnOutputWeightSum; // if weight is int8
+    xft::Vector<float> attnOutputBias;
 
     // Query/Key post op
     QKPO_CLS qkpo;
