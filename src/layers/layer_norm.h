@@ -16,6 +16,7 @@
 
 #include <string>
 #include "weight_util.h"
+#include "transformer_ctx.h"
 
 namespace xft {
 
@@ -23,6 +24,7 @@ namespace xft {
 class LayerNorm {
 public:
     LayerNorm();
+    LayerNorm(DecoderContext *ctx);
     ~LayerNorm();
 
     void setWeight(const float *gamma, const float *beta, int cols);
@@ -37,6 +39,7 @@ private:
 
     float *gamma = nullptr;
     float *beta = nullptr;
+    void *device = nullptr;
 };
 
 } // namespace xft

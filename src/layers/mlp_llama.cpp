@@ -45,7 +45,7 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         auto it_created = llama_mlp_hub.find(llama_mlp_key);
         if (it_created == llama_mlp_hub.end()) {
             // LlamaMLP<bfloat16_t> &llama_mlp = LlamaMLP<bfloat16_t>::getInstance();
-            llama_mlp = new LlamaMLP<bfloat16_t>;
+            llama_mlp = new LlamaMLP<bfloat16_t>(ctx);
             llama_mlp->setWeights(ctx, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr,
                     nullptr, nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, false);
             llama_mlp_hub[llama_mlp_key] = llama_mlp;
@@ -77,7 +77,7 @@ void invokeMLPLLaMA(DataType dt, int numTokens, int hiddenSize, int intermediate
         auto it_created = llama_mlp_hub.find(llama_mlp_key);
         if (it_created == llama_mlp_hub.end()) {
             // LlamaMLP<float16_t> &llama_mlp = LlamaMLP<float16_t>::getInstance();
-            llama_mlp = new LlamaMLP<float16_t>;
+            llama_mlp = new LlamaMLP<float16_t>(ctx);
             llama_mlp->setWeights(ctx, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr,
                     nullptr, nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, false);
             llama_mlp_hub[llama_mlp_key] = llama_mlp;

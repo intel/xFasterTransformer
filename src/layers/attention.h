@@ -25,11 +25,11 @@
 #include "gemm_kernel_ext.h"
 #include "kvcache_tensor.h"
 #include "matmul_helper.h"
+#include "rms_norm.h"
+#include "rotary_embedding.h"
 #include "simple_mem_pool.h"
 #include "transformer_ctx.h"
 #include "transformer_util.h"
-
-#include "rotary_embedding.h"
 
 /**
  * WeiT: weight data type
@@ -49,6 +49,8 @@ public:
 
         //todo(marvin): clear this code after all rotary_emb refactor
         if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
+
+        norm = new NORM_CLS(ctx);
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
@@ -85,7 +87,6 @@ public:
         int qResponsibleCols = (this->endQHead - this->startQHead) * headSize;
         int kvResponsibleCols = (this->endKVHead - this->startKVHead) * headSize;
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
-        qkvWeight.Resize(hiddenSize, responsibleCols);
 
         constexpr int sizeFactor = std::is_same_v<OriWeiT, uint4x2_t> ? 2 : 1;
 
@@ -135,7 +136,21 @@ public:
         hpj::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
+
+#ifdef GPU
+        hpj::Matrix<WeiT> qkvWeightT;
+        qkvWeightT.Resize(hiddenSize, responsibleCols);
+        ctx->mmHelper->transposeWeight(true, convertedqkvWeight, qkvWeightT);
+
+        sycl::queue *gpu_queue_1 = static_cast<sycl::queue *>(ctx->device);
+        WeiT *qkvWeiData = sycl::malloc_device<WeiT>(hiddenSize * responsibleCols, *gpu_queue_1);
+        qkvWeight.Assign(qkvWeiData, hiddenSize, responsibleCols, responsibleCols);
+        gpu_queue_1->memcpy(qkvWeight.Data(), qkvWeightT.Data(), qkvWeightT.Rows() * qkvWeightT.Cols() * sizeof(WeiT))
+                .wait();
+#else
+        qkvWeight.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
+#endif
 
         free(concatBuf);
         free(concatScale);
@@ -162,16 +177,30 @@ public:
 
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
-        hpj::Matrix<WeiT> convertedWeight;
+        hpj::Matrix<WeiT> convertedOutWeight;
         ctx->mmHelper->convertWeight(trans, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, attnOutWeight, attnOutScale,
-                attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedWeight,
+                attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedOutWeight,
                 attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
-        ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
+
+#ifdef GPU
+        hpj::Matrix<WeiT> outWeightT;
+        outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
+        ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
+
+        sycl::queue *gpu_queue_2 = static_cast<sycl::queue *>(ctx->device);
+        WeiT *outWeiData = sycl::malloc_device<WeiT>(ctx->attHeadNum * ctx->attHeadSize * hiddenSize, *gpu_queue_2);
+        attnOutputWeight.Assign(outWeiData, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, hiddenSize);
+        int outWeightTSize = outWeightT.Rows() * outWeightT.Cols() * sizeof(WeiT);
+        gpu_queue_2->memcpy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize).wait();
+#else
+        attnOutputWeight.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
+        ctx->mmHelper->packWeight(trans, convertedOutWeight, attnOutputWeight);
+#endif
 
 #ifdef DEBUG
-        dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
-                convertedWeight.Stride());
-        dbg.dumpMatrix(convertedWeight);
+        dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedOutWeight.Rows(),
+                convertedOutWeight.Cols(), convertedOutWeight.Stride());
+        dbg.dumpMatrix(convertedOutWeight);
         dbg.debugPrint("attention output packed weight: [%d, %d] (%d)\n", attnOutputWeight.Rows(),
                 attnOutputWeight.Cols(), attnOutputWeight.Stride());
         dbg.dumpMatrix(attnOutputWeight);
@@ -188,7 +217,7 @@ public:
         }
 
         // LayerNorm
-        this->norm.setWeight(gamma1, beta1, hiddenSize);
+        this->norm->setWeight(gamma1, beta1, hiddenSize);
     }
 
 #ifdef DEBUG
@@ -242,7 +271,7 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+            norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
 #ifdef DEBUG
@@ -297,7 +326,7 @@ public:
 #ifdef GPU
             sycl::queue *q = static_cast<sycl::queue *>(ctx->device);
             int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
-            q->memcpy(qkvMatMul.Data(), query.Data(), size).wait();
+            q->memcpy(qkvMatMul.Data(), query.Data(), size).wait(); // error: need CPU ptr and GPU ptr
 #endif
         }
         t3.release();
@@ -342,6 +371,12 @@ public:
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
+#endif
+
+#ifdef GPU
+        sycl::queue *q = static_cast<sycl::queue *>(ctx->device);
+        int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
+        q->memcpy(qkvMatMul.Data(), attnSplit.Data(), size).wait(); // error: need CPU ptr and GPU ptr
 #endif
 
         TimeLine t5("Output");
@@ -389,7 +424,7 @@ public:
 
         if (!doLnBefore) {
             TimeLine t6("result.layer_norm");
-            norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
+            norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
@@ -906,7 +941,7 @@ protected:
     QKPO_CLS qkpo;
 
     // layerNorm param
-    NORM_CLS norm;
+    NORM_CLS *norm;
     int layerId;
 
     // The responsible head in the global view

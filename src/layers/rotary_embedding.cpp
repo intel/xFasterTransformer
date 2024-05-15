@@ -42,6 +42,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
         }
         llamaCalEmb(inv_freq, max_position_embeddings);
 #ifdef GPU
+        device = ctx->device;
         if (device != nullptr) {
             sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
             float *emb_cos_bak = emb_cos;

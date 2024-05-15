@@ -21,6 +21,11 @@
 #include "rms_norm.h"
 #include "rmsnorm_kernels.h"
 #include "timeline.h"
+#include "transformer_ctx.h"
+
+#ifdef GPU
+#include "gpudnn/gpu_layernorm_kernels.h"
+#endif
 
 namespace xft {
 
@@ -29,14 +34,26 @@ RmsNorm::RmsNorm() {
     normSize = 0;
 }
 
+RmsNorm::RmsNorm(DecoderContext *ctx) {
+    device = ctx->device;
+    weight = nullptr;
+    normSize = 0;
+}
+
 RmsNorm::~RmsNorm() {
-    if (weight) { free(weight); }
+    if (weight) { xft::dealloc(weight); }
 }
 
 void RmsNorm::setWeight(const float *w, const float *, int cols) {
     this->normSize = cols;
+#ifdef GPU
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    this->weight = sycl::malloc_device<float>(cols, *gpu_queue);
+    gpu_queue->memcpy(this->weight, w, cols * sizeof(float)).wait();
+#else
     this->weight = (float *)xft::alloc(cols * sizeof(float));
     memcpy(weight, w, cols * sizeof(float));
+#endif
 }
 
 void RmsNorm::setWeight(const std::string &modelPath, const std::string &, int cols) {
@@ -44,6 +61,22 @@ void RmsNorm::setWeight(const std::string &modelPath, const std::string &, int c
     loadWeight(modelPath, weight, cols);
 }
 
+#ifdef GPU
+void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    fastertransformer::invokeGeneralT5LayerNorm(
+            output, input, weight, (const float *)nullptr, epsilon, rows, iStride, gpu_queue);
+}
+
+void RmsNorm::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+}
+
+void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+}
+#else
 // input and output are in shape of (rows, normSize)
 void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
@@ -59,5 +92,5 @@ void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int
     TimeLine t("RmsNorm.forward");
     rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
-
+#endif
 } // namespace xft

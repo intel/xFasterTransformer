@@ -121,9 +121,10 @@ public:
         this->dbg.dumpMatrix(this->downWeight);
 #endif
         // norm.setWeight(normW, NULL, hiddenSize);
-        if (normW) {
-            this->normWeight.Resize(hiddenSize);
-            memcpy(this->normWeight.Data(), normW, sizeof(float) * hiddenSize);
-        }
+
+        if (normW) { norm->setWeight(normW, nullptr, hiddenSize); }
     }
+
+private:
+    using LlamaMLP<WeiT, InT, ImT, OutT>::norm;
 };

@@ -16,6 +16,7 @@
 
 #include "bfloat16.h"
 #include "weight_util.h"
+#include "transformer_ctx.h"
 
 namespace xft {
 
@@ -23,6 +24,7 @@ namespace xft {
 class RmsNorm {
 public:
     RmsNorm();
+    RmsNorm(DecoderContext *ctx);
     ~RmsNorm();
 
     void setWeight(const float *w, const float *, int cols);
@@ -44,6 +46,7 @@ private:
 
     // the scale weight
     float *weight = nullptr;
+    void *device = nullptr;
 };
 
 } // namespace xft
