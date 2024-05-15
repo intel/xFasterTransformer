@@ -60,6 +60,10 @@ public:
     std::vector<int> set_input(
             std::vector<std::vector<int32_t>> &inputIds_, std::vector<int> seqIDs = {}, int maxLen = -1);
 
+    // Only used for model.forward()
+    std::vector<int> set_input(
+            std::vector<int32_t> &inputIds_, int batchSize_, std::vector<int> seqIDs = {}, int maxLen = -1);
+
     bool isDone();
 
     std::tuple<float *, int, int> forward(bool logits_all = true);
@@ -97,6 +101,8 @@ public:
     void unsetPrefix();
 
     bool setStopWords(std::vector<std::vector<int>> stopWordsList);
+
+    bool freeSeqs(std::vector<int> &seqIDs);
 
 private:
     AbstractDecoder *decoder;

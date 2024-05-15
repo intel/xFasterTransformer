@@ -21,10 +21,13 @@ TORCH_LIBRARY(xfastertransformer, m) {
             .def("get_rank", &TorchAutoModel::getRank)
             .def("input", &TorchAutoModel::input)
             .def("config", &TorchAutoModel::config)
+            .def("set_input_cb", &TorchAutoModel::setInputCB)
             .def("is_done", &TorchAutoModel::isDone)
             .def("forward", &TorchAutoModel::forward)
+            .def("forward_cb", &TorchAutoModel::forwardCB)
             .def("generate", &TorchAutoModel::generate)
             .def("finalize", &TorchAutoModel::finalize)
+            .def("free_seqs", &TorchAutoModel::freeSeqs)
             .def("set_prefix", &TorchAutoModel::setPrefix)
             .def("unset_prefix", &TorchAutoModel::unsetPrefix);
 }
