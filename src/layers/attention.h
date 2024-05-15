@@ -509,7 +509,7 @@ protected:
     void softmax(DecoderContext *ctx, T1 *score, const T2 *mask, int rows, int cols, int lds, int startSeq) {
         const int keyLen = cols;
         for (int seq = 0; seq < rows; ++seq) {
-            DecoderUtil::computeSoftmax(ctx, score + seq * lds, mask + (seq + startSeq) * keyLen, keyLen);
+            DecoderUtil::computeSoftmax(score + seq * lds, mask + (seq + startSeq) * keyLen, keyLen, ctx->attFactor);
         }
     }
 
