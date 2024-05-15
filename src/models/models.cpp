@@ -33,6 +33,7 @@
 #include "searcher.h"
 #include "timeline.h"
 #include "yarn_llama.h"
+#include "sequence.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
