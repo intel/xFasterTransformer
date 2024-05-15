@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <queue>
+#include "sampling_params.h"
 #include <unordered_map>
 
 /*
@@ -42,16 +43,22 @@ namespace xft {
 // The SequenceMeta is one sequence of batch inputs and includes the generated tokens.
 class SequenceMeta {
 public:
-    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen, std::vector<int32_t> &_inputTokens)
-        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), pastSeqLen(0), step(0) {
-        inputTokens.reserve(_inputSeqLen);
-        inputTokens.assign(_inputTokens.begin(), _inputTokens.end());
-        nextTokens.reserve(_inputSeqLen);
+    SequenceMeta(std::vector<int32_t> &_inputTokens)
+        : sequenceID(SequencePool::getInstance().createSequenceID())
+        , inputSeqLen(_inputTokens.size())
+        , inputTokens(_inputTokens)
+        , pastSeqLen(0)
+        , step(0) {
+        nextTokens.reserve(inputSeqLen);
         setPastSeqLen(getPastSeqLen());
     }
 
-    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
-        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), inputTokens(_inputSeqLen, 0), pastSeqLen(0), step(0) {
+    SequenceMeta(int32_t _inputSeqLen)
+        : sequenceID(SequencePool::getInstance().createSequenceID())
+        , inputSeqLen(_inputSeqLen)
+        , inputTokens(_inputSeqLen, 0)
+        , pastSeqLen(0)
+        , step(0) {
         nextTokens.reserve(_inputSeqLen);
     }
 
@@ -123,25 +130,47 @@ private:
 // For beam searcher
 class SequenceGroupMeta {
 public:
-    SequenceGroupMeta(std::vector<SequenceMeta> &seq) {
-        size_per_group = seq.size();
-        sequences.reserve(size_per_group);
+    SequenceGroupMeta(std::vector<SequenceMeta> &seq, SamplingMeta samplingMeta_) : samplingMeta(samplingMeta_) {
+        assert(samplingMeta.config.numBeams == seq.size());
+        sequences.reserve(samplingMeta.config.numBeams);
         sequences.assign(seq.begin(), seq.end());
+        groupID = sequences[0].getSequenceID();
     }
 
-    int32_t getGroupSize() { return size_per_group; }
+    SequenceGroupMeta(std::vector<int32_t> &_inputTokens, SamplingMeta samplingMeta_) : samplingMeta(samplingMeta_) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_inputTokens));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
+    SequenceGroupMeta(int32_t _inputSeqLen, SamplingMeta samplingMeta_) : samplingMeta(samplingMeta_) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_inputSeqLen));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
+    int32_t getGroupID() { return groupID; }
+
+    int32_t getGroupSize() { return samplingMeta.config.numBeams; }
 
     SequenceMeta *get() { return sequences.data(); }
 
     SequenceMeta *get(int index) { return &sequences[index]; }
 
-    SequenceMeta &operator[](int index) {
-        return sequences[index];
-    }
+    SequenceMeta &operator[](int index) { return sequences[index]; }
 
 private:
-    int32_t size_per_group;
+    // using 1st sequence ID as group ID.
+    int32_t groupID;
+
+    // The number of sequences in the group, equal to num beams
+    int32_t size;
     std::vector<SequenceMeta> sequences;
+    SamplingMeta samplingMeta;
 };
 
 //    SequencePool
@@ -166,61 +195,56 @@ public:
         return id;
     }
 
-    SequenceGroupMeta *newMeta(int32_t sequenceID, int32_t inputSeqLen, std::vector<int32_t> &inputTokens) {
-        std::vector<SequenceMeta> sequence;
-        sequence.emplace_back(SequenceMeta(sequenceID, inputSeqLen, inputTokens));
-
-        auto *group = new SequenceGroupMeta(sequence);
-        return group;
-    }
-
-    SequenceGroupMeta *newMeta(int32_t sequenceID, int32_t inputSeqLen) {
-        std::vector<SequenceMeta> sequence;
-        sequence.emplace_back(SequenceMeta(sequenceID, inputSeqLen));
-
-        auto *group = new SequenceGroupMeta(sequence);
-        return group;
-    }
-
-    SequenceGroupMeta *newGroupMeta(std::vector<int32_t> &sequenceIDs, std::vector<int32_t> &inputSeqLens,
-            std::vector<std::vector<int32_t>> &inputTokens) {
-        assert(sequenceIDs.size() == inputSeqLens.size());
-        assert(sequenceIDs.size() == inputTokens.size());
-
+    SequenceGroupMeta *newMeta(std::vector<int32_t> &inputTokens, SamplingMeta samplingMeta_) {
         std::vector<SequenceMeta> sequences;
-        for (int i = 0; i < sequenceIDs.size(); ++i) {
-            sequences.emplace_back(SequenceMeta(sequenceIDs[i], inputSeqLens[i], inputTokens[i]));
+        sequences.emplace_back(SequenceMeta(inputTokens));
+
+        auto *group = new SequenceGroupMeta(sequences, samplingMeta_);
+        return group;
+    }
+
+    SequenceGroupMeta *newMeta(int32_t inputSeqLen, SamplingMeta samplingMeta_) {
+        std::vector<SequenceMeta> sequences;
+        sequences.emplace_back(SequenceMeta(inputSeqLen));
+
+        auto *group = new SequenceGroupMeta(sequences, samplingMeta_);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(std::vector<std::vector<int32_t>> &inputTokens, SamplingMeta samplingMeta_) {
+        std::vector<SequenceMeta> sequences;
+        for (int i = 0; i < inputTokens.size(); ++i) {
+            sequences.emplace_back(SequenceMeta(inputTokens[i]));
         }
 
-        auto *group = new SequenceGroupMeta(sequences);
+        auto *group = new SequenceGroupMeta(sequences, samplingMeta_);
         return group;
     }
 
-    SequenceGroupMeta *newGroupMeta(std::vector<int32_t> &sequenceIDs, std::vector<int32_t> &inputSeqLens) {
-        assert(sequenceIDs.size() == inputSeqLens.size());
+    SequenceGroupMeta *newGroupMeta(std::vector<int32_t> &inputSeqLens, SamplingMeta samplingMeta_) {
 
         std::vector<SequenceMeta> sequences;
-        for (int i = 0; i < sequenceIDs.size(); ++i) {
-            sequences.emplace_back(SequenceMeta(sequenceIDs[i], inputSeqLens[i]));
+        for (int i = 0; i < inputSeqLens.size(); ++i) {
+            sequences.emplace_back(SequenceMeta(inputSeqLens[i]));
         }
 
-        auto *group = new SequenceGroupMeta(sequences);
+        auto *group = new SequenceGroupMeta(sequences, samplingMeta_);
         return group;
     }
 
-    // Use first sequenceID if num_beam = 4
-    bool add(int32_t sequenceID, SequenceGroupMeta *sequence, bool force = false) {
+    bool add(SequenceGroupMeta *sequenceGroup, bool force = false) {
+        int32_t groupID = sequenceGroup->getGroupID();
         bool isSuccess = false;
         if (force) {
-            auto it = hub.find(sequenceID);
+            auto it = hub.find(groupID);
             if (it != hub.end()) { remove(it->first, true); }
 
-            hub[sequenceID] = sequence;
+            hub[groupID] = sequenceGroup;
             isSuccess = true;
         } else {
-            bool exist = has(sequenceID);
+            bool exist = has(groupID);
             if (!exist) {
-                hub[sequenceID] = sequence;
+                hub[groupID] = sequenceGroup;
                 isSuccess = true;
             }
         }
@@ -228,10 +252,10 @@ public:
         return isSuccess;
     }
 
-    bool has(int32_t sequenceID) const { return hub.find(sequenceID) != hub.end(); }
+    bool has(int32_t groupID) const { return hub.find(groupID) != hub.end(); }
 
-    SequenceGroupMeta *get(int32_t sequenceID) const {
-        auto it = hub.find(sequenceID);
+    SequenceGroupMeta *get(int32_t groupID) const {
+        auto it = hub.find(groupID);
         if (it != hub.end()) {
             return it->second;
         } else {
@@ -239,25 +263,25 @@ public:
         }
     }
 
-    bool remove(int32_t sequenceID, bool deep = false) {
+    bool remove(int32_t groupID, bool deep = false) {
         bool isSuccess = false;
-        if (has(sequenceID)) {
+        if (has(groupID)) {
             if (deep == true) {
-                auto it = hub.find(sequenceID);
+                auto it = hub.find(groupID);
                 if (it != hub.end()) { delete it->second; }
             }
-            isSuccess = hub.erase(sequenceID);
+            isSuccess = hub.erase(groupID);
         }
 
         return isSuccess;
     }
 
-    bool replace(int32_t sequenceID, SequenceGroupMeta *sequences) {
+    bool replace(int32_t groupID, SequenceGroupMeta *sequenceGroup) {
         bool isSuccess = false;
-        auto it = hub.find(sequenceID);
+        auto it = hub.find(groupID);
         if (it != hub.end()) {
             remove(it->first, true);
-            hub[sequenceID] = sequences;
+            hub[groupID] = sequenceGroup;
             isSuccess = true;
         }
 
