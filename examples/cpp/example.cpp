@@ -445,19 +445,19 @@ int main(int argc, char **argv) {
     for (int i = 0; i < loop; ++i) {
         secondIdCount = 0;
 
-        model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
-                /*lenPenalty*/ 1.0,
+        // TODO: Deprecated this old path
+        model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
                 /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
-        
-        // TODO: Deprecated
-        // Old Path
-        // model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
+        model.input(input, batchSize);
+
+        // New path
+        // model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
+        //         /*lenPenalty*/ 1.0,
         //         /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
         //         /*doSample*/ doSample, /*temperature*/ temperature,
         //         /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
-        // model.input(input, batchSize);
 
         std::vector<int> firstIds;
         std::vector<int> secondIds;
