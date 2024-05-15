@@ -101,8 +101,8 @@ void QwenLLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT, typename KVCacheT>
-void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
-    embedding->forward(ids, output, batchSize, seqLen);
+void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
 }
 
 template <typename WeiT, typename KVCacheT>

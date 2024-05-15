@@ -58,7 +58,7 @@ public:
                 "unsupported activation.");
 
         // Vertically split the gate weight and up weight
-        hpj::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
+        xft::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
 
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
         downWeight.Resize(it.second - it.first, hiddenSize);
@@ -74,7 +74,7 @@ public:
             ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
             ctx->mmHelper->packWeight(trans, quantizedUpWeight, upWeight);
         } else {
-            hpj::Matrix<WeiT> quantizedCatWeights;
+            xft::Matrix<WeiT> quantizedCatWeights;
             catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, gateWeightSum,
                     upWeightScale, upWeightZero, upWeightSum, quantizedCatWeights, catWeightsScale, catWeightsZero,
                     catWeightsSum);
@@ -112,16 +112,17 @@ public:
 
     // Forward for FFN (Feed Forward Network)
     void forward(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride,
-            bool doLnBefore = true /*not used*/) {
+            bool doLnBefore = true /*not used*/, int totInSeqLen = 0) {
         TimeLine t("LlamaMLP");
-        const int M = ctx->batchSize * ctx->inputSeqLen;
+
+        const int M = totInSeqLen == 0 ? ctx->batchSize * ctx->inputSeqLen : totInSeqLen;
         const int hiddenSize = ctx->hiddenSize;
 
         static_assert(sizeof(ctx->normBuf.Data()[0]) >= sizeof(ImT), "normBuff is not big enough!");
 
-        hpj::Matrix<InT> inBuffer(input, M, hiddenSize, iStride);
-        hpj::Matrix<OutT> outBuffer(output, M, hiddenSize, oStride);
-        hpj::Matrix<ImT> normBuffer(
+        xft::Matrix<InT> inBuffer(input, M, hiddenSize, iStride);
+        xft::Matrix<OutT> outBuffer(output, M, hiddenSize, oStride);
+        xft::Matrix<ImT> normBuffer(
                 (ImT *)ctx->normBuf.Data(), ctx->normBuf.Rows(), ctx->normBuf.Cols(), ctx->normBuf.Stride());
 
         if (doLnBefore == true) {
@@ -137,7 +138,7 @@ public:
 #endif
 
         if (!enableCATMLP()) {
-            hpj::Matrix<ImT> imBuffer(
+            xft::Matrix<ImT> imBuffer(
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
@@ -162,13 +163,13 @@ public:
         } else {
             auto M = normBuffer.Rows();
             auto N = catWeights.Cols();
-            hpj::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
+            xft::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
 
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
             const int cols = N / 2;
             auto bufSize = sizeof(ImT) * M * cols;
             ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
-            hpj::Matrix<ImT> siluBuf(t, M, cols, cols);
+            xft::Matrix<ImT> siluBuf(t, M, cols, cols);
 #ifdef DEBUG
             dbg.debugPrint(
                     ">>> enableCATMLP imBuffer: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
@@ -199,7 +200,7 @@ public:
     }
 
 private:
-    void gateProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
+    void gateProj(DecoderContext *ctx, xft::Matrix<InT> &input, xft::Matrix<ImT> &output) {
         TimeLine t("GateProj");
 
         assert(input.Rows() == output.Rows());
@@ -228,7 +229,7 @@ private:
         }
     }
 
-    void upProj(DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output) {
+    void upProj(DecoderContext *ctx, xft::Matrix<InT> &input, xft::Matrix<ImT> &output) {
         TimeLine t("UpProj");
 
         assert(input.Rows() == output.Rows());
@@ -248,8 +249,8 @@ private:
         ctx->mmHelper->compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc);
     }
 
-    void downProj(DecoderContext *ctx, hpj::Matrix<ImT> &input, hpj::Matrix<OutT> &output,
-            hpj::Matrix<InT> &residential, bool isMaster) {
+    void downProj(DecoderContext *ctx, xft::Matrix<ImT> &input, xft::Matrix<OutT> &output,
+            xft::Matrix<InT> &residential, bool isMaster) {
         TimeLine t("DownProj");
 
         assert(input.Rows() == output.Rows());
@@ -276,7 +277,7 @@ private:
     }
 
     template <typename T1, typename T2>
-    void catGateUpProj(DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
+    void catGateUpProj(DecoderContext *ctx, xft::Matrix<T1> &input, xft::Matrix<T2> &output, xft::Matrix<T2> &siluBuf) {
         TimeLine t("catGateUpProj");
 
         assert(input.Rows() == output.Rows());
@@ -308,11 +309,11 @@ private:
         }
     }
 
-    void catGateUpWeights(hpj::Matrix<WeiT> &gateWeight, hpj::Matrix<WeiT> &upWeight,
-            hpj::Vector<float> &gateWeightScale, hpj::Vector<float> &gateWeightZero, hpj::Vector<float> &gateWeightSum,
-            hpj::Vector<float> &upWeightScale, hpj::Vector<float> &upWeightZero, hpj::Vector<float> &upWeightSum,
-            hpj::Matrix<WeiT> &catWeights, hpj::Vector<float> &catWeightsScale, hpj::Vector<float> &catWeightsZero,
-            hpj::Vector<float> &catWeightsSum) {
+    void catGateUpWeights(xft::Matrix<WeiT> &gateWeight, xft::Matrix<WeiT> &upWeight,
+            xft::Vector<float> &gateWeightScale, xft::Vector<float> &gateWeightZero, xft::Vector<float> &gateWeightSum,
+            xft::Vector<float> &upWeightScale, xft::Vector<float> &upWeightZero, xft::Vector<float> &upWeightSum,
+            xft::Matrix<WeiT> &catWeights, xft::Vector<float> &catWeightsScale, xft::Vector<float> &catWeightsZero,
+            xft::Vector<float> &catWeightsSum) {
         catWeights.Resize(gateWeight.Rows(), gateWeight.Cols() + upWeight.Cols());
         catWeightsScale.Resize(gateWeightScale.Size() + upWeightScale.Size());
         catWeightsZero.Resize(gateWeightZero.Size() + upWeightZero.Size());
@@ -345,25 +346,25 @@ private:
     }
 
 protected:
-    hpj::Matrix<WeiT> gateWeight;
-    hpj::Vector<float> gateWeightScale; // For int8_t weight
-    hpj::Vector<float> gateWeightZero; // For int8_t weight
-    hpj::Vector<float> gateWeightSum; // For int8_t weight
-    hpj::Matrix<WeiT> upWeight;
-    hpj::Vector<float> upWeightScale; // For int8_t weight
-    hpj::Vector<float> upWeightZero; // For int8_t weight
-    hpj::Vector<float> upWeightSum; // For int8_t weight
-    hpj::Matrix<WeiT> catWeights;
-    hpj::Vector<float> catWeightsScale; // For int8_t weight
-    hpj::Vector<float> catWeightsZero; // For int8_t weight
-    hpj::Vector<float> catWeightsSum; // For int8_t weight
-    hpj::Matrix<WeiT> downWeight;
-    hpj::Vector<float> downWeightScale; // For int8_t weight
-    hpj::Vector<float> downWeightZero; // For int8_t weight
-    hpj::Vector<float> downWeightSum; // For int8_t weight
+    xft::Matrix<WeiT> gateWeight;
+    xft::Vector<float> gateWeightScale; // For int8_t weight
+    xft::Vector<float> gateWeightZero; // For int8_t weight
+    xft::Vector<float> gateWeightSum; // For int8_t weight
+    xft::Matrix<WeiT> upWeight;
+    xft::Vector<float> upWeightScale; // For int8_t weight
+    xft::Vector<float> upWeightZero; // For int8_t weight
+    xft::Vector<float> upWeightSum; // For int8_t weight
+    xft::Matrix<WeiT> catWeights;
+    xft::Vector<float> catWeightsScale; // For int8_t weight
+    xft::Vector<float> catWeightsZero; // For int8_t weight
+    xft::Vector<float> catWeightsSum; // For int8_t weight
+    xft::Matrix<WeiT> downWeight;
+    xft::Vector<float> downWeightScale; // For int8_t weight
+    xft::Vector<float> downWeightZero; // For int8_t weight
+    xft::Vector<float> downWeightSum; // For int8_t weight
 
     // LlamaRMSNorm param
-    hpj::Vector<float> normWeight;
+    xft::Vector<float> normWeight;
 
 #ifdef DEBUG
     Debugger dbg;

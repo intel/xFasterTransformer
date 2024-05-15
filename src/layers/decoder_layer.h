@@ -105,47 +105,18 @@ public:
                 useSelfAttn, doLnBefore, false, positionIds);
     }
 
+    template <typename InT, typename OutT, typename KVCacheT>
+    void forwardAttention(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, InT *input, OutT *output,
+            size_t totInSeqLen, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
+            std::vector<KVCacheTensor<KVCacheT> *> &valueCaches) {
+        TimeLine t("Decoder.forwardAttention");
+        attn.forward(ctx, seqs, input, output, totInSeqLen, keyCaches, valueCaches);
+    }
+
     template <typename InT, typename OutT>
-    void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true) {
+    void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true, int totInSeqLen = 0) {
         TimeLine t("Decoder.forwardFFN");
-        mlp.forward(ctx, input, output, iStride, oStride, doLnBefore);
-    }
-
-private:
-    void copyWeights(hpj::Matrix<float> &w, int start_col, int end_col, const float *data) {
-        hpj::Matrix<float> subW(w, 0, w.Rows(), start_col, end_col - start_col);
-        copyWeights(subW, data);
-    }
-
-    // Copy the transposed weight into the non-transposed matrix
-    void copyWeights(hpj::Matrix<float> &w, const float *data) {
-        for (int j = 0; j < w.Cols(); ++j) {
-            for (int i = 0; i < w.Rows(); ++i) {
-                w(i, j) = *data++;
-            }
-        }
-    }
-
-    void copyTransposed(hpj::Matrix<float> &dst, hpj::Matrix<float> &src) {
-        dst.Resize(src.Cols(), src.Rows());
-        for (int i = 0; i < dst.Rows(); ++i) {
-            for (int j = 0; j < dst.Cols(); ++j) {
-                dst(i, j) = src(j, i);
-            }
-        }
-    }
-
-    // Add bias to matrix
-    void biasAdd(hpj::Matrix<float> &m, hpj::Vector<float> &bias) {
-        float *pbias = bias.Data();
-#pragma omp parallel for
-        for (int i = 0; i < m.Rows(); ++i) {
-            float *p = m.Row(i);
-#pragma omp simd
-            for (int j = 0; j < m.Cols(); ++j) {
-                p[j] += pbias[j];
-            }
-        }
+        mlp.forward(ctx, input, output, iStride, oStride, doLnBefore, totInSeqLen);
     }
 
 private:

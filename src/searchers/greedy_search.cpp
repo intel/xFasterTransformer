@@ -14,7 +14,11 @@
 // ============================================================================
 #include "greedy_search.h"
 #include "messenger.h"
+#include "sequence.h"
 #include "search_utils.h"
+#include "thread_util.h"
+
+using namespace xft;
 
 GreedySearch::GreedySearch(AbstractDecoder &dec, const SearcherConfig &config)
     : decoder(dec), maxLen(config.maxLen), step(0), repetitionPenalty(config.repetitionPenalty) {
@@ -36,18 +40,34 @@ std::vector<int> GreedySearch::syncToken(std::tuple<float *, int, int> &result) 
 
     if (std::get<0>(result) == nullptr) { // The first embedding pipeline parallel stage
         this->nextTokens = std::vector<int>(batchSize, 0);
-        if (ctx->ppSize > 1 && ctx->ppRank == 0) {
+        if (ctx->ppSize > 1 && ctx->ppRank == 0 && enabledBackgroundSync == false) {
+            enabledBackgroundSync = true;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
-            MPI_Recv(this->nextTokens.data(), batchSize, MPI_INT32_T, predictor_world_rank, predictor_world_rank,
-                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            // TODO: Error: different scope when dynamic loading so file
-            // messenger.worldRecvINT32(this->nextTokens.data(), batchSize, predictor_world_rank, predictor_world_rank);
+            ThreadPool::getInstance().addTask([predictor_world_rank, this] {
+                while (true) {
+                    int32_t sequenceID;
+                    MPI_Recv(&sequenceID, 1, MPI_INT32_T, predictor_world_rank, predictor_world_rank, MPI_COMM_WORLD,
+                            MPI_STATUS_IGNORE);
+                    TimeLine t("GreedySearch.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
+                    MPI_Recv(this->nextTokens.data(), this->batchSize, MPI_INT32_T, predictor_world_rank,
+                            predictor_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    if (SequencePool::getInstance().has(sequenceID)) {
+                        auto seq = SequencePool::getInstance().get(sequenceID);
+                        TaskWaitingQueue::getInstance().push(seq);
+                    } else {
+                        printf("Error: should have sequenceID\n");
+                        fflush(stdout);
+                    }
+                }
+            });
         }
     } else { // The last predictor pipeline parallel stage
         this->nextTokens = this->search(result);
         if (ctx->ppSize > 1 && ctx->ppRank == ctx->ppSize - 1) {
+            TimeLine t("GreedySearch.Seq" + std::to_string(ctx->sequenceID) + ".MPI_Send");
             int embedding_world_rank = 0 * ctx->tpSize + ctx->tpRank;
             int predictor_world_rank = (ctx->ppSize - 1) * ctx->tpSize + ctx->tpRank;
+            MPI_Send(&ctx->sequenceID, 1, MPI_INT32_T, embedding_world_rank, predictor_world_rank, MPI_COMM_WORLD);
             MPI_Send(this->nextTokens.data(), batchSize, MPI_INT32_T, embedding_world_rank, predictor_world_rank,
                     MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file

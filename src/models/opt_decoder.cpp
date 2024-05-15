@@ -103,10 +103,13 @@ void OptDecoder<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT, typename KVCacheT>
-void OptDecoder<WeiT, KVCacheT>::embeddingForward(int *ids, float *buf, int batchSize, int seqLen) {
+void OptDecoder<WeiT, KVCacheT>::embeddingForward(int *ids, float *buf, int tokenSize) {
     int pastSeqLen = this->accSeqLen;
     if (pastSeqLen == 0 && this->prefixSharing) { pastSeqLen += this->prefixSeqLen; }
+
     // Prepare position data for positional embedding
+    int batchSize = 1;
+    int seqLen = tokenSize;
     int positions[batchSize * seqLen];
     for (int b = 0; b < batchSize; ++b) {
         for (int i = 0; i < seqLen; ++i) {
@@ -115,7 +118,42 @@ void OptDecoder<WeiT, KVCacheT>::embeddingForward(int *ids, float *buf, int batc
     }
 
     // Embedding
-    embedding->forward(ids, positions, buf, batchSize, seqLen);
+    embedding->forward(ids, positions, buf, tokenSize);
+}
+
+template <typename WeiT, typename KVCacheT>
+void OptDecoder<WeiT, KVCacheT>::embeddingForward(float *output, const std::vector<SequenceMeta *> &sequences) {
+    // Calculate the total number of input tokens
+    int inputTokens = 0;
+    for (int i = 0; i < sequences.size(); ++i) {
+        inputTokens += sequences[i]->getInputSeqLen();
+    }
+
+    // Prepare position data for positional embedding
+    int idBuf[256];
+    int posBuf[256];
+
+    int *ids = inputTokens <= 256 ? idBuf : (int *)malloc(inputTokens * sizeof(int));
+    int *positions = inputTokens <= 256 ? posBuf : (int *)malloc(inputTokens * sizeof(int));
+
+    int idx = 0;
+    for (int i = 0; i < sequences.size(); ++i) {
+        auto pastSeqLen = sequences[i]->getPastSeqLen();
+        auto inputTokens = sequences[i]->getInputTokens();
+        for (int j = 0; j < sequences[i]->getInputSeqLen(); ++j) {
+            ids[idx] = inputTokens[pastSeqLen + j];
+            positions[idx] = pastSeqLen + j;
+            idx += 1;
+        }
+    }
+
+    // Embedding
+    embedding->forward(ids, positions, output, inputTokens);
+
+    if (inputTokens > 256) {
+        free(ids);
+        free(positions);
+    }
 }
 
 template <typename WeiT, typename KVCacheT>

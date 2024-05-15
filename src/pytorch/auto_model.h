@@ -212,6 +212,61 @@ public:
 
     void unsetPrefix() { model->unsetPrefix(); };
 
+    torch::Tensor forwardCB() {
+        // Forward for continuous batching
+        int batchSize = model->getBatchSize();
+        int vocabSize = model->getVocabSize();
+
+        std::tuple<float *, int, int> result = model->forward(false);
+        float *outBuf = std::get<0>(result);
+        int sampleOffset = std::get<1>(result);
+        int sampleSize = std::get<2>(result);
+
+        // Create a torch::Tensor from the C array
+        int64_t tdims[3] = {batchSize, 1, vocabSize};
+        torch::Tensor ret = torch::from_blob(outBuf, tdims, torch::kFloat32);
+        return ret;
+    }
+
+    torch::Tensor setInputCB(torch::optional<torch::Tensor> inputIds_, torch::optional<torch::Tensor> seqIDs_,
+            torch::optional<int64_t> maxLength) {
+        int batchSize = 0;
+        std::vector<int> seqIDs;
+        if (model->getRank() == 0) {
+            TORCH_CHECK(inputIds_.has_value(), "Make sure master's input is not None.")
+
+            batchSize = inputIds_.value().size(0);
+            int seqLen = inputIds_.value().size(1);
+
+            torch::Tensor inputTensor = inputIds_.value().to(torch::kInt32);
+
+            tokenIds.resize(batchSize * seqLen);
+            memcpy(tokenIds.data(), inputTensor.data_ptr<int>(), batchSize * seqLen * sizeof(int));
+
+            if (seqIDs_.has_value()) {
+                torch::Tensor seqIDsTensor = seqIDs_.value().to(torch::kInt32);
+                TORCH_CHECK(batchSize == seqIDsTensor.size(0), "seqIDs size[0] must equal to inputIds size[0].")
+                seqIDs.resize(batchSize);
+                memcpy(seqIDs.data(), seqIDsTensor.data_ptr<int>(), batchSize * sizeof(int));
+            }
+        }
+
+        seqIDs = model->set_input(tokenIds, batchSize, seqIDs, maxLength.value());
+        torch::Tensor ret = torch::from_blob(seqIDs.data(), {batchSize}, torch::kInt32).to(torch::kInt64);
+        return ret;
+    }
+
+    bool freeSeqs(torch::optional<torch::Tensor> seqIDs_) {
+        std::vector<int> seqIDs;
+        if (model->getRank() == 0) {
+            TORCH_CHECK(seqIDs_.has_value(), "Make sure master's input is not None.")
+            torch::Tensor seqIDsTensor = seqIDs_.value().to(torch::kInt32);
+            seqIDs.resize(seqIDsTensor.size(0));
+            memcpy(seqIDs.data(), seqIDsTensor.data_ptr<int>(), seqIDsTensor.size(0) * sizeof(int));
+        }
+        return model->freeSeqs(seqIDs);
+    }
+
 private:
     xft::Model *model;
     std::vector<int> tokenIds;

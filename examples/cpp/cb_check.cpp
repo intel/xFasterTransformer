@@ -297,7 +297,7 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"bf16_nf4", xft::DataType::bf16_nf4}, {"w8a8_int8", xft::DataType::w8a8_int8},
         {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
 
-std::map<std::string, xft::DataType> KVCacheDataTypeMap
+std::map<std::string, xft::DataType> kvCacheDataTypeMap
         = {{"fp32", xft::DataType::fp32}, {"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
 
 std::string getModelType(std::string &modelPath) {
@@ -316,35 +316,22 @@ int main(int argc, char **argv) {
 
     args.add<std::string>("model", 'm', "path of xft format model", true);
     args.add<std::string>("token", 't', "path of tokenizer", true);
-    args.add<std::string>("input", 'i', "input prompt, invalid for Opt model.", false,
+    args.add<std::string>("input", 'i', "input prompt.", false,
             "Once upon a time, there existed a little girl who liked to have adventures.");
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16");
     args.add<std::string>("kv_cache_dtype", '\0', "kv cache data type", false, "fp16");
-    args.add<int>("input_len", 'l', "input token size", false, -1);
-    args.add<int>("output_len", 'o', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
-    args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
-    args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
-    args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
-    args.add<int>("loop", '\0', "number of loop.", false, 1);
-    args.add<int>("topK", '\0', "number of highest probability tokens to keep for top-k-filtering.", false, 50);
-    args.add<float>("temperature", '\0', "value used to modulate the next token probabilities.", false, 1.0);
-    args.add<float>("topP", '\0', "retain minimal tokens above topP threshold.", false, 1.0);
-    args.add<float>("repetPen", '\0', "repetition penalty.", false, 1.0);
-    args.add("no_stream", '\0', "disable streaming output");
-    args.add("do_sample", '\0', "use sampling");
+
     args.parse_check(argc, argv);
 
     std::string modelPath = args.get<std::string>("model");
     std::string tokenPath = args.get<std::string>("token");
 
-    bool streamingOutput = !args.exist("no_stream");
-    bool doSample = args.exist("do_sample");
-
     std::string dtype_name = args.get<std::string>("dtype");
     xft::DataType dtype = xft::DataType::fp16;
     std::string kv_cache_dtype_name = args.get<std::string>("kv_cache_dtype");
-    xft::DataType KVCacheDataType = xft::DataType::fp16;
+    xft::DataType kvCacheDataType = xft::DataType::fp16;
 
+    // Check data type
     auto it = dataTypeMap.find(dtype_name);
     if (it != dataTypeMap.end()) {
         dtype = it->second;
@@ -353,24 +340,13 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    it = KVCacheDataTypeMap.find(kv_cache_dtype_name);
-    if (it != KVCacheDataTypeMap.end()) {
-        KVCacheDataType = it->second;
+    it = kvCacheDataTypeMap.find(kv_cache_dtype_name);
+    if (it != kvCacheDataTypeMap.end()) {
+        kvCacheDataType = it->second;
     } else {
         std::cout << "[Error] Unsupport KV cache dtype index: " << kv_cache_dtype_name << std::endl;
         return 0;
     }
-
-    int inputSize = args.get<int>("input_len");
-    int outputLen = args.get<int>("output_len");
-    int prefixLen = args.get<int>("prefix_len");
-    int numBeams = args.get<int>("num_beams");
-    int batchSize = args.get<int>("batch_size");
-    int loop = args.get<int>("loop");
-    int topK = args.get<int>("topK");
-    float temperature = args.get<float>("temperature");
-    float topP = args.get<float>("topP");
-    float repetitionPenalty = args.get<float>("repetPen");
 
     std::string modeltype = getModelType(modelPath);
 
@@ -378,127 +354,113 @@ int main(int argc, char **argv) {
     std::string inputPrompt = args.get<std::string>("input");
     std::vector<int> input = tokenizer->encode(inputPrompt);
 
-    xft::AutoModel model(modelPath, dtype, KVCacheDataType);
+    xft::AutoModel model(modelPath, dtype, kvCacheDataType);
     bool isMaster = model.isMaster();
-    int secondIdCount = 0;
-
-    // Need longer prompt
-    if (inputSize > 0 && inputSize > input.size()) {
-        input.reserve(inputSize);
-        std::vector<int> fakeTokens(inputSize - input.size(), input[2]);
-        input.insert(input.begin() + 2, fakeTokens.begin(), fakeTokens.end());
-    } else if (inputSize > 0) {
-        printf("[Warning] Do not support token size of %d, use %ld instead.\n", inputSize, input.size());
-    }
-    inputSize = input.size();
-    int maxLen = input.size() + outputLen;
-
-    std::vector<int> perfixSeq;
-    if (prefixLen > 0) {
-        if (prefixLen <= input.size()) {
-            perfixSeq = std::vector<int>(input.begin(), input.begin() + prefixLen);
-        } else {
-            printf("[ERROR] Prefix length %d is larger than input size %ld.\n", prefixLen, input.size());
-            exit(-1);
-        }
-    }
-
-    if (batchSize > 1) {
-        int len = input.size();
-        input.resize(len * batchSize);
-        for (int i = 1; i < batchSize; i++) {
-            std::copy(input.begin(), input.begin() + len, input.begin() + i * len);
-        }
-    }
 
     if (isMaster) {
         std::cout << "[INFO] Model path is " << modelPath << std::endl;
         std::cout << "[INFO] Token path is " << tokenPath << std::endl;
         std::cout << "[INFO] Data type is " << dtype_name << std::endl;
         std::cout << "[INFO] KV cache data type is " << kv_cache_dtype_name << std::endl;
-        std::cout << "[INFO] inputSize is " << inputSize << std::endl;
-        std::cout << "[INFO] outputLen is " << outputLen << std::endl;
-        std::cout << "[INFO] num_beams is " << numBeams << std::endl;
-        std::cout << "[INFO] do_samlpe is " << std::boolalpha << doSample << std::endl;
-        std::cout << "[INFO] temperature is " << temperature << std::endl;
-        std::cout << "[INFO] topK is " << topK << std::endl;
-        std::cout << "[INFO] topP is " << topP << std::endl;
-        std::cout << "[INFO] repetitionPenalty is " << repetitionPenalty << std::endl;
-        std::cout << "[INFO] batch_size is " << batchSize << std::endl;
-        std::cout << "[INFO] loop is " << loop << std::endl;
-        if (prefixLen > 0) {
-            std::cout << "[INFO] prefixSharing is ON, perfixLen is " << prefixLen << std::endl;
-        } else {
-            std::cout << "[INFO] prefixSharing is OFF" << std::endl;
-        }
-        std::cout << "[INFO] Input prompt is : " << inputPrompt << std::endl;
-        std::cout << "[INFO] Input Token Ids is : ";
+        std::cout << "[INFO] Input prompt: " << inputPrompt << std::endl;
+        std::cout << "[INFO] Input Token Ids: ";
         for (auto x : input) {
             std::cout << x << " ";
         }
         std::cout << std::endl;
     }
 
-    // Set prefix
-    if (prefixLen > 0) { model.setPrefix(perfixSeq); }
+    SearcherConfig config;
+    config.maxLen = 128;
+    std::vector<std::vector<int>> generatedTokens(3);
+    int seqIDs[3];
+    std::vector<std::vector<int>> inputIDs;
+    std::vector<int> seqs;
 
-    for (int i = 0; i < loop; ++i) {
-        secondIdCount = 0;
+    // 1st sequence: generate some tokens
+    inputIDs = {input};
+    auto ret = model.set_input(inputIDs, seqs, config);
+    seqIDs[0] = ret[0];
+    ret = model.generate(); // 1st token
+    for (auto id : ret) {
+        generatedTokens[0].emplace_back(id);
+    }
 
-        // TODO: Deprecated this old path
-        model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
-                /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
-                /*doSample*/ doSample, /*temperature*/ temperature,
-                /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
-        model.input(input, batchSize);
-
-        // New path
-        // model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
-        //         /*lenPenalty*/ 1.0,
-        //         /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
-        //         /*doSample*/ doSample, /*temperature*/ temperature,
-        //         /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
-
-        std::vector<int> firstIds;
-        std::vector<int> secondIds;
-
-        if (!model.isDone()) {
-            Timer t(isMaster, "[INFO] First token");
-            firstIds = model.generate();
+    for (int i = 0; i < 2; ++i) { // some next tokens
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[0]}, config);
+        auto ret = model.generate();
+        for (auto id : ret) {
+            generatedTokens[0].emplace_back(id);
         }
+    }
 
-        Timer timerSecond;
-        if (!model.isDone()) {
-            secondIds = model.generate();
-            secondIdCount++;
-        }
+    // 2nd sequence: first token generation
+    inputIDs = {input};
+    seqs.clear();
+    ret = model.set_input(inputIDs, seqs, config);
+    seqIDs[1] = ret[0];
+    ret = model.generate();
+    for (auto id : ret) {
+        generatedTokens[1].emplace_back(id);
+    }
 
-        if (isMaster && streamingOutput) {
-            if (!firstIds.empty()) {
-                tokenizer->printResult(firstIds, batchSize, numBeams);
-                if (!secondIds.empty()) { tokenizer->printResult(secondIds, batchSize, numBeams); }
-            }
+    // Batching together to generate some tokens for both sequences
+    for (int i = 0; i < 2; ++i) {
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
+                {generatedTokens[1].at(generatedTokens[1].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[0], seqIDs[1]}, config);
+        auto ret = model.generate();
+        assert(ret.size() == 2);
+        for (int j = 0; j < 2; ++j) {
+            generatedTokens[j].emplace_back(ret[j]);
         }
+    }
 
-        while (!model.isDone()) {
-            auto nextIds = model.generate();
-            secondIdCount++;
-            if (isMaster && streamingOutput) { tokenizer->printResult(nextIds, batchSize, numBeams); }
-        }
-        if (isMaster && secondIdCount > 0) {
-            auto avgDuration = timerSecond.getTime() / float(secondIdCount);
-            std::cout << std::endl << "[INFO] Second token time: " << avgDuration << " ms" << std::endl;
-        }
-        auto result = model.finalize();
+    // 3rd sequence: first token generation
+    inputIDs = {input};
+    seqs.clear();
+    ret = model.set_input(inputIDs, seqs, config);
+    seqIDs[2] = ret[0];
+    ret = model.generate();
+    for (auto id : ret) {
+        generatedTokens[2].emplace_back(id);
+    }
 
-        if (isMaster) {
-            std::cout << "\n[INFO] Final output is: " << std::endl;
-            std::vector<std::string> sent = tokenizer->batchDecode(result, batchSize);
-            for (auto str : sent) {
-                std::cout << "==============================================" << std::endl;
-                std::cout << str << std::endl;
-            }
+    // Batching together to generate some tokens for 3 sequences
+    for (int i = 0; i < 2; ++i) {
+        inputIDs = {{generatedTokens[0].at(generatedTokens[0].size() - 1)},
+                {generatedTokens[1].at(generatedTokens[1].size() - 1)},
+                {generatedTokens[2].at(generatedTokens[2].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[0], seqIDs[1], seqIDs[2]}, config);
+        auto ret = model.generate();
+        assert(ret.size() == 3);
+        for (int j = 0; j < 3; ++j) {
+            generatedTokens[j].emplace_back(ret[j]);
         }
+    }
+
+    // Suppose sequence 0 finished
+    for (int i = 0; i < 2; ++i) {
+        inputIDs = {{generatedTokens[1].at(generatedTokens[1].size() - 1)},
+                {generatedTokens[2].at(generatedTokens[2].size() - 1)}};
+        model.set_input(inputIDs, {seqIDs[1], seqIDs[2]}, config);
+        auto ret = model.generate();
+        assert(ret.size() == 2);
+        for (int j = 0; j < 2; ++j) {
+            generatedTokens[j + 1].emplace_back(ret[j]);
+        }
+    }
+
+    // Print out values inside generatedTokens
+    for (int i = 0; i < 3; ++i) {
+        std::cout << "Generated Tokens [" << i << "]: ";
+        for (auto id : generatedTokens[i]) {
+            std::cout << id << " ";
+        }
+        std::cout << std::endl;
+        std::vector<std::string> strs = tokenizer->batchDecode(generatedTokens[i], 1);
+        std::cout << strs[0] << std::endl;
     }
 
     return 0;

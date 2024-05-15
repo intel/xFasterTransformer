@@ -134,7 +134,7 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
     }
 
     ctx->resize(batchSize, inputSeqLen, pastSeqLen);
-    hpj::Matrix<float> actBuffers;
+    xft::Matrix<float> actBuffers;
     actBuffers.Resize(batchSize * inputSeqLen * 2, hiddenSize);
     float *attnMask = prepareAttnMask(ctx, step);
 

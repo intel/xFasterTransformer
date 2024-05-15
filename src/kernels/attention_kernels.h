@@ -93,7 +93,7 @@ void gemmSV(T1 *score, const std::tuple<T2, int, T3> &valueMat, T4 *output, int 
     auto [B, ldv, scale] = valueMat;
     auto C = output;
     const int N = headSize;
-    if constexpr (std::is_same_v<T2, int8_t>) {
+    if constexpr (std::is_same_v<T2, int8_t *>) {
         xft::small_gemm(A, B, scale, C, M, N, K, lds, ldv, ldo);
     } else {
         xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
@@ -776,6 +776,132 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
 
         } // end for i
     } // end for b
+}
+
+// scaled dot-product attention: bmm1 + softmax + bmm2
+// query key value are all in [*, seqLen, headnum, headsize] order
+template <typename T, typename AttnT>
+void selfScaledDpAttention(T *output, const T *query, const AttnT *key, const AttnT *value, int qHeadNum, int kvHeadNum,
+        int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens,
+        const int *pastSeqLens, bool causal, const float *alibiSlopes, const float *attnMask, const float scale,
+        int threadNum) {
+    // output = softmax(query * trans(key)) * value
+    // causal = True: llama-family, chatglm2; extra alibiSlopes for baichuan
+    // causal = False: just chatglm (prefixLLM, 0:startid) need attnMask for now
+
+    // get the max seqLen
+    int maxSrcLen = 0, maxTgtLen = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        maxSrcLen = std::max(maxSrcLen, inputSeqLens[i]);
+        maxTgtLen = std::max(maxTgtLen, inputSeqLens[i] + pastSeqLens[i]);
+    }
+    // compute the seqStartLoc
+    int seqStartLoc[batchSize + 1];
+    seqStartLoc[0] = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        seqStartLoc[i + 1] = seqStartLoc[i] + inputSeqLens[i];
+    }
+
+    // closest value of power of 2
+    int minBlk = (int)std::pow(2, int(std::log2(maxSrcLen / 2)));
+    // Split sequence to make sure a moderate sync frequency and the intermediate
+    // result [srcSeq * tgtSeq] in cache. The current block size is derived from practical experience.
+    int srcBlk = std::min(256, minBlk);
+    int tgtBlk = std::min(512, maxTgtLen);
+
+    int numGroup = qHeadNum / kvHeadNum;
+
+    int numArr = 7;
+    int arrStride = (4 + tgtBlk + 2 * headSize) * srcBlk;
+    float *thrBuf
+            = (float *)SimpleMemPool::instance().getBuffer("threadBuffers", sizeof(float) * threadNum * arrStride);
+    float **thrPtrBuf
+            = (float **)SimpleMemPool::instance().getBuffer("threadPtrBuffers", sizeof(float *) * threadNum * numArr);
+
+    float **preSum = thrPtrBuf;
+    float **sum = thrPtrBuf + threadNum;
+    float **preMax = thrPtrBuf + threadNum * 2;
+    float **max = thrPtrBuf + threadNum * 3;
+    float **qkArr = thrPtrBuf + threadNum * 4;
+    float **expQkvArr = thrPtrBuf + threadNum * 5;
+    float **qArr = thrPtrBuf + threadNum * 6;
+
+    for (int i = 0; i < threadNum; ++i) {
+        preSum[i] = thrBuf + srcBlk * i;
+        sum[i] = thrBuf + srcBlk * threadNum + srcBlk * i;
+        preMax[i] = thrBuf + srcBlk * threadNum * 2 + srcBlk * i;
+        max[i] = thrBuf + srcBlk * threadNum * 3 + srcBlk * i;
+        qkArr[i] = thrBuf + srcBlk * threadNum * 4 + srcBlk * tgtBlk * i;
+        expQkvArr[i] = thrBuf + srcBlk * threadNum * (4 + tgtBlk) + srcBlk * headSize * i;
+        qArr[i] = thrBuf + srcBlk * threadNum * (4 + tgtBlk + headSize) + srcBlk * headSize * i;
+    }
+
+#pragma omp parallel for collapse(3) schedule(dynamic)
+    for (uint64_t b = 0; b < batchSize; ++b) {
+        for (int h = 0; h < qHeadNum; ++h) {
+            for (int m = 0; m < maxSrcLen; m += srcBlk) {
+                int srcLen = inputSeqLens[b];
+                int tgtLen = inputSeqLens[b] + pastSeqLens[b];
+                if (m >= srcLen) { continue; }
+
+                int tid = omp_get_thread_num();
+                int qRealBlk = std::min(srcBlk, srcLen - m);
+                uint64_t srcOff = seqStartLoc[b] * qStride + h * headSize;
+                uint64_t outOff = seqStartLoc[b] * oStride + h * headSize;
+                const T *qbuf = query + srcOff + m * qStride;
+                AttnT *q = (AttnT *)qArr[tid];
+                T *out = output + outOff + m * oStride;
+
+                // reset out
+                for (int ii = 0; ii < qRealBlk; ++ii) {
+#pragma omp simd
+                    for (int jj = 0; jj < headSize; ++jj) {
+                        out[ii * oStride + jj] = 0; // reset output
+                        q[ii * headSize + jj] = (AttnT)(qbuf[ii * qStride + jj]); // reset output
+                    }
+                }
+                // reset sum
+#pragma omp simd
+                for (int ii = 0; ii < qRealBlk; ++ii) {
+                    preSum[tid][ii] = 0;
+                    sum[tid][ii] = 0;
+                    preMax[tid][ii] = std::numeric_limits<float>::lowest();
+                    max[tid][ii] = std::numeric_limits<float>::lowest();
+                }
+
+                uint64_t tgtOff = seqStartLoc[b] * kvStride + (h / numGroup) * headSize;
+                const AttnT *k = key + tgtOff;
+                const AttnT *v = value + tgtOff;
+                // split the target len dimension
+                for (int n = 0; n < tgtLen; n += tgtBlk) {
+                    int kvRealBlk = std::min(tgtBlk, tgtLen - n);
+                    // mask out. TODO: for prefixLLM
+                    if (causal && m + qRealBlk - 1 < n) {
+                        //printf("Skip bs %d head %d src %d tgt %d\n", b, h, m, n);
+                        break;
+                    }
+
+                    const AttnT *kBlk = k + n * kvStride;
+                    const AttnT *vBlk = v + n * kvStride;
+
+                    if (causal) {
+                        // causal=True, build-in mask
+                        float headSlope = alibiSlopes != nullptr ? alibiSlopes[h] : 0.0f;
+                        DecoderUtil::incrementalTileAttentionCausal(q, kBlk, vBlk, headSlope, m, n, qRealBlk, headSize,
+                                kvRealBlk, preSum[tid], sum[tid], preMax[tid], max[tid], scale, qkArr[tid],
+                                expQkvArr[tid], out, headSize, kvStride, kvStride, oStride);
+                    } else {
+                        // causal=False, need mask matrix for now
+                        const float *attnMsk = attnMask + seqStartLoc[b] * tgtLen + m * tgtLen + n;
+                        DecoderUtil::incrementalTileAttention(q, kBlk, vBlk, attnMsk, qRealBlk, headSize, kvRealBlk,
+                                tgtLen, preSum[tid], sum[tid], preMax[tid], max[tid], scale, qkArr[tid], expQkvArr[tid],
+                                out, headSize, kvStride, kvStride, oStride);
+                    }
+                }
+            }
+        }
+    }
+    return;
 }
 
 } // namespace xft

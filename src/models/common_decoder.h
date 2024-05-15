@@ -22,7 +22,9 @@
 #include "INIReader.h"
 #include "abstract_decoder.h"
 #include "attention.h"
+#include "datatypes.h"
 #include "debugger.h"
+#include "decoder_block.h"
 #include "decoder_layer.h"
 #include "dist_linear.h"
 #include "dtype.h"
@@ -31,6 +33,7 @@
 #include "mlp_chatglm2.h"
 #include "mlp_standard.h"
 #include "model_factory.h"
+#include "sequence.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"
@@ -41,6 +44,8 @@ using namespace xft;
 struct QKPO_Dummy {
     QKPO_Dummy(int dim, int maxPos) {}
     void forward(float *query, float *key, int qStride, int kStride, const int *qk_shape, const int *position_ids) {}
+    void forward(float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
+            int *positionIds) {};
 };
 
 // To get data types in MLP class
@@ -165,7 +170,7 @@ public:
         const int attHeadNum = reader.GetInteger(modelType, "head_num");
         // Use the same head number for the default multi-head attention
         const int kvHeadNum = reader.GetInteger(modelType, "kv_head_num", attHeadNum);
-        const int size_per_head = reader.GetInteger(modelType, "size_per_head");
+        const int headSize = reader.GetInteger(modelType, "size_per_head");
         const int imSize = reader.GetInteger(modelType, "inter_size");
         const int layers = reader.GetInteger(modelType, "num_layer");
         const int vocabSize = reader.GetInteger(modelType, "vocab_size");
@@ -177,7 +182,7 @@ public:
         const int maxSeqLength = reader.GetInteger(modelType, "seq_length", -1);
         const bool useLogN = reader.GetInteger(modelType, "use_logn_attn", true);
         const bool useNTK = reader.GetInteger(modelType, "use_dynamic_ntk", true);
-        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * size_per_head);
+        const int hiddenSize = reader.GetInteger(modelType, "hidden_size", attHeadNum * headSize);
         const int embeddingSize = hiddenSize;
         const int multi_query_group_num = reader.GetInteger(modelType, "multi_query_group_num", attHeadNum);
         const float epsilon = reader.GetFloat(modelType, "layernorm_eps", 1e-6);
@@ -219,10 +224,10 @@ public:
         this->inputTokens = nullptr;
         this->maskSize = 0;
         this->attnMask = nullptr;
-        actBuffers.reset(new hpj::Matrix<float>());
+        actBuffers.reset(new xft::Matrix<float>());
 
         // Context
-        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, size_per_head, attHeadNum, kvHeadNum, imSize, act,
+        DecoderContext *ctx = getDecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                 epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK,
                 ropeParamsPtr);
 
@@ -235,19 +240,9 @@ public:
             std::exit(-1);
         }
 
-        int layers_per_pp_stage = layers / ctx->ppSize;
-        int start_layer = ctx->ppRank * layers_per_pp_stage;
-        for (int i = start_layer; i < start_layer + layers_per_pp_stage; ++i) {
-            auto pdec = new DECODER(ctx, i);
-            if (dt == DataType::int8) {
-                this->setDecoderWeights<int8_t>(pdec, modelPath, i);
-            } else if (dt == DataType::int4) {
-                this->setDecoderWeights<uint4x2_t>(pdec, modelPath, i);
-            } else if (dt == DataType::fp32) {
-                this->setDecoderWeights<float>(pdec, modelPath, i);
-            }
-            this->decoders.push_back(pdec);
-        }
+        decoderBlock = new DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL>(ctx, modelPath, layers, dt);
+        auto maxSeqLen = maxSeqLength > 0 ? maxSeqLength : maxPositions;
+        KVCacheMgr::instance().configure(maxSeqLen, kvHeadNum, headSize, layers, getDataType<KVCacheT>());
 
         // Predictor
         int workers = messenger.getSize();
@@ -263,11 +258,8 @@ public:
         if (this->inputTokens) free(this->inputTokens);
         if (this->attnMask) free(this->attnMask);
 
+        delete this->decoderBlock;
         delete this->predictor;
-
-        for (auto dec : this->decoders) {
-            delete dec;
-        }
     }
 
     std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logitsAll = false) {
@@ -278,7 +270,7 @@ public:
 
         int userSideBS = dims[0];
         int beamSize = dims[1];
-        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as samples are duplicated at step 0
+        int batchSize = (step == 0 ? userSideBS : userSideBS * beamSize); // as sequence are duplicated at step 0
         int seqLen = dims[2];
         int pastSeqLen = step == 0 ? 0 : this->accSeqLen;
         int inputSeqLen = seqLen;
@@ -286,6 +278,7 @@ public:
         // Prepare context
         DecoderContext *ctx = this->getContext();
         ctx->resize(batchSize, seqLen, pastSeqLen);
+        int hiddenSize = ctx->hiddenSize;
 
         if (step == 0) {
             // Reset initial and accumulated sequence length at the first step
@@ -314,23 +307,23 @@ public:
         }
 
         AttnInT *embBuf = (AttnInT *)actBuffers->Data();
-        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * ctx->hiddenSize);
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
 
         // Embedding
-        this->embeddingForward(ids, embBuf, batchSize, inputSeqLen);
+        this->embeddingForward(ids, embBuf, batchSize * inputSeqLen);
         this->accSeqLen += seqLen;
 
 #ifdef DEBUG
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
-        dbg.debugPrint(
-                "embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
-        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, ctx->hiddenSize, ctx->hiddenSize);
+        dbg.debugPrint("embBuf(rows: %d, cols: %d, stride: %d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
 #endif
 
         // Prepare attention mask
         this->prepareAttnMask(ids, step + this->prefixSharing);
+        // prepareAttnMeta
 
         // Token position ids, note: different models may have different impl.
         int *positionIds = this->getPositionIds(ids, batchSize, inputSeqLen, step + this->prefixSharing);
@@ -341,16 +334,44 @@ public:
         if (ctx->ppSize > 1 && ctx->ppRank > 0) {
             int curr_world_rank = ctx->ppRank * ctx->tpSize + ctx->tpRank;
             int prev_world_rank = (ctx->ppRank - 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            int count = batchSize * inputSeqLen * hiddenSize;
+            int32_t sequenceID;
+            MPI_Recv(&sequenceID, 1, MPI_INT32_T, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Recv");
             MPI_Recv(embBuf, count, MPI_FLOAT, prev_world_rank, curr_world_rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
+            if (!SequencePool::getInstance().has(sequenceID)) {
+                auto *seqs = SequencePool::getInstance().newMeta(sequenceID, seqLen);
+                seqs->get(0)->setPastSeqLen(pastSeqLen);
+                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
+            }
+            TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
+
+        if (!InputQueue::getInstance().empty()) {
+            if (!TaskWaitingQueue::getInstance().isFull()) {
+                auto *seqs = InputQueue::getInstance().pop();
+                seqs->get(0)->setPastSeqLen(pastSeqLen);
+                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(seqs->get(0)->getSequenceID()));
+            }
+        }
+
+        while (TaskWaitingQueue::getInstance().empty());
+
+        SequenceGroupMeta *runningTask = nullptr;
+        int32_t sequenceID = -1;
+        if (!TaskWaitingQueue::getInstance().empty()) {
+            runningTask = TaskWaitingQueue::getInstance().pop();
+            sequenceID = runningTask->get(0)->getSequenceID();
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
         // Decoder: forward
-        int hiddenSize = ctx->hiddenSize;
-        int layers_per_pp_stage = this->decoders.size();
+        int layers_per_pp_stage = decoderBlock->size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
@@ -362,7 +383,8 @@ public:
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
-            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
+            // attnMeta (inputSeqLens, pastSeqLens, seqStartLoc, is_prompt(useSelfAttn), causal, attnMask)
+            decoderBlock->get(i)->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     inputSeqLen, // inputSeqLen,
@@ -385,27 +407,31 @@ public:
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
 
 #ifdef PIPELINE_PARALLEL
+        }
+
         // If current pipeline stage isn't the end of stage, should send data to next stage and return nullptr
         if (ctx->ppSize > 1 && ctx->ppRank < ctx->ppSize - 1) {
+            TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".MPI_Send");
             int next_world_rank = (ctx->ppRank + 1) * ctx->tpSize + ctx->tpRank;
-            int count = batchSize * inputSeqLen * ctx->hiddenSize;
+            int count = batchSize * inputSeqLen * hiddenSize;
+            MPI_Send(&sequenceID, 1, MPI_INT32_T, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             MPI_Send(embBuf, count, MPI_FLOAT, next_world_rank, next_world_rank, MPI_COMM_WORLD);
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldSendFP32(embBuf, count, next_world_rank, next_world_rank);
@@ -488,6 +514,85 @@ public:
                 finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
     }
 
+    std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
+        // Assume input has been synced with master in higher level.
+        TimeLine t("Decoder.forward");
+        TimeLine t1("Decoder.embedding");
+
+        if (unlikely(seqs.empty())) { return std::tuple<float *, int, int>(nullptr, 0, 0); }
+
+        DecoderContext *ctx = this->getContext();
+        int batchSize = seqs.size();
+        int hiddenSize = ctx->hiddenSize;
+
+        // Prepare input
+        int totInputSeqLen = 0;
+        std::vector<int> allInputIds;
+        for (auto seq : seqs) {
+            totInputSeqLen += seq->getInputSeqLen();
+            auto ids = seq->getInputTokens();
+            allInputIds.insert(allInputIds.end(), ids.begin(), ids.end());
+        }
+
+        // Prepare context
+        ctx->resize(totInputSeqLen);
+
+        // Prepare buffers
+        int logitRows = (!logitsAll && seqs[0]->getStep() == 0) ? seqs.size() : totInputSeqLen;
+        prepareBuffer(ctx, totInputSeqLen, logitRows);
+
+        AttnInT *embBuf = (AttnInT *)actBuffers->Data();
+        MlpOutT *outBuf = (MlpOutT *)(embBuf + totInputSeqLen * hiddenSize);
+
+        // Embedding
+        this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
+
+        // Decoder block (all layers)
+        decoderBlock->forward(ctx, seqs, embBuf, embBuf);
+
+        // Prepare input for final Layer Norm (only care about the last row of the result)
+        // Shape of embBuf: (total_input_seqlen, hiddenSize)
+        MlpOutT *lnIn = embBuf;
+        if (logitRows != totInputSeqLen) {
+            int offset = -1;
+            for (int b = 0; b < batchSize; ++b) {
+                offset += seqs[b]->getInputSeqLen();
+                memcpy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT));
+            }
+        }
+
+#ifdef DEBUG
+        dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
+        dbg.debugPrint("LayerNorm In:\n");
+
+        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize);
+#endif
+
+        // Last normalization layer
+        MlpOutT *lnOut = embBuf;
+        lastLayerNormForward(lnIn, lnOut, logitRows);
+
+#ifdef DEBUG
+        dbg.debugPrint("LayerNorm Out:\n");
+        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
+#endif
+
+        // Predictor
+        float *finalOut = (float *)outBuf;
+        this->predictor->forward(ctx, lnOut, finalOut, logitRows);
+
+#ifdef DEBUG
+        auto splitSize = this->predictor->getSplitSize();
+        dbg.debugPrint("finalOut:\n");
+        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
+#endif
+
+        return std::tuple<float *, int, int>(
+                finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
+    }
+
     void setPrefix(int *ids, int seqLen) {
         this->prefixSharing = true;
         this->prefixSeqLen = seqLen;
@@ -512,7 +617,7 @@ public:
         MlpOutT *outBuf = (MlpOutT *)(embBuf + 1 * seqLen * ctx->hiddenSize);
 
         // Embedding
-        this->embeddingForward(ids, embBuf, 1, seqLen);
+        this->embeddingForward(ids, embBuf, 1 * seqLen);
 
         // Prepare attention mask
         this->prepareAttnMask(ids, 0);
@@ -524,14 +629,14 @@ public:
         // Decoder: forward
         // TODO: Add PIPELINE_PARALLEL feature
         int hiddenSize = ctx->hiddenSize;
-        for (int i = 0; i < this->decoders.size(); ++i) {
+        for (int i = 0; i < this->decoderBlock->size(); ++i) {
             int workers = this->messenger.getSize();
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getPrefixKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
-            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
+            decoderBlock->get(i)->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     seqLen, // inputSeqLen,
@@ -549,18 +654,18 @@ public:
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
@@ -572,8 +677,8 @@ public:
     // Get decoder context
     DecoderContext *getContext() { return context.get(); }
 
-    // How many layers
-    int getLayers() { return decoders.size(); }
+    // How many layers on Duty
+    int getLayers() { return decoderBlock->size(); }
 
     Messenger &getMessenger() { return messenger; }
 
@@ -586,13 +691,13 @@ public:
     int getInitSeqLen() { return initSeqLen; }
 
     std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>>
+            std::shared_ptr<xft::Matrix<float>>>
     getSharedResources() {
         return std::make_tuple(context, kvCacheMgr, actBuffers);
     }
 
     void setSharedResources(const std::tuple<std::shared_ptr<DecoderContext>, std::shared_ptr<KVCacheManager<KVCacheT>>,
-            std::shared_ptr<hpj::Matrix<float>>> &r) {
+            std::shared_ptr<xft::Matrix<float>>> &r) {
         this->context = std::get<0>(r);
         this->kvCacheMgr = std::get<1>(r);
         this->actBuffers = std::get<2>(r);
@@ -879,7 +984,7 @@ protected:
         int seqLen = ctx->inputSeqLen;
         int vocabSize = ctx->vocabSize;
         int maxPositions = ctx->maxPositions;
-        int layers = this->decoders.size();
+        int layers = this->decoderBlock->size();
         int workers = this->messenger.getSize();
 
         // Prepare buffers
@@ -904,6 +1009,16 @@ protected:
                 ctx->attHeadSize, prefix);
     }
 
+    void prepareBuffer(DecoderContext *ctx, int totInputSeqLen, int logitRows) {
+        int hiddenSize = ctx->hiddenSize;
+        int vocabSize = ctx->vocabSize;
+
+        // Convert final output buffer size into units of hiddenSize
+        int outRows = std::ceil(1.0f * logitRows * vocabSize / hiddenSize);
+
+        this->actBuffers->Resize(totInputSeqLen + outRows, hiddenSize);
+    }
+
     float *getAttnMask(int sizeRequired) {
         if (this->maskSize < sizeRequired) {
             if (this->attnMask) free(this->attnMask);
@@ -915,11 +1030,11 @@ protected:
 
     int getStartId() { return startId; }
 
-    virtual void embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
+    virtual void embeddingForward(int *ids, float *output, int tokenSize) {
         printf("embeddingForward(float) must be implemented.\n");
         exit(-1);
     }
-    virtual void embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
+    virtual void embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
         printf("embeddingForward(bfloat16_t) must be implemented.\n");
         exit(-1);
     }
@@ -966,11 +1081,11 @@ protected:
     using MlpOutT = typename MlpTypeExtractor<MLP_CLS>::Tout;
 
     // Activation buffers (declared as float, but the actual data type may be different)
-    std::shared_ptr<hpj::Matrix<float>> actBuffers;
+    std::shared_ptr<xft::Matrix<float>> actBuffers;
 
 protected:
-    // Components most LLMs may use
-    std::vector<DECODER *> decoders;
+    // Decoder block (all decoder layers)
+    DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL> *decoderBlock;
 
     using LinearWeiT = typename std::conditional<std::is_same_v<MlpOutT, bfloat16_t>, bfloat16_t, float16_t>::type;
     DistLinear<LinearWeiT> *predictor;
