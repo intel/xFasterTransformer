@@ -112,43 +112,6 @@ public:
     }
 
 private:
-    void copyWeights(xft::Matrix<float> &w, int start_col, int end_col, const float *data) {
-        xft::Matrix<float> subW(w, 0, w.Rows(), start_col, end_col - start_col);
-        copyWeights(subW, data);
-    }
-
-    // Copy the transposed weight into the non-transposed matrix
-    void copyWeights(xft::Matrix<float> &w, const float *data) {
-        for (int j = 0; j < w.Cols(); ++j) {
-            for (int i = 0; i < w.Rows(); ++i) {
-                w(i, j) = *data++;
-            }
-        }
-    }
-
-    void copyTransposed(xft::Matrix<float> &dst, xft::Matrix<float> &src) {
-        dst.Resize(src.Cols(), src.Rows());
-        for (int i = 0; i < dst.Rows(); ++i) {
-            for (int j = 0; j < dst.Cols(); ++j) {
-                dst(i, j) = src(j, i);
-            }
-        }
-    }
-
-    // Add bias to matrix
-    void biasAdd(xft::Matrix<float> &m, xft::Vector<float> &bias) {
-        float *pbias = bias.Data();
-#pragma omp parallel for
-        for (int i = 0; i < m.Rows(); ++i) {
-            float *p = m.Row(i);
-#pragma omp simd
-            for (int j = 0; j < m.Cols(); ++j) {
-                p[j] += pbias[j];
-            }
-        }
-    }
-
-private:
     // For debug usage
     int layerIdx;
 
