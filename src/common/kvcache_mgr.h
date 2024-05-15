@@ -28,6 +28,7 @@ public:
     virtual bool reorderCache(const std::vector<int> &seqIDs, const std::vector<int> &prevSeqIDs) = 0;
     virtual bool addPrefix(int prefixId, int seqID) = 0;
     virtual bool prepareCache(const std::vector<int> &seqIDs) = 0;
+    virtual bool exist(int seqID) const = 0;
     virtual std::vector<void *> getKey(int layerId) = 0;
     virtual std::vector<void *> getValue(int layerId) = 0;
 };
@@ -160,6 +161,8 @@ public:
         return valueCaches;
     }
 
+    bool exist(int seqID) const override { return sequenceCaches.find(seqID) != sequenceCaches.end(); }
+
 private:
     // seqID -> pointer to an array of caches (each element is a KVCacheTensor, size=2*layers)
     // Layout of each array is:
@@ -219,6 +222,8 @@ public:
     std::vector<void *> getKey(int layerId) { return cacheMgrImpl->getKey(layerId); }
 
     std::vector<void *> getValue(int layerId) { return cacheMgrImpl->getValue(layerId); }
+
+    bool exist(int seqID) const { return cacheMgrImpl->exist(seqID); }
 
 private:
     KVCacheMgrImplBase *cacheMgrImpl;
