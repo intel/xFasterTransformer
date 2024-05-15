@@ -524,6 +524,21 @@ public:
                 finalOut, this->predictor->getSplitOffset(), this->predictor->getSplitSize());
     }
 
+    std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
+        // Assume input has been synced with master in higher level.
+        TimeLine t("Decoder.forward");
+        TimeLine t1("Decoder.embedding");
+
+        int batchSize = seqs.size();
+        int userSideBS = seqs.size();
+        int step = seqs[0]->getStep();
+
+        // TODO
+        throw std::logic_error("Method not implemented");
+        return std::tuple<float *, int, int>(nullptr, 0, 0);
+    }
+
     void setPrefix(int *ids, int seqLen) {
         this->prefixSharing = true;
         this->prefixSeqLen = seqLen;
