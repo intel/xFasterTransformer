@@ -114,9 +114,9 @@ public:
     }
 
     template <typename InT, typename OutT>
-    void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true) {
+    void forwardFFN(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true, int totInSeqLen = 0) {
         TimeLine t("Decoder.forwardFFN");
-        mlp.forward(ctx, input, output, iStride, oStride, doLnBefore);
+        mlp.forward(ctx, input, output, iStride, oStride, doLnBefore, totInSeqLen);
     }
 
 private:
