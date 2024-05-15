@@ -23,6 +23,7 @@
 #include "abstract_decoder.h"
 #include "attention.h"
 #include "debugger.h"
+#include "decoder_block.h"
 #include "decoder_layer.h"
 #include "dist_linear.h"
 #include "dtype.h"
@@ -31,6 +32,7 @@
 #include "mlp_chatglm2.h"
 #include "mlp_standard.h"
 #include "model_factory.h"
+#include "sequence.h"
 #include "timeline.h"
 #include "transformer_ctx.h"
 #include "transpose_util.h"
@@ -236,19 +238,7 @@ public:
             std::exit(-1);
         }
 
-        int layers_per_pp_stage = layers / ctx->ppSize;
-        int start_layer = ctx->ppRank * layers_per_pp_stage;
-        for (int i = start_layer; i < start_layer + layers_per_pp_stage; ++i) {
-            auto pdec = new DECODER(ctx, i);
-            if (dt == DataType::int8) {
-                this->setDecoderWeights<int8_t>(pdec, modelPath, i);
-            } else if (dt == DataType::int4) {
-                this->setDecoderWeights<uint4x2_t>(pdec, modelPath, i);
-            } else if (dt == DataType::fp32) {
-                this->setDecoderWeights<float>(pdec, modelPath, i);
-            }
-            this->decoders.push_back(pdec);
-        }
+        decoderBlock = new DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL>(ctx, modelPath, layers, dt);
 
         // Predictor
         int workers = messenger.getSize();
@@ -264,11 +254,8 @@ public:
         if (this->inputTokens) free(this->inputTokens);
         if (this->attnMask) free(this->attnMask);
 
+        delete this->decoderBlock;
         delete this->predictor;
-
-        for (auto dec : this->decoders) {
-            delete dec;
-        }
     }
 
     std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logitsAll = false) {
@@ -381,7 +368,7 @@ public:
 #endif
 
         // Decoder: forward
-        int layers_per_pp_stage = this->decoders.size();
+        int layers_per_pp_stage = decoderBlock->size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
             int workers = this->messenger.getSize();
             if (step == 0 && this->prefixSharing) {
@@ -394,7 +381,7 @@ public:
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
             // attnMeta (inputSeqLens, pastSeqLens, seqStartLoc, is_prompt(useSelfAttn), causal, attnMask)
-            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
+            decoderBlock->get(i)->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     inputSeqLen, // inputSeqLen,
@@ -417,18 +404,18 @@ public:
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, batchSize * inputSeqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
@@ -552,7 +539,8 @@ public:
         // Embedding
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
 
-        // TODO: Decoder layers
+        // Decoder block (all layers)
+        decoderBlock->forward(ctx, seqs, embBuf, outBuf);
 
         // Prepare input for final Layer Norm (only care about the last row of the result)
         // Shape of embBuf: (bs, seqLen, hiddenSize)
@@ -629,14 +617,14 @@ public:
         // Decoder: forward
         // TODO: Add PIPELINE_PARALLEL feature
         int hiddenSize = ctx->hiddenSize;
-        for (int i = 0; i < this->decoders.size(); ++i) {
+        for (int i = 0; i < this->decoderBlock->size(); ++i) {
             int workers = this->messenger.getSize();
             KVCacheTensor<KVCacheT> &presentKey = this->kvCacheMgr->getPrefixKey(i);
             KVCacheTensor<KVCacheT> &presentValue = this->kvCacheMgr->getPrefixValue(i);
 
             // Pls be noted: in attention, 'outBuf' is used as imtermediate buffer, 'tmpBuf' is used as output
             AttnOutT *attnOut = (AttnOutT *)(this->getContext()->tmpBuf.Data());
-            this->decoders[i]->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
+            decoderBlock->get(i)->forwardAttention(getContext(), embBuf, outBuf, attnOut, attnMask,
                     presentKey, // presentKey,
                     presentValue, // presentValue,
                     seqLen, // inputSeqLen,
@@ -654,18 +642,18 @@ public:
             // When attention and FFN/MLP are in parallel, use the initial embedding as input
             if constexpr (ATTN_MLP_PARALLEL) {
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), embBuf, embBuf, hiddenSize, hiddenSize, true);
                 }
             } else {
                 // FFN (for multiple workers, output into outBuf and then reduce add to embBuf)
                 if (this->messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, outBuf, hiddenSize, hiddenSize, true);
                     this->messenger.reduceAdd(outBuf, embBuf, seqLen * hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
+                    decoderBlock->get(i)->forwardFFN(getContext(), attnOut, embBuf, hiddenSize, hiddenSize, true);
                 }
             }
         }
@@ -677,8 +665,8 @@ public:
     // Get decoder context
     DecoderContext *getContext() { return context.get(); }
 
-    // How many layers
-    int getLayers() { return decoders.size(); }
+    // How many layers on Duty
+    int getLayers() { return decoderBlock->size(); }
 
     Messenger &getMessenger() { return messenger; }
 
@@ -984,7 +972,7 @@ protected:
         int seqLen = ctx->inputSeqLen;
         int vocabSize = ctx->vocabSize;
         int maxPositions = ctx->maxPositions;
-        int layers = this->decoders.size();
+        int layers = this->decoderBlock->size();
         int workers = this->messenger.getSize();
 
         // Prepare buffers
@@ -1074,8 +1062,8 @@ protected:
     std::shared_ptr<xft::Matrix<float>> actBuffers;
 
 protected:
-    // Components most LLMs may use
-    std::vector<DECODER *> decoders;
+    // Decoder block (all decoder layers)
+    DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL> *decoderBlock;
 
     using LinearWeiT = typename std::conditional<std::is_same_v<MlpOutT, bfloat16_t>, bfloat16_t, float16_t>::type;
     DistLinear<LinearWeiT> *predictor;
