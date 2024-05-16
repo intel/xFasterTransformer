@@ -221,7 +221,7 @@ public:
         int sampleSize = std::get<2>(result);
 
         // Create a torch::Tensor from the C array
-        int64_t tdims[3] = {batchSize, 1, vocabSize};
+        int64_t tdims[2] = {batchSize, vocabSize};
         torch::Tensor ret = torch::from_blob(outBuf, tdims, torch::kFloat32);
         return ret;
     }
