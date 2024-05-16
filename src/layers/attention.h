@@ -191,8 +191,7 @@ public:
         }
 
         // LayerNorm
-        if (doLNorm)
-            this->norm.setWeight(gamma1, beta1, hiddenSize);
+        if (doLNorm) this->norm.setWeight(gamma1, beta1, hiddenSize);
     }
 
 #ifdef DEBUG
@@ -513,8 +512,9 @@ public:
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
         if (seqs[0]->getStep() == 0) { // First token generation
-            // TODO: add flashAttention
-            if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
+            if (totInSeqLen > getFlashThresh() * seqs.size()) {
+                flashAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
+            } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
                 selfAttentionBF16(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
             } else {
                 fusedAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
@@ -621,8 +621,8 @@ protected:
 
         xft::selfAttention(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
-                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, tokenSizes,
-                ctx->attFactor, ctx->numThreads,
+                ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, tokenSizes, ctx->attFactor,
+                ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); },
                 [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); });
     }
@@ -648,7 +648,7 @@ protected:
         xft::crossAttnByHead<T, KVCacheT>(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, inputSeqLens, pastSeqLens,
-                true, nullptr, ctx->attFactor, ctx->numThreads,
+                true, alibiSlopes, ctx->attFactor, ctx->numThreads,
                 [&](int b, int headIdx) { return keyCaches[b]->getHead(0, headIdx); },
                 [&](int b, int headIdx) { return valueCaches[b]->getHead(0, headIdx); });
     }
@@ -701,6 +701,44 @@ protected:
 
                     auto srcV = value.Row(b * ctx->inputSeqLen + seq) + h * headSize;
                     auto dstV = presentValue.getSequence(pastSeqLen + seq, b, h);
+
+                    xft::storeKVCache(dstK, srcK, headSize);
+                    xft::storeKVCache(dstV, srcV, headSize);
+                }
+            }
+        }
+    }
+
+    template <typename KVCacheT>
+    void copyKVCache(DecoderContext *ctx, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
+            std::vector<KVCacheTensor<KVCacheT> *> &keyCaches, std::vector<KVCacheTensor<KVCacheT> *> &valueCaches,
+            std::vector<xft::SequenceMeta *> &seqs) {
+        int batchSize = seqs.size();
+        int headSize = ctx->attHeadSize;
+
+        int maxSeqLen = 0;
+        int inputSeqLens[batchSize], pastSeqLens[batchSize], seqStartLoc[batchSize + 1];
+        seqStartLoc[0] = 0;
+        for (int i = 0; i < batchSize; ++i) {
+            inputSeqLens[i] = seqs[i]->getInputSeqLen();
+            pastSeqLens[i] = seqs[i]->getPastSeqLen();
+            seqStartLoc[i + 1] = seqStartLoc[i] + inputSeqLens[i];
+            maxSeqLen = std::max(maxSeqLen, inputSeqLens[i]);
+        }
+
+#pragma omp parallel for collapse(3)
+        for (int b = 0; b < batchSize; ++b) {
+            for (int h = 0; h < (this->endKVHead - this->startKVHead); ++h) {
+                // Copy current key/value to cached keys/values
+                // Re-layout is needed: (bs, seq=1, hidden_size) -> (seq=1, bs, hidden_size)
+                // Be noted: for group attention, the key/value is less than query
+                for (int seq = 0; seq < maxSeqLen; ++seq) {
+                    if (seq >= inputSeqLens[b]) continue;
+                    auto srcK = key.Row(seqStartLoc[b] + seq) + h * headSize;
+                    auto dstK = keyCaches[b]->getSequence(pastSeqLens[b] + seq, 0, h);
+
+                    auto srcV = value.Row(seqStartLoc[b] + seq) + h * headSize;
+                    auto dstV = valueCaches[b]->getSequence(pastSeqLens[b] + seq, 0, h);
 
                     xft::storeKVCache(dstK, srcK, headSize);
                     xft::storeKVCache(dstV, srcV, headSize);
@@ -949,7 +987,6 @@ protected:
         int kvStride;
         // convert to AttnT forcely for accelerating purpose
         if constexpr (!std::is_same_v<AttnT, ImT>) {
-            //Timer tmc(true, "convert KV matrix into bf16");
             kvStride = kvCols * 2;
             AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
                     "flashKVBuf", totalTokenSize * kvStride * sizeof(AttnT));
@@ -983,6 +1020,73 @@ protected:
 
         // copy current key/values to cache
         copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
+    }
+
+    template <typename KVCacheT>
+    void flashAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
+            xft::Matrix<ImT> &result, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
+            std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, std::vector<xft::SequenceMeta *> &seqs) {
+#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
+        using AttnT = bfloat16_t;
+#else
+        using AttnT = float;
+#endif
+        // How many heads this task should do
+        int batchSize = seqs.size();
+        int respQHeads = this->endQHead - this->startQHead;
+        int respKVHeads = this->endKVHead - this->startKVHead;
+        int headSize = ctx->attHeadSize;
+        int qCols = respQHeads * headSize;
+        int kvCols = respKVHeads * headSize;
+        int qkvCols = qCols + kvCols * 2;
+        float scale = ctx->attFactor;
+
+        int totalTokenSize = 0;
+        int inputSeqLens[batchSize], pastSeqLens[batchSize];
+        for (int i = 0; i < batchSize; ++i) {
+            inputSeqLens[i] = seqs[i]->getInputSeqLen();
+            pastSeqLens[i] = seqs[i]->getPastSeqLen();
+            totalTokenSize += inputSeqLens[i];
+        }
+
+        // TODO: kv dtype conversion for prefixSharing
+        AttnT *k, *v;
+        int kvStride;
+        // convert to AttnT forcely for accelerating purpose
+        if constexpr (!std::is_same_v<AttnT, ImT>) {
+            kvStride = kvCols * 2;
+            AttnT *kvBuf = (AttnT *)SimpleMemPool::instance().getBuffer(
+                    "flashKVBuf", totalTokenSize * kvStride * sizeof(AttnT));
+#pragma omp parallel for collapse(2)
+            for (uint64_t seq = 0; seq < totalTokenSize; ++seq)
+                for (uint64_t i = 0; i < kvCols * 2; i += headSize) {
+                    const ImT *srcPtr = key.Data() + seq * qkvCols + i;
+                    AttnT *dstPtr = kvBuf + seq * kvStride + i;
+                    if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
+                        bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
+                        bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else {
+                        printf("Not supported Type in Flash Attention yet\n");
+                        exit(-1);
+                    }
+                }
+
+            k = kvBuf;
+            v = kvBuf + kvCols;
+        } else {
+            kvStride = qkvCols;
+            k = key.Data();
+            v = value.Data();
+        }
+
+        // [batch, src, head, headsize]
+        xft::selfScaledDpAttention<ImT, AttnT>(result.Data(), query.Data(), k, v, respQHeads, respKVHeads, headSize,
+                result.Stride(), query.Stride(), kvStride, batchSize, inputSeqLens, pastSeqLens, true, alibiSlopes,
+                nullptr, scale, ctx->numThreads);
+
+        // copy current key/values to cache
+        copyKVCache(ctx, key, value, keyCaches, valueCaches, seqs);
     }
 
 private:
