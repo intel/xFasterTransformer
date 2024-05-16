@@ -65,7 +65,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/llama-2-7b-chat-hf", help="Path to token file")
 parser.add_argument("-m", "--model_path", type=str, default="/data/llama-2-7b-chat-cpu", help="Path to model file")
 parser.add_argument("-i", "--input_file", type=str, help="Path to input file, if not provided, use builtin prompts.")
-parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="fp16", help="Data type")
+parser.add_argument("-d", "--dtype", type=str, choices=DTYPE_LIST, default="bf16", help="Data type")
 parser.add_argument("--kv_cache_dtype", type=str, choices=KVCACHE_DTYPE_LIST, default="fp16", help="KV cache dtype")
 parser.add_argument("-s", "--sort_results", action="store_true", help="Sort the results")
 
