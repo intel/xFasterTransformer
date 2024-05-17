@@ -226,30 +226,56 @@ public:
         return ret;
     }
 
-    torch::Tensor setInputCB(torch::optional<torch::Tensor> inputIds_, torch::optional<torch::Tensor> seqIDs_,
-            torch::optional<int64_t> maxLength) {
+    torch::Tensor setInputCB(torch::optional<torch::Tensor> inputIds_, torch::optional<torch::Tensor> seqLens_,
+            torch::optional<torch::Tensor> seqIDs_, torch::optional<torch::Tensor> maxLens_) {
         int batchSize = 0;
+        std::vector<int> seqLens;
         std::vector<int> seqIDs;
+        std::vector<int> maxLens;
         if (model->getRank() == 0) {
             TORCH_CHECK(inputIds_.has_value(), "Make sure master's input is not None.")
+            TORCH_CHECK(inputIds_.value().dim() == 2 || inputIds_.value().dim() == 1,
+                    "Make sure master's input is 1-D or 2-D.")
 
-            batchSize = inputIds_.value().size(0);
-            int seqLen = inputIds_.value().size(1);
+            int totalSeqLen;
+
+            if (inputIds_.value().dim() == 2) {
+                batchSize = inputIds_.value().size(0);
+                totalSeqLen = inputIds_.value().size(0) * inputIds_.value().size(1);
+                seqLens.assign(batchSize, inputIds_.value().size(1));
+            } else {
+                TORCH_CHECK(seqLens_.has_value(), "Make sure master's seqLens_ is not None when input is 1-D.")
+                TORCH_CHECK(seqLens_.value().dim() == 1, "Make sure master's seqLens_ is 1-D.")
+                TORCH_CHECK(!seqIDs_.has_value(), "Make sure master's seqIDs_ is None when input is 1-D.")
+                batchSize = seqLens_.value().size(0);
+                totalSeqLen = inputIds_.value().size(0);
+                torch::Tensor seqLensTensor = seqLens_.value().to(torch::kInt32);
+                seqLens.resize(batchSize);
+                memcpy(seqLens.data(), seqLensTensor.data_ptr<int>(), batchSize * sizeof(int));
+            }
 
             torch::Tensor inputTensor = inputIds_.value().to(torch::kInt32);
 
-            tokenIds.resize(batchSize * seqLen);
-            memcpy(tokenIds.data(), inputTensor.data_ptr<int>(), batchSize * seqLen * sizeof(int));
+            tokenIds.resize(totalSeqLen);
+            memcpy(tokenIds.data(), inputTensor.data_ptr<int>(), totalSeqLen * sizeof(int));
 
             if (seqIDs_.has_value()) {
                 torch::Tensor seqIDsTensor = seqIDs_.value().to(torch::kInt32);
-                TORCH_CHECK(batchSize == seqIDsTensor.size(0), "seqIDs size[0] must equal to inputIds size[0].")
+                TORCH_CHECK(batchSize == seqIDsTensor.size(0), "seqIDs'shape must equal to batchSize.")
                 seqIDs.resize(batchSize);
                 memcpy(seqIDs.data(), seqIDsTensor.data_ptr<int>(), batchSize * sizeof(int));
             }
+
+            if (maxLens_.has_value()) {
+                torch::Tensor maxLensTensor = maxLens_.value().to(torch::kInt32);
+                TORCH_CHECK(maxLensTensor.size(-1) == batchSize || maxLensTensor.size(-1) == 1,
+                        "maxLens size must equal to inputIds size[0] or 1.")
+                maxLens.resize(batchSize);
+                memcpy(maxLens.data(), maxLensTensor.data_ptr<int>(), batchSize * sizeof(int));
+            }
         }
 
-        seqIDs = model->set_input(tokenIds, batchSize, seqIDs, maxLength.value());
+        seqIDs = model->set_input(tokenIds, seqLens, seqIDs, maxLens);
         torch::Tensor ret = torch::from_blob(seqIDs.data(), {batchSize}, torch::kInt32).to(torch::kInt64);
         return ret;
     }

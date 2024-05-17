@@ -13,7 +13,7 @@
 # limitations under the License.
 # ============================================================================
 import torch
-from typing import Union, List
+from typing import Union, List, Optional
 
 
 class AutoModel:
@@ -47,8 +47,36 @@ class AutoModel:
     def __call__(self, inputs, **kwargs):
         return self.model.forward(inputs)
 
-    def set_input_cb(self, input_ids, seq_ids, max_length):
-        return self.model.set_input_cb(input_ids, seq_ids, max_length)
+    def set_input_cb(
+        self,
+        input_ids: Optional[Union[List[int], List[List[int]], torch.Tensor]],
+        seq_ids: Optional[Union[List[int], torch.Tensor]] = None,
+        max_length: Optional[Union[int, List[int], torch.Tensor]] = None,
+    ):
+        seq_lens = None
+        if isinstance(input_ids, list):
+            if seq_ids is None:
+                if isinstance(input_ids[0], list):
+                    flattened_input_ids = [item for sublist in input_ids for item in sublist]
+                    seq_lens = torch.tensor([len(sublist) for sublist in input_ids], dtype=torch.int64)
+                    input_ids = torch.tensor(flattened_input_ids, dtype=torch.int64)
+                else:
+                    raise ValueError("For prompts, input_ids should not be List[int].")
+            else:
+                if isinstance(input_ids[0], int):
+                    input_ids = torch.tensor(input_ids, dtype=torch.int64).unsqueeze(1)
+                elif isinstance(input_ids[0], list):
+                    input_ids = torch.tensor(input_ids, dtype=torch.int64)
+
+        if isinstance(seq_ids, list):
+            seq_ids = torch.tensor(seq_ids, dtype=torch.int64)
+
+        if isinstance(max_length, int):
+            max_length = torch.tensor([max_length], dtype=torch.int64)
+        elif isinstance(max_length, list):
+            max_length = torch.tensor(max_length, dtype=torch.int64)
+
+        return self.model.set_input_cb(input_ids, seq_lens, seq_ids, max_length)
 
     def forward_cb(self):
         return self.model.forward_cb()
