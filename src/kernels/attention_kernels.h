@@ -70,8 +70,7 @@ void storeKVCache(
 // ldq: leading dimension of query; lds: LD of score
 // keyMat: key matrix, which is a tuple of (addr, strde, scale)
 template <typename T1, typename T2, typename T3, typename T4>
-void gemmQK(T1 *query, const std::tuple<T2, int, T3> &keyMat, T4 *score, int M, int N, int headSize, int ldq,
-        int lds) {
+void gemmQK(T1 *query, const std::tuple<T2, int, T3> &keyMat, T4 *score, int M, int N, int headSize, int ldq, int lds) {
     auto A = query;
     auto [B, ldb, scale] = keyMat;
     auto C = score;
@@ -87,8 +86,8 @@ void gemmQK(T1 *query, const std::tuple<T2, int, T3> &keyMat, T4 *score, int M, 
 // score: M * K(keyLen), value: K * headSize, output: M * headSize
 // valueMat: value matrix, which is a tuple of (addr, strde, scale)
 template <typename T1, typename T2, typename T3, typename T4>
-void gemmSV(T1 *score, const std::tuple<T2, int, T3> &valueMat, T4 *output, int M, int headSize, int K, int lds,
-        int ldo) {
+void gemmSV(
+        T1 *score, const std::tuple<T2, int, T3> &valueMat, T4 *output, int M, int headSize, int K, int lds, int ldo) {
     auto A = score;
     auto [B, ldv, scale] = valueMat;
     auto C = output;
@@ -745,9 +744,16 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
                         memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float));
                     }
                 }
+            } else {
+                // alibiMask: Baichuan-13B
+                for (int seq = 0; seq < queryLen; ++seq) {
+                    int elements = pastSeqLens[b] + seq + 1;
+                    DecoderUtil::alibiSoftmax(S + seq * keyLen, scale, alibiSlopes[i], elements);
+                    if (keyLen > elements) {
+                        memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float));
+                    }
+                }
             }
-            
-            // TODO: other cases
 
             // Softmax * V
             if (bCopyCache) {
