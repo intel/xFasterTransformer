@@ -60,4 +60,14 @@ void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int
     rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
 
+void RmsNorm::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+}
+
+void RmsNorm::forward(const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+}
+
 } // namespace xft
