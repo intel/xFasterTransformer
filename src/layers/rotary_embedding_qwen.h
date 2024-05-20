@@ -21,6 +21,7 @@
 
 #include "bfloat16.h"
 #include "float16.h"
+#include "rotary_embedding_kernels.h"
 
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
