@@ -60,18 +60,6 @@ while [ -n "$1" ]; do
             ;;
         esac
         ;;
-    -p | --platform)
-        case $2 in
-        "spr" | "emr" )
-            platform=$2
-            shift 2
-            ;;
-        *)
-            Error "platform must in spr or emr."
-            exit 1
-            ;;
-        esac
-        ;;
     -s | --sockets)
         case $2 in
         "1" | "2")
@@ -127,10 +115,6 @@ if [ "${model_name}" == "" ]; then
     Error "Please pass a value of model name using -m or --model_name."
     exit 1
 fi
-if [ "${platform}" == "" ]; then
-    Error "Please pass a value of platform using -p or --platform. You can choose 'spr' or 'emr'"
-    exit 1
-fi
 if [ "${model_path}" == "" ] || [ "${token_path}" == "" ]; then
     Warning "Please pass both 'model_path' and 'token_path' at the same time if you want to use real model."
     Info "Using fake model mode now."
@@ -138,6 +122,7 @@ if [ "${model_path}" == "" ] || [ "${token_path}" == "" ]; then
     model_path=""
     token_path=""
 fi
+
 model_path=${model_path:-"${SCRIPT_DIR}"/../examples/model_config/${model_name}/}
 token_path=${token_path:-"${SCRIPT_DIR}"/../examples/model_config/${model_name}/}
 dtype=${dtype:-bf16}
@@ -200,45 +185,46 @@ cores_per_numa=$(($sockets_num * $cores_per_socket * 2 / $numa_nodes))
 
 export BENCHMARK=$benchmark_cmd
 
-# spr
-if [ "${platform,,}" == "spr" ]; then
-    if [ "${numa_nodes}" -eq 16 ]; then
-        #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
-        #0-7 is DRAM memory node, 8-15 is HBM node
-        export OMP_NUM_THREADS=${cores_per_numa}
-        Info "OMP_NUM_THREADS: ${cores_per_numa}"
-        Info "SPR-HBM SNC4 mode"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
-        -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
-        -n 1 bash run.sh 2 10 ${OMP_NUM_THREADS} 2 : \
-        -n 1 bash run.sh 3 11 ${OMP_NUM_THREADS} 3"
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 4 12 ${OMP_NUM_THREADS} 4 : \
-            -n 1 bash run.sh 5 13 ${OMP_NUM_THREADS} 5 : \
-            -n 1 bash run.sh 6 14 ${OMP_NUM_THREADS} 6 : \
-            -n 1 bash run.sh 7 15 ${OMP_NUM_THREADS} 7"
-        fi
-    elif [ "${numa_nodes}" -eq 8 ]; then
-        #HBM SNC-4 for cache or hbm only mode
-        export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-        Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-        Info "SPR-HBM SNC4 mode"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
-        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
-        -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
-        -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 4 4 ${OMP_NUM_THREADS} 4 : \
-            -n 1 bash run.sh 5 5 ${OMP_NUM_THREADS} 5 : \
-            -n 1 bash run.sh 6 6 ${OMP_NUM_THREADS} 6 : \
-            -n 1 bash run.sh 7 7 ${OMP_NUM_THREADS} 7"
-        fi
-    elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
-        #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
+if [ "${numa_nodes}" -eq 16 ]; then
+    #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
+    #0-7 is DRAM memory node, 8-15 is HBM node
+    export OMP_NUM_THREADS=${cores_per_numa}
+    Info "OMP_NUM_THREADS: ${cores_per_numa}"
+    Info "SPR-HBM SNC4 mode"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
+    -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
+    -n 1 bash run.sh 2 10 ${OMP_NUM_THREADS} 2 : \
+    -n 1 bash run.sh 3 11 ${OMP_NUM_THREADS} 3"
+    if [ "$sockets" == "2" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 4 12 ${OMP_NUM_THREADS} 4 : \
+        -n 1 bash run.sh 5 13 ${OMP_NUM_THREADS} 5 : \
+        -n 1 bash run.sh 6 14 ${OMP_NUM_THREADS} 6 : \
+        -n 1 bash run.sh 7 15 ${OMP_NUM_THREADS} 7"
+    fi
+elif [ "${numa_nodes}" -eq 8 ]; then
+    #HBM SNC-4 for cache or hbm only mode
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    Info "SPR-HBM SNC4 mode"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
+    -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
+    -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
+    -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
+    if [ "$sockets" == "2" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 4 4 ${OMP_NUM_THREADS} 4 : \
+        -n 1 bash run.sh 5 5 ${OMP_NUM_THREADS} 5 : \
+        -n 1 bash run.sh 6 6 ${OMP_NUM_THREADS} 6 : \
+        -n 1 bash run.sh 7 7 ${OMP_NUM_THREADS} 7"
+    fi
+elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
+    #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
+    # or EMR SNC-2 mode
+    numa_nodes_info=$(lscpu | grep "NUMA node3 CPU(s):" | awk -F ':' '{print $2}')
+    if [ "$numa_nodes_info" == "" ]; then
         Info "SPR-HBM Quad mode"
         export OMP_NUM_THREADS=${cores_per_numa}
         Info "OMP_NUM_THREADS: ${cores_per_numa}"
@@ -248,77 +234,58 @@ if [ "${platform,,}" == "spr" ]; then
             run_cmd+=" : \
             -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
         fi
-    elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
-        #4-socket spr quad mode
-        Info "#SPR-SP 4-socket Quad mode"
-        export OMP_NUM_THREADS=${cores_per_numa}
-        Info "OMP_NUM_THREADS: ${cores_per_numa}"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
-        fi
-        if [ "$sockets" == "3" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
-        fi
-        if [ "$sockets" == "4" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
-        fi
-    elif [ "${numa_nodes}" -eq 2 ]; then
-        #SPR or hbm only or hbm cache Quad-mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
-        Info "SPR-SP Quad mode"
-        export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-        Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
-        fi
-    elif [ "${numa_nodes}" -eq 1 ]; then
-        # General Test mode
-        Info "General Test mode"
-        export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
-        Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
     else
-        Error "Please double check the memory nodes"
-    fi
-fi
-
-# emr
-if [ "${platform,,}" == "emr" ]; then
-    if [ "${numa_nodes}" -eq 4 ]; then
-        #EMR SNC-2 Mode
         Info "EMR SNC-2 mode"
-        export OMP_NUM_THREADS=${cores_per_numa}
-        Info "OMP_NUM_THREADS: ${cores_per_numa}"
+        export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+        Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
         run_cmd="mpirun \
         -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
         if [ "$sockets" == "2" ]; then
             run_cmd+=" : \
-            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
+            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \"
             -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
         fi
-    elif [ "${numa_nodes}" -eq 2 ]; then
-        #EMR non SNC-2 mode"
-        Info "EMR non SNC-2 mode"
-        export OMP_NUM_THREADS=${cores_per_numa}
-        Info "OMP_NUM_THREADS: ${cores_per_numa}"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
-            -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
-        fi
-    else
-        Error "Please double check the memory nodes"
     fi
+elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
+    #4-socket spr quad mode
+    Info "#SPR-SP 4-socket Quad mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    if [ "$sockets" == "2" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+    fi
+    if [ "$sockets" == "3" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
+    fi
+    if [ "$sockets" == "4" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
+    fi
+elif [ "${numa_nodes}" -eq 2 ]; then
+    #SPR or hbm only or hbm cache Quad-mode or EMR non SNC-2 mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
+    Info "Quad mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    if [ "$sockets" == "2" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+    fi
+elif [ "${numa_nodes}" -eq 1 ]; then
+    # General Test mode
+    Info "General Test mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd="mpirun \
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+else
+    Error "Please double check the memory nodes"
 fi
 
 echo "Run command line: ${run_cmd}"
