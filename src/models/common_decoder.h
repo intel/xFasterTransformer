@@ -1038,6 +1038,10 @@ protected:
         printf("embeddingForward(bfloat16_t) must be implemented.\n");
         exit(-1);
     }
+    virtual void embeddingForward(int *ids, float16_t *output, int tokenSize) {
+        printf("embeddingForward(float16_t) must be implemented.\n");
+        exit(-1);
+    }
 
     virtual void lastLayerNormForward(float *input, float *output, int rows) {
         printf("lastLayerNormForward(float) must be implemented.\n");
@@ -1045,6 +1049,10 @@ protected:
     }
     virtual void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
         printf("lastLayerNormForward(bfloat16_t) must be implemented.\n");
+        exit(-1);
+    }
+    virtual void lastLayerNormForward(float16_t *input, float16_t *output, int rows) {
+        printf("lastLayerNormForward(float16_t) must be implemented.\n");
         exit(-1);
     }
 

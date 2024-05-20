@@ -47,6 +47,14 @@ public:
     static void cvt_float16_to_float_MT(const float16_t *src, float *dst, int size);
     static void float_add_float16(const float *src1, const float16_t *src2, float *dst, int size);
 
+    static inline __m512 cvt_fp16_to_fp32(const __m256i src) {
+        return _mm512_cvtph_ps(src);
+    }
+
+    static inline __m256i cvt_fp32_to_fp16(const __m512 src) {
+        return _mm512_cvtps_ph(src, _MM_FROUND_TO_NEAREST_INT);
+    }
+
 private:
     float f() { return (float)(*this); }
 

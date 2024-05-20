@@ -34,4 +34,13 @@ void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const float *weight, i
 void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const bfloat16_t *weight, int rows, int cols,
         int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 
+void rmsNorm(float16_t *output, const float *input, const float *weight, int rows, int cols,
+        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+
+void rmsNorm(float16_t *output, const float16_t *input, const float *weight, int rows, int cols,
+        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+
+void rmsNorm(float16_t *output, const float16_t *input, const float16_t *weight, int rows, int cols,
+        int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+
 } // namespace xft
