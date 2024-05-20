@@ -24,10 +24,12 @@
 static int respBaichuanHeads = 0;
 static float *alibiSlopes = nullptr;
 
-template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm>
-class BaichuanAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
+template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm, typename InT = float,
+        typename ImT = float, typename OutT = float, bool INPUT_AS_RESID = true>
+class BaichuanAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, INPUT_AS_RESID> {
 public:
-    BaichuanAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
+    BaichuanAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, INPUT_AS_RESID>(layerId, ctx) {
         if (ctx->maxPosEmbed <= 0 && this->alibiSlopes == nullptr) {
             respBaichuanHeads = this->endQHead - this->startQHead;
             this->alibiSlopes = new float[respBaichuanHeads];
@@ -66,4 +68,11 @@ protected:
     }
 
 private:
+};
+
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT, typename ImT, typename OutT>
+struct AttnTypeExtractor<BaichuanAttention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
 };

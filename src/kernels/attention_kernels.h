@@ -103,7 +103,8 @@ void gemmSV(
 template <bool fusedPack, typename Lambda1, typename Lambda2>
 void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
+        const Lambda2 &getVCache) {
     constexpr int mBlockSize = 32;
 
     int totalTokenSize = 0; // total token size
@@ -250,7 +251,11 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
         // Softmax(Q * Kᵀ)
         for (int seq = 0; seq < endSeq - startSeq; ++seq) {
             int elements = startSeq + seq + 1;
-            small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+            if (alibiSlopes == nullptr) {
+                small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+            } else {
+                DecoderUtil::alibiSoftmax(C + seq * ldc, scale, alibiSlopes[i], elements);
+            }
             memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(bfloat16_t));
         }
 
@@ -298,7 +303,8 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
 template <typename Lambda1, typename Lambda2>
 void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
+        const Lambda2 &getVCache) {
 #ifdef DEBUG
     printf("Q[0]=%f, K[0]=%f, V[0]=%f\n", (float)query[0], (float)key[0], (float)value[0]);
     printf("kvHeadNum=%d, headSize=%d, qStride=%d, kvStride=%d, batchSize=%d\n", kvHeadNum, headSize, qStride, kvStride,
@@ -396,7 +402,11 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
                 // Softmax(Q * Kᵀ)
                 for (int seq = 0; seq < endSeq - startSeq; ++seq) {
                     int elements = startSeq + seq + 1;
-                    small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+                    if (alibiSlopes == nullptr) {
+                        small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+                    } else {
+                        DecoderUtil::alibiSoftmax(C + seq * ldc, scale, alibiSlopes[i], elements);
+                    }
                     memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(bfloat16_t));
                 }
 
@@ -435,7 +445,8 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
 template <typename Lambda1, typename Lambda2>
 void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
+        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
+        const Lambda2 &getVCache) {
     // Revise threadNum if not set
     if (unlikely(threadNum <= 0)) {
 #pragma omp parallel
@@ -450,10 +461,10 @@ void selfAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloa
     // TODO: .9f is the estimation, change it when have more data
     if (kvHeadNum == qHeadNum && efficiency > .9f) {
         selfAttention_FusedCopy(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride, kvStride,
-                batchSize, tokenSizes, scale, threadNum, getKCache, getVCache);
+                batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache);
     } else {
         selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
-                kvStride, batchSize, tokenSizes, scale, threadNum, getKCache, getVCache);
+                kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache);
     }
 }
 
@@ -497,10 +508,10 @@ inline std::pair<T, T> balance211(T n, U team, U tid) {
  * @param scale Scale factor
  * @param threadNum Thread number
 */
-template <typename T1, typename KVCacheT, typename Lambda1, typename Lambda2>
-void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, int inputSeqLen, int presentSeqLen,
-        int qHeadNum, int headSize, int oStride, int qStride, int batchSize, const float scale, int threadNum,
-        const Lambda1 &getKHead, const Lambda2 &getVHead) {
+template <typename T1, typename KVCacheT, typename Lambda1, typename Lambda2, typename LambdaM>
+void crossAttnShardedHead(T1 *output, const T1 *query, int inputSeqLen, int presentSeqLen, int qHeadNum, int headSize,
+        int oStride, int qStride, int batchSize, const float scale, int threadNum, const Lambda1 &getKHead,
+        const Lambda2 &getVHead, const LambdaM &getMask) {
 
     const int responsibleHeads = qHeadNum;
 
@@ -567,7 +578,7 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
                 }
 
                 // Softmax and the stats info
-                auto mask = attnMask + b * queryLen * keyLen + nOff;
+                auto mask = getMask(b, i, queryLen, keyLen) + nOff;
                 auto smInfo = DecoderUtil::softmaxWithStats(C, mask, n, scale);
                 std::get<0>(splitInfo[threadIdx].data) = smInfo.first;
                 std::get<1>(splitInfo[threadIdx].data) = smInfo.second;
@@ -677,7 +688,7 @@ void crossAttnShardedHead(T1 *output, const T1 *query, const float *attnMask, in
 template <typename T, typename KVCacheT, typename Lambda1, typename Lambda2>
 void crossAttnByHead(T *output, const T *query, const T *key, const T *value, int qHeadNum, int kvHeadNum, int headSize,
         int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens, const int *pastSeqLens,
-        bool causal, const float *alibiSlopes, const float scale, int threadNum, const Lambda1 &getKHead,
+        bool causal, const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKHead,
         const Lambda2 &getVHead) {
 
     int responsibleHeads = qHeadNum;
@@ -736,23 +747,14 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
             }
 
             // Softmax(Q * K)
-            if (alibiSlopes == nullptr) {
-                for (int seq = 0; seq < queryLen; ++seq) {
-                    int elements = pastSeqLens[b] + seq + 1;
+            for (int seq = 0; seq < queryLen; ++seq) {
+                int elements = pastSeqLens[b] + seq + 1;
+                if (alibiSlopes == nullptr) {
                     small_softmax_f32(S + seq * keyLen, scale, elements);
-                    if (keyLen > elements) {
-                        memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float));
-                    }
-                }
-            } else {
-                // alibiMask: Baichuan-13B
-                for (int seq = 0; seq < queryLen; ++seq) {
-                    int elements = pastSeqLens[b] + seq + 1;
+                } else {
                     DecoderUtil::alibiSoftmax(S + seq * keyLen, scale, alibiSlopes[i], elements);
-                    if (keyLen > elements) {
-                        memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float));
-                    }
                 }
+                if (keyLen > elements) { memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float)); }
             }
 
             // Softmax * V

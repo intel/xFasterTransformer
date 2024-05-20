@@ -149,10 +149,6 @@ if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"
 fi
 
-if [[ ${model_name} == *"baichuan"* ]]; then
-    export FLASH_ATTN_THRESHOLD=1000
-fi
-
 if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
     export ENABLE_KV_TRANS=1
 fi

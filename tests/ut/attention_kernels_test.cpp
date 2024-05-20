@@ -143,7 +143,7 @@ void testSelfAttention(
     if (bSeparateCopy) {
         xft::selfAttention_SeparateCopy<true>(
                 ourOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
-                batchSize, tokenSizes, scale, threadNum,
+                batchSize, tokenSizes, scale, nullptr, threadNum,
                 [&](int b, int h, int s) {
                     return kCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
                 },
@@ -153,7 +153,7 @@ void testSelfAttention(
     } else {
         xft::selfAttention_FusedCopy(
                 ourOutput, query, key, value, qHeadNum, kvHeadNum, headSize, hiddenSize, qkvStride, qkvStride,
-                batchSize, tokenSizes, scale, threadNum,
+                batchSize, tokenSizes, scale, nullptr, threadNum,
                 [&](int b, int h, int s) {
                     return kCache + b * maxTokens * kvHeadNum * headSize + s * kvHeadNum * headSize + h * headSize;
                 },
