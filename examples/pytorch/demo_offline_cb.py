@@ -242,7 +242,7 @@ def genNextToken(model, active_seqs, max_seqlen, end_ids, output_func):
         
         else:
             # Extend generated IDs
-            gen_ids = torch.cat([gen_ids, next_ids[idx]])
+            gen_ids = torch.cat((gen_ids, next_ids[idx].unsqueeze(0)))
             active_seqs[seq_id] = (prompt, input_ids, gen_ids)
 
             # Check if the sequence reaches max length
