@@ -688,7 +688,7 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
     size_t scoreSizePerThr = 0;
     for (int i = 0; i < batchSize; ++i) {
         scoreSizePerThr = std::max(scoreSizePerThr, (size_t)inputSeqLens[i] * (inputSeqLens[i] + pastSeqLens[i]));
-        inputOffsets[i] = (i > 0 ? inputOffsets[i - 1] + inputSeqLens[i] : 0);
+        inputOffsets[i] = (i > 0 ? inputOffsets[i - 1] + inputSeqLens[i - 1] : 0);
     }
 
     scoreSizePerThr = ALIGNED_SIZE(scoreSizePerThr, 16);
