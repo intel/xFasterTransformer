@@ -64,6 +64,14 @@ public:
     std::vector<int> set_input(
             std::vector<int32_t> &inputIds_, int batchSize_, std::vector<int> seqIDs = {}, int maxLen = -1);
 
+    // Only used for model.forward()
+    std::vector<int> set_input(
+            std::vector<int32_t> &inputIds_, int batchSize_, std::vector<int> seqIDs, const std::vector<int> &maxLen);
+
+    // Only used for model.forward()
+    std::vector<int> set_input(std::vector<int32_t> &inputIds_, std::vector<int32_t> &seqLens_, std::vector<int> seqIDs,
+            const std::vector<int> &maxLen);
+
     bool isDone();
 
     std::tuple<float *, int, int> forward(bool logits_all = true);
