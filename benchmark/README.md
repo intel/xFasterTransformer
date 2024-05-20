@@ -17,7 +17,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
     ```
 
 ## Step 4: Run scripts
-Enter the folder corresponding to the model and run `run_benchmark.sh -m <model_name>`.
+Enter the folder corresponding to the model and run `run_benchmark.sh -m <model_name> -p <platform>`.
 
 Please choose `<model_name>` as follows:
 - llama-2 (-7b,-13b,-70b)
@@ -26,6 +26,10 @@ Please choose `<model_name>` as follows:
 - chatglm3-6b
 - chatglm-6b
 - baichuan2 (-7b,-13b)
+
+Please choose `<platform>` as follows:
+- SPR (including SPR-SP and SPR-HBM)
+- EMR
 
 Please choose `-d` or `--dtype` as follows:
 - bf16 (default)
@@ -51,6 +55,8 @@ Specify data type of kvcache using `-kdv` or `--kv_cache_dtype` from below list:
 - fp16 (default)
 - int8
 
+Specify batch size using `-mp` or `--model_path`. (If not been specified, will use fake model config)
+Specify batch size using `-tp` or `--token_path`. (If not been specified, will use fake tokenizer config)
 Specify batch size using `-bs` or `--batch_size`. (default 1)
 Specify input tokens using `-in` or `--input_tokens`. (default 32)
 Specify output tokens using `-out` or `--output_tokens`. (default 32)
@@ -63,7 +69,7 @@ Specify inference iteration using `-i` or `--iter`. (default 10)
 cd benchmark
 # setup mpirun env
 source ../3rdparty/oneccl/build/_install/env/setvars.sh
-bash run_benchmark.sh -m llama-2-7b -d bf16 -s 1 -bs 1 -in 1024 -out 128 -i 10
+bash run_benchmark.sh -m llama-2-7b -p spr -d bf16 -s 1 -bs 1 -in 1024 -out 128 -i 10
 ```
 
 - Shell script will automatically check number of numa nodes.
