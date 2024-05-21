@@ -138,59 +138,12 @@ void LlamaYaRNScaledRotaryEmbedding::forward(
 
 void LlamaYaRNScaledRotaryEmbedding::forward(
         bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    int dim = invFreqSize * 2;
-    REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
+    xft::llamaApplyRotaryPosEmbeding(query, key, qStride, kStride, embCos, embSin, invFreqSize, qkShape, positionIds);
+}
 
-    const int batchSize = qkShape[0];
-    const int seqLen = qkShape[1];
-    const int qHeads = qkShape[2];
-    const int kHeads = qkShape[4];
-    const int heads = std::max(qHeads, kHeads);
-    const int half = invFreqSize;
-
-#pragma omp parallel for collapse(3)
-    for (int head = 0; head < heads; ++head) {
-        for (int bs = 0; bs < batchSize; ++bs) {
-            for (int seq = 0; seq < seqLen; ++seq) {
-                int pos = positionIds[seq];
-                float *pcos = embCos + pos * half;
-                float *psin = embSin + pos * half;
-
-                bfloat16_t *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
-                bfloat16_t *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
-
-                // Process chunks of 16 elements at a time
-                for (int i = 0; i < half; i += 16) {
-                    int remain = half - i;
-                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-
-                    __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
-                    __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
-
-                    // Compute something like:
-                    // q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
-                    // q[i + half] = q[i + half] * pcos[i + half] + q[i] * psin[i + half];
-                    if (head < qHeads) {
-                        __m512 qVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &q[i]));
-                        __m512 qHalfVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &q[i + half]));
-                        __m512 qNew = _mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec));
-                        __m512 qHalfNew = _mm512_fmadd_ps(qHalfVec, pCosVec, _mm512_mul_ps(qVec, pSinVec));
-                        _mm256_mask_storeu_epi16(&q[i], mask, bfloat16_t::cvt_fp32_to_bf16(qNew));
-                        _mm256_mask_storeu_epi16(&q[i + half], mask, bfloat16_t::cvt_fp32_to_bf16(qHalfNew));
-                    }
-
-                    if (head < kHeads) {
-                        __m512 kVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &k[i]));
-                        __m512 kHalfVec = bfloat16_t::cvt_bf16_to_fp32(_mm256_maskz_loadu_epi16(mask, &k[i + half]));
-                        __m512 kNew = _mm512_fmsub_ps(kVec, pCosVec, _mm512_mul_ps(kHalfVec, pSinVec));
-                        __m512 kHalfNew = _mm512_fmadd_ps(kHalfVec, pCosVec, _mm512_mul_ps(kVec, pSinVec));
-                        _mm256_mask_storeu_epi16(&k[i], mask, bfloat16_t::cvt_fp32_to_bf16(kNew));
-                        _mm256_mask_storeu_epi16(&k[i + half], mask, bfloat16_t::cvt_fp32_to_bf16(kHalfNew));
-                    }
-                }
-            }
-        }
-    }
+void LlamaYaRNScaledRotaryEmbedding::forward(
+        float16_t *query, float16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    xft::llamaApplyRotaryPosEmbeding(query, key, qStride, kStride, embCos, embSin, invFreqSize, qkShape, positionIds);
 }
 
 void LlamaYaRNScaledRotaryEmbedding::forward(
@@ -200,6 +153,12 @@ void LlamaYaRNScaledRotaryEmbedding::forward(
 }
 
 void LlamaYaRNScaledRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride,
+        int kStride, int qHeads, int kHeads, int *positionIds) {
+    xft::llamaApplyRotaryPosEmbed(
+            query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void LlamaYaRNScaledRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride,
         int kStride, int qHeads, int kHeads, int *positionIds) {
     xft::llamaApplyRotaryPosEmbed(
             query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);

@@ -64,4 +64,5 @@ void qwenApplyRotaryPosEmbeding(bfloat16_t *query, bfloat16_t *key, int qStride,
 void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, int kStride, float *cur_emb_cos,
         float *cur_emb_sin, int inv_freq_size, const float *logn, int maxSupportedSeqLength, const int *qkShape,
         const int *positionIds);
+
 } // namespace xft
