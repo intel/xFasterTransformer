@@ -600,7 +600,7 @@ protected:
         xft::selfAttention(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), ctx->batchSize, tokenSizes,
-                ctx->attFactor, ctx->numThreads,
+                ctx->attFactor, alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return presentKey.getSequence(seqIdx, b, headIdx); },
                 [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
     }
@@ -622,7 +622,7 @@ protected:
         xft::selfAttention(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, tokenSizes, ctx->attFactor,
-                ctx->numThreads,
+                alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); },
                 [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); });
     }
@@ -648,7 +648,7 @@ protected:
         xft::crossAttnByHead<T, KVCacheT>(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, inputSeqLens, pastSeqLens,
-                true, alibiSlopes, ctx->attFactor, ctx->numThreads,
+                true, ctx->attFactor, alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx) { return keyCaches[b]->getHead(0, headIdx); },
                 [&](int b, int headIdx) { return valueCaches[b]->getHead(0, headIdx); });
     }
@@ -949,10 +949,13 @@ protected:
         const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         xft::crossAttnShardedHead<ImT, KVCacheT>(
-                result.Data(), query.Data(), attnMask, ctx->inputSeqLen, presentSeqLen, responsibleHeads,
-                ctx->attHeadSize, result.Stride(), query.Stride(), batchSize, ctx->attFactor, ctx->numThreads,
+                result.Data(), query.Data(), ctx->inputSeqLen, presentSeqLen, responsibleHeads, ctx->attHeadSize,
+                result.Stride(), query.Stride(), batchSize, ctx->attFactor, ctx->numThreads,
                 [&](int b, int qHeadIdx) { return presentKey.getHead(b, qHeadIdx / groupNum); },
-                [&](int b, int qHeadIdx) { return presentValue.getHead(b, qHeadIdx / groupNum); });
+                [&](int b, int qHeadIdx) { return presentValue.getHead(b, qHeadIdx / groupNum); },
+                [&](int b, int qHeadIdx, int srcLen, int tgtLen) {
+                    return getMask(attnMask, b, qHeadIdx, srcLen, tgtLen);
+                });
     }
 
     template <typename KVCacheT>

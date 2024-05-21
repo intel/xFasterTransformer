@@ -146,7 +146,7 @@ static void testShardedHead(int inputSeqLen, int pastSeqLen, int qHeadNum, int k
 
     // Call the function under test
     xft::crossAttnShardedHead<bfloat16_t, float16_t>(
-            output, query, attnMask, inputSeqLen, presentSeqLen, qHeadNum, headSize, oStride, qStride, batchSize, scale,
+            output, query, inputSeqLen, presentSeqLen, qHeadNum, headSize, oStride, qStride, batchSize, scale,
             threadNum,
             [&](int b, int qHead) {
                 auto kvHead = qHead / (qHeadNum / kvHeadNum);
@@ -155,7 +155,8 @@ static void testShardedHead(int inputSeqLen, int pastSeqLen, int qHeadNum, int k
             [&](int b, int qHead) {
                 auto kvHead = qHead / (qHeadNum / kvHeadNum);
                 return std::make_tuple(value + kvHead * headSize, kvStride, nullptr);
-            });
+            },
+            [&](int b, int qHead, int srcLen, int tgtLen) { return attnMask + b * srcLen * tgtLen; });
 
     for (int i = 0; i < batchSize; ++i) {
         auto pout = refOut + i * inputSeqLen * oStride;
@@ -237,7 +238,7 @@ static void testCrossAttnByHead(int qHeadNum, int kvHeadNum, int headSize, int t
     Timer timer("xft::crossAttnByHead");
     xft::crossAttnByHead<bfloat16_t, float16_t>(
             output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride, kvStride, batchSize,
-            inputSeqLen, pastSeqLens, true, nullptr, scale, threadNum,
+            inputSeqLen, pastSeqLens, true, scale, nullptr, threadNum,
             [&](int b, int kvHdx) {
                 return std::make_tuple(keyCaches[b] + kvHdx * headSize, kvHeadNum * headSize, nullptr);
             },

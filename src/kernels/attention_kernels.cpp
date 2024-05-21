@@ -23,8 +23,8 @@ static int threadNum = 0;
 
 void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
         int kvHeadNum, int headSize, int qStride, int kvStride, int batchSize, int cacheBlkStride, int cacheBlkSize,
-        const int *contextSizes, const float scale, const void *kcache, const void *vcache, int *blockTables,
-        int *blockNums, int *slots) {
+        const int *contextSizes, const float scale, const float *alibiSlopes, const void *kcache, const void *vcache,
+        int *blockTables, int *blockNums, int *slots) {
     int maxCtxSize = 0;
     int blkOffsets[batchSize]; // offset in blockTables
     int curOff = 0;
@@ -114,9 +114,9 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
 
 void invokeAttention(DataType dt, void *__restrict__ output, const void *__restrict__ query,
         const void *__restrict__ key, const void *__restrict__ value, int *query_shape, int *kv_shape,
-        const int q_stride, const int kv_stride, const float scale, const int batch_size, const int *token_lens,
-        const void *kcache, const void *vcache, int *kvcache_shape, int *block_tables, int *block_nums,
-        int *context_lens, int layer_id, bool is_prefill, int *slot_mapping) {
+        const int q_stride, const int kv_stride, const float scale, const float *alibiSlopes, const int batch_size,
+        const int *token_lens, const void *kcache, const void *vcache, int *kvcache_shape, int *block_tables,
+        int *block_nums, int *context_lens, int layer_id, bool is_prefill, int *slot_mapping) {
     // query_shape is like [total_tokens, query_head_num, head_size]
     int qHeadNum = query_shape[1];
     int headSize = query_shape[2];
@@ -136,11 +136,11 @@ void invokeAttention(DataType dt, void *__restrict__ output, const void *__restr
             int cacheBlkStride = kvcache_shape[1] * kvcache_shape[2] * kvcache_shape[3];
             crossAttention((bfloat16_t *)output, (bfloat16_t *)query, (bfloat16_t *)key, (bfloat16_t *)value, qHeadNum,
                     kvHeadNum, headSize, q_stride, kv_stride, batch_size, cacheBlkStride, cacheBlkSize, context_lens,
-                    scale, kcache, vcache, block_tables, block_nums, slot_mapping);
+                    scale, alibiSlopes, kcache, vcache, block_tables, block_nums, slot_mapping);
         } else { // prefill phase
             selfAttention((bfloat16_t *)output, (bfloat16_t *)query, (bfloat16_t *)key, (bfloat16_t *)value, qHeadNum,
                     kvHeadNum, headSize, qHeadNum * headSize, q_stride, kv_stride, batch_size, token_lens, scale,
-                    threadNum,
+                    alibiSlopes, threadNum,
                     [&](int b, int headIdx, int seqIdex) {
                         // TODO: debug and fix
                         return (bfloat16_t *)kcache + slot_mapping[b] * kvHeadNum * headSize + headIdx * headSize;

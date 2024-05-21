@@ -23,7 +23,11 @@
 
 template <typename WeiT, typename KVCacheT>
 class Baichuan
-    : public CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT> {
+    : public CommonDecoder<BaichuanAttention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
+                                   typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
+              LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                      typename TypeSelector<WeiT>::OutType>,
+              KVCacheT> {
 public:
     Baichuan(const std::string &modelPath);
     ~Baichuan();
@@ -31,7 +35,9 @@ public:
     void prepareAttnMaskBase(int *ids, int step);
     void prepareAttnMask(int *ids, int step);
     void embeddingForward(int *ids, float *output, int tokenSize);
+    void embeddingForward(int *ids, bfloat16_t *output, int tokenSize);
     void lastLayerNormForward(float *input, float *output, int rows);
+    void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
 
 private:
     void setEmbeddingWeights(const std::string &modelPath);
