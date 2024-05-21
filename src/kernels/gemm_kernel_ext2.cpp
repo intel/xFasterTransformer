@@ -237,6 +237,7 @@ void small_gemm_int8(const float *A, const int8_t *B, const float *bScale, T *C,
 }
 
 namespace xft {
+
 void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb,
         int ldc, bool acc) {
     small_gemm_int8<float>(A, B, bScale, C, M, N, K, lda, ldb, ldc, acc);
@@ -245,6 +246,11 @@ void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, 
 void small_gemm(const float *A, const int8_t *B, const float *bScale, bfloat16_t *C, int M, int N, int K, int lda,
         int ldb, int ldc, bool acc) {
     small_gemm_int8<bfloat16_t>(A, B, bScale, C, M, N, K, lda, ldb, ldc, acc);
+}
+
+void small_gemm(const float *A, const int8_t *B, const float *bScale, float16_t *C, int M, int N, int K, int lda,
+        int ldb, int ldc, bool acc) {
+    small_gemm_int8<float16_t>(A, B, bScale, C, M, N, K, lda, ldb, ldc, acc);
 }
 
 } // namespace xft
