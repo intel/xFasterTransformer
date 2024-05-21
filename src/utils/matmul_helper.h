@@ -417,9 +417,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute",
-                        xdnn_hgemm_compute(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute",
+                            xdnn_hgemm_compute(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute",
+                            xdnn_hgemm_f16f16f32_compute(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -530,9 +536,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_biasadd(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_biasadd",
-                        xdnn_hgemm_compute_biasadd(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_biasadd",
+                            xdnn_hgemm_compute_biasadd(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_biasadd",
+                            xdnn_hgemm_f16f16f32_compute_biasadd(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -646,9 +658,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_biasadd_relu(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_biasadd_relu",
-                        xdnn_hgemm_compute_biasadd_relu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_biasadd_relu",
+                            xdnn_hgemm_compute_biasadd_relu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_biasadd_relu",
+                            xdnn_hgemm_f16f16f32_compute_biasadd_relu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -755,9 +773,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_silu(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_silu",
-                        xdnn_hgemm_compute_silu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_silu",
+                            xdnn_hgemm_compute_silu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_silu",
+                            xdnn_hgemm_f16f16f32_compute_silu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -870,9 +894,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_gelu(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_gelu",
-                        xdnn_hgemm_compute_gelu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_gelu",
+                            xdnn_hgemm_compute_gelu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_gelu",
+                            xdnn_hgemm_f16f16f32_compute_gelu(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -986,10 +1016,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_resmul(
                                 transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, res, ldres));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_resmul",
-                        xdnn_hgemm_compute_resmul(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, (const XDNN_FP16 *)res,
-                                ldres));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_resmul",
+                            xdnn_hgemm_compute_resmul(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, (const XDNN_FP16 *)res, ldres));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_resmul",
+                            xdnn_hgemm_f16f16f32_compute_resmul(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, (const XDNN_FP16 *)res, ldres));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -1104,10 +1139,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda,
                                 (const XDNN_FP16 *)packedB, beta, C, ldc, bias, res, ldres));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_residential",
-                        xdnn_hgemm_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias,
-                                (const XDNN_FP16 *)res, ldres));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_residential",
+                            xdnn_hgemm_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, (const XDNN_FP16 *)res, ldres));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_residential",
+                            xdnn_hgemm_f16f16f32_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias, (const XDNN_FP16 *)res, ldres));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
@@ -1223,10 +1263,15 @@ public:
                         xdnn_hgemm_f32f16f32_compute_resext(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
                                 beta, C, ldc, bias, gamma, res, ldres));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
-                GEMMVERBOSE("xdnn_hgemm_compute_resext",
-                        xdnn_hgemm_compute_resext(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, gamma,
-                                (const XDNN_FP16 *)res, ldres));
+                if constexpr (std::is_same_v<OutT, float16_t>) {
+                    GEMMVERBOSE("xdnn_hgemm_compute_resext",
+                            xdnn_hgemm_compute_resext(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, gamma, (const XDNN_FP16 *)res, ldres));
+                } else if constexpr (std::is_same_v<OutT, float>) {
+                    GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_resext",
+                            xdnn_hgemm_f16f16f32_compute_resext(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias, gamma, (const XDNN_FP16 *)res, ldres));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
