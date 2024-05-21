@@ -98,6 +98,10 @@ extern "C" void allreduceBF16(void *sendBuf, void *recvBuf, size_t count) {
     ccl::allreduce(sendBuf, recvBuf, count, ccl::datatype::bfloat16, ccl::reduction::sum, *pcomm).wait();
 }
 
+extern "C" void allreduceFP16(void *sendBuf, void *recvBuf, size_t count) {
+    ccl::allreduce(sendBuf, recvBuf, count, ccl::datatype::float16, ccl::reduction::sum, *pcomm).wait();
+}
+
 extern "C" void broadcast(int *buf, size_t count) {
     ccl::broadcast(buf, count, 0, *pcomm).wait(); // assume always broadcast from master (rank 0)
 }
