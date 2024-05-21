@@ -43,10 +43,15 @@ public:
     void forward(float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
     void forward(
             bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
+    void forward(
+            float16_t *query, float16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds);
 
+    // For continuous batching
     void forward(float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
             int *positionIds);
     void forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
+            int *positionIds);
+    void forward(float16_t *query, float16_t *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads,
             int *positionIds);
 
 private:
