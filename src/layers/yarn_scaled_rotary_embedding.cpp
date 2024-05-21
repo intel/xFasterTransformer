@@ -157,3 +157,9 @@ void LlamaYaRNScaledRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key,
     xft::llamaApplyRotaryPosEmbed(
             query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
+
+void LlamaYaRNScaledRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride,
+        int kStride, int qHeads, int kHeads, int *positionIds) {
+    xft::llamaApplyRotaryPosEmbed(
+            query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+}
