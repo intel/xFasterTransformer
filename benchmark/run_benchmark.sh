@@ -135,7 +135,7 @@ beam_width=${beam_width:-1}
 iter=${iter:-10}
 warmup=${warmup:-2}
 
-Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets ${platform}."
+Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
 
 Warning "The mapping method for CPU IDs in the cloud server environment is different,
         for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
