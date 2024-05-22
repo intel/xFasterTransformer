@@ -63,5 +63,5 @@ setup(
     platforms="x86_64",
     ext_modules=[CMakeExtension(name="xft")],
     cmdclass={"build_ext": BuildCMakeExt},
-    install_requires=["torch>=2.0.0, <2.1.0"],
+    install_requires=["torch>=2.3.0, <2.4.0"],
 )
