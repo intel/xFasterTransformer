@@ -51,6 +51,8 @@ Specify data type of kvcache using `-kdv` or `--kv_cache_dtype` from below list:
 - fp16 (default)
 - int8
 
+Specify batch size using `-mp` or `--model_path`. (If not been specified, will use fake model config)
+Specify batch size using `-tp` or `--token_path`. (If not been specified, will use fake tokenizer config)
 Specify batch size using `-bs` or `--batch_size`. (default 1)
 Specify input tokens using `-in` or `--input_tokens`. (default 32)
 Specify output tokens using `-out` or `--output_tokens`. (default 32)
