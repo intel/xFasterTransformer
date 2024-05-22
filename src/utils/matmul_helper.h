@@ -93,6 +93,113 @@ public:
     //               transposed                          not_transposed
     //
 
+// need revise in xdnn
+#define BLOCK_N 64
+    void xdnn_hgemm_f32f16f32_packb(bool transB, int N, int K, const XDNN_FP16 *B, int ldb, XDNN_FP16 *packedB) {
+        const int blks = (N + BLOCK_N - 1) / BLOCK_N;
+
+        // B is not transposed, shape: K x N
+        if (!transB) {
+    #pragma omp parallel for
+            for (int i = 0; i < blks; ++i) {
+                int cols = BLOCK_N;        // each time pack BLOCK_N columns
+                if (i == blks - 1) {  // last block
+                    cols = N - i * BLOCK_N;
+                }
+
+                const XDNN_FP16 *psrc = B + i * BLOCK_N;
+                XDNN_FP16 *pdst = packedB + i * K * BLOCK_N;
+
+                for (int r = 0; r < K; ++r) {
+                    memcpy(pdst, psrc, cols * sizeof(XDNN_FP16));
+                    psrc += ldb;
+                    pdst += cols;
+                }
+            }
+        }
+
+        // B is transposed, shape: N x K
+        else {
+    #pragma omp parallel for
+            for (int i = 0; i < blks; ++i) {
+                int rows = BLOCK_N;        // each time pack BLOCK_N elements in N dimension
+                if (i == blks - 1) {  // last block
+                    rows = N - i * BLOCK_N;
+                }
+
+                const XDNN_FP16 *psrc = B + i * BLOCK_N * ldb;
+                XDNN_FP16 *pdst = packedB + i * K * BLOCK_N;
+
+                for (int c = 0; c < K; ++c) {
+                    for (int r = 0; r < rows; ++r) {
+                        pdst[r] = psrc[r * ldb];
+                    }
+                    psrc += 1;
+                    pdst += rows;
+                }
+            }
+        }
+    }
+
+    void xdnn_hgemm_f32f16f32_packb(bool transB, int N, int K, const XDNN_FP16 *B, int ldb, XDNN_FP16 *packedB, int block_rows, int block_cols) {
+        REQUIRES(K % 2 == 0, "K must be multiple of 2");
+        REQUIRES(block_rows % 16 == 0, "block_rows must be multiple of 16");
+        REQUIRES(block_cols == 64, "block_cols must be 64");
+        if (!transB) {
+            REQUIRES(ldb >= N, "Leading dimension must >= N");
+        } else {
+            REQUIRES(ldb >= K, "Leading dimension must >= K");
+        }
+
+        // If B is transposed, restore it to non-transposed format
+        XDNN_FP16 *restored;
+        if (transB) {
+            restored = (XDNN_FP16 *)aligned_alloc(64, K * N * sizeof(XDNN_FP16));
+
+#pragma omp parallel for
+            for (int i = 0; i < K; ++i) {
+                for (int j = 0; j < N; ++j) {
+                    restored[i * N + j] = B[j * ldb + i];
+                }
+            }
+
+            // B = restored;
+            ldb = N;
+        }
+
+        int expanded_rows = (int)((K + block_rows - 1) / block_rows) * block_rows;
+        int segs = (int)(N + block_cols - 1) / block_cols;
+
+#pragma omp parallel for
+        for (int s = 0; s < segs; ++s) {
+            const int nstart = s * block_cols;
+            const int nend = (nstart + block_cols) > N ? N : nstart + block_cols;
+            int index = expanded_rows * nstart; // K * block_cols segment start pointer
+
+            for (int i = 0; i < K / 2; ++i) {
+                int idx = index + i * 2 * block_cols;
+                for (int j = nstart; j < nend; ++j) {
+                    if (transB) {
+                        packedB[idx + 0] = restored[(i * 2 + 0) * ldb + j];
+                        packedB[idx + 1] = restored[(i * 2 + 1) * ldb + j];
+                    }
+                    else {
+                        packedB[idx + 0] = B[(i * 2 + 0) * ldb + j];
+                        packedB[idx + 1] = B[(i * 2 + 1) * ldb + j];
+                    }
+                    // printf("%d: %f %f\n", idx, float(packedB[idx + 0]), float(packedB[idx + 1]));
+                    // printf("%d %d %d %d: %f %f\n", i, j, (i * 2 + 0) * ldb + j, (i * 2 + 1) * ldb + j, float(B[(i * 2 + 0) * ldb + j]), float(B[(i * 2 + 1) * ldb + j]));
+                    idx += 2;
+                }
+            }
+        }
+
+        // Clean up
+        if (transB) {
+            free(restored);
+        }
+    }
+
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
             int splitOffset, int splitSize, bool verticalSplit, xft::Matrix<WeiT> &convertedWeight,
@@ -302,13 +409,23 @@ public:
 
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
-            weight.Resize(K, N);
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            weight.Resize(K, N);
             xdnn_sgemm_f32f16f32_packb(
                     trans, N, K, (const XDNN_FP16 *)src.Data(), src.Stride(), (XDNN_FP16 *)weight.Data());
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+#ifdef AMX_FP16_WEIGHT_ONLY_FP16
+            int amx_rows = (int)((K + 15) / 16) * 16;
+            int amx_cols = (int)((N + 63) / 64) * 64;
+            weight.Resize(amx_rows, amx_cols);
+            memset(weight.Data(), 0, sizeof(float16_t) * amx_rows * amx_cols);
+            xdnn_hgemm_f32f16f32_packb(
+                    trans, N, K, (const XDNN_FP16 *)src.Data(), src.Stride(), (XDNN_FP16 *)weight.Data(), 16, 64);
+#else
+            weight.Resize(K, N);
             xdnn_hgemm_f32f16f32_packb(
                     trans, N, K, (const XDNN_FP16 *)src.Data(), src.Stride(), (XDNN_FP16 *)weight.Data());
+#endif
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_FP16 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -411,6 +528,10 @@ public:
             GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute",
                     xdnn_sgemm_f32f16f32_compute(
                             transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+#elif defined(AMX_FP16_WEIGHT_ONLY_FP16)
+            GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute",
+                    onednn_amx_sgemm_f32x16f32_compute(
+                            transA, M, N, K, alpha, A, lda, (const float16_t *)packedB, beta, C, ldc));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute",
                     xdnn_hgemm_f32f16f32_compute(
@@ -430,12 +551,12 @@ public:
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             // TODO: xdnn impl?
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
-                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute",
-                        onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+                GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute",
+                        onednn_amx_sgemm_f32x16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
             } else {
                 if (M > AMXThresholdM) {
-                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute",
-                            onednn_amx_sgemm_f32bf16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+                    GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute",
+                            onednn_amx_sgemm_f32x16f32_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute",
                             xdnn_bgemm_f32bf16f32_compute(
@@ -749,13 +870,13 @@ public:
                             transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
-                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_silu",
-                        onednn_amx_sgemm_f32bf16f32_compute(
+                GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_silu",
+                        onednn_amx_sgemm_f32x16f32_compute(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Silu));
             } else {
                 if (M > AMXThresholdM) {
-                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_silu",
-                            onednn_amx_sgemm_f32bf16f32_compute(
+                    GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_silu",
+                            onednn_amx_sgemm_f32x16f32_compute(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Silu));
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_silu",
@@ -858,13 +979,13 @@ public:
                             transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
-                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_gelu",
-                        onednn_amx_sgemm_f32bf16f32_compute(
+                GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_gelu",
+                        onednn_amx_sgemm_f32x16f32_compute(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Gelu));
             } else {
                 if (M > AMXThresholdM) {
-                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_gelu",
-                            onednn_amx_sgemm_f32bf16f32_compute(
+                    GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_gelu",
+                            onednn_amx_sgemm_f32x16f32_compute(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, matmul_kinds::Gelu));
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_gelu",
@@ -1061,6 +1182,10 @@ public:
             GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_residential",
                     xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
                             beta, C, ldc, bias, res, ldres));
+#elif defined(AMX_FP16_WEIGHT_ONLY_FP16)
+            GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_residential",
+                    onednn_amx_sgemm_f32x16f32_compute_residential(
+                            transA, M, N, K, alpha, A, lda, (const float16_t *)packedB, beta, C, ldc, bias, res, ldres));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_residential",
                     xdnn_hgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
@@ -1080,13 +1205,13 @@ public:
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             // TODO: xdnn impl?
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
-                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_residential",
-                        onednn_amx_sgemm_f32bf16f32_compute_residential(
+                GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_residential",
+                        onednn_amx_sgemm_f32x16f32_compute_residential(
                                 transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres));
             } else {
                 if (M > AMXThresholdM) {
-                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_residential",
-                            onednn_amx_sgemm_f32bf16f32_compute_residential(
+                    GEMMVERBOSE("onednn_amx_sgemm_f32x16f32_compute_residential",
+                            onednn_amx_sgemm_f32x16f32_compute_residential(
                                     transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres));
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_residential",
@@ -1191,7 +1316,7 @@ public:
                             beta, C, ldc, bias, gamma, res, ldres));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
             if constexpr (std::is_same_v<InT, bfloat16_t>) {
-                TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+                TimeLine t("onednn_amx_sgemm_f32x16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                 for (uint64_t i = 0; i < M; ++i) {
                     for (int j = 0; j < N; ++j) {
@@ -1202,18 +1327,18 @@ public:
                         xft::store_avx512(&res[i * ldres + j], mask, v);
                     }
                 }
-                onednn_amx_sgemm_f32bf16f32_compute_residential(
+                onednn_amx_sgemm_f32x16f32_compute_residential(
                         transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
             } else {
                 if (M > AMXThresholdM) {
-                    TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
+                    TimeLine t("onednn_amx_sgemm_f32x16f32_compute_residential");
 #pragma omp parallel for collapse(2)
                     for (uint64_t i = 0; i < M; ++i) {
                         for (int j = 0; j < N; ++j) {
                             res[i * ldres + j] = res[i * ldres + j] * gamma;
                         }
                     }
-                    onednn_amx_sgemm_f32bf16f32_compute_residential(
+                    onednn_amx_sgemm_f32x16f32_compute_residential(
                             transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres);
                 } else {
                     GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_resext",
@@ -1326,6 +1451,8 @@ private:
                 return dnnl::memory::format_tag::BA16a64b2a;
             } else if (dt == dnnl::memory::data_type::s8) {
                 return dnnl::memory::format_tag::BA16a64b4a;
+            } else if (dt == dnnl::memory::data_type::f16) {
+                return dnnl::memory::format_tag::BA16a64b2a;
             } else {
                 printf("[XFT][ERROR] Unsupport your data type in input layout.");
                 std::exit(-1);
@@ -1351,11 +1478,11 @@ private:
         }
     }
 
-    template <typename Tin, typename Tout>
-    void onednn_amx_sgemm_f32bf16f32_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
-            const bfloat16_t *packedB, float beta, Tout *C, int ldc, const matmul_kinds postAlg = matmul_kinds::Basic) {
-        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute");
-        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute.create_primitive");
+    template <typename Tin, typename Tweight, typename Tout>
+    void onednn_amx_sgemm_f32x16f32_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda,
+            const Tweight *packedB, float beta, Tout *C, int ldc, const matmul_kinds postAlg = matmul_kinds::Basic) {
+        TimeLine t("onednn_amx_sgemm_f32x16f32_compute");
+        TimeLine t1("onednn_amx_sgemm_f32x16f32_compute.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1374,13 +1501,17 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
+            dt dt_x16 = std::is_same_v<Tweight, bfloat16_t> ? dt::bf16 :
+                    std::is_same_v<Tweight, float16_t> ? dt::f16 : dt::undef;
+            auto input_md = memory::desc(input_dims, dt_x16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt_x16, get_onednn_weight_layout(dt_x16));
             memory::desc output_md;
             if constexpr (std::is_same_v<Tout, float>) {
                 output_md = memory::desc(output_dims, dt::f32, tag::ab);
             } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
                 output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+            } else if constexpr (std::is_same_v<Tout, float16_t>) {
+                output_md = memory::desc(output_dims, dt::f16, tag::ab);
             } else {
                 printf(">>> onednn amx output date type not supported.");
                 exit(-1);
@@ -1430,11 +1561,13 @@ private:
             input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
             input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+        } else if constexpr (std::is_same_v<Tin, float16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<float16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
-        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
+        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<Tweight *>(packedB));
         auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
 
         // Create the primitive args.
@@ -1445,15 +1578,18 @@ private:
         t1.release();
 
         // Executions.
-        TimeLine t2("onednn_amx_sgemm_f32bf16f32_compute.execute_primitive");
+        TimeLine t2("onednn_amx_sgemm_f32x16f32_compute.execute_primitive");
         // Reorder
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
             for (uint64_t i = 0; i < M; ++i) {
-                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+                if constexpr (std::is_same_v<Tweight, float16_t>) {
+                    float16_t::cvt_float_to_float16(A + i * lda, (float16_t *)input_mem.get_data_handle() + i * K, K);
+                } else if constexpr (std::is_same_v<Tweight, bfloat16_t>) {
+                    bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+                }
             }
         }
-
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
     }
@@ -1736,12 +1872,12 @@ private:
         stream->wait();
     }
 
-    template <typename Tin, typename Tout>
-    void onednn_amx_sgemm_f32bf16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const Tin *A,
-            int lda, const bfloat16_t *packedB, float beta, Tout *C, int ldc, const float *bias, const Tin *res,
+    template <typename Tin,  typename Tweight, typename Tout>
+    void onednn_amx_sgemm_f32x16f32_compute_residential(bool transA, int M, int N, int K, float alpha, const Tin *A,
+            int lda, const Tweight *packedB, float beta, Tout *C, int ldc, const float *bias, const Tin *res,
             int ldres) {
-        TimeLine t("onednn_amx_sgemm_f32bf16f32_compute_residential");
-        TimeLine t1("onednn_amx_sgemm_f32bf16f32_compute_residential.create_primitive");
+        TimeLine t("onednn_amx_sgemm_f32x16f32_compute_residential");
+        TimeLine t1("onednn_amx_sgemm_f32x16f32_compute_residential.create_primitive");
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -1762,17 +1898,21 @@ private:
             memory::dims output_dims = {M, N};
 
             // Create primitive descriptor.
-            auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
-            auto weight_md = memory::desc(weight_dims, dt::bf16, get_onednn_weight_layout(dt::bf16));
+            dt dt_x16 = std::is_same_v<Tweight, bfloat16_t> ? dt::bf16 :
+                    std::is_same_v<Tweight, float16_t> ? dt::f16 : dt::undef;
+            auto input_md = memory::desc(input_dims, dt_x16, tag::ab);
+            auto weight_md = memory::desc(weight_dims, dt_x16, get_onednn_weight_layout(dt_x16));
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
-            auto shift_md = memory::desc(shift_dims,
-                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef),
-                    tag::ab);
+            auto shift_md = memory::desc(
+                    shift_dims,
+                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                        (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
+                        tag::ab);
             memory::desc output_md;
             if constexpr (std::is_same_v<Tout, float>) {
                 output_md = memory::desc(output_dims, dt::f32, tag::ab);
             } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
-                output_md = memory::desc(output_dims, dt::bf16, tag::ab);
+                output_md = memory::desc(output_dims, dt_x16, tag::ab);
             } else {
                 printf(">>> onednn amx output date type not supported.");
             }
@@ -1801,20 +1941,24 @@ private:
 
         // Repack and convert input data.
         memory::dims shift_dims = {M, N};
-        auto shift_md = memory::desc(shift_dims,
-                std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef),
-                tag::ab);
+        auto shift_md = memory::desc(
+                    shift_dims,
+                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                        (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
+                        tag::ab);
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
             input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
             input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+        } else if constexpr (std::is_same_v<Tin, float16_t>) {
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<float16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
-        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
+        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<Tweight *>(packedB));
         memory bias_mem;
         auto shift_mem = memory(shift_md, *engine, (void *)res);
         auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
@@ -1835,7 +1979,11 @@ private:
         if constexpr (std::is_same_v<Tin, float>) {
 #pragma omp parallel for
             for (uint64_t i = 0; i < M; ++i) {
-                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+                if constexpr (std::is_same_v<Tweight, float16_t>) {
+                    float16_t::cvt_float_to_float16(A + i * lda, (float16_t *)input_mem.get_data_handle() + i * K, K);
+                } else if constexpr (std::is_same_v<Tweight, bfloat16_t>) {
+                    bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+                }
             }
         }
 
