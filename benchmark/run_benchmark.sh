@@ -104,6 +104,10 @@ while [ -n "$1" ]; do
         kv_cache_dtype=$2
         shift 2
         ;;
+    -p | --padding)
+        padding=$2
+        shift 2
+        ;;
     "")
         shift
         break
@@ -159,6 +163,8 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
 
 if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
     benchmark_cmd+=" --padding=False"
+else
+    benchmark_cmd+=" --padding=${padding}"
 fi
 
 if [ -n $csv ]; then
@@ -239,7 +245,7 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
         if [ "$sockets" == "2" ]; then
             run_cmd+=" : \
-            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \"
+            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
             -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
         fi
     fi
