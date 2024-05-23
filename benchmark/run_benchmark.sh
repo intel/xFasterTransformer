@@ -104,10 +104,6 @@ while [ -n "$1" ]; do
         kv_cache_dtype=$2
         shift 2
         ;;
-    -p | --padding)
-        padding=$2
-        shift 2
-        ;;
     "")
         shift
         break
@@ -164,7 +160,7 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
 if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
     benchmark_cmd+=" --padding=False"
 else
-    benchmark_cmd+=" --padding=${padding}"
+    benchmark_cmd+=" --padding=True"
 fi
 
 if [ -n $csv ]; then
