@@ -157,7 +157,7 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --iteration ${iter} \
     --warmup ${warmup}"
 
-if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
+if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]] || [[ ${model_name} == *"qwen-"* ]]; then
     benchmark_cmd+=" --padding=False"
 else
     benchmark_cmd+=" --padding=True"
