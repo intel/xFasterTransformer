@@ -70,7 +70,8 @@ extern "C" int init(int *world_size, int *world_rank, int *world_color) {
 
     int sameHostnames = 1;
     for (int i = 1; i < *world_size; i++) {
-        if (strcmp(myHostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
+        int id = (*world_rank + i) % (*world_size);
+        if (strcmp(myHostname, &all_hostnames[id * MPI_MAX_PROCESSOR_NAME]) != 0) {
             sameHostnames = 0;
             break;
         }
