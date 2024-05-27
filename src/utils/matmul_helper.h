@@ -1339,10 +1339,11 @@ private:
         Resext,
     };
 
-    std::string create_key(bool transA, int M, int N, int K, int matmul_kind) {
-        std::string key = std::to_string(transA) + "_" + std::to_string(M) + "_" + std::to_string(N) + "_"
-                + std::to_string(K) + "_" + std::to_string(matmul_kind);
-        return key;
+    template <typename Twei>
+    std::string create_key(bool transA, int M, int N, int K, int matmul_kind, const Twei *packedB) {
+        std::stringstream key;
+        key << transA << "_" << M << "_" << N << "_" << K << "_" << matmul_kind << "_" << packedB;
+        return key.str();
     }
 
     dnnl::memory::format_tag get_onednn_input_layout(dnnl::memory::data_type dt) {
@@ -1359,8 +1360,10 @@ private:
 
     dnnl::memory::format_tag get_onednn_weight_layout(dnnl::memory::data_type dt) {
         if (this->kind == dnnl::engine::kind::cpu) {
-            if (dt == dnnl::memory::data_type::bf16 || dt == dnnl::memory::data_type::f16) {
+            if (dt == dnnl::memory::data_type::bf16) {
                 return dnnl::memory::format_tag::BA16a64b2a;
+            } else if (dt == dnnl::memory::data_type::f16) {
+                return dnnl::memory::format_tag::BA16a64b;
             } else if (dt == dnnl::memory::data_type::s8) {
                 return dnnl::memory::format_tag::BA16a64b4a;
             } else {
@@ -1410,9 +1413,26 @@ private:
         }
     }
 
-    template <typename Tin, typename Twei, typename Tout, typename Tbias = float, typename Tres = float>
+    // Tin | Twei | Tout | Tbias | matmul
+    // --- | ---- | ---- | ----- | ------
+    // f32 | f32  | f32  | f32   | sgemm
+    // f32 | f32  | f16  | f32   | sgemm_f32f32f16
+    // f32 | f32  | bf16 | f32   | sgemm_f32f32bf16
+    // f16 | f32  | f32  | f32   | sgemm_f16f32f32
+    // bf16| f32  | f32  | f32   | sgemm_bf16f32f32
+    // f16 | f32  | f16  | f32   | sgemm_f16f32f16
+    // bf16| f32  | bf16 | f32   | sgemm_bf16f32bf16
+    // f32 | f16  | f32  | f32   | hgemm_f32f16f32
+    // f32 | f16  | f16  | f32   | hgemm_f32f16f16
+    // f16 | f16  | f32  | f32   | hgemm_f16f16f32
+    // f16 | f16  | f16  | f32   | hgemm
+    // f32 | bf16 | f32  | f32   | bgemm_f32bf16f32
+    // f32 | bf16 | bf16 | f32   | bgemm_f32bf16bf16
+    // bf16| bf16 | f32  | f32   | bgemm_bf16bf16f32
+    // bf16| bf16 | bf16 | f32   | bgemm
+    template <typename Tin, typename Twei, typename Tout, typename Tbias = float>
     void onednn_gemm_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda, const Twei *packedB,
-            float beta, Tout *C, int ldc, const Tbias *bias = nullptr, const Tres *res = nullptr, int ldres = -1,
+            float beta, Tout *C, int ldc, const Tbias *bias = nullptr, const Tin *res = nullptr, int ldres = -1,
             const matmul_kinds postAlg = matmul_kinds::Basic) {
         TimeLine t("onednn_gemm_compute");
         TimeLine t1("onednn_gemm_compute.create_primitive");
@@ -1421,26 +1441,22 @@ private:
         using dt = memory::data_type;
 
         dt input_dt;
-        if constexpr (std::is_same_v<Tin, float>) {
-            input_dt = dt::f32;
-        } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_dt = dt::bf16;
-        } else if constexpr (std::is_same_v<Tin, float16_t>) {
-            input_dt = dt::f16;
-        } else {
-            printf(">>> onednn_gemm_compute: input date type not supported.");
-            exit(-1);
-        }
-
         dt weight_dt;
+        dt shift_dt;
         if constexpr (std::is_same_v<Twei, float>) {
+            input_dt = dt::f32;
             weight_dt = dt::f32;
+            shift_dt = dt::f32;
         } else if constexpr (std::is_same_v<Twei, bfloat16_t>) {
+            input_dt = dt::bf16;
             weight_dt = dt::bf16;
+            shift_dt = dt::bf16;
         } else if constexpr (std::is_same_v<Twei, float16_t>) {
+            input_dt = dt::f16;
             weight_dt = dt::f16;
+            shift_dt = dt::f16;
         } else {
-            printf(">>> onednn_gemm_compute: weight date type not supported.");
+            printf(">>> onednn_gemm_compute: input and weight date type not supported.");
             exit(-1);
         }
 
@@ -1468,21 +1484,9 @@ private:
             exit(-1);
         }
 
-        dt shift_dt;
-        if constexpr (std::is_same_v<Tres, float>) {
-            shift_dt = dt::f32;
-        } else if constexpr (std::is_same_v<Tres, bfloat16_t>) {
-            shift_dt = dt::bf16;
-        } else if constexpr (std::is_same_v<Tres, float16_t>) {
-            shift_dt = dt::f16;
-        } else {
-            printf(">>> onednn_gemm_compute: res date type not supported.");
-            exit(-1);
-        }
-
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, postAlg);
+        std::string key = create_key(transA, M, N, K, postAlg, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1557,7 +1561,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, postAlg);
+            std::string key = create_key(transA, M, N, K, postAlg, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1570,12 +1574,21 @@ private:
             input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<Tin *>(A));
         }
 
-        auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<Twei *>(packedB));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
+        memory weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<Twei *>(packedB));
+        memory output_mem = memory(matmul_pd->dst_desc(), *engine, C);
         memory bias_mem;
         if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<Tbias *>(bias)); }
-        auto shift_md = memory::desc({M, N}, shift_dt, get_onednn_shift_layout(shift_dt));
-        auto shift_mem = memory(shift_md, *engine, const_cast<Tres *>(res));
+
+        memory::desc shift_md;
+        memory shift_mem;
+        if (res != nullptr) {
+            shift_md = memory::desc({M, N}, shift_dt, get_onednn_shift_layout(shift_dt));
+            if constexpr (std::is_same_v<Tin, float>) {
+                shift_mem = memory(shift_md, *engine);
+            } else {
+                shift_mem = memory(shift_md, *engine, const_cast<Tin *>(res));
+            }
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1589,10 +1602,26 @@ private:
         // Executions.
         TimeLine t2("onednn_gemm_compute.execute_primitive");
         // Reorder
-        if constexpr (std::is_same_v<Tin, float> && std::is_same_v<Twei, bfloat16_t>) {
+        if constexpr (std::is_same_v<Tin, float> && !std::is_same_v<Twei, float>) {
 #pragma omp parallel for
             for (uint64_t i = 0; i < M; ++i) {
-                bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_mem.get_data_handle() + i * K, K);
+                void *input_ptr = input_mem.get_data_handle();
+                if constexpr (std::is_same_v<Twei, bfloat16_t>) {
+                    bfloat16_t::cvt_float_to_bfloat16(A + i * lda, (bfloat16_t *)input_ptr + i * K, K);
+                    if (res != nullptr) {
+                        void *shift_ptr = shift_mem.get_data_handle();
+                        bfloat16_t::cvt_float_to_bfloat16(res + i * lda, (bfloat16_t *)shift_ptr + i * K, K);
+                    }
+                } else if constexpr (std::is_same_v<Twei, float16_t>) {
+                    float16_t::cvt_float_to_float16(A + i * lda, (float16_t *)input_ptr + i * K, K);
+                    if (res != nullptr) {
+                        void *shift_ptr = shift_mem.get_data_handle();
+                        float16_t::cvt_float_to_float16(res + i * lda, (float16_t *)shift_ptr + i * K, K);
+                    }
+                } else {
+                    printf(">>> onednn_gemm_compute: input and res date type convert not supported.");
+                    exit(-1);
+                }
             }
         }
 
@@ -1611,7 +1640,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, postAlg);
+        std::string key = create_key(transA, M, N, K, postAlg, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1667,7 +1696,7 @@ private:
             }
             matmul_prim = new matmul(*matmul_pd);
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, postAlg);
+            std::string key = create_key(transA, M, N, K, postAlg, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1717,7 +1746,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1747,7 +1776,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1799,7 +1828,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1837,7 +1866,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1889,7 +1918,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1928,7 +1957,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1996,7 +2025,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Residential, packedB);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -2042,7 +2071,7 @@ private:
             }
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Residential, packedB);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -2101,7 +2130,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+        std::string key = create_key(transA, M, N, K, matmul_kinds::Basic, B);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -2123,7 +2152,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
+            std::string key = create_key(transA, M, N, K, matmul_kinds::Basic, B);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
