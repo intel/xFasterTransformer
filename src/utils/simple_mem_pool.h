@@ -65,7 +65,7 @@ public:
         }
 
         // Allocate new aligned buffer
-        void *buffer = xft::alloc(size, alignment, device);
+        void *buffer = xft::alloc(size, device, alignment);
         if (buffer == nullptr) {
             // Allocation failed
             std::cerr << "Memory allocation failed for buffer:" << name << " size:" << size << std::endl;

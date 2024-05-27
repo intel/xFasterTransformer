@@ -142,11 +142,9 @@ public:
         qkvWeightT.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->transposeWeight(true, convertedqkvWeight, qkvWeightT);
 
-        sycl::queue *gpu_queue_1 = static_cast<sycl::queue *>(ctx->device);
-        WeiT *qkvWeiData = sycl::malloc_device<WeiT>(hiddenSize * responsibleCols, *gpu_queue_1);
+        WeiT *qkvWeiData = xft::alloc(hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
         qkvWeight.Assign(qkvWeiData, hiddenSize, responsibleCols, responsibleCols);
-        gpu_queue_1->memcpy(qkvWeight.Data(), qkvWeightT.Data(), qkvWeightT.Rows() * qkvWeightT.Cols() * sizeof(WeiT))
-                .wait();
+        xft::memcopy(qkvWeight.Data(), qkvWeightT.Data(), hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
 #else
         qkvWeight.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
@@ -187,11 +185,10 @@ public:
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
 
-        sycl::queue *gpu_queue_2 = static_cast<sycl::queue *>(ctx->device);
-        WeiT *outWeiData = sycl::malloc_device<WeiT>(ctx->attHeadNum * ctx->attHeadSize * hiddenSize, *gpu_queue_2);
+        WeiT *outWeiData = xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
         attnOutputWeight.Assign(outWeiData, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, hiddenSize);
-        int outWeightTSize = outWeightT.Rows() * outWeightT.Cols() * sizeof(WeiT);
-        gpu_queue_2->memcpy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize).wait();
+        int outWeightTSize = ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT);
+        xft::memcopy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize, ctx->device);
 #else
         attnOutputWeight.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->packWeight(trans, convertedOutWeight, attnOutputWeight);
@@ -324,9 +321,8 @@ public:
             }
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
 #ifdef GPU
-            sycl::queue *q = static_cast<sycl::queue *>(ctx->device);
             int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
-            q->memcpy(qkvMatMul.Data(), query.Data(), size).wait(); // error: need CPU ptr and GPU ptr
+            xft::memcopy(qkvMatMul.Data(), query.Data(), size, ctx->device); // error: need CPU ptr and GPU ptr
 #endif
         }
         t3.release();
@@ -374,9 +370,8 @@ public:
 #endif
 
 #ifdef GPU
-        sycl::queue *q = static_cast<sycl::queue *>(ctx->device);
         int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
-        q->memcpy(qkvMatMul.Data(), attnSplit.Data(), size).wait(); // error: need CPU ptr and GPU ptr
+        xft::memcopy(qkvMatMul.Data(), attnSplit.Data(), size, ctx->device); // error: need CPU ptr and GPU ptr
 #endif
 
         TimeLine t5("Output");

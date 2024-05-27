@@ -85,10 +85,9 @@ public:
             catWeightsT.Resize(catWeiRows, catWeiCols);
             ctx->mmHelper->transposeWeight(true, quantizedCatWeights, catWeightsT);
 
-            sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
-            WeiT *catWeiData = sycl::malloc_device<WeiT>(catWeiRows * catWeiCols, *gpu_queue);
+            WeiT *catWeiData = xft::alloc(catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
             catWeights.Assign(catWeiData, catWeiRows, catWeiCols, catWeiCols);
-            gpu_queue->memcpy(catWeights.Data(), catWeightsT.Data(), catWeiRows * catWeiCols * sizeof(WeiT)).wait();
+            xft::memcopy(catWeights.Data(), catWeightsT.Data(), catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
 #else
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
             ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
@@ -104,10 +103,9 @@ public:
         downWeightT.Resize(downWeiRows, downWeiCols);
         ctx->mmHelper->transposeWeight(true, quantizedDownWeight, downWeightT);
 
-        sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
-        WeiT *downWeiData = sycl::malloc_device<WeiT>(downWeiRows * downWeiCols, *gpu_queue);
+        WeiT *downWeiData = xft::alloc(downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
         downWeight.Assign(downWeiData, downWeiRows, downWeiCols, downWeiCols);
-        gpu_queue->memcpy(downWeight.Data(), downWeightT.Data(), downWeiRows * downWeiCols * sizeof(WeiT)).wait();
+        xft::memcopy(downWeight.Data(), downWeightT.Data(), downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
 #else
         downWeight.Resize(it.second - it.first, hiddenSize);
         ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
@@ -296,8 +294,9 @@ private:
         }
     }
 
+    template <typename T1, typename T2>
     void catGateUpProj(
-            DecoderContext *ctx, hpj::Matrix<InT> &input, hpj::Matrix<ImT> &output, hpj::Matrix<ImT> &siluBuf) {
+            DecoderContext *ctx, hpj::Matrix<T1> &input, hpj::Matrix<T2> &output, hpj::Matrix<T2> &siluBuf) {
         TimeLine t("catGateUpProj");
 
         assert(input.Rows() == output.Rows());
@@ -307,12 +306,12 @@ private:
         int M = input.Rows(), N = output.Cols(), K = input.Cols();
         int lda = input.Stride(), ldc = output.Stride();
 
-        const InT *A = input.Data();
+        const T1 *A = input.Data();
         const WeiT *B = catWeights.Data();
         const float *scaleB = catWeightsScale.Data();
         const float *zeroB = catWeightsZero.Data();
         const float *sumB = catWeightsSum.Data();
-        ImT *C = output.Data();
+        T2 *C = output.Data();
 
         ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
 

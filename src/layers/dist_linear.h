@@ -71,10 +71,9 @@ public:
         tWeight.Resize(K, N);
         ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);
 
-        sycl::queue *gpu_queue = static_cast<sycl::queue *>(ctx->device);
-        WeiT *input_data = sycl::malloc_device<WeiT>(K * N, *gpu_queue);
+        WeiT *input_data = xft::alloc(K * N * sizeof(WeiT), ctx->device);
         weight.Assign(input_data, K, N, N);
-        gpu_queue->memcpy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT)).wait();
+        xft::memcopy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT), ctx->device);
 #else
         weight.Resize(K, N);
         ctx->mmHelper->packWeight(true, quantizedWeight, weight);

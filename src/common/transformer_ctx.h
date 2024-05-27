@@ -110,8 +110,8 @@ struct DecoderContext {
     hpj::Matrix<float> qkvMatMul; // query, key, value
     hpj::Matrix<float> imOut; // intermediate output
 
-    MMHelper *mmHelper;
-    void *device;
+    MMHelper *mmHelper = nullptr;
+    void *device = nullptr;
 
     std::string configPath;
     INIReader configReader;

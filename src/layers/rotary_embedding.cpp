@@ -44,13 +44,12 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
 #ifdef GPU
         device = ctx->device;
         if (device != nullptr) {
-            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
             float *emb_cos_bak = emb_cos;
             float *emb_sin_bak = emb_sin;
-            emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, gpu_queue);
-            emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, gpu_queue);
-            gpu_queue->memcpy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
-            gpu_queue->memcpy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float)).wait();
+            emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+            emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+            xft::memcopy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
+            xft::memcopy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
             ctx->freeBuffer(emb_cos_str);
             ctx->freeBuffer(emb_sin_str);
         }

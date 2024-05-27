@@ -15,6 +15,7 @@
 #pragma once
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include "environment.h"
 #include <sys/mman.h>
 
@@ -30,14 +31,15 @@ static inline bool is_thp_alloc(size_t nbytes) {
     return (Env::getInstance().getTHPEnabled() && (nbytes >= g_thp_threshold));
 }
 
-static inline void *alloc(size_t nbytes, size_t alignment = 64, void *device = nullptr) {
+static inline void *alloc(size_t nbytes, void *device = nullptr, size_t alignment = 64) {
     if (nbytes == 0) { return nullptr; }
 
     void *data = nullptr;
 
 #ifdef GPU
     if (device != nullptr) {
-        data = sycl::malloc_device<char>(nbytes, *static_cast<sycl::queue *>(device));
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        data = sycl::malloc_device<char>(nbytes, *gpu_queue);
         if (data == nullptr) {
             printf("Unable to allocate buffer with size of %zu in GPU.\n", nbytes);
             exit(-1);
@@ -72,7 +74,18 @@ static inline void dealloc(void *data, void *device = nullptr) {
 #endif
 
     free(data);
-    return;
+}
+
+static inline void memcopy(void *dst, const void *src, size_t size, void *device = nullptr) {
+#ifdef GPU
+    if (device != nullptr) {
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        gpu_queue->memcpy(dst, src, size).wait();
+        return;
+    }
+#endif
+
+    memcpy(dst, src, size);
 }
 
 } // namespace xft

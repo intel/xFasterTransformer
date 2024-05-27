@@ -46,14 +46,8 @@ RmsNorm::~RmsNorm() {
 
 void RmsNorm::setWeight(const float *w, const float *, int cols) {
     this->normSize = cols;
-#ifdef GPU
-    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    this->weight = sycl::malloc_device<float>(cols, *gpu_queue);
-    gpu_queue->memcpy(this->weight, w, cols * sizeof(float)).wait();
-#else
-    this->weight = (float *)xft::alloc(cols * sizeof(float));
-    memcpy(weight, w, cols * sizeof(float));
-#endif
+    this->weight = (float *)xft::alloc(cols * sizeof(float), device);
+    xft::memcopy(this->weight, w, cols * sizeof(float), device);
 }
 
 void RmsNorm::setWeight(const std::string &modelPath, const std::string &, int cols) {

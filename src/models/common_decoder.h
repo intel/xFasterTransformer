@@ -667,7 +667,7 @@ protected:
         int kvSize = attHeadSize * kvHeadNum;
         int qkvSize = qSize + 2 * kvSize;
 
-#define ALLOC(size, alignment) xft::alloc((size), (alignment))
+#define ALLOC(size, alignment) xft::alloc((size), nullptr, (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;

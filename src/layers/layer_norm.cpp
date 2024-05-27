@@ -45,18 +45,10 @@ LayerNorm::~LayerNorm() {
 
 void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
     this->normSize = cols;
-#ifdef GPU
-    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    this->gamma = (float *)xft::alloc(cols * sizeof(float), 64, *gpu_queue);
-    this->beta = (float *)xft::alloc(cols * sizeof(float), 64, *gpu_queue);
-    gpu_queue->memcpy(this->gamma, gamma, cols * sizeof(float)).wait();
-    gpu_queue->memcpy(this->beta, beta, cols * sizeof(float)).wait();
-#else
-    this->gamma = (float *)xft::alloc(cols * sizeof(float));
-    this->beta = (float *)xft::alloc(cols * sizeof(float));
-    memcpy(this->gamma, gamma, cols * sizeof(float));
-    memcpy(this->beta, beta, cols * sizeof(float));
-#endif
+    this->gamma = (float *)xft::alloc(cols * sizeof(float), device);
+    this->beta = (float *)xft::alloc(cols * sizeof(float), device);
+    xft::memcopy(this->gamma, gamma, cols * sizeof(float), device);
+    xft::memcopy(this->beta, beta, cols * sizeof(float), device);
 }
 
 void LayerNorm::setWeight(const std::string &gammaPath, const std::string &betaPath, int cols) {
