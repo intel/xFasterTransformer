@@ -79,7 +79,7 @@ public:
             quantizedUpWeight.Release();
 
 #ifdef GPU
-            hpj::Matrix<WeiT> catWeightsT;
+            xft::Matrix<WeiT> catWeightsT;
             int catWeiRows = quantizedCatWeights.Rows();
             int catWeiCols = quantizedCatWeights.Cols();
             catWeightsT.Resize(catWeiRows, catWeiCols);
@@ -97,7 +97,7 @@ public:
         ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
                 downWeightScale, downWeightZero, downWeightSum);
 #ifdef GPU
-        hpj::Matrix<WeiT> downWeightT;
+        xft::Matrix<WeiT> downWeightT;
         int downWeiRows = it.second - it.first;
         int downWeiCols = hiddenSize;
         downWeightT.Resize(downWeiRows, downWeiCols);

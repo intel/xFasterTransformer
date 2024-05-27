@@ -67,7 +67,7 @@ public:
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
 #ifdef GPU
-        hpj::Matrix<WeiT> tWeight;
+        xft::Matrix<WeiT> tWeight;
         tWeight.Resize(K, N);
         ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);
 

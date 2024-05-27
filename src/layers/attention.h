@@ -141,7 +141,7 @@ public:
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
 
 #ifdef GPU
-        hpj::Matrix<WeiT> qkvWeightT;
+        xft::Matrix<WeiT> qkvWeightT;
         qkvWeightT.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->transposeWeight(true, convertedqkvWeight, qkvWeightT);
 
@@ -184,7 +184,7 @@ public:
                 attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
 
 #ifdef GPU
-        hpj::Matrix<WeiT> outWeightT;
+        xft::Matrix<WeiT> outWeightT;
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
 
@@ -423,7 +423,7 @@ public:
 
         if (doLnAfter) {
             TimeLine t6("result.layer_norm");
-            norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
+            norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
@@ -466,7 +466,7 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+            norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
 #ifdef DEBUG

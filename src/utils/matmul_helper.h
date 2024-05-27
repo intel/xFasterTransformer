@@ -400,7 +400,7 @@ public:
     }
 
     template <typename WeiT>
-    void transposeWeight(bool trans, hpj::Matrix<WeiT> &src, hpj::Matrix<WeiT> &dst) {
+    void transposeWeight(bool trans, xft::Matrix<WeiT> &src, xft::Matrix<WeiT> &dst) {
         using namespace dnnl;
         using tag = memory::format_tag;
         using dt = memory::data_type;

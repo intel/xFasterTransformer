@@ -132,7 +132,7 @@ void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_
 
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16_t *output, int rows) {
-    finalLN.forward(input, output, rows);
+    finalLN->forward(input, output, rows);
 }
 
 IMPLEMENT_MODEL(LlamaLLM, llama)
