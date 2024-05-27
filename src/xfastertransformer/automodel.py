@@ -81,7 +81,10 @@ class AutoModel:
     def forward_cb(self):
         return self.model.forward_cb()
 
-    def free_seqs(self, seq_ids):
+    def free_seqs(self, seq_ids: Optional[Union[List[int], torch.Tensor]] = None):
+        if isinstance(seq_ids, list):
+            seq_ids = torch.tensor(seq_ids, dtype=torch.int64)
+
         return self.model.free_seqs(seq_ids)
 
     @classmethod
