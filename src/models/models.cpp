@@ -73,9 +73,19 @@ void Model::initMaxSeqLen() {
 
 void Model::exitSlaves() {
     if (decoder->getRank() == 0) {
-        configuration.numBeams = 0;
-        Messenger &messenger = decoder->getMessenger();
-        messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+        if (searcher != nullptr) {
+            configuration.numBeams = 0;
+            Messenger &messenger = decoder->getMessenger();
+            messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+            return;
+        } else {
+            // Only work for Model::set_input(std::vector<int32_t> &inputIds_, std::vector<int32_t> &seqLens_,
+            // std::vector<int> seqIDs, std::vector<int> &maxLen)
+            // TODO: Add support for other continuous batching interface
+            Messenger &messenger = decoder->getMessenger();
+            int dim[4] = {-1, -1, -1, -1};
+            messenger.broadcast(dim, 4);
+        }
     }
 }
 
@@ -584,6 +594,7 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, std::vector<i
         messenger.broadcast(dim, 4);
 
         if (messenger.getRank() != 0) {
+            if (dim[0] < 0) { exit(0); }
             inputIds_.resize(dim[0]);
             seqLens_.resize(dim[1]);
             seqIDs.resize(dim[2]);
@@ -791,7 +802,8 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         for (int i = 0; i < works; ++i) {
             for (int j = 0; j < totalSeqSize; ++j) {
                 memcpy(logits.data() + (i * offset + j * vocabSize),
-                        logitsRecvBuf.data() + offset * totalSeqSize + j * splitSizes[i], splitSizes[i] * sizeof(float));
+                        logitsRecvBuf.data() + offset * totalSeqSize + j * splitSizes[i],
+                        splitSizes[i] * sizeof(float));
             }
             offset += splitSizes[i];
         }
