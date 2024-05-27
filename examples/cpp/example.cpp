@@ -298,7 +298,7 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
 
 std::map<std::string, xft::DataType> KVCacheDataTypeMap
-        = {{"fp32", xft::DataType::fp32}, {"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
+        = {{"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
 
 std::string getModelType(std::string &modelPath) {
     std::string configPath = modelPath + "/config.ini";
@@ -321,7 +321,7 @@ int main(int argc, char **argv) {
     args.add<std::string>("dtype", 'd', "weight data type", false, "fp16");
     args.add<std::string>("kv_cache_dtype", '\0', "kv cache data type", false, "fp16");
     args.add<int>("input_len", 'l', "input token size", false, -1);
-    args.add<int>("output_len", '\0', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
+    args.add<int>("output_len", 'o', "max tokens can generate excluded input.", false, 100, cmdline::range(1, 8192));
     args.add<int>("prefix_len", '\0', "shared prefix tokens num.", false, 0);
     args.add<int>("num_beams", 'n', "number of beam size.", false, 1, cmdline::range(1, 32));
     args.add<int>("batch_size", 'b', "batch size.", false, 1, cmdline::range(1, 512));
@@ -444,11 +444,20 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < loop; ++i) {
         secondIdCount = 0;
+
+        // TODO: Deprecated this old path
         model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
                 /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
         model.input(input, batchSize);
+
+        // New path
+        // model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
+        //         /*lenPenalty*/ 1.0,
+        //         /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
+        //         /*doSample*/ doSample, /*temperature*/ temperature,
+        //         /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
 
         std::vector<int> firstIds;
         std::vector<int> secondIds;

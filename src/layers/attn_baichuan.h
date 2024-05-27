@@ -24,13 +24,15 @@
 static int respBaichuanHeads = 0;
 static float *alibiSlopes = nullptr;
 
-template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm>
-class BaichuanAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
+template <typename WeiT, typename QKPO_CLS = QKPO_Dummy, typename NORM_CLS = RmsNorm, typename InT = float,
+        typename ImT = float, typename OutT = float, bool INPUT_AS_RESID = true>
+class BaichuanAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, INPUT_AS_RESID> {
 public:
-    BaichuanAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
-        if (ctx->maxPosEmbed <= 0 && alibiSlopes == nullptr) {
+    BaichuanAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, INPUT_AS_RESID>(layerId, ctx) {
+        if (ctx->maxPosEmbed <= 0 && this->alibiSlopes == nullptr) {
             respBaichuanHeads = this->endQHead - this->startQHead;
-            alibiSlopes = new float[respBaichuanHeads];
+            this->alibiSlopes = new float[respBaichuanHeads];
             // alibi mask element
             float ratio = std::pow(2, 8);
             int closestPowerOf2 = std::pow(2, int(std::log2(ctx->attHeadNum)));
@@ -38,10 +40,11 @@ public:
             float x1 = std::pow(ratio, 1.0 / (closestPowerOf2 * 2));
             for (int i = 0, h = this->startQHead; i < respBaichuanHeads; ++i, ++h) {
                 if (h < closestPowerOf2)
-                    alibiSlopes[i] = 1 / std::pow(x0, h + 1);
+                    this->alibiSlopes[i] = 1 / std::pow(x0, h + 1);
                 else
-                    alibiSlopes[i] = 1 / std::pow(x1, 2 * (h - closestPowerOf2) + 1);
+                    this->alibiSlopes[i] = 1 / std::pow(x1, 2 * (h - closestPowerOf2) + 1);
             }
+            alibiSlopes = this->alibiSlopes;
         }
     }
 
@@ -50,19 +53,26 @@ public:
     const static int getResponsibleHeads() { return respBaichuanHeads; }
 
     virtual ~BaichuanAttention() {
-        if (alibiSlopes != nullptr) {
-            delete[] alibiSlopes;
-            alibiSlopes = nullptr;
+        if (this->alibiSlopes != nullptr) {
+            delete[] this->alibiSlopes;
+            this->alibiSlopes = nullptr;
         }
     }
 
 protected:
     const float *getMask(const float *attnMask, int bId, int hId, int srcLen, int tgtLen) override {
-        if (alibiSlopes != nullptr)
+        if (this->alibiSlopes != nullptr)
             return attnMask + hId * srcLen * tgtLen;
         else
             return attnMask + bId * srcLen * tgtLen;
     }
 
 private:
+};
+
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT, typename ImT, typename OutT>
+struct AttnTypeExtractor<BaichuanAttention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
 };

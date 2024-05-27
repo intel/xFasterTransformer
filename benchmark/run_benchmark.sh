@@ -40,6 +40,14 @@ while [ -n "$1" ]; do
         model_name=$2
         shift 2
         ;;
+    -mp | --model_path)
+        model_path=$2
+        shift 2
+        ;;
+    -tp | --token_path)
+        token_path=$2
+        shift 2
+        ;;
     -d | --dtype)
         case $2 in
         "bf16" | "bf16_fp16" | "bf16_int8" | "int8" | "fp16" | "bf16_int4" | "int4" | "bf16_nf4" | "nf4" | "w8a8" | "bf16_w8a8" | "w8a8_int8" | "w8a8_int4" | "w8a8_nf4")
@@ -107,6 +115,16 @@ if [ "${model_name}" == "" ]; then
     Error "Please pass a value of model name using -m or --model_name."
     exit 1
 fi
+if [ "${model_path}" == "" ] || [ "${token_path}" == "" ]; then
+    Warning "Please pass both 'model_path' and 'token_path' at the same time if you want to use real model."
+    Info "Using fake model mode now."
+    export XFT_FAKE_MODEL=1
+    model_path=""
+    token_path=""
+fi
+
+model_path=${model_path:-"${SCRIPT_DIR}"/../examples/model_config/${model_name}/}
+token_path=${token_path:-"${SCRIPT_DIR}"/../examples/model_config/${model_name}/}
 dtype=${dtype:-bf16}
 kv_cache_dtype=${kv_cache_dtype:-fp16}
 sockets=${sockets:-1}
@@ -125,10 +143,8 @@ Warning "The mapping method for CPU IDs in the cloud server environment is diffe
         you can enable \`export XFT_CLOUD_ENV=1\` to bind to the correct physical core."
 export XFT_CLOUD_ENV=${XFT_CLOUD_ENV:-0}
 
-model_path="${SCRIPT_DIR}"/../examples/model_config/${model_name}/
-
 benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
-    --token_path "${model_path}" \
+    --token_path "${token_path}" \
     --model_path "${model_path}" \
     --prompt_path "${SCRIPT_DIR}"/prompt.json \
     --model_name "${model_name}" \
@@ -147,10 +163,6 @@ fi
 
 if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"
-fi
-
-if [[ ${model_name} == *"baichuan"* ]]; then
-    export FLASH_ATTN_THRESHOLD=1000
 fi
 
 if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
@@ -174,7 +186,7 @@ if [ "${numa_nodes}" -eq 16 ]; then
     #0-7 is DRAM memory node, 8-15 is HBM node
     export OMP_NUM_THREADS=${cores_per_numa}
     Info "OMP_NUM_THREADS: ${cores_per_numa}"
-    Info "HBM SNC4 mode"
+    Info "SPR-HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
     -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
@@ -191,7 +203,7 @@ elif [ "${numa_nodes}" -eq 8 ]; then
     #HBM SNC-4 for cache or hbm only mode
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    Info "HBM SNC4 mode"
+    Info "SPR-HBM SNC4 mode"
     run_cmd="mpirun \
     -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
     -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
@@ -204,20 +216,55 @@ elif [ "${numa_nodes}" -eq 8 ]; then
         -n 1 bash run.sh 6 6 ${OMP_NUM_THREADS} 6 : \
         -n 1 bash run.sh 7 7 ${OMP_NUM_THREADS} 7"
     fi
-elif [ "${numa_nodes}" -eq 4 ]; then
+elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
     #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
-    Info "HBM Quad mode"
-    export OMP_NUM_THREADS=${cores_per_numa}
-    Info "OMP_NUM_THREADS: ${cores_per_numa}"
+    # or EMR SNC-2 mode
+    numa_nodes_info=$(lscpu | grep "NUMA node3 CPU(s):" | awk -F ':' '{print $2}')
+    if [ "$numa_nodes_info" == "" ]; then
+        Info "SPR-HBM Quad mode"
+        export OMP_NUM_THREADS=${cores_per_numa}
+        Info "OMP_NUM_THREADS: ${cores_per_numa}"
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+        if [ "$sockets" == "2" ]; then
+            run_cmd+=" : \
+            -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
+        fi
+    else
+        Info "EMR SNC-2 mode"
+        export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+        Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+        if [ "$sockets" == "2" ]; then
+            run_cmd+=" : \
+            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \"
+            -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
+        fi
+    fi
+elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
+    #4-socket spr quad mode
+    Info "#SPR-SP 4-socket Quad mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd="mpirun \
-    -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
-        -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+    fi
+    if [ "$sockets" == "3" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
+    fi
+    if [ "$sockets" == "4" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
     fi
 elif [ "${numa_nodes}" -eq 2 ]; then
-    #SPR or hbm only or hbm cache Quad-mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
-    Info "SPR Quad mode"
+    #SPR or hbm only or hbm cache Quad-mode or EMR non SNC-2 mode, Confirm that there are 2 DRAM memory nodes through "nuamctl -H"
+    Info "Quad mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd="mpirun \

@@ -97,8 +97,8 @@ public:
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
-            int splitOffset, int splitSize, bool verticalSplit, hpj::Matrix<WeiT> &convertedWeight,
-            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight,
+            int splitOffset, int splitSize, bool verticalSplit, xft::Matrix<WeiT> &convertedWeight,
+            xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight,
             bool unused) {
         // transform trans cases to no trans cases
         if (trans) {
@@ -263,8 +263,8 @@ public:
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
-            int numSplit, int splitIdx, bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight,
-            hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
+            int numSplit, int splitIdx, bool verticalSplit, xft::Matrix<WeiT> &quantizedWeight,
+            xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight) {
         int totalSize = verticalSplit ? cols : rows;
         std::pair<int, int> range = SplitUtil::getTaskRange(totalSize, numSplit, splitIdx);
 
@@ -277,22 +277,22 @@ public:
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
-            hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight, hpj::Vector<float> &zeroWeight,
-            hpj::Vector<float> &sumWeight) {
+            xft::Matrix<WeiT> &quantizedWeight, xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight,
+            xft::Vector<float> &sumWeight) {
         convertWeight(trans, rows, cols, weight, scales, zeros, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight,
                 sumWeight);
     }
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(DecoderContext *ctx, bool trans, int rows, int cols, const OriWeiT *weight, const float *scales,
-            const float *zeros, bool verticalSplit, hpj::Matrix<WeiT> &quantizedWeight, hpj::Vector<float> &scaleWeight,
-            hpj::Vector<float> &zeroWeight, hpj::Vector<float> &sumWeight) {
+            const float *zeros, bool verticalSplit, xft::Matrix<WeiT> &quantizedWeight, xft::Vector<float> &scaleWeight,
+            xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight) {
         convertWeight(trans, rows, cols, weight, scales, zeros, ctx->numSplit, ctx->splitIdx, verticalSplit,
                 quantizedWeight, scaleWeight, zeroWeight, sumWeight);
     }
 
     template <typename WeiT>
-    void packWeight(bool trans, hpj::Matrix<WeiT> &src, hpj::Matrix<WeiT> &weight) {
+    void packWeight(bool trans, xft::Matrix<WeiT> &src, xft::Matrix<WeiT> &weight) {
         int K = trans ? src.Cols() : src.Rows();
         int N = trans ? src.Rows() : src.Cols();
 

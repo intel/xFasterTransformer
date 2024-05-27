@@ -106,13 +106,18 @@ void LlamaLLM<WeiT, KVCacheT>::prepareAttnMask(int *ids, int step) {
 }
 
 template <typename WeiT, typename KVCacheT>
-void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int batchSize, int seqLen) {
-    embedding->forward(ids, output, batchSize, seqLen);
+void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
 }
 
 template <typename WeiT, typename KVCacheT>
-void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int batchSize, int seqLen) {
-    embedding->forward(ids, output, batchSize, seqLen);
+void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
+}
+
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
 }
 
 template <typename WeiT, typename KVCacheT>
@@ -123,6 +128,11 @@ void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output,
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
     finalLN->forward(input, output, rows);
+}
+
+template <typename WeiT, typename KVCacheT>
+void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16_t *output, int rows) {
+    finalLN.forward(input, output, rows);
 }
 
 IMPLEMENT_MODEL(LlamaLLM, llama)

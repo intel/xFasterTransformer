@@ -74,7 +74,7 @@ svr_info() {
 build() {
     pip install -r requirements.txt
     Info "Running build function with arguments: $@"
-    rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=1 -DPython_EXECUTABLE=$(which python) .. && make -j
+    rm -rf build && mkdir build && cd build && cmake -DXFT_BUILD_TESTS=ON -DXFT_BUILD_EVALUATION=ON -DPython_EXECUTABLE=$(which python) .. && make -j
 }
 
 ut() {
@@ -83,13 +83,6 @@ ut() {
     Info "Running UT function with arguments: $@"
     for file in ./*; do
         if [ -x "$file" ]; then
-
-            #Todo(marvin): delete me when the case is ready.
-            if [[ "$file" == "./rotary_embedding_test" ]]; then
-                Warning "Bypass the fail case of $file."
-                continue
-            fi
-            ##################################################
 
             if [[ "$file" != *_test ]]; then
                 Warning "$file is not ending with '_test', skip current loop."

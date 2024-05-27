@@ -1,3 +1,17 @@
+// Copyright (c) 2024 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ============================================================================
 #pragma once
 
 #include "dtype.h"
@@ -43,5 +57,11 @@ void invokeAttention(DataType dt,
         int *query_shape, int *kv_shape, const int q_stride, const int kv_stride, const float scale,
         const int batch_size, const int *token_lens, const void *kcache, const void *vcache, int *kvcache_shape,
         int *block_tables, int *block_nums, int *context_lens, int layer_id, bool is_prefill, int *slot_mapping);
+
+void invokeAttentionLLaMA(DataType dt, int batchSize, int inputSeqLen, int attHeadDim, int attHeadNum, int kvHeadNum,
+        int maxPositions, int maxPosEmbed, int pastSeqLen, int currentSeqLen, int step, int hiddenSize, void *output,
+        int outputStride, const void *input, int inputStride, const void *queryWeight, const void *keyWeight,
+        const void *valueWeight, const void *attnOutWeight, const float *queryBias = nullptr,
+        const float *keyBias = nullptr, const float *valueBias = nullptr, const float *attnOutBias = nullptr);
 
 } // namespace xft

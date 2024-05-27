@@ -70,7 +70,7 @@ DTYPE_LIST = [
     "w8a8_nf4",
 ]
 
-KVCACHE_DTYPE_LIST = ["fp32", "fp16", "int8"]
+KVCACHE_DTYPE_LIST = ["fp16", "int8"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default=None, help="Model name")

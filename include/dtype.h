@@ -38,4 +38,17 @@ enum DeviceKind {
     iCPU = 0,
     iGPU,
 };
+
+enum NormType {
+    RMS = 0,
+    LN,
+};
+
+enum ActivationType {
+    RELU = 0,
+    GELU,
+    SWIGLU,
+    SILU,
+};
+
 } // namespace xft

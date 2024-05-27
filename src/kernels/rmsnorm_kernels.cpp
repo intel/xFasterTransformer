@@ -24,13 +24,15 @@
 
 namespace xft {
 
-template <typename Tout, typename Tin>
-void rmsNorm(Tout *output, const Tin *input, const float *weight, int rows, int cols, int iStride, int oStride,
+template <typename Tout, typename Tin, typename Twei>
+void rmsNorm(Tout *output, const Tin *input, const Twei *weight, int rows, int cols, int iStride, int oStride,
         float epsilon) {
-    static_assert(std::is_same_v<Tout, float> || std::is_same_v<Tout, bfloat16_t>,
-            "Output of rmsNorm must be either float or bfloat16_t.");
-    static_assert(std::is_same_v<Tin, float> || std::is_same_v<Tin, bfloat16_t>,
-            "Input of rmsNorm must be either float or bfloat16_t.");
+    static_assert(std::is_same_v<Tout, float> || std::is_same_v<Tout, bfloat16_t> || std::is_same_v<Tout, float16_t>,
+            "Output of rmsNorm must be either float, bfloat16_t or float16.");
+    static_assert(std::is_same_v<Tin, float> || std::is_same_v<Tin, bfloat16_t> || std::is_same_v<Tin, float16_t>,
+            "Input of rmsNorm must be either float, bfloat16_t or float16.");
+    static_assert(std::is_same_v<Twei, float> || std::is_same_v<Twei, bfloat16_t> || std::is_same_v<Twei, float16_t>,
+            "Tweight of rmsNorm must be either float, bfloat16_t or float16.");
 
     int size = cols;
     if (iStride == -1) iStride = cols;
@@ -67,14 +69,14 @@ void rmsNorm(Tout *output, const Tin *input, const float *weight, int rows, int 
 
         for (col = 0; col + 15 < size; col += 16) {
             __m512 vx = xft::load_avx512(px + col);
-            __m512 vw = _mm512_loadu_ps(weight + col);
+            __m512 vw = xft::load_avx512(weight + col);
             __m512 vy = vx * vvar * vw;
             xft::store_avx512(py + col, 0xffff, vy);
         }
         if (col < size) {
             __mmask16 mask = (1 << (size - col)) - 1;
             __m512 vx = xft::load_avx512(mask, px + col);
-            __m512 vw = _mm512_maskz_loadu_ps(mask, weight + col);
+            __m512 vw = xft::load_avx512(mask, weight + col);
             __m512 vy = vx * vvar * vw;
             xft::store_avx512(py + col, mask, vy);
         }
@@ -143,9 +145,24 @@ void rmsNorm(bfloat16_t *output, const float *input, const float *weight, int ro
     rmsNorm<bfloat16_t, float>(output, input, weight, rows, cols, iStride, oStride, epsilon);
 }
 
-void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const float *weight, int rows, int cols, int iStride, int oStride,
-        float epsilon) {
+void rmsNorm(bfloat16_t *output, const bfloat16_t *input, const float *weight, int rows, int cols, int iStride,
+        int oStride, float epsilon) {
     rmsNorm<bfloat16_t, bfloat16_t>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+}
+
+void rmsNorm(float16_t *output, const float *input, const float *weight, int rows, int cols, int iStride, int oStride,
+        float epsilon) {
+    rmsNorm<float16_t, float>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+}
+
+void rmsNorm(float16_t *output, const float16_t *input, const float *weight, int rows, int cols, int iStride,
+        int oStride, float epsilon) {
+    rmsNorm<float16_t, float16_t>(output, input, weight, rows, cols, iStride, oStride, epsilon);
+}
+
+void rmsNorm(float16_t *output, const float16_t *input, const float16_t *weight, int rows, int cols, int iStride,
+        int oStride, float epsilon) {
+    rmsNorm<float16_t, float16_t>(output, input, weight, rows, cols, iStride, oStride, epsilon);
 }
 
 void invokeRmsNorm(DataType dt, void *output, const void *input, const void *weight, int rows, int cols, int iStride,
@@ -155,6 +172,9 @@ void invokeRmsNorm(DataType dt, void *output, const void *input, const void *wei
     } else if (dt == DataType::bf16) {
         rmsNorm((bfloat16_t *)output, (const bfloat16_t *)input, (const bfloat16_t *)weight, rows, cols, iStride,
                 oStride, epsilon);
+    } else if (dt == DataType::fp16) {
+        rmsNorm((float16_t *)output, (const float16_t *)input, (const float16_t *)weight, rows, cols, iStride, oStride,
+                epsilon);
     }
 }
 

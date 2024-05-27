@@ -54,7 +54,7 @@ DTYPE_LIST = [
     "w8a8_nf4",
 ]
 
-KVCACHE_DTYPE_LIST = ["fp32", "fp16", "int8"]
+KVCACHE_DTYPE_LIST = ["fp16", "int8"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/chatglm-6b-hf", help="Path to token file")
@@ -64,7 +64,7 @@ parser.add_argument("--kv_cache_dtype", type=str, choices=KVCACHE_DTYPE_LIST, de
 parser.add_argument("--padding", help="Enable padding, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
-parser.add_argument("--output_len", help="max tokens can generate excluded input.", type=int, default=100)
+parser.add_argument("-o", "--output_len", help="max tokens can generate excluded input.", type=int, default=100)
 parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--do_sample", help="Enable sampling search, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--temperature", help="value used to modulate next token probabilities.", type=float, default=1.0)
@@ -108,9 +108,11 @@ def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[st
     inputs = torch.cat((prefix, inputs, suffix), dim=1)
     return inputs
 
+
 def build_inputs_llama(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
-    inputs = tokenizer([f"[INST] {query.strip()} [/INST]"], return_tensors="pt",padding=padding).input_ids
+    inputs = tokenizer([f"[INST] {query.strip()} [/INST]"], return_tensors="pt", padding=padding).input_ids
     return inputs
+
 
 def build_inputs_qwen(
     tokenizer: PreTrainedTokenizer,

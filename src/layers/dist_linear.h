@@ -63,7 +63,7 @@ public:
         scaleWeight.Resize(N);
         zeroWeight.Resize(N);
 
-        hpj::Matrix<WeiT> quantizedWeight;
+        xft::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
 #ifdef GPU
@@ -119,9 +119,9 @@ private:
     int splitSize;
     int splitOffset;
 
-    hpj::Matrix<WeiT> weight;
-    hpj::Vector<float> scaleWeight; // if weight is int8
-    hpj::Vector<float> zeroWeight; // if weight is int8
-    hpj::Vector<float> sumWeight; // if weight is int8
+    xft::Matrix<WeiT> weight;
+    xft::Vector<float> scaleWeight; // if weight is int8
+    xft::Vector<float> zeroWeight; // if weight is int8
+    xft::Vector<float> sumWeight; // if weight is int8
     float *bias = nullptr;
 };

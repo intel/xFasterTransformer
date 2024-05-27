@@ -70,6 +70,18 @@ void RmsNorm::forward(const float *input, bfloat16_t *output, int rows, int iStr
 void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
 }
+
+void RmsNorm::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+}
+
+void RmsNorm::forward(const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    fastertransformer::invokeGeneralT5LayerNorm(
+            output, input, weight, (const float16_t *)nullptr, epsilon, rows, iStride, gpu_queue);
+}
+
 #else
 // input and output are in shape of (rows, normSize)
 void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
@@ -86,5 +98,16 @@ void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int
     TimeLine t("RmsNorm.forward");
     rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
+
+void RmsNorm::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+}
+
+void RmsNorm::forward(const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+}
 #endif
+
 } // namespace xft
