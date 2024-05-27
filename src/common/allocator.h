@@ -15,8 +15,8 @@
 #pragma once
 #include <cstdio>
 #include <cstdlib>
-#include <sys/mman.h>
 #include "environment.h"
+#include <sys/mman.h>
 
 #ifdef GPU
 #include <CL/sycl.hpp>
@@ -33,11 +33,15 @@ static inline bool is_thp_alloc(size_t nbytes) {
 static inline void *alloc(size_t nbytes, size_t alignment = 64, void *device = nullptr) {
     if (nbytes == 0) { return nullptr; }
 
-    void *data;
+    void *data = nullptr;
 
 #ifdef GPU
     if (device != nullptr) {
         data = sycl::malloc_device<char>(nbytes, *static_cast<sycl::queue *>(device));
+        if (data == nullptr) {
+            printf("Unable to allocate buffer with size of %zu in GPU.\n", nbytes);
+            exit(-1);
+        }
         return data;
     }
 #endif

@@ -47,8 +47,8 @@ void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
     this->normSize = cols;
 #ifdef GPU
     sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    this->gamma = sycl::malloc_device<float>(cols, *gpu_queue);
-    this->beta = sycl::malloc_device<float>(cols, *gpu_queue);
+    this->gamma = (float *)xft::alloc(cols * sizeof(float), 64, *gpu_queue);
+    this->beta = (float *)xft::alloc(cols * sizeof(float), 64, *gpu_queue);
     gpu_queue->memcpy(this->gamma, gamma, cols * sizeof(float)).wait();
     gpu_queue->memcpy(this->beta, beta, cols * sizeof(float)).wait();
 #else
