@@ -108,7 +108,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
         static std::unordered_map<size_t, int> tuned_map;
 #ifdef USE_SHM
-        if (tunedComm() && localRanksFlag) {
+        if (tunedComm() && localRanksFlag && pshm != nullptr) {
             size_t commSize = sizeof(T) * count;
             if (sizeof(T) * count > pshm->getSHMSize()) { pshm->ShmResize(rank, commSize); }
 
@@ -120,7 +120,7 @@ public:
                 float dur_shm = std::numeric_limits<float>::max(), dur_ccl = std::numeric_limits<float>::max();
                 // tuned for the faster comm primitive
                 for (int i = 0; i < warmup + nruns; ++i) {
-                    if (i >= warmup) gettimeofday(&start, NULL);
+                    if (i == warmup) gettimeofday(&start, NULL);
                     pshm->reduceAdd(commBuf, commBuf, count, rank, size);
                 }
                 gettimeofday(&end, NULL);
@@ -128,7 +128,7 @@ public:
 
                 if (commSize < 1.0e9) {
                     for (int i = 0; i < warmup + nruns; ++i) {
-                        if (i >= warmup) gettimeofday(&start, NULL);
+                        if (i == warmup) gettimeofday(&start, NULL);
                         cclAllreduce(commBuf, commBuf, count);
                     }
                     gettimeofday(&end, NULL);
@@ -161,7 +161,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (sizeof(T) * count > pshm->getSHMSize() || !localRanksFlag) {
+        if (!localRanksFlag || (pshm != nullptr && sizeof(T) * count > pshm->getSHMSize())) {
             cclAllreduce(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
