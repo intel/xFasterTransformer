@@ -49,7 +49,7 @@ class AutoModel:
 
     def set_input_cb(
         self,
-        input_ids: Optional[Union[List[int], List[List[int]], torch.Tensor]],
+        input_ids: Optional[Union[List[int], List[List[int]], torch.Tensor]] = None,
         seq_ids: Optional[Union[List[int], torch.Tensor]] = None,
         max_length: Optional[Union[int, List[int], torch.Tensor]] = None,
     ):
