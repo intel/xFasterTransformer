@@ -648,6 +648,8 @@ protected:
 #ifdef GPU
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             this->context->device = new sycl::queue(devices[this->context->mmHelper->getEngineCount() + engineIdx]);
+#else
+            this->context->device = nullptr;
 #endif
         }
 

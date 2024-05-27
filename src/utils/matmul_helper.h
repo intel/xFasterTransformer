@@ -53,6 +53,8 @@ public:
         }
 
         AMXThresholdM = Env::getInstance().getAMXThresholdM();
+        cpu_engine = new dnnl::engine(dnnl::engine::kind::cpu, 0);
+        cpu_stream = new dnnl::stream(*cpu_engine);
     }
 
     ~MMHelper() {
@@ -349,11 +351,9 @@ public:
         // W8A8
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             using dt = dnnl::memory::data_type;
-            dnnl::engine eng(dnnl::engine::kind::cpu, 0);
-            dnnl::stream stm(eng);
 
             auto tag = trans ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab;
-            dnnl::memory B_mem({{K, N}, dt::s8, tag}, eng, src.Data());
+            dnnl::memory B_mem({{K, N}, dt::s8, tag}, *cpu_engine, src.Data());
             dnnl::memory::desc desc({K, N}, dt::s8, get_onednn_weight_layout(dt::s8));
 
             // When converting to oneDNN blocked memory format, padded dims can be larger than [K, N]
@@ -363,9 +363,9 @@ public:
             weight.Resize(dims[0], dims[1]);
             weight.Resize(K, N);
 
-            dnnl::memory packedB_mem(desc, eng, weight.Data());
-            dnnl::reorder(B_mem, packedB_mem).execute(stm, B_mem, packedB_mem);
-            stm.wait();
+            dnnl::memory packedB_mem(desc, *cpu_engine, weight.Data());
+            dnnl::reorder(B_mem, packedB_mem).execute(*cpu_stream, B_mem, packedB_mem);
+            cpu_stream->wait();
         }
 
         // INT4
@@ -419,15 +419,12 @@ public:
 
         int K = trans ? src.Cols() : src.Rows();
         int N = trans ? src.Rows() : src.Cols();
-
-        dnnl::engine engine(dnnl::engine::kind::cpu, 0);
-        dnnl::stream stream(engine);
         auto weight_md = memory::desc({K, N}, weight_dt, trans ? tag::ba : tag::ab);
-        auto weight_mem = memory(weight_md, engine, src.Data());
+        auto weight_mem = memory(weight_md, *cpu_engine, src.Data());
         auto transposed_weight_md = memory::desc({K, N}, weight_dt, get_onednn_weight_layout(weight_dt));
-        auto transposed_weight_mem = memory(transposed_weight_md, engine, dst.Data());
-        dnnl::reorder(weight_mem, transposed_weight_mem).execute(stream, weight_mem, transposed_weight_mem);
-        stream.wait();
+        auto transposed_weight_mem = memory(transposed_weight_md, *cpu_engine, dst.Data());
+        dnnl::reorder(weight_mem, transposed_weight_mem).execute(*cpu_stream, weight_mem, transposed_weight_mem);
+        cpu_stream->wait();
     }
 
     template <typename InT, typename WeiT, typename OutT>
@@ -1323,9 +1320,11 @@ public:
 
 private:
     dnnl::engine::kind kind;
-    dnnl::engine *engine;
-    dnnl::stream *stream;
+    dnnl::engine *engine; // For runtime engine
+    dnnl::stream *stream; // For runtime stream
     std::unordered_map<std::string, std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *>> matmul_hub;
+    dnnl::engine *cpu_engine;
+    dnnl::stream *cpu_stream;
 
     int AMXThresholdM;
 
