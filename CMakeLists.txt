@@ -47,8 +47,8 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -D_GLIBCXX_USE_CXX11_ABI=0")
 endif()
 
-# GCC>=10.1 should support avx512bf16, but need to double check as some versions have issues
-if(GCC_VERSION VERSION_GREATER_EQUAL "10.1")
+# GCC>=12.4 should support avx512bf16, but need to double check as some versions have issues
+if(GCC_VERSION VERSION_GREATER_EQUAL "12.4")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512bf16")
 
     # Source code for BF16 test
