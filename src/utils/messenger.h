@@ -56,6 +56,7 @@ private:
         helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
         helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
         helperAllreduceBF16 = (void (*)(bfloat16_t *, bfloat16_t *, size_t))dlsym(commHelperHanlde, "allreduceBF16");
+        helperAllreduceFP16 = (void (*)(float16_t *, float16_t *, size_t))dlsym(commHelperHanlde, "allreduceFP16");
         helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
@@ -175,6 +176,8 @@ public:
     void cclAllreduce(T *sendBuf, T *recvBuf, size_t count) {
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        } else if constexpr (std::is_same_v<T, float16_t>) {
+            (*helperAllreduceFP16)(sendBuf, recvBuf, count);
         } else if constexpr (std::is_same_v<T, float>) {
             (*helperAllreduce)(sendBuf, recvBuf, count);
         } else {
@@ -266,6 +269,7 @@ private:
     void (*helperFreePCOMM)();
     void (*helperAllreduce)(float *, float *, size_t);
     void (*helperAllreduceBF16)(bfloat16_t *, bfloat16_t *, size_t);
+    void (*helperAllreduceFP16)(float16_t *, float16_t *, size_t);
     void (*helperBroadcast)(int *, size_t);
     void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
     void (*helperWorldSendFP32)(const float *, int, int, int);

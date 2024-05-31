@@ -146,3 +146,5 @@ void ShmReduction::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int 
 template void ShmReduction::reduceAdd<float>(float *sendBuf, float *recvBuf, size_t size, int rank, int rankSize);
 template void ShmReduction::reduceAdd<bfloat16_t>(
         bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t size, int rank, int rankSize);
+template void ShmReduction::reduceAdd<float16_t>(
+        float16_t *sendBuf, float16_t *recvBuf, size_t size, int rank, int rankSize);
