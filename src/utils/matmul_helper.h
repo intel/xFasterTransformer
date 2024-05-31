@@ -20,6 +20,7 @@
 #include "dtype.h"
 #include "environment.h"
 #include "float16.h"
+#include "intrinsics_util.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "oneapi/dnnl/dnnl.hpp"
@@ -645,14 +646,20 @@ public:
                     xdnn_sgemm_f32bf16f32_compute_biasadd_relu(
                             transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, beta, C, ldc, bias));
 #elif defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-            if (M > AMXThresholdM) {
-                GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu",
-                        onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
-                                transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
+            if constexpr (std::is_same_v<InT, bfloat16_t>) {
+                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu",
+                            onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
+                                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
             } else {
-                GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_biasadd_relu",
-                        xdnn_bgemm_f32bf16f32_compute_biasadd_relu(
-                                transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias));
+                if (M > AMXThresholdM) {
+                    GEMMVERBOSE("onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu",
+                            onednn_amx_sgemm_f32bf16f32_compute_biasadd_relu(
+                                    transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias));
+                } else {
+                    GEMMVERBOSE("xdnn_bgemm_f32bf16f32_compute_biasadd_relu",
+                            xdnn_bgemm_f32bf16f32_compute_biasadd_relu(
+                                    transA, M, N, K, alpha, A, lda, (const XDNN_BF16 *)packedB, beta, C, ldc, bias));
+                }
             }
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_BF16 kernel data type.\n", __FILE__, __LINE__);
@@ -1369,7 +1376,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B) and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims output_dims = {M, N};
 
@@ -1387,35 +1394,34 @@ private:
             }
 
             // Create primitive descriptor and primitive.
-            switch (postAlg)
-            {
-            case matmul_kinds::Basic:
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
-                break;
-            case matmul_kinds::Silu:{
-                const float post_alpha = 1.0f;
-                const float post_beta = 0.0f;
-                post_ops matmul_ops;
-                matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
-                primitive_attr matmul_attr;
-                matmul_attr.set_post_ops(matmul_ops);
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
-                break;
-            }
-            case matmul_kinds::Gelu:{
-                const float post_alpha = 1.0f;
-                const float post_beta = 0.0f;
-                post_ops matmul_ops;
-                matmul_ops.append_eltwise(algorithm::eltwise_gelu_tanh, post_alpha, post_beta);
-                primitive_attr matmul_attr;
-                matmul_attr.set_post_ops(matmul_ops);
-                matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
-                break;
-            }
-            default:
-                printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
-                exit(-1);
-                break;
+            switch (postAlg) {
+                case matmul_kinds::Basic:
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md);
+                    break;
+                case matmul_kinds::Silu: {
+                    const float post_alpha = 1.0f;
+                    const float post_beta = 0.0f;
+                    post_ops matmul_ops;
+                    matmul_ops.append_eltwise(algorithm::eltwise_swish, post_alpha, post_beta);
+                    primitive_attr matmul_attr;
+                    matmul_attr.set_post_ops(matmul_ops);
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                    break;
+                }
+                case matmul_kinds::Gelu: {
+                    const float post_alpha = 1.0f;
+                    const float post_beta = 0.0f;
+                    post_ops matmul_ops;
+                    matmul_ops.append_eltwise(algorithm::eltwise_gelu_tanh, post_alpha, post_beta);
+                    primitive_attr matmul_attr;
+                    matmul_attr.set_post_ops(matmul_ops);
+                    matmul_pd = new matmul::primitive_desc(*engine, input_md, weight_md, output_md, matmul_attr);
+                    break;
+                }
+                default:
+                    printf(">>> onednn amx postAlg type %s not supported.", std::to_string(postAlg).c_str());
+                    exit(-1);
+                    break;
             }
             matmul_prim = new matmul(*matmul_pd);
             // Cache primitive_desc and matmul
@@ -1427,9 +1433,11 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+        //     input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+            input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+        //     input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
@@ -1476,7 +1484,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
             memory::dims output_dims = {M, N};
@@ -1507,9 +1515,9 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+            input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
@@ -1558,7 +1566,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
             memory::dims output_dims = {M, N};
@@ -1597,9 +1605,9 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+            input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
@@ -1648,7 +1656,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims scale_dims = {M, N};
             memory::dims output_dims = {M, N};
@@ -1703,9 +1711,9 @@ private:
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+            input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
@@ -1755,7 +1763,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
             memory::dims shift_dims = {M, N};
@@ -1807,9 +1815,9 @@ private:
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
+            input_mem = memory(matmul_pd->src_desc(), *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
@@ -1860,7 +1868,7 @@ private:
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B) and destination (C) matrix dimensions.
-            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
+            memory::dims input_dims = {M, K};
             memory::dims weight_dims = {K, N};
             memory::dims output_dims = {M, N};
 
@@ -1880,7 +1888,7 @@ private:
             matmul_hub[key] = value;
         }
 
-        auto input_mem = memory({{M, K}, dt::s8, tag::ab}, *engine, const_cast<int8_t *>(A));
+        auto input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<int8_t *>(A));
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<int8_t *>(B));
         auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
 
