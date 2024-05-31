@@ -162,7 +162,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (!localRanksFlag || (pshm != nullptr && sizeof(T) * count > pshm->getSHMSize())) {
+        if (!localRanksFlag || pshm == nullptr || sizeof(T) * count > pshm->getSHMSize()) {
             cclAllreduce(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
