@@ -157,8 +157,10 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --iteration ${iter} \
     --warmup ${warmup}"
 
-if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]]; then
+if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]] || [[ ${model_name} == *"qwen-"* ]]; then
     benchmark_cmd+=" --padding=False"
+else
+    benchmark_cmd+=" --padding=True"
 fi
 
 if [ -n $csv ]; then
@@ -239,7 +241,7 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
         if [ "$sockets" == "2" ]; then
             run_cmd+=" : \
-            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \"
+            -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
             -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
         fi
     fi
