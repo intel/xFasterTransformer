@@ -37,7 +37,7 @@ int getFlashThresh() {
     // > threshold to enable flash attention, default 1024
     static int envFlashThresh = -1;
     if (envFlashThresh == -1)
-        envFlashThresh = (getenv("FLASH_ATTN_THRESHOLD") ? atoi(getenv("FLASH_ATTN_THRESHOLD")) : 1024);
+        envFlashThresh = (getenv("FLASH_ATTN_THRESHOLD") ? atoi(getenv("FLASH_ATTN_THRESHOLD")) : 8192);
     return envFlashThresh;
 }
 
