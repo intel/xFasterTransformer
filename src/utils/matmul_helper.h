@@ -20,6 +20,7 @@
 #include "dtype.h"
 #include "environment.h"
 #include "float16.h"
+#include "intrinsics_util.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "oneapi/dnnl/dnnl.hpp"
