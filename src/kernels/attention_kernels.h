@@ -233,8 +233,9 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
             }
         }
 
+        // Causal mask (either with or without Alibi), use endSeq as N
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
-                m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, (XDNN_BF16 *)C, ldc);
+                m, endSeq, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, (XDNN_BF16 *)C, ldc);
 
 #ifdef DEBUG
         if (b == 0 && i == 0) {
