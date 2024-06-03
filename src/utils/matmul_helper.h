@@ -1369,16 +1369,16 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, postAlg);
+        std::string key = create_key(transA, 0, N, K, postAlg);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B) and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
+            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
             memory::dims weight_dims = {K, N};
-            memory::dims output_dims = {M, N};
+            memory::dims output_dims = {DNNL_RUNTIME_DIM_VAL, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
@@ -1425,7 +1425,7 @@ private:
             }
             matmul_prim = new matmul(*matmul_pd);
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, postAlg);
+            std::string key = create_key(transA, 0, N, K, postAlg);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1433,17 +1433,23 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-        //     input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
-            input_mem = memory(matmul_pd->src_desc(), *engine);
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-        //     input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
+        memory output_mem;
+        if constexpr (std::is_same_v<Tout, float>) {
+            output_mem = memory({{M, N}, dt::f32, tag::ab}, *engine, C);
+        } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
+            output_mem = memory({{M, N}, dt::bf16, tag::ab}, *engine, C);
+        } else {
+            printf(">>> onednn amx output date type not supported.");
+            exit(-1);
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1477,17 +1483,17 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+        std::string key = create_key(transA, 0, N, K, matmul_kinds::BiasAdd);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
+            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
-            memory::dims output_dims = {M, N};
+            memory::dims output_dims = {DNNL_RUNTIME_DIM_VAL, N};
 
             // Create memory descriptors and memory objects for src, weights, bias, and dst.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
@@ -1507,7 +1513,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
+            std::string key = create_key(transA, 0, N, K, matmul_kinds::BiasAdd);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1515,16 +1521,24 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine);
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
         auto bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
+        memory output_mem;
+        if constexpr (std::is_same_v<Tout, float>) {
+            output_mem = memory({{M, N}, dt::f32, tag::ab}, *engine, C);
+        } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
+            output_mem = memory({{M, N}, dt::bf16, tag::ab}, *engine, C);
+        } else {
+            printf(">>> onednn amx output date type not supported.");
+            exit(-1);
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1559,17 +1573,17 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+        std::string key = create_key(transA, 0, N, K, matmul_kinds::BiasAdd_Relu);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
+            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
-            memory::dims output_dims = {M, N};
+            memory::dims output_dims = {DNNL_RUNTIME_DIM_VAL, N};
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
@@ -1597,7 +1611,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+            std::string key = create_key(transA, 0, N, K, matmul_kinds::BiasAdd_Relu);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1605,16 +1619,24 @@ private:
         // Repack and convert input data.
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine);
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
         auto bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
+        memory output_mem;
+        if constexpr (std::is_same_v<Tout, float>) {
+            output_mem = memory({{M, N}, dt::f32, tag::ab}, *engine, C);
+        } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
+            output_mem = memory({{M, N}, dt::bf16, tag::ab}, *engine, C);
+        } else {
+            printf(">>> onednn amx output date type not supported.");
+            exit(-1);
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1649,17 +1671,17 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+        std::string key = create_key(transA, 0, N, K, matmul_kinds::Resmul);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
+            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
             memory::dims weight_dims = {K, N};
-            memory::dims scale_dims = {M, N};
-            memory::dims output_dims = {M, N};
+            memory::dims scale_dims = {DNNL_RUNTIME_DIM_VAL, N};
+            memory::dims output_dims = {DNNL_RUNTIME_DIM_VAL, N};
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
@@ -1688,9 +1710,10 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
+            std::string key = create_key(transA, 0, N, K, matmul_kinds::Resmul);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
+            printf(">>> onednn");
         }
 
         // Repack and convert input data.
@@ -1711,15 +1734,23 @@ private:
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine);
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
+        memory output_mem;
+        if constexpr (std::is_same_v<Tout, float>) {
+            output_mem = memory({{M, N}, dt::f32, tag::ab}, *engine, C);
+        } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
+            output_mem = memory({{M, N}, dt::bf16, tag::ab}, *engine, C);
+        } else {
+            printf(">>> onednn amx output date type not supported.");
+            exit(-1);
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;
@@ -1756,18 +1787,18 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+        std::string key = create_key(transA, 0, N, K, matmul_kinds::Residential);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
         } else {
             // Source (A), weights (B), and destination (C) matrix dimensions.
-            memory::dims input_dims = {M, K};
+            memory::dims input_dims = {DNNL_RUNTIME_DIM_VAL, K};
             memory::dims weight_dims = {K, N};
             memory::dims bias_dims = {1, N};
-            memory::dims shift_dims = {M, N};
-            memory::dims output_dims = {M, N};
+            memory::dims shift_dims = {DNNL_RUNTIME_DIM_VAL, N};
+            memory::dims output_dims = {DNNL_RUNTIME_DIM_VAL, N};
 
             // Create primitive descriptor.
             auto input_md = memory::desc(input_dims, dt::bf16, tag::ab);
@@ -1802,7 +1833,7 @@ private:
             }
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
+            std::string key = create_key(transA, 0, N, K, matmul_kinds::Residential);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }
@@ -1815,18 +1846,26 @@ private:
 
         memory input_mem;
         if constexpr (std::is_same_v<Tin, float>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine);
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine);
         } else if constexpr (std::is_same_v<Tin, bfloat16_t>) {
-            input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<bfloat16_t *>(A));
+            input_mem = memory({{M, K}, dt::bf16, tag::ab}, *engine, const_cast<bfloat16_t *>(A));
         } else {
             printf(">>> onednn amx input date type not supported.");
         }
 
         auto weight_mem = memory(matmul_pd->weights_desc(), *engine, const_cast<bfloat16_t *>(packedB));
         memory bias_mem;
-        auto shift_mem = memory(shift_md, *engine, (void *)res);
-        auto output_mem = memory(matmul_pd->dst_desc(), *engine, C);
         if (bias != nullptr) { bias_mem = memory(matmul_pd->bias_desc(), *engine, const_cast<float *>(bias)); }
+        auto shift_mem = memory(shift_md, *engine, (void *)res);
+        memory output_mem;
+        if constexpr (std::is_same_v<Tout, float>) {
+            output_mem = memory({{M, N}, dt::f32, tag::ab}, *engine, C);
+        } else if constexpr (std::is_same_v<Tout, bfloat16_t>) {
+            output_mem = memory({{M, N}, dt::bf16, tag::ab}, *engine, C);
+        } else {
+            printf(">>> onednn amx output date type not supported.");
+            exit(-1);
+        }
 
         // Create the primitive args.
         std::unordered_map<int, memory> matmul_args;

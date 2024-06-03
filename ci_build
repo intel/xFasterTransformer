@@ -14,7 +14,6 @@
 # limitations under the License.
 # ============================================================================
 
-source ~/.bashrc
 pushd 3rdparty/
 sh prepare_oneccl.sh
 source ./oneccl/build/_install/env/setvars.sh
