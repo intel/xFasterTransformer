@@ -20,6 +20,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
     - [Built from source](#built-from-source)
       - [Prepare Environment](#prepare-environment)
         - [Manually](#manually)
+        - [Install dependent libraries](#install-dependent-libraries)
         - [How to build](#how-to-build)
   - [Models Preparation](#models-preparation)
   - [API usage](#api-usage)
@@ -34,6 +35,11 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
         - [C++](#c)
   - [Web Demo](#web-demo)
   - [Serving](#serving)
+    - [vLLM](#vllm)
+      - [Install](#install)
+      - [OpenAI Compatible Server](#openai-compatible-server)
+    - [FastChat](#fastchat)
+    - [MLServer](#mlserver)
   - [Benchmark](#benchmark)
   - [Support](#support)
   - [Q\&A](#qa)
@@ -55,7 +61,8 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |       Llama        | &#10004;  | &#10004; |   &#10004;   |
 |       Llama2       | &#10004;  | &#10004; |   &#10004;   |
 |       Llama3       | &#10004;  | &#10004; |   &#10004;   |
-|      Baichuan      | &#10004;  | &#10004; |   &#10004;   |
+|     Baichuan1      | &#10004;  | &#10004; |   &#10004;   |
+|     Baichuan2      | &#10004;  | &#10004; |   &#10004;   |
 |        QWen        | &#10004;  | &#10004; |   &#10004;   |
 |        QWen2       | &#10004;  | &#10004; |   &#10004;   |
 | SecLLM(YaRN-Llama) | &#10004;  | &#10004; |   &#10004;   |
@@ -114,12 +121,12 @@ docker run -it \
 ### Built from source
 #### Prepare Environment
 ##### Manually
-- [PyTorch](https://pytorch.org/get-started/locally/) v2.0 (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
+- [PyTorch](https://pytorch.org/get-started/locally/) v2.3 (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
-- For GPU, xFT needs ABI=1 from [torch==2.0.1+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.0.1%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=fbe35a5c60aef0c4b5463caab10ba905bdfa07d6d16b7be5d510225c966a0b46) in [torch-whl-list](https://download.pytorch.org/whl/torch/) due to DPC++ need ABI=1.
+- For GPU, xFT needs ABI=1 from [torch==2.3.0+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.3.0%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=c34512c3e07efe9b7fb5c3a918fef1a7c6eb8969c6b2eea92ee5c16a0583fe12) in [torch-whl-list](https://download.pytorch.org/whl/torch/) due to DPC++ need ABI=1.
 
 ##### Install dependent libraries
 
@@ -229,7 +236,10 @@ std::cout << std::endl;
 ```
 
 ## How to run
-Recommend preloading `libiomp5.so` to get a better performance. `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after building xFasterTransformer successfully.
+Recommend preloading `libiomp5.so` to get a better performance. 
+- ***[Recommended]*** Run `export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')` if xfastertransformer's python wheel package is installed.
+- `libiomp5.so` file will be in `3rdparty/mkl/lib` directory after building xFasterTransformer successfully if building from source code.
+
 ### Single rank
 FasterTransformer will automatically check the MPI environment, or you can use the `SINGLE_INSTANCE=1` environment variable to forcefully deactivate MPI.  
 
@@ -254,7 +264,9 @@ Use MPI to run in the multi-ranks mode, please install oneCCL firstly.
 
 - Here is a example on local. 
   ```bash
-  OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+  # or export LD_PRELOAD=libiomp5.so manually
+  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+  OMP_NUM_THREADS=48 mpirun \
     -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
     -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
   ```
@@ -300,14 +312,65 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. Now s
 - Run the script corresponding to the model. After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory. This demo also support multi-rank.
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
-# `libiomp5.so` file will be in `3rdparty/mklml/lib` directory after build xFasterTransformer.
-LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                    --dtype=bf16 \
-                                    --token_path=${TOKEN_PATH} \
-                                    --model_path=${MODEL_PATH}
+# or LD_PRELOAD=libiomp5.so manually, `libiomp5.so` file will be in `3rdparty/mkl/lib` directory after build xFasterTransformer.
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+python examples/web_demo/ChatGLM.py \
+                      --dtype=bf16 \
+                      --token_path=${TOKEN_PATH} \
+                      --model_path=${MODEL_PATH}
 ```
 
 ## Serving
+### vLLM
+A fork of vLLM has been created to integrate the xFasterTransformer backend, maintaining compatibility with most of the official vLLM's features. Refer [this link](serving/vllm-xft.md) for more detail.
+
+#### Install
+```bash
+pip install vllm-xft
+```
+***Notice: Please do not install both `vllm-xft` and `vllm` simultaneously in the environment. Although the package names are different, they will actually overwrite each other.***
+
+#### OpenAI Compatible Server
+***Notice: Preload libiomp5.so is required!***
+```bash
+# Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+
+python -m vllm.entrypoints.openai.api_server \
+        --model ${XFT_MODEL} \
+        --tokenizer ${TOKENIZER_DIR} \
+        --dtype fp16 \
+        --kv-cache-dtype fp16 \
+        --served-model-name xft \
+        --port 8000 \
+        --trust-remote-code
+```
+For multi-rank mode, please use `python -m vllm.entrypoints.slave` as slave and keep params of slaves align with master.
+```bash
+# Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+
+OMP_NUM_THREADS=48 mpirun \
+        -n 1 numactl --all -C 0-47 -m 0 \
+          python -m vllm.entrypoints.openai.api_server \
+            --model ${MODEL_PATH} \
+            --tokenizer ${TOKEN_PATH} \
+            --dtype bf16 \
+            --kv-cache-dtype fp16 \
+            --served-model-name xft \
+            --port 8000 \
+            --trust-remote-code \
+        : -n 1 numactl --all -C 48-95 -m 1 \
+          python -m vllm.entrypoints.slave \
+            --dtype bf16 \
+            --model ${MODEL_PATH} \
+            --kv-cache-dtype fp16
+```
+
+### FastChat
+xFasterTransformer is an official inference backend of [FastChat](https://github.com/lm-sys/FastChat). Please refer to [xFasterTransformer in FastChat](https://github.com/lm-sys/FastChat/blob/main/docs/xFasterTransformer.md) and [FastChat's serving](https://github.com/lm-sys/FastChat/blob/main/docs/openai_api.md) for more details.
+
+### MLServer
 [A example serving of MLServer](serving/mlserver/README.md) is provided which supports REST and gRPC interface and adaptive batching feature to group inference requests together on the fly.
 
 ## [Benchmark](benchmark/README.md)
