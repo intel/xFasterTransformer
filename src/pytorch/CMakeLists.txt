@@ -60,7 +60,7 @@ add_custom_command(TARGET xfastertransformer_pt POST_BUILD
 
 add_custom_command(TARGET xfastertransformer_pt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_SOURCE_DIR}/3rdparty/mklml/lib/libiomp5.so"
+    "${CMAKE_SOURCE_DIR}/3rdparty/mkl/lib/libiomp5.so"
     ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
     COMMENT "Copying libiomp5.so to src/xfastertransformer directory"
 )
