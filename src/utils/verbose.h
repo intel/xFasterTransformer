@@ -41,11 +41,38 @@ public:
         printf("xft_verbose,exec,cpu,api,%s,m%dn%dk%d,%.6lf\n", api_func, M, N, K, ms);
         fflush(stdout);
     }
+
     static void matrix(int rows, int cols, int stride, size_t totalmem) {
         printf("xft_verbose,matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", rows, cols, stride, totalmem);
         fflush(stdout);
     }
-};
+
+    template <typename T>
+    static void print(std::string buf_name, T *buf, int rows, int cols, int stride, bool printAll = false, void *device = nullptr) {
+        std::cout << buf_name.c_str() << ":" << std::endl;
+#ifdef GPU
+        if (device != nullptr) {
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+            gpu_queue
+                    ->submit([&](sycl::handler &cgh) {
+                        auto out = sycl::stream(1024, 768, cgh);
+                        cgh.parallel_for(sycl::nd_range<1>(1, 1), [=](sycl::nd_item<1> item) {
+                            int idx_col = item.get_global_id(0);
+                            if (idx_col == 0) {
+                                for (int row = 0; row < rows; ++row) {
+                                    for (int col = 0; col < cols; ++col) {
+                                        out << (float)buf[row * stride + col] << ", ";
+                                    }
+                                    out << sycl::endl;
+                                }
+                                out << sycl::endl;
+                            }
+                        });
+                    })
+                    .wait();
+#endif
+        }
+    };
 
 #define GEMMVERBOSE(api_func, compute_func)                \
     if (Env::getInstance().getVerbose() >= 1) {            \

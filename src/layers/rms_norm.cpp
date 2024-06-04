@@ -69,6 +69,9 @@ void RmsNorm::forward(const float *input, bfloat16_t *output, int rows, int iStr
 
 void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    fastertransformer::invokeGeneralT5LayerNorm(
+            output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, iStride, gpu_queue);
 }
 
 void RmsNorm::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {

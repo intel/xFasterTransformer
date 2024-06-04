@@ -386,4 +386,83 @@ void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, i
             maxSupportedSeqLength, qkShape, positionIds);
 }
 
+#ifdef GPU
+// For LLaMA
+template <typename T>
+static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, int qStride, int kStride, float *emb_cos,
+        float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    int dim = inv_freq_size * 2;
+    REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
+
+    const int batchSize = qkShape[0];
+    const int seqLen = qkShape[1];
+    const int qHeads = qkShape[2];
+    const int kHeads = qkShape[4];
+    const int head_num = std::max(qHeads, kHeads);
+    const int head_size = qkShape[3];
+    const int half_head_size = (head_size + 1) / 2;
+    using namespace sycl;
+
+    auto rope_kernel
+            = [](sycl::nd_item<3> &item, const float *embCos, const float *embSin, const int qHeads, const int kHeads,
+                      const int seq_size, const int head_size, const int half, T *query, T *key, int qStride,
+                      int kStride, const sycl::accessor<int, 1, sycl::access::mode::read> &positionIds) {
+                  size_t idx_bs_seq = item.get_global_id(0);
+                  size_t idx_head_num = item.get_global_id(1);
+                  size_t idx_half_head_dim = item.get_global_id(2);
+
+                  size_t pos = positionIds[idx_bs_seq % seq_size];
+                  float cos = embCos[pos * half + idx_half_head_dim];
+                  float sin = embSin[pos * half + idx_half_head_dim];
+
+                  T *q = query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
+                  T *k = key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
+
+                  if (idx_head_num < qHeads) {
+                      auto q1 = q[0];
+                      q[0] = q1 * cos - q[half] * sin;
+                      q[half] = q[half] * cos + q1 * sin;
+                  }
+                  if (idx_head_num < kHeads) {
+                      auto k1 = k[0];
+                      k[0] = k1 * cos - k[half] * sin;
+                      k[half] = k[half] * cos + k1 * sin;
+                  }
+              };
+
+    // Reorder input
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
+    gpu_queue->submit([&](sycl::handler &cgh) {
+        sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
+        sycl::range<3> globalSize(batchSize * seqLen, head_num, half_head_size);
+        sycl::range<3> workGroupSize(1, 1, 1);
+
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=, this](sycl::nd_item<3> item) {
+            rope_kernel(item, emb_cos, emb_sin, qHeads, kHeads, seqLen, head_size, half_head_size, query, key, qStride,
+                    kStride, position);
+        });
+    });
+    gpu_queue->wait();
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,
+        float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<float>(
+            device, query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, bfloat16_t *query, bfloat16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<bfloat16_t>(
+            device, query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<float16_t>(
+            device, query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+#endif
+
 } // namespace xft

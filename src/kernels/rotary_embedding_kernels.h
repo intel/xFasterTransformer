@@ -32,7 +32,7 @@ void llamaApplyRotaryPosEmbeding(bfloat16_t *query, bfloat16_t *key, int qStride
 void llamaApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, int kStride, float *emb_cos,
         float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
 
-// For continous batching
+// For LLaMA continous batching
 void llamaApplyRotaryPosEmbed(float *query, float *key, float *embCos, float *embSin, int qStride, int kStride, int dim,
         int totSeqLen, int qHeads, int kHeads, const int *positionIds);
 
@@ -64,5 +64,17 @@ void qwenApplyRotaryPosEmbeding(bfloat16_t *query, bfloat16_t *key, int qStride,
 void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, int kStride, float *cur_emb_cos,
         float *cur_emb_sin, int inv_freq_size, const float *logn, int maxSupportedSeqLength, const int *qkShape,
         const int *positionIds);
+
+#ifdef GPU
+// For LLaMA
+void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,
+        float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+void llamaApplyRotaryPosEmbeding(void *device, bfloat16_t *query, bfloat16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+#endif
 
 } // namespace xft
