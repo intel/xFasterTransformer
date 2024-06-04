@@ -56,6 +56,7 @@ private:
         helperFreePCOMM = (void (*)())dlsym(commHelperHanlde, "freePCOMM");
         helperAllreduce = (void (*)(float *, float *, size_t))dlsym(commHelperHanlde, "allreduce");
         helperAllreduceBF16 = (void (*)(bfloat16_t *, bfloat16_t *, size_t))dlsym(commHelperHanlde, "allreduceBF16");
+        helperAllreduceFP16 = (void (*)(float16_t *, float16_t *, size_t))dlsym(commHelperHanlde, "allreduceFP16");
         helperBroadcast = (void (*)(int *, size_t))dlsym(commHelperHanlde, "broadcast");
         helperAllgatherv = (void (*)(const float *, size_t, float *, const std::vector<long unsigned int> &))dlsym(
                 commHelperHanlde, "allgatherv");
@@ -108,7 +109,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
         static std::unordered_map<size_t, int> tuned_map;
 #ifdef USE_SHM
-        if (tunedComm() && localRanksFlag) {
+        if (tunedComm() && localRanksFlag && pshm != nullptr) {
             size_t commSize = sizeof(T) * count;
             if (sizeof(T) * count > pshm->getSHMSize()) { pshm->ShmResize(rank, commSize); }
 
@@ -120,7 +121,7 @@ public:
                 float dur_shm = std::numeric_limits<float>::max(), dur_ccl = std::numeric_limits<float>::max();
                 // tuned for the faster comm primitive
                 for (int i = 0; i < warmup + nruns; ++i) {
-                    if (i >= warmup) gettimeofday(&start, NULL);
+                    if (i == warmup) gettimeofday(&start, NULL);
                     pshm->reduceAdd(commBuf, commBuf, count, rank, size);
                 }
                 gettimeofday(&end, NULL);
@@ -128,7 +129,7 @@ public:
 
                 if (commSize < 1.0e9) {
                     for (int i = 0; i < warmup + nruns; ++i) {
-                        if (i >= warmup) gettimeofday(&start, NULL);
+                        if (i == warmup) gettimeofday(&start, NULL);
                         cclAllreduce(commBuf, commBuf, count);
                     }
                     gettimeofday(&end, NULL);
@@ -161,7 +162,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
 
 #ifdef USE_SHM
-        if (sizeof(T) * count > pshm->getSHMSize() || !localRanksFlag) {
+        if (!localRanksFlag || pshm == nullptr || sizeof(T) * count > pshm->getSHMSize()) {
             cclAllreduce(sendBuf, recvBuf, count);
         } else {
             pshm->reduceAdd(sendBuf, recvBuf, count, rank, size);
@@ -175,6 +176,8 @@ public:
     void cclAllreduce(T *sendBuf, T *recvBuf, size_t count) {
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             (*helperAllreduceBF16)(sendBuf, recvBuf, count);
+        } else if constexpr (std::is_same_v<T, float16_t>) {
+            (*helperAllreduceFP16)(sendBuf, recvBuf, count);
         } else if constexpr (std::is_same_v<T, float>) {
             (*helperAllreduce)(sendBuf, recvBuf, count);
         } else {
@@ -266,6 +269,7 @@ private:
     void (*helperFreePCOMM)();
     void (*helperAllreduce)(float *, float *, size_t);
     void (*helperAllreduceBF16)(bfloat16_t *, bfloat16_t *, size_t);
+    void (*helperAllreduceFP16)(float16_t *, float16_t *, size_t);
     void (*helperBroadcast)(int *, size_t);
     void (*helperAllgatherv)(const float *, size_t, float *, const std::vector<long unsigned int> &);
     void (*helperWorldSendFP32)(const float *, int, int, int);

@@ -70,7 +70,8 @@ extern "C" int init(int *world_size, int *world_rank, int *world_color) {
 
     int sameHostnames = 1;
     for (int i = 1; i < *world_size; i++) {
-        if (strcmp(myHostname, &all_hostnames[i * MPI_MAX_PROCESSOR_NAME]) != 0) {
+        int id = (*world_rank + i) % (*world_size);
+        if (strcmp(myHostname, &all_hostnames[id * MPI_MAX_PROCESSOR_NAME]) != 0) {
             sameHostnames = 0;
             break;
         }
@@ -96,6 +97,10 @@ extern "C" void allreduce(float *sendBuf, float *recvBuf, size_t count) {
 
 extern "C" void allreduceBF16(void *sendBuf, void *recvBuf, size_t count) {
     ccl::allreduce(sendBuf, recvBuf, count, ccl::datatype::bfloat16, ccl::reduction::sum, *pcomm).wait();
+}
+
+extern "C" void allreduceFP16(void *sendBuf, void *recvBuf, size_t count) {
+    ccl::allreduce(sendBuf, recvBuf, count, ccl::datatype::float16, ccl::reduction::sum, *pcomm).wait();
 }
 
 extern "C" void broadcast(int *buf, size_t count) {

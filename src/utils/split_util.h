@@ -8,7 +8,8 @@ public:
     static std::pair<int, int> getTaskRange(int N, int splits, int splitIdx) {
         int startId, endId;
 
-        if (N % splits == 0) {
+        // 64 is related to the GEMM kernel implementation
+        if (N % (splits * 64) == 0) {
             int tasksPerSplit = N / splits;
             startId = splitIdx * tasksPerSplit;
             endId = startId + tasksPerSplit;

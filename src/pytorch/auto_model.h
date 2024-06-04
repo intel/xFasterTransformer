@@ -276,7 +276,7 @@ public:
         }
 
         seqIDs = model->set_input(tokenIds, seqLens, seqIDs, maxLens);
-        torch::Tensor ret = torch::from_blob(seqIDs.data(), {batchSize}, torch::kInt32).to(torch::kInt64);
+        torch::Tensor ret = torch::from_blob(seqIDs.data(), {static_cast<int>(seqIDs.size())}, torch::kInt32).to(torch::kInt64);
         return ret;
     }
 
