@@ -1,5 +1,5 @@
 # vLLM-xft
-This is a fork of vLLM to support xfastertransformer backend and supports most of official vllm's feature, like continuous batching.
+vLLM-xFT is a fork of vLLM to  integrate the xfastertransformer backend, maintaining compatibility with most of the official vLLM's features.
 
 ## Install
 ```bash

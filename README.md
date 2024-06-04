@@ -61,7 +61,8 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |       Llama        | &#10004;  | &#10004; |   &#10004;   |
 |       Llama2       | &#10004;  | &#10004; |   &#10004;   |
 |       Llama3       | &#10004;  | &#10004; |   &#10004;   |
-|      Baichuan      | &#10004;  | &#10004; |   &#10004;   |
+|     Baichuan1      | &#10004;  | &#10004; |   &#10004;   |
+|     Baichuan2      | &#10004;  | &#10004; |   &#10004;   |
 |        QWen        | &#10004;  | &#10004; |   &#10004;   |
 |        QWen2       | &#10004;  | &#10004; |   &#10004;   |
 | SecLLM(YaRN-Llama) | &#10004;  | &#10004; |   &#10004;   |
@@ -120,12 +121,12 @@ docker run -it \
 ### Built from source
 #### Prepare Environment
 ##### Manually
-- [PyTorch](https://pytorch.org/get-started/locally/) v2.0 (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
+- [PyTorch](https://pytorch.org/get-started/locally/) v2.3 (When using the PyTorch API, it's required, but it's not needed when using the C++ API.)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
-- For GPU, xFT needs ABI=1 from [torch==2.0.1+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.0.1%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=fbe35a5c60aef0c4b5463caab10ba905bdfa07d6d16b7be5d510225c966a0b46) in [torch-whl-list](https://download.pytorch.org/whl/torch/) due to DPC++ need ABI=1.
+- For GPU, xFT needs ABI=1 from [torch==2.3.0+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.3.0%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=c34512c3e07efe9b7fb5c3a918fef1a7c6eb8969c6b2eea92ee5c16a0583fe12) in [torch-whl-list](https://download.pytorch.org/whl/torch/) due to DPC++ need ABI=1.
 
 ##### Install dependent libraries
 
@@ -321,7 +322,7 @@ python examples/web_demo/ChatGLM.py \
 
 ## Serving
 ### vLLM
-We created a fork of vLLM to support xFasterTransformer backend, supporting most of official vllm's feature, like continuous batching. Refer [this link](serving/vllm-xft.md) for more detail.
+A fork of vLLM has been created to integrate the xFasterTransformer backend, maintaining compatibility with most of the official vLLM's features. Refer [this link](serving/vllm-xft.md) for more detail.
 
 #### Install
 ```bash

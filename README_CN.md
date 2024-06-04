@@ -52,7 +52,7 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 
 ### 支持的模型
 
-|        模型        |   框架   |          | 分布式支持 |
+|        模型         |   框架   |          | 分布式支持   |
 | :----------------: | :------: | :------: | :--------: |
 |                    | PyTorch  |   C++    |            |
 |      ChatGLM       | &#10004; | &#10004; |  &#10004;  |
@@ -60,8 +60,11 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |      ChatGLM3      | &#10004; | &#10004; |  &#10004;  |
 |       Llama        | &#10004; | &#10004; |  &#10004;  |
 |       Llama2       | &#10004; | &#10004; |  &#10004;  |
-|      Baichuan      | &#10004; | &#10004; |  &#10004;  |
+|       Llama3       | &#10004; | &#10004; |  &#10004;  |
+|     Baichuan1      | &#10004; | &#10004; |   &#10004; |
+|     Baichuan2      | &#10004; | &#10004; |   &#10004; |
 |        QWen        | &#10004; | &#10004; |  &#10004;  |
+|        QWen2       | &#10004; | &#10004; |  &#10004;  |
 | SecLLM(YaRN-Llama) | &#10004; | &#10004; |  &#10004;  |
 |        Opt         | &#10004; | &#10004; |  &#10004;  |
 |   Deepseek-coder   | &#10004; | &#10004; |  &#10004;  |
@@ -118,10 +121,12 @@ docker run -it \
 ### 从源码构建
 #### 准备环境
 ##### 手动操作
-- [PyTorch](https://pytorch.org/get-started/locally/) v2.0 (使用 PyTorch API 时需要，但使用 C++ API 时不需要。)
+- [PyTorch](https://pytorch.org/get-started/locally/) v2.3 (使用 PyTorch API 时需要，但使用 C++ API 时不需要。)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
+
+- 对于 GPU 版本的 xFT，由于 DPC++ 要求 ABI=1，因此需要安装 [torch-whl-list](https://download.pytorch.org/whl/torch/) 中 ABI=1 的 [torch==2.3.0+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.3.0%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=c34512c3e07efe9b7fb5c3a918fef1a7c6eb8969c6b2eea92ee5c16a0583fe12)。
 
 ##### 安装依赖的库
 
@@ -171,6 +176,7 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     - OPTConvert
     - BaichuanConvert
     - QwenConvert
+    - Qwen2Convert
     - DeepseekConvert
 
 ## API 用法
@@ -319,7 +325,7 @@ python examples/web_demo/ChatGLM.py \
 ## 服务
 
 ### vLLM
-我们创建了 vLLM 的一个分支来支持 xFasterTransformer 后端，支持大部分官方 vLLM 的特性，比如连续批处理。详细信息请参考[此链接](serving/vllm-xft.md)。
+vllm-xft项目创建了vLLM的一个分支版本，该版本集成了xFasterTransformer后端以提高性能，同时保持了与官方vLLM大多数功能的兼容性。详细信息请参考[此链接](serving/vllm-xft.md)。
 
 #### Install
 ```bash
