@@ -20,6 +20,7 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
     - [从源码构建](#从源码构建)
       - [准备环境](#准备环境)
         - [手动操作](#手动操作)
+        - [安装依赖的库](#安装依赖的库)
         - [如何编译](#如何编译)
   - [模型准备](#模型准备)
   - [API 用法](#api-用法)
@@ -34,6 +35,11 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
         - [C++](#c)
   - [网页示例](#网页示例)
   - [服务](#服务)
+    - [vLLM](#vllm)
+      - [Install](#install)
+      - [兼容OpenAI-API的服务](#兼容openai-api的服务)
+    - [FastChat](#fastchat)
+    - [MLServer](#mlserver)
   - [性能测试](#性能测试)
   - [技术支持](#技术支持)
   - [问题与回答](#问题与回答)
@@ -225,7 +231,10 @@ std::cout << std::endl;
 ```
 
 ## 如何运行
-建议预加载 `libiomp5.so` 以获得更好的性能。成功编译 xFasterTransformer 后，`libiomp5.so` 文件将位于 `3rdparty/mklml/lib` 目录中。
+建议预加载 `libiomp5.so` 以获得更好的性能。
+- **[推荐]** 如果已安装 xfastertransformer 的 Python wheel 包，请运行 `export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`。
+- 如果从源代码构建 xFasterTransformer，成功构建后 `libiomp5.so` 文件将在 `3rdparty/mkl/lib` 目录下。
+
 ### 单进程
 xFasterTransformer 会自动检查 MPI 环境，或者使用 `SINGLE_INSTANCE=1` 环境变量强制停用 MPI。 
 
@@ -250,7 +259,9 @@ xFasterTransformer 会自动检查 MPI 环境，或者使用 `SINGLE_INSTANCE=1`
 
 - 下面是一个本地环境的运行方式示例。 
   ```bash
-  OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+  # 或者手动预加载 export LD_PRELOAD=libiomp5.so
+  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+  OMP_NUM_THREADS=48 mpirun \
     -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
     -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
   ```
@@ -297,13 +308,66 @@ while (1) {
 ```bash
 # 推荐预加载`libiomp5.so`来获得更好的性能。
 # `libiomp5.so`文件会位于编译后`3rdparty/mklml/lib`文件夹中。
-LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                    --dtype=bf16 \
-                                    --token_path=${TOKEN_PATH} \
-                                    --model_path=${MODEL_PATH}
+# 或者手动预加载LD_PRELOAD=libiomp5.so manually, `libiomp5.so`文件会位于编译后`3rdparty/mkl/lib`文件夹中
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+python examples/web_demo/ChatGLM.py \
+                      --dtype=bf16 \
+                      --token_path=${TOKEN_PATH} \
+                      --model_path=${MODEL_PATH}
 ```
 
 ## 服务
+
+### vLLM
+我们创建了 vLLM 的一个分支来支持 xFasterTransformer 后端，支持大部分官方 vLLM 的特性，比如连续批处理。详细信息请参考[此链接](serving/vllm-xft.md)。
+
+#### Install
+```bash
+pip install vllm-xft
+```
+***注意：请不要在环境中同时安装 `vllm-xft` 和 `vllm` 。虽然包名不同，但实际上它们会互相覆盖。***
+
+#### 兼容OpenAI-API的服务
+***注意：需要预加载 `libiomp5`！***
+```bash
+# 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+
+python -m vllm.entrypoints.openai.api_server \
+        --model ${XFT_MODEL} \
+        --tokenizer ${TOKENIZER_DIR} \
+        --dtype fp16 \
+        --kv-cache-dtype fp16 \
+        --served-model-name xft \
+        --port 8000 \
+        --trust-remote-code
+```
+对于分布式模式，请使用 `python -m vllm.entrypoints.slave` 作为从节点，并确保从节点的参数与主节点一致。
+```bash
+# 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+
+OMP_NUM_THREADS=48 mpirun \
+        -n 1 numactl --all -C 0-47 -m 0 \
+          python -m vllm.entrypoints.openai.api_server \
+            --model ${MODEL_PATH} \
+            --tokenizer ${TOKEN_PATH} \
+            --dtype bf16 \
+            --kv-cache-dtype fp16 \
+            --served-model-name xft \
+            --port 8000 \
+            --trust-remote-code \
+        : -n 1 numactl --all -C 48-95 -m 1 \
+          python -m vllm.entrypoints.slave \
+            --dtype bf16 \
+            --model ${MODEL_PATH} \
+            --kv-cache-dtype fp16
+```
+
+### FastChat
+xFasterTransformer 是 [FastChat](https://github.com/lm-sys/FastChat)的官方推理后端。详细信息请参考 [FastChat 中的 xFasterTransformer](https://github.com/lm-sys/FastChat/blob/main/docs/xFasterTransformer.md) 和 [FastChat 服务](https://github.com/lm-sys/FastChat/blob/main/docs/openai_api.md)。
+
+### MLServer
 [MLServer 服务示例](serving/mlserver/README.md) 支持 REST 和 gRPC 接口，并具有自适应批处理功能，可即时将推理请求分组。
 
 ## [性能测试](benchmark/README.md)
