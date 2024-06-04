@@ -71,8 +71,8 @@ public:
                         });
                     })
                     .wait();
-#endif
         }
+#endif
     }
 };
 
