@@ -145,7 +145,7 @@ public:
         qkvWeightT.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->transposeWeight(true, convertedqkvWeight, qkvWeightT);
 
-        WeiT *qkvWeiData = xft::alloc(hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
+        WeiT *qkvWeiData = (WeiT *)xft::alloc(hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
         qkvWeight.Assign(qkvWeiData, hiddenSize, responsibleCols, responsibleCols);
         xft::memcopy(qkvWeight.Data(), qkvWeightT.Data(), hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
 #else
@@ -188,7 +188,7 @@ public:
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
 
-        WeiT *outWeiData = xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
+        WeiT *outWeiData = (WeiT *)xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
         attnOutputWeight.Assign(outWeiData, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, hiddenSize);
         int outWeightTSize = ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT);
         xft::memcopy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize, ctx->device);

@@ -342,21 +342,21 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
             if (!SequencePool::getInstance().has(sequenceID)) {
-                auto *seqs = SequencePool::getInstance().newMeta(sequenceID, seqLen);
-                seqs->get(0)->setPastSeqLen(pastSeqLen);
-                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
+                auto *groupMeta = SequencePool::getInstance().newGroupMeta(sequenceID, seqLen);
+                groupMeta->get(0)->setPastSeqLen(pastSeqLen);
+                groupMeta->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(groupMeta);
             }
             TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
 
         if (!InputQueue::getInstance().empty()) {
             if (!TaskWaitingQueue::getInstance().isFull()) {
-                auto *seqs = InputQueue::getInstance().pop();
-                seqs->get(0)->setPastSeqLen(pastSeqLen);
-                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
-                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(seqs->get(0)->getSequenceID()));
+                auto *groupMeta = InputQueue::getInstance().pop();
+                groupMeta->get(0)->setPastSeqLen(pastSeqLen);
+                groupMeta->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(groupMeta);
+                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(groupMeta->get(0)->getSequenceID()));
             }
         }
 

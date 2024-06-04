@@ -438,7 +438,7 @@ static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, i
         sycl::range<3> globalSize(batchSize * seqLen, head_num, half_head_size);
         sycl::range<3> workGroupSize(1, 1, 1);
 
-        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=, this](sycl::nd_item<3> item) {
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {
             rope_kernel(item, emb_cos, emb_sin, qHeads, kHeads, seqLen, head_size, half_head_size, query, key, qStride,
                     kStride, position);
         });

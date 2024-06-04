@@ -71,7 +71,7 @@ public:
         tWeight.Resize(K, N);
         ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);
 
-        WeiT *input_data = xft::alloc(K * N * sizeof(WeiT), ctx->device);
+        WeiT *input_data = (WeiT *)xft::alloc(K * N * sizeof(WeiT), ctx->device);
         weight.Assign(input_data, K, N, N);
         xft::memcopy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT), ctx->device);
 #else

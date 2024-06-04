@@ -183,6 +183,8 @@ void LlamaRotaryEmbedding::forward(
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
+#endif // GPU
+
 // For continuous batching
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
@@ -201,4 +203,3 @@ void LlamaRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqL
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
-#endif // GPU

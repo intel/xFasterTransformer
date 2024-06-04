@@ -85,7 +85,7 @@ public:
             catWeightsT.Resize(catWeiRows, catWeiCols);
             ctx->mmHelper->transposeWeight(true, quantizedCatWeights, catWeightsT);
 
-            WeiT *catWeiData = xft::alloc(catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
+            WeiT *catWeiData = (WeiT *)xft::alloc(catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
             catWeights.Assign(catWeiData, catWeiRows, catWeiCols, catWeiCols);
             xft::memcopy(catWeights.Data(), catWeightsT.Data(), catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
 #else
@@ -103,7 +103,7 @@ public:
         downWeightT.Resize(downWeiRows, downWeiCols);
         ctx->mmHelper->transposeWeight(true, quantizedDownWeight, downWeightT);
 
-        WeiT *downWeiData = xft::alloc(downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
+        WeiT *downWeiData = (WeiT *)xft::alloc(downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
         downWeight.Assign(downWeiData, downWeiRows, downWeiCols, downWeiCols);
         xft::memcopy(downWeight.Data(), downWeightT.Data(), downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
 #else

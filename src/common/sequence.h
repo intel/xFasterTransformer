@@ -19,6 +19,7 @@
 #include <queue>
 #include <unordered_map>
 
+#include "allocator.h"
 #include "environment.h"
 #include "sampling_params.h"
 
@@ -76,6 +77,20 @@ public:
 
     SequenceMeta(int32_t _inputSeqLen)
         : sequenceID(SequenceIDManager::getInstance().createSequenceID())
+        , inputSeqLen(_inputSeqLen)
+        , pastSeqLen(0)
+        , promptTokens(_inputSeqLen, 0)
+        , step(0) {}
+
+    SequenceMeta(int32_t _sequenceID, std::vector<int32_t> &_promptTokens)
+        : sequenceID(_sequenceID)
+        , inputSeqLen(_promptTokens.size())
+        , pastSeqLen(0)
+        , promptTokens(_promptTokens)
+        , step(0) {}
+
+    SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
+        : sequenceID(_sequenceID)
         , inputSeqLen(_inputSeqLen)
         , pastSeqLen(0)
         , promptTokens(_inputSeqLen, 0)
@@ -207,6 +222,38 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
+    SequenceGroupMeta(int32_t _sequenceID, std::vector<int32_t> &_inputTokens, SamplingMeta &samplingMeta_) : samplingMeta(samplingMeta_) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_sequenceID, _inputTokens));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
+    SequenceGroupMeta(int32_t _sequenceID, int32_t _inputSeqLen, SamplingMeta &samplingMeta_) : samplingMeta(samplingMeta_) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_sequenceID, _inputSeqLen));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
+    SequenceGroupMeta(int32_t _sequenceID, std::vector<int32_t> &_inputTokens) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_sequenceID, _inputTokens));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
+    SequenceGroupMeta(int32_t _sequenceID, int32_t _inputSeqLen) {
+        sequences.reserve(samplingMeta.config.numBeams);
+        for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
+            sequences.emplace_back(SequenceMeta(_sequenceID, _inputSeqLen));
+        }
+        groupID = sequences[0].getSequenceID();
+    }
+
     int32_t getGroupID() { return groupID; }
 
     int32_t getGroupSize() { return samplingMeta.config.numBeams; }
@@ -268,6 +315,30 @@ public:
 
     SequenceGroupMeta *newGroupMeta(int32_t inputSeqLen) {
         auto *group = new SequenceGroupMeta(inputSeqLen);
+        this->add(group);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(int32_t sequenceID, std::vector<int32_t> &inputTokens, SamplingMeta &samplingMeta_) {
+        auto *group = new SequenceGroupMeta(sequenceID, inputTokens, samplingMeta_);
+        this->add(group);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(int32_t sequenceID, int32_t inputSeqLen, SamplingMeta &samplingMeta_) {
+        auto *group = new SequenceGroupMeta(sequenceID, inputSeqLen, samplingMeta_);
+        this->add(group);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(int32_t sequenceID, std::vector<int32_t> &inputTokens) {
+        auto *group = new SequenceGroupMeta(sequenceID, inputTokens);
+        this->add(group);
+        return group;
+    }
+
+    SequenceGroupMeta *newGroupMeta(int32_t sequenceID, int32_t inputSeqLen) {
+        auto *group = new SequenceGroupMeta(sequenceID, inputSeqLen);
         this->add(group);
         return group;
     }

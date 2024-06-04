@@ -48,7 +48,8 @@ public:
     }
 
     template <typename T>
-    static void print(std::string buf_name, T *buf, int rows, int cols, int stride, bool printAll = false, void *device = nullptr) {
+    static void print(std::string buf_name, T *buf, int rows, int cols, int stride, bool printAll = false,
+            void *device = nullptr) {
         std::cout << buf_name.c_str() << ":" << std::endl;
 #ifdef GPU
         if (device != nullptr) {
@@ -72,7 +73,8 @@ public:
                     .wait();
 #endif
         }
-    };
+    }
+};
 
 #define GEMMVERBOSE(api_func, compute_func)                \
     if (Env::getInstance().getVerbose() >= 1) {            \
