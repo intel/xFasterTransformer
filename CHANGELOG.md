@@ -1,4 +1,26 @@
 # CHANGELOG
+# [Version v1.7.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.0)
+v1.7.0 - Continuous batching feature supported.
+
+## Functionality
+- Refactor framework to support continuous batching feature. `vllm-xft`, a fork of vllm, integrates the xFasterTransformer backend and maintains compatibility with most of the official vLLM's features.
+- Remove FP32 data type option of KV Cache.
+- Add `get_env()` python API to get recommended LD_PRELOAD set.
+- Add GPU build option for Intel Arc GPU series.
+- Exposed the interface of the LLaMA model, including Attention and decoder.
+
+## Performance
+- Update xDNN to release `v1.5.1`
+- Baichuan series models supports full FP16 pipline to improve performance.
+- More FP16 data type kernel added, including MHA, MLP, YARN rotary_embedding, rmsnorm and rope.
+- Kernel implementation of crossAttnByHead.
+
+## Dependency
+- Bump `torch` to `2.3.0`.
+
+## BUG fix
+- Fixed the segament fault error when running with more than 4 ranks.
+- Fixed the bugs of core dump && hang when running croos nodes.
 
 # [Version v1.6.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.6.0)
 v1.6.0 - Llama3 and Qwen2 series models supported.
