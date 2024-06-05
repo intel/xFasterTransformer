@@ -241,6 +241,37 @@ public:
             }
         }
 
+        // INT8 -> BF16
+        else if constexpr (std::is_same_v<OriWeiT, int8_t> && std::is_same_v<WeiT, bfloat16_t>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                for (uint64_t j = 0; j < colSize; j++) {
+                    const int8_t src = weight[(rowOffset + i) * cols + colOffset + j];
+                    bfloat16_t *dst = convertedWeight.Data() + i * convertedWeight.Stride() + j;
+                    float scale = scales[colOffset + j];
+                    float zero = zeros[colOffset + j];
+                    *dst = static_cast<bfloat16_t>(scale * src + zero);
+                }
+            }
+        }
+
+        // UINT4 -> BF16
+        else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, bfloat16_t>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                for (uint64_t j = 0; j < colSize; j+=2) {
+                    const uint4x2_t *src = weight + (rowOffset + i) * cols / 2 + colOffset / 2 + j / 2;
+                    bfloat16_t *dst = convertedWeight.Data() + i * convertedWeight.Stride() + j;
+                    float scale1 = scales[colOffset + j];
+                    float scale2 = scales[colOffset + j + 1];
+                    float zero1 = zeros[colOffset + j];
+                    float zero2 = zeros[colOffset + j + 1];
+                    dst[0] = static_cast<bfloat16_t>(scale1 * src->get_v1() + zero1);
+                    dst[1] = static_cast<bfloat16_t>(scale2 * src->get_v2() + zero2);
+                }
+            }
+        }
+
         else {
             printf("%s:%d: Do not support this kind of weights datatype convertion.\n", __FILE__, __LINE__);
             exit(-1);
