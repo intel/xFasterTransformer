@@ -15,8 +15,8 @@ pip install vllm-xft
 export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 python -m vllm.entrypoints.openai.api_server \
-        --model ${XFT_MODEL} \
-        --tokenizer ${TOKENIZER_DIR} \
+        --model ${MODEL_PATH} \
+        --tokenizer ${TOKEN_PATH} \
         --dtype bf16 \
         --kv-cache-dtype fp16 \
         --served-model-name xft \
