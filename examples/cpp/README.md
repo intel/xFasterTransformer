@@ -11,7 +11,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
 # or LD_PRELOAD=libiomp5.so manually, `libiomp5.so` file will be in `3rdparty/mkl/lib` directory after build xFasterTransformer.
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 # run single instance like
 ./example -m ${MODEL_PATH} -t ${TOKEN_PATH}
