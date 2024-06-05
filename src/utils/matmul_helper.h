@@ -250,7 +250,7 @@ public:
                     bfloat16_t *dst = convertedWeight.Data() + i * convertedWeight.Stride() + j;
                     float scale = scales[colOffset + j];
                     float zero = zeros[colOffset + j];
-                    *dst = bfloat16_t(scale * src + zero);
+                    *dst = static_cast<bfloat16_t>(scale * src + zero);
                 }
             }
         }
@@ -266,9 +266,8 @@ public:
                     float scale2 = scales[colOffset + j + 1];
                     float zero1 = zeros[colOffset + j];
                     float zero2 = zeros[colOffset + j + 1];
-                    bfloat16_t w[2] = {scale1 * src->get_v1() + zero1,
-                                       scale2 * src->get_v2() + zero2};
-                    memcpy(dst, w, 2 * sizeof(bfloat16_t));
+                    dst[0] = static_cast<bfloat16_t>(scale1 * src->get_v1() + zero1);
+                    dst[1] = static_cast<bfloat16_t>(scale2 * src->get_v2() + zero2);
                 }
             }
         }
