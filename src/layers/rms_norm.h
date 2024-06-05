@@ -31,15 +31,21 @@ public:
     void setWeight(const std::string &modelPath, const std::string &, int cols);
 
     // Input and output are in shape of (rows, normSize)
-    void forward(const T *input, T *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
+    void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 
     // Input = float, output = bfloat16_t
     void forward(
             const float *input, bfloat16_t *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 
+    // Input = bfloat16_t, output = bfloat16_t
+    void forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride = -1, int oStride = -1,
+            float epsilon = 1e-6);
+
     void forward(const float *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
             float epsilon = 1e-6);
 
+    void forward(const float16_t *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
+            float epsilon = 1e-6);
 
 private:
     int normSize;

@@ -69,9 +69,14 @@ void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &,
 
 // input and output are in shape of (rows, normSize)
 template <typename T>
-void RmsNormImp<T>::forward(const T *input, T *output, int rows, int iStride, int oStride, float epsilon) {
+void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
-    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
 }
 
 template <typename T>
@@ -86,7 +91,31 @@ void RmsNormImp<T>::forward(const float *input, bfloat16_t *output, int rows, in
 }
 
 template <typename T>
+void RmsNormImp<T>::forward(
+        const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+}
+
+template <typename T>
 void RmsNormImp<T>::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+}
+
+template <typename T>
+void RmsNormImp<T>::forward(
+        const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
     if constexpr (std::is_same_v<T, float>) {
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
