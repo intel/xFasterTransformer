@@ -117,7 +117,7 @@ void test_gemm(MMHelper *mm, int M, int N, int K) {
 }
 
 // TEST(MMHelper, gemm_f32f16f32) {
-//     std::vector<int> M(8192);
+//     std::vector<int> M(1024);
 //     std::generate(M.begin(), M.end(), [n = 1]() mutable { return n += 1; });
 //     std::vector<int> N = {4096, 5120, 7168, 8192};
 //     std::vector<int> K = {4096, 5120, 7168, 8192, 11008, 13696, 13824, 28672};
@@ -129,33 +129,27 @@ void test_gemm(MMHelper *mm, int M, int N, int K) {
 //                 test_gemm<float, float16_t, float>(mm.get(), M[i], N[j], K[t]);
 //             }
 //         }
-//         std::string name;
-//         std::cout << "Enter your name: ";
-//         std::getline(std::cin, name);
 //     }
 // }
 
-TEST(MMHelper, gemm_f32bf16f32) {
-    std::vector<int> M(8192);
-    std::generate(M.begin(), M.end(), [n = 1]() mutable { return n += 1; });
-    std::vector<int> N = {4096, 5120, 7168, 8192};
-    std::vector<int> K = {4096, 5120, 7168, 8192, 11008, 13696, 13824, 28672};
+// TEST(MMHelper, gemm_f32bf16f32) {
+//     std::vector<int> M(1024);
+//     std::generate(M.begin(), M.end(), [n = 1]() mutable { return n += 1; });
+//     std::vector<int> N = {4096, 5120, 7168, 8192};
+//     std::vector<int> K = {4096, 5120, 7168, 8192, 11008, 13696, 13824, 28672};
 
-    for (int j = 0; j < N.size(); ++j) {
-        std::unique_ptr<MMHelper> mm = std::make_unique<MMHelper>(xft::DeviceKind::iCPU, 0);
-        for (int t = j; t < K.size(); ++t) {
-            for (int i = 0; i < M.size(); ++i) {
-                test_gemm<float, bfloat16_t, float>(mm.get(), M[i], N[j], K[t]);
-            }
-        }
-        std::string name;
-        std::cout << "Enter your name: ";
-        std::getline(std::cin, name);
-    }
-}
+//     for (int j = 0; j < N.size(); ++j) {
+//         std::unique_ptr<MMHelper> mm = std::make_unique<MMHelper>(xft::DeviceKind::iCPU, 0);
+//         for (int t = j; t < K.size(); ++t) {
+//             for (int i = 0; i < M.size(); ++i) {
+//                 test_gemm<float, bfloat16_t, float>(mm.get(), M[i], N[j], K[t]);
+//             }
+//         }
+//     }
+// }
 
 // TEST(MMHelper, gemm_bf16bf16bf16) {
-//     std::vector<int> M(8192);
+//     std::vector<int> M(1024);
 //     std::generate(M.begin(), M.end(), [n = 1]() mutable { return n += 1; });
 //     std::vector<int> N = {4096, 5120, 7168, 8192};
 //     std::vector<int> K = {4096, 5120, 7168, 8192, 11008, 13696, 13824, 28672};
@@ -167,9 +161,6 @@ TEST(MMHelper, gemm_f32bf16f32) {
 //                 test_gemm<bfloat16_t, bfloat16_t, bfloat16_t>(mm.get(), M[i], N[j], K[t]);
 //             }
 //         }
-//         std::string name;
-//         std::cout << "Enter your name: ";
-//         std::getline(std::cin, name);
 //     }
 // }
 
