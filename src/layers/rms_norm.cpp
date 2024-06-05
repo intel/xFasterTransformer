@@ -67,6 +67,64 @@ void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &,
     loadWeight(modelPath, weight, cols);
 }
 
+#ifdef GPU
+
+#include <CL/sycl.hpp>
+#include "gpudnn/gpu_layernorm_kernels.h"
+
+template <typename T>
+void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    if constexpr (std::is_same_v<T, float>) {
+        fastertransformer::invokeGeneralT5LayerNorm(
+                output, input, weight, (const float *)nullptr, epsilon, rows, iStride, gpu_queue);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+}
+
+template <typename T>
+void RmsNormImp<T>::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+}
+
+template <typename T>
+void RmsNormImp<T>::forward(
+        const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    if constexpr (std::is_same_v<T, bfloat16_t>) {
+        // fastertransformer::invokeGeneralT5LayerNorm(
+        //         output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, iStride, gpu_queue);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+}
+
+template <typename T>
+void RmsNormImp<T>::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+}
+
+template <typename T>
+void RmsNormImp<T>::forward(
+        const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("RmsNorm.forward");
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    if constexpr (std::is_same_v<T, float16_t>) {
+        fastertransformer::invokeGeneralT5LayerNorm((sycl::half *)output, (const sycl::half *)input,
+                (const sycl::half *)weight, (const sycl::half *)nullptr, epsilon, rows, iStride, gpu_queue);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+}
+
+#else
+
 // input and output are in shape of (rows, normSize)
 template <typename T>
 void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
@@ -124,6 +182,8 @@ void RmsNormImp<T>::forward(
         exit(-1);
     }
 }
+
+#endif
 
 template class RmsNormImp<float>;
 template class RmsNormImp<float16_t>;
