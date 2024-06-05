@@ -12,12 +12,12 @@ pip install vllm-xft
 ### Serving(OpenAI Compatible Server)
 ```shell
 # Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 python -m vllm.entrypoints.openai.api_server \
         --model ${XFT_MODEL} \
         --tokenizer ${TOKENIZER_DIR} \
-        --dtype fp16 \
+        --dtype bf16 \
         --kv-cache-dtype fp16 \
         --served-model-name xft \
         --port 8000 \
@@ -51,7 +51,7 @@ Please keep params of slaves align with master.
 Here is a example on 2Socket platform, 48 cores pre socket.
 ```bash
 # Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 OMP_NUM_THREADS=48 mpirun \
         -n 1 numactl --all -C 0-47 -m 0 \

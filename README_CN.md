@@ -266,7 +266,7 @@ xFasterTransformer 会自动检查 MPI 环境，或者使用 `SINGLE_INSTANCE=1`
 - 下面是一个本地环境的运行方式示例。 
   ```bash
   # 或者手动预加载 export LD_PRELOAD=libiomp5.so
-  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
   OMP_NUM_THREADS=48 mpirun \
     -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
     -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
@@ -315,7 +315,7 @@ while (1) {
 # 推荐预加载`libiomp5.so`来获得更好的性能。
 # `libiomp5.so`文件会位于编译后`3rdparty/mklml/lib`文件夹中。
 # 或者手动预加载LD_PRELOAD=libiomp5.so manually, `libiomp5.so`文件会位于编译后`3rdparty/mkl/lib`文件夹中
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 python examples/web_demo/ChatGLM.py \
                       --dtype=bf16 \
                       --token_path=${TOKEN_PATH} \
@@ -337,12 +337,12 @@ pip install vllm-xft
 ***注意：需要预加载 `libiomp5`！***
 ```bash
 # 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 python -m vllm.entrypoints.openai.api_server \
         --model ${XFT_MODEL} \
         --tokenizer ${TOKENIZER_DIR} \
-        --dtype fp16 \
+        --dtype bf16 \
         --kv-cache-dtype fp16 \
         --served-model-name xft \
         --port 8000 \
@@ -351,7 +351,7 @@ python -m vllm.entrypoints.openai.api_server \
 对于分布式模式，请使用 `python -m vllm.entrypoints.slave` 作为从节点，并确保从节点的参数与主节点一致。
 ```bash
 # 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 OMP_NUM_THREADS=48 mpirun \
         -n 1 numactl --all -C 0-47 -m 0 \

@@ -265,7 +265,7 @@ Use MPI to run in the multi-ranks mode, please install oneCCL firstly.
 - Here is a example on local. 
   ```bash
   # or export LD_PRELOAD=libiomp5.so manually
-  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
   OMP_NUM_THREADS=48 mpirun \
     -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
     -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
@@ -313,7 +313,7 @@ A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. Now s
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
 # or LD_PRELOAD=libiomp5.so manually, `libiomp5.so` file will be in `3rdparty/mkl/lib` directory after build xFasterTransformer.
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 python examples/web_demo/ChatGLM.py \
                       --dtype=bf16 \
                       --token_path=${TOKEN_PATH} \
@@ -334,12 +334,12 @@ pip install vllm-xft
 ***Notice: Preload libiomp5.so is required!***
 ```bash
 # Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 python -m vllm.entrypoints.openai.api_server \
         --model ${XFT_MODEL} \
         --tokenizer ${TOKENIZER_DIR} \
-        --dtype fp16 \
+        --dtype bf16 \
         --kv-cache-dtype fp16 \
         --served-model-name xft \
         --port 8000 \
@@ -348,7 +348,7 @@ python -m vllm.entrypoints.openai.api_server \
 For multi-rank mode, please use `python -m vllm.entrypoints.slave` as slave and keep params of slaves align with master.
 ```bash
 # Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
-export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
 
 OMP_NUM_THREADS=48 mpirun \
         -n 1 numactl --all -C 0-47 -m 0 \
