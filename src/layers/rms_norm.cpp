@@ -24,50 +24,80 @@
 
 namespace xft {
 
-RmsNorm::RmsNorm() {
+template <typename T>
+RmsNormImp<T>::RmsNormImp() {
     weight = nullptr;
     normSize = 0;
 }
 
-RmsNorm::~RmsNorm() {
+template <typename T>
+RmsNormImp<T>::RmsNormImp(DecoderContext *ctx) {
+    device = ctx->device;
+    weight = nullptr;
+    normSize = 0;
+}
+
+template <typename T>
+RmsNormImp<T>::~RmsNormImp() {
     if (weight) { free(weight); }
 }
 
-void RmsNorm::setWeight(const float *w, const float *, int cols) {
+template <typename T>
+void RmsNormImp<T>::setWeight(const float *w, const float *, int cols) {
+    T weightBuf[cols];
+    if constexpr (std::is_same_v<T, float>) {
+        memcpy(weightBuf, w, cols * sizeof(float));
+    } else if constexpr (std::is_same_v<T, float16_t>) {
+        float16_t::cvt_float_to_float16(w, weightBuf, cols);
+    } else if constexpr (std::is_same_v<T, bfloat16_t>) {
+        bfloat16_t::cvt_float_to_bfloat16(w, weightBuf, cols);
+    } else {
+        printf("%s:%d: Could not setWeight in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
+
     this->normSize = cols;
-    this->weight = (float *)xft::alloc(cols * sizeof(float));
-    memcpy(weight, w, cols * sizeof(float));
+    this->weight = (T *)xft::alloc(cols * sizeof(T));
+    memcpy(weight, weightBuf, cols * sizeof(T));
 }
 
-void RmsNorm::setWeight(const std::string &modelPath, const std::string &, int cols) {
+template <typename T>
+void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &, int cols) {
     this->normSize = cols;
     loadWeight(modelPath, weight, cols);
 }
 
 // input and output are in shape of (rows, normSize)
-void RmsNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
+template <typename T>
+void RmsNormImp<T>::forward(const T *input, T *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
     rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
 }
 
-void RmsNorm::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+template <typename T>
+void RmsNormImp<T>::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
-    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
 }
 
-void RmsNorm::forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
+template <typename T>
+void RmsNormImp<T>::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
-    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else {
+        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+        exit(-1);
+    }
 }
 
-void RmsNorm::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
-}
-
-void RmsNorm::forward(const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
-}
+template class RmsNormImp<float>;
+template class RmsNormImp<float16_t>;
+template class RmsNormImp<bfloat16_t>;
 
 } // namespace xft
