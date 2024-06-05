@@ -15,6 +15,7 @@
 #pragma once
 
 #include "bfloat16.h"
+#include "transformer_ctx.h"
 #include "weight_util.h"
 
 namespace xft {
@@ -41,8 +42,8 @@ public:
     void forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride = -1, int oStride = -1,
             float epsilon = 1e-6);
 
-    void forward(const float *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
-            float epsilon = 1e-6);
+    void forward(
+            const float *input, float16_t *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 
     void forward(const float16_t *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
             float epsilon = 1e-6);
