@@ -14,6 +14,8 @@
 # ============================================================================
 import os
 def get_env():
-    libiomp_path = os.path.dirname(os.path.abspath(__file__)) + "/libxft_comm_helper.so"
-    env = f"LD_PRELOAD={libiomp_path}:$LD_PRELOAD"
+    libiomp_path = os.path.dirname(os.path.abspath(__file__)) + "/libiomp5.so"
+    env = f"LD_PRELOAD={libiomp_path}"
+    if os.getenv("LD_PRELOAD"):
+        env = f"{env}:{os.getenv('LD_PRELOAD')}"
     return env
