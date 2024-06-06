@@ -783,13 +783,13 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         // Sync and gather all logits
         float *outBuf = std::get<0>(result);
 
-        int works = messenger.getSize();
-        int splitSize = vocabSize / works;
-        std::vector<long unsigned int> recvCount(works);
-        std::vector<long unsigned int> splitSizes(works);
-        for (int i = 0; i < works; i++) {
+        int workers = messenger.getSize();
+        int splitSize = vocabSize / workers;
+        std::vector<long unsigned int> recvCount(workers);
+        std::vector<long unsigned int> splitSizes(workers);
+        for (int i = 0; i < workers; i++) {
             splitSizes[i] = splitSize;
-            if (i < vocabSize % works) { splitSizes[i]++; }
+            if (i < vocabSize % workers) { splitSizes[i]++; }
             recvCount[i] = splitSizes[i] * totalSeqSize;
         }
         // warning: vocabSize * totalSeqSize may exceed the range of int when seq and batch size is large.
@@ -799,7 +799,7 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
 
         // Reorder
         int offset = 0;
-        for (int i = 0; i < works; ++i) {
+        for (int i = 0; i < workers; ++i) {
             for (int j = 0; j < totalSeqSize; ++j) {
                 memcpy(logits.data() + (offset + j * vocabSize),
                         logitsRecvBuf.data() + offset * totalSeqSize + j * splitSizes[i],
