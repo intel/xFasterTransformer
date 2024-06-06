@@ -304,9 +304,6 @@ class Qwen2Convert(BaseModelConvert):
             config[sec_name]["vocab_size"] = str(hf_config["vocab_size"])
             config[sec_name]["start_id"] = str(hf_config["bos_token_id"])
             config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
-            #config[sec_name]["pad_id"] = str(gen_config.pad_token_id)
-            # no gen_config, hard code
-            config[sec_name]["pad_id"] = str(151643)
             config[sec_name]["weight_data_type"] = dtype
 
             self.wbits = quantize_config["bits"]
