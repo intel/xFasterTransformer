@@ -70,7 +70,7 @@ public:
 
     // Only used for model.forward()
     std::vector<int> set_input(std::vector<int32_t> &inputIds_, std::vector<int32_t> &seqLens_, std::vector<int> seqIDs,
-            const std::vector<int> &maxLen);
+            std::vector<int> &maxLen);
 
     bool isDone();
 
@@ -123,6 +123,8 @@ private:
     SearcherConfig configuration;
     bool isNewInput;
     std::vector<SequenceGroupMeta *> workingGroup;
+    std::vector<float> logits;
+    std::vector<float> logitsRecvBuf;
 };
 
 class AutoModel : public Model {

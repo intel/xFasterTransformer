@@ -20,6 +20,7 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
     - [从源码构建](#从源码构建)
       - [准备环境](#准备环境)
         - [手动操作](#手动操作)
+        - [安装依赖的库](#安装依赖的库)
         - [如何编译](#如何编译)
   - [模型准备](#模型准备)
   - [API 用法](#api-用法)
@@ -34,6 +35,11 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
         - [C++](#c)
   - [网页示例](#网页示例)
   - [服务](#服务)
+    - [vLLM](#vllm)
+      - [Install](#install)
+      - [兼容OpenAI-API的服务](#兼容openai-api的服务)
+    - [FastChat](#fastchat)
+    - [MLServer](#mlserver)
   - [性能测试](#性能测试)
   - [技术支持](#技术支持)
   - [问题与回答](#问题与回答)
@@ -46,7 +52,7 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 
 ### 支持的模型
 
-|        模型        |   框架   |          | 分布式支持 |
+|        模型         |   框架   |          | 分布式支持   |
 | :----------------: | :------: | :------: | :--------: |
 |                    | PyTorch  |   C++    |            |
 |      ChatGLM       | &#10004; | &#10004; |  &#10004;  |
@@ -54,8 +60,11 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |      ChatGLM3      | &#10004; | &#10004; |  &#10004;  |
 |       Llama        | &#10004; | &#10004; |  &#10004;  |
 |       Llama2       | &#10004; | &#10004; |  &#10004;  |
-|      Baichuan      | &#10004; | &#10004; |  &#10004;  |
+|       Llama3       | &#10004; | &#10004; |  &#10004;  |
+|     Baichuan1      | &#10004; | &#10004; |   &#10004; |
+|     Baichuan2      | &#10004; | &#10004; |   &#10004; |
 |        QWen        | &#10004; | &#10004; |  &#10004;  |
+|        QWen2       | &#10004; | &#10004; |  &#10004;  |
 | SecLLM(YaRN-Llama) | &#10004; | &#10004; |  &#10004;  |
 |        Opt         | &#10004; | &#10004; |  &#10004;  |
 |   Deepseek-coder   | &#10004; | &#10004; |  &#10004;  |
@@ -112,10 +121,12 @@ docker run -it \
 ### 从源码构建
 #### 准备环境
 ##### 手动操作
-- [PyTorch](https://pytorch.org/get-started/locally/) v2.0 (使用 PyTorch API 时需要，但使用 C++ API 时不需要。)
+- [PyTorch](https://pytorch.org/get-started/locally/) v2.3 (使用 PyTorch API 时需要，但使用 C++ API 时不需要。)
   ```bash 
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
+
+- 对于 GPU 版本的 xFT，由于 DPC++ 要求 ABI=1，因此需要安装 [torch-whl-list](https://download.pytorch.org/whl/torch/) 中 ABI=1 的 [torch==2.3.0+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.3.0%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=c34512c3e07efe9b7fb5c3a918fef1a7c6eb8969c6b2eea92ee5c16a0583fe12)。
 
 ##### 安装依赖的库
 
@@ -165,6 +176,7 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     - OPTConvert
     - BaichuanConvert
     - QwenConvert
+    - Qwen2Convert
     - DeepseekConvert
 
 ## API 用法
@@ -225,7 +237,10 @@ std::cout << std::endl;
 ```
 
 ## 如何运行
-建议预加载 `libiomp5.so` 以获得更好的性能。成功编译 xFasterTransformer 后，`libiomp5.so` 文件将位于 `3rdparty/mklml/lib` 目录中。
+建议预加载 `libiomp5.so` 以获得更好的性能。
+- **[推荐]** 如果已安装 xfastertransformer 的 Python wheel 包，请运行 `export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')`。
+- 如果从源代码构建 xFasterTransformer，成功构建后 `libiomp5.so` 文件将在 `3rdparty/mkl/lib` 目录下。
+
 ### 单进程
 xFasterTransformer 会自动检查 MPI 环境，或者使用 `SINGLE_INSTANCE=1` 环境变量强制停用 MPI。 
 
@@ -250,7 +265,9 @@ xFasterTransformer 会自动检查 MPI 环境，或者使用 `SINGLE_INSTANCE=1`
 
 - 下面是一个本地环境的运行方式示例。 
   ```bash
-  OMP_NUM_THREADS=48 LD_PRELOAD=libiomp5.so mpirun \
+  # 或者手动预加载 export LD_PRELOAD=libiomp5.so
+  export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+  OMP_NUM_THREADS=48 mpirun \
     -n 1 numactl -N 0  -m 0 ${RUN_WORKLOAD} : \
     -n 1 numactl -N 1  -m 1 ${RUN_WORKLOAD} 
   ```
@@ -297,13 +314,66 @@ while (1) {
 ```bash
 # 推荐预加载`libiomp5.so`来获得更好的性能。
 # `libiomp5.so`文件会位于编译后`3rdparty/mklml/lib`文件夹中。
-LD_PRELOAD=libiomp5.so python examples/web_demo/ChatGLM.py \
-                                    --dtype=bf16 \
-                                    --token_path=${TOKEN_PATH} \
-                                    --model_path=${MODEL_PATH}
+# 或者手动预加载LD_PRELOAD=libiomp5.so manually, `libiomp5.so`文件会位于编译后`3rdparty/mkl/lib`文件夹中
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+python examples/web_demo/ChatGLM.py \
+                      --dtype=bf16 \
+                      --token_path=${TOKEN_PATH} \
+                      --model_path=${MODEL_PATH}
 ```
 
 ## 服务
+
+### vLLM
+vllm-xft项目创建了vLLM的一个分支版本，该版本集成了xFasterTransformer后端以提高性能，同时保持了与官方vLLM大多数功能的兼容性。详细信息请参考[此链接](serving/vllm-xft.md)。
+
+#### Install
+```bash
+pip install vllm-xft
+```
+***注意：请不要在环境中同时安装 `vllm-xft` 和 `vllm` 。虽然包名不同，但实际上它们会互相覆盖。***
+
+#### 兼容OpenAI-API的服务
+***注意：需要预加载 `libiomp5`！***
+```bash
+# 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+
+python -m vllm.entrypoints.openai.api_server \
+        --model ${MODEL_PATH} \
+        --tokenizer ${TOKEN_PATH} \
+        --dtype bf16 \
+        --kv-cache-dtype fp16 \
+        --served-model-name xft \
+        --port 8000 \
+        --trust-remote-code
+```
+对于分布式模式，请使用 `python -m vllm.entrypoints.slave` 作为从节点，并确保从节点的参数与主节点一致。
+```bash
+# 通过以下命令或手动设置 LD_PRELOAD=libiomp5.so 预加载 libiomp5.so
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+
+OMP_NUM_THREADS=48 mpirun \
+        -n 1 numactl --all -C 0-47 -m 0 \
+          python -m vllm.entrypoints.openai.api_server \
+            --model ${MODEL_PATH} \
+            --tokenizer ${TOKEN_PATH} \
+            --dtype bf16 \
+            --kv-cache-dtype fp16 \
+            --served-model-name xft \
+            --port 8000 \
+            --trust-remote-code \
+        : -n 1 numactl --all -C 48-95 -m 1 \
+          python -m vllm.entrypoints.slave \
+            --dtype bf16 \
+            --model ${MODEL_PATH} \
+            --kv-cache-dtype fp16
+```
+
+### FastChat
+xFasterTransformer 是 [FastChat](https://github.com/lm-sys/FastChat)的官方推理后端。详细信息请参考 [FastChat 中的 xFasterTransformer](https://github.com/lm-sys/FastChat/blob/main/docs/xFasterTransformer.md) 和 [FastChat 服务](https://github.com/lm-sys/FastChat/blob/main/docs/openai_api.md)。
+
+### MLServer
 [MLServer 服务示例](serving/mlserver/README.md) 支持 REST 和 gRPC 接口，并具有自适应批处理功能，可即时将推理请求分组。
 
 ## [性能测试](benchmark/README.md)

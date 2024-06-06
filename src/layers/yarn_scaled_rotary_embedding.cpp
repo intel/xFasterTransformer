@@ -17,6 +17,8 @@
 #include "allocator.h"
 #include "compile_util.h"
 
+static float *embCos = nullptr;
+static float *embSin = nullptr;
 bool LlamaYaRNScaledRotaryEmbedding::initialized = false;
 
 // dim: equals to head size
@@ -24,12 +26,13 @@ LlamaYaRNScaledRotaryEmbedding::LlamaYaRNScaledRotaryEmbedding(
         const int dim, const int maxPosEmbed, const RopeParams *ropeParamsPtr) {
     // skip the init of parent class
     if (ropeParamsPtr == nullptr) return;
+    invFreqSize = (dim + 1) / 2;
+    this->dim = dim;
+
     if (!initialized) {
         initialized = true;
 
         maxSeqLenCached = maxPosEmbed;
-        invFreqSize = (dim + 1) / 2;
-        this->dim = dim;
         // assert ropeParam in Context
         assert(ropeParamsPtr->type == "yarn");
 
@@ -158,8 +161,8 @@ void LlamaYaRNScaledRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key,
             query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
-void LlamaYaRNScaledRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride,
-        int kStride, int qHeads, int kHeads, int *positionIds) {
+void LlamaYaRNScaledRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride, int kStride,
+        int qHeads, int kHeads, int *positionIds) {
     xft::llamaApplyRotaryPosEmbed(
             query, key, embCos, embSin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }

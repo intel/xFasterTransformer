@@ -177,23 +177,34 @@ void small_sgemm(const TA *A, const TB *B, TC *C, int lda, int ldb, int ldc, int
 }
 
 namespace xft {
+
 void small_gemm(const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
     ::small_sgemm<float, float, float>(A, B, C, lda, ldb, ldc, M, N, K, acc);
 }
+
 void small_gemm(
         const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
     ::small_sgemm<float, float16_t, float>(A, B, C, lda, ldb, ldc, M, N, K, acc);
 }
-void small_gemm(
-        const float *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
-    ::small_sgemm<float, bfloat16_t, float>(A, B, C, lda, ldb, ldc, M, N, K, acc);
-}
+
 void small_gemm(
         const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
     ::small_sgemm<float, float16_t, bfloat16_t>(A, B, C, lda, ldb, ldc, M, N, K, acc);
 }
+
+void small_gemm(
+        const float *A, const float16_t *B, float16_t *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
+    ::small_sgemm<float, float16_t, float16_t>(A, B, C, lda, ldb, ldc, M, N, K, acc);
+}
+
+void small_gemm(
+        const float *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
+    ::small_sgemm<float, bfloat16_t, float>(A, B, C, lda, ldb, ldc, M, N, K, acc);
+}
+
 void small_gemm(
         const float *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc) {
     ::small_sgemm<float, bfloat16_t, bfloat16_t>(A, B, C, lda, ldb, ldc, M, N, K, acc);
 }
+
 } // namespace xft
