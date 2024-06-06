@@ -801,7 +801,7 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         int offset = 0;
         for (int i = 0; i < works; ++i) {
             for (int j = 0; j < totalSeqSize; ++j) {
-                memcpy(logits.data() + (i * offset + j * vocabSize),
+                memcpy(logits.data() + (offset + j * vocabSize),
                         logitsRecvBuf.data() + offset * totalSeqSize + j * splitSizes[i],
                         splitSizes[i] * sizeof(float));
             }
