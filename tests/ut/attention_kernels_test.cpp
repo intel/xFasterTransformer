@@ -87,6 +87,7 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
         const float scale) {
 
     int rowOffsets[batchSize];
+    memset(rowOffsets, 0 , batchSize * sizeof(int));
     for (int i = 1; i < batchSize; i++) {
         rowOffsets[i] = rowOffsets[i - 1] + tokenSizes[i - 1];
     }

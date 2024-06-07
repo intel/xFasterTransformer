@@ -34,10 +34,11 @@
 // def forward(self, x):
 //         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 // But please also be noted: we extended the MLP to include layer norm
-template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float, typename NORM_CLS = xft::RmsNorm>
+template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float,
+        typename NORM_CLS = xft::RmsNorm>
 class LlamaMLP {
 public:
-    LlamaMLP(DecoderContext *ctx) { norm = new NORM_CLS(ctx); }
+    LlamaMLP(DecoderContext *ctx) : norm(NORM_CLS(ctx)) {}
 
     // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
@@ -119,7 +120,7 @@ public:
 #endif
 
         // LlamaRMSNorm
-        if (normW) { norm->setWeight(normW, nullptr, hiddenSize); }
+        if (normW) { norm.setWeight(normW, nullptr, hiddenSize); }
     }
 
 #ifdef XFT_DEBUG
@@ -142,7 +143,7 @@ public:
                 (ImT *)ctx->normBuf.Data(), ctx->normBuf.Rows(), ctx->normBuf.Cols(), ctx->normBuf.Stride());
 
         if (doLnBefore == true) {
-            norm->forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
+            norm.forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
         }
 
 #ifdef XFT_DEBUG
@@ -379,7 +380,7 @@ protected:
     xft::Vector<float> downWeightSum; // For int8_t weight
 
     // LlamaRMSNorm param
-    NORM_CLS *norm;
+    NORM_CLS norm;
 
 #ifdef XFT_DEBUG
     Debugger dbg;

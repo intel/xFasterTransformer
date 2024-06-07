@@ -121,7 +121,7 @@ public:
 #endif
         // norm.setWeight(normW, NULL, hiddenSize);
 
-        if (normW) { norm->setWeight(normW, nullptr, hiddenSize); }
+        if (normW) { norm.setWeight(normW, nullptr, hiddenSize); }
     }
 
 private:

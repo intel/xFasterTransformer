@@ -61,6 +61,14 @@ public:
     ~MMHelper() {
         if (engine) delete engine;
         if (stream) delete stream;
+
+        for (auto &pair : matmul_hub) {
+            dnnl::matmul::primitive_desc *primitive_desc_ptr = std::get<0>(pair.second);
+            dnnl::matmul *matmul_ptr = std::get<1>(pair.second);
+
+            delete primitive_desc_ptr;
+            delete matmul_ptr;
+        }
     }
 
     // Pack the MatMul weight from 'src(rows, cols)' to 'weight'
@@ -1050,7 +1058,8 @@ public:
                 if constexpr (std::is_same_v<OutT, float16_t>) {
                     GEMMVERBOSE("xdnn_hgemm_compute_resmul",
                             xdnn_hgemm_compute_resmul(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, (const XDNN_FP16 *)res, ldres));
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, (const XDNN_FP16 *)res,
+                                    ldres));
                 } else if constexpr (std::is_same_v<OutT, float>) {
                     GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_resmul",
                             xdnn_hgemm_f16f16f32_compute_resmul(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
@@ -1173,7 +1182,8 @@ public:
                 if constexpr (std::is_same_v<OutT, float16_t>) {
                     GEMMVERBOSE("xdnn_hgemm_compute_residential",
                             xdnn_hgemm_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, (const XDNN_FP16 *)res, ldres));
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, (const XDNN_FP16 *)res,
+                                    ldres));
                 } else if constexpr (std::is_same_v<OutT, float>) {
                     GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_residential",
                             xdnn_hgemm_f16f16f32_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
@@ -1297,11 +1307,13 @@ public:
                 if constexpr (std::is_same_v<OutT, float16_t>) {
                     GEMMVERBOSE("xdnn_hgemm_compute_resext",
                             xdnn_hgemm_compute_resext(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, gamma, (const XDNN_FP16 *)res, ldres));
+                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, gamma,
+                                    (const XDNN_FP16 *)res, ldres));
                 } else if constexpr (std::is_same_v<OutT, float>) {
                     GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_resext",
                             xdnn_hgemm_f16f16f32_compute_resext(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias, gamma, (const XDNN_FP16 *)res, ldres));
+                                    (const XDNN_FP16 *)packedB, beta, C, ldc, bias, gamma, (const XDNN_FP16 *)res,
+                                    ldres));
                 }
             }
 #else

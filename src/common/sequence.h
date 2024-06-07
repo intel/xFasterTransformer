@@ -68,7 +68,7 @@ private:
 // The SequenceMeta is one sequence of batch inputs and includes the generated tokens.
 class SequenceMeta {
 public:
-    SequenceMeta(std::vector<int32_t> &_promptTokens)
+    SequenceMeta(const std::vector<int32_t> &_promptTokens)
         : sequenceID(SequenceIDManager::getInstance().createSequenceID())
         , inputSeqLen(_promptTokens.size())
         , pastSeqLen(0)
@@ -82,7 +82,7 @@ public:
         , promptTokens(_inputSeqLen, 0)
         , step(0) {}
 
-    SequenceMeta(int32_t _sequenceID, std::vector<int32_t> &_promptTokens)
+    SequenceMeta(int32_t _sequenceID, const std::vector<int32_t> &_promptTokens)
         : sequenceID(_sequenceID)
         , inputSeqLen(_promptTokens.size())
         , pastSeqLen(0)
@@ -90,11 +90,7 @@ public:
         , step(0) {}
 
     SequenceMeta(int32_t _sequenceID, int32_t _inputSeqLen)
-        : sequenceID(_sequenceID)
-        , inputSeqLen(_inputSeqLen)
-        , pastSeqLen(0)
-        , promptTokens(_inputSeqLen, 0)
-        , step(0) {}
+        : sequenceID(_sequenceID), inputSeqLen(_inputSeqLen), pastSeqLen(0), promptTokens(_inputSeqLen, 0), step(0) {}
 
     ~SequenceMeta() {}
 
@@ -190,7 +186,8 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
-    SequenceGroupMeta(std::vector<int32_t> &_inputTokens, SamplingMeta &samplingMeta_) : samplingMeta(samplingMeta_) {
+    SequenceGroupMeta(const std::vector<int32_t> &_inputTokens, SamplingMeta &samplingMeta_)
+        : samplingMeta(samplingMeta_) {
         sequences.reserve(samplingMeta.config.numBeams);
         for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
             sequences.emplace_back(SequenceMeta(_inputTokens));
@@ -206,7 +203,7 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
-    SequenceGroupMeta(std::vector<int32_t> &_inputTokens) {
+    SequenceGroupMeta(const std::vector<int32_t> &_inputTokens) {
         sequences.reserve(samplingMeta.config.numBeams);
         for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
             sequences.emplace_back(SequenceMeta(_inputTokens));
@@ -222,7 +219,8 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
-    SequenceGroupMeta(int32_t _sequenceID, std::vector<int32_t> &_inputTokens, SamplingMeta &samplingMeta_) : samplingMeta(samplingMeta_) {
+    SequenceGroupMeta(int32_t _sequenceID, const std::vector<int32_t> &_inputTokens, SamplingMeta &samplingMeta_)
+        : samplingMeta(samplingMeta_) {
         sequences.reserve(samplingMeta.config.numBeams);
         for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
             sequences.emplace_back(SequenceMeta(_sequenceID, _inputTokens));
@@ -230,7 +228,8 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
-    SequenceGroupMeta(int32_t _sequenceID, int32_t _inputSeqLen, SamplingMeta &samplingMeta_) : samplingMeta(samplingMeta_) {
+    SequenceGroupMeta(int32_t _sequenceID, int32_t _inputSeqLen, SamplingMeta &samplingMeta_)
+        : samplingMeta(samplingMeta_) {
         sequences.reserve(samplingMeta.config.numBeams);
         for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
             sequences.emplace_back(SequenceMeta(_sequenceID, _inputSeqLen));
@@ -238,7 +237,7 @@ public:
         groupID = sequences[0].getSequenceID();
     }
 
-    SequenceGroupMeta(int32_t _sequenceID, std::vector<int32_t> &_inputTokens) {
+    SequenceGroupMeta(int32_t _sequenceID, const std::vector<int32_t> &_inputTokens) {
         sequences.reserve(samplingMeta.config.numBeams);
         for (int i = 0; i < samplingMeta.config.numBeams; ++i) {
             sequences.emplace_back(SequenceMeta(_sequenceID, _inputTokens));
@@ -319,7 +318,8 @@ public:
         return group;
     }
 
-    SequenceGroupMeta *newGroupMeta(int32_t sequenceID, std::vector<int32_t> &inputTokens, SamplingMeta &samplingMeta_) {
+    SequenceGroupMeta *newGroupMeta(
+            int32_t sequenceID, std::vector<int32_t> &inputTokens, SamplingMeta &samplingMeta_) {
         auto *group = new SequenceGroupMeta(sequenceID, inputTokens, samplingMeta_);
         this->add(group);
         return group;

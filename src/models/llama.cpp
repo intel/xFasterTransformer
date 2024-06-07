@@ -38,6 +38,7 @@ LlamaLLM<WeiT, KVCacheT>::LlamaLLM(const std::string &modelPath)
 template <typename WeiT, typename KVCacheT>
 LlamaLLM<WeiT, KVCacheT>::~LlamaLLM() {
     delete embedding;
+    delete finalLN;
 }
 
 template <typename WeiT, typename KVCacheT>

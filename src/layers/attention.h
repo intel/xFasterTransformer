@@ -46,12 +46,13 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
         typename OutT = float, bool INPUT_AS_RESID = true>
 class Attention {
 public:
-    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
+    Attention(int layerId, DecoderContext *ctx)
+        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(NORM_CLS(ctx)) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
-        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
-
-        norm = new NORM_CLS(ctx);
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {
+            qkpo = LlamaRotaryEmbedding(ctx);
+        }
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
@@ -188,7 +189,8 @@ public:
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
 
-        WeiT *outWeiData = (WeiT *)xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
+        WeiT *outWeiData
+                = (WeiT *)xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
         attnOutputWeight.Assign(outWeiData, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, hiddenSize);
         int outWeightTSize = ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT);
         xft::memcopy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize, ctx->device);
@@ -217,7 +219,7 @@ public:
         }
 
         // LayerNorm
-        if (doLNorm) this->norm->setWeight(gamma1, beta1, hiddenSize);
+        if (doLNorm) this->norm.setWeight(gamma1, beta1, hiddenSize);
     }
 
 #ifdef XFT_DEBUG
@@ -272,7 +274,7 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
 #ifdef XFT_DEBUG
@@ -423,7 +425,7 @@ public:
 
         if (doLnAfter) {
             TimeLine t6("result.layer_norm");
-            norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
+            norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
@@ -466,7 +468,7 @@ public:
 
         if (doLnBefore) {
             TimeLine t1("input.layer_norm");
-            norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+            norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
 #ifdef XFT_DEBUG
@@ -610,7 +612,7 @@ public:
 
         if (!doLnBefore) {
             TimeLine t6("result.layer_norm");
-            norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
+            norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
@@ -1189,7 +1191,7 @@ protected:
     QKPO_CLS qkpo;
 
     // layerNorm param
-    NORM_CLS *norm;
+    NORM_CLS norm;
     int layerId;
 
     // Alibi Slopes

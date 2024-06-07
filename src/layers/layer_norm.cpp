@@ -64,6 +64,9 @@ void LayerNorm::forward(const float *input, float *output, int rows, int iStride
     TimeLine t("LayerNorm.forward");
     const float *pgamma = gamma;
     const float *pbeta = beta;
+    // TODO: Add LayerNorm Impl
+    printf("%s:%d: Could not forward in LayerNorm with undefined data type.\n", __FILE__, __LINE__);
+    exit(-1);
 }
 #else
 void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
