@@ -157,7 +157,7 @@ public:
         free(concatScale);
         free(concatZero);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("attention qkv weight: [%d, %d] (%d)\n", convertedqkvWeight.Rows(), convertedqkvWeight.Cols(),
                 convertedqkvWeight.Stride());
         dbg.dumpMatrix(convertedqkvWeight);
@@ -197,7 +197,7 @@ public:
         ctx->mmHelper->packWeight(trans, convertedOutWeight, attnOutputWeight);
 #endif
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedOutWeight.Rows(),
                 convertedOutWeight.Cols(), convertedOutWeight.Stride());
         dbg.dumpMatrix(convertedOutWeight);
@@ -220,7 +220,7 @@ public:
         if (doLNorm) this->norm->setWeight(gamma1, beta1, hiddenSize);
     }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
@@ -264,7 +264,7 @@ public:
         auto &qkvMatMul = ctx->qkvMatMul;
         xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");
         dbg.dumpMatrix(inputBuffer);
@@ -275,7 +275,7 @@ public:
             norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
         dbg.dumpMatrix(imBuffer);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
@@ -299,7 +299,7 @@ public:
         xft::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
         xft::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
@@ -331,7 +331,7 @@ public:
         }
         t3.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
@@ -367,7 +367,7 @@ public:
         }
         t4.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
@@ -415,7 +415,7 @@ public:
         }
         t5.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
@@ -424,7 +424,7 @@ public:
         if (doLnAfter) {
             TimeLine t6("result.layer_norm");
             norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
             dbg.dumpMatrix(outBuffer);
@@ -458,7 +458,7 @@ public:
         auto &qkvMatMul = ctx->qkvMatMul;
         xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward ----\n");
         dbg.debugPrint("input:\n");
         dbg.dumpMatrix(inputBuffer);
@@ -469,7 +469,7 @@ public:
             norm->forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
         dbg.dumpMatrix(imBuffer);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
@@ -493,7 +493,7 @@ public:
         xft::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
         xft::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
@@ -523,7 +523,7 @@ public:
         }
         t3.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
@@ -559,7 +559,7 @@ public:
         }
         t4.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
@@ -602,7 +602,7 @@ public:
         }
         t5.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
@@ -611,7 +611,7 @@ public:
         if (!doLnBefore) {
             TimeLine t6("result.layer_norm");
             norm->forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
             dbg.dumpMatrix(outBuffer);
@@ -929,7 +929,7 @@ protected:
 
                     this->gemm1(A, keyMatInfo, C, m, n, headSize, lda, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Q * K, first head:\n");
                         auto p = scoreBuf;
@@ -942,7 +942,7 @@ protected:
                     // Softmax(Q * K)
                     this->softmax(ctx, C, getMask(attnMask, b, i, queryLen, keyLen), m, n, ldc, startSeq);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K), first head:\n");
                         auto p = scoreBuf;
@@ -960,7 +960,7 @@ protected:
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
                     this->gemm2(C, valueMat, output, m, headSize, keyLen, scoreStride, result.Stride());
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
                         auto p = output;
@@ -1201,7 +1201,7 @@ protected:
     int endQHead;
     int startKVHead;
     int endKVHead;
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

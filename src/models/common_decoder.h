@@ -155,7 +155,7 @@ class CommonDecoder : public AbstractDecoder {
 public:
     CommonDecoder(const std::string &modelPath, const std::string &modelType)
         : messenger(Messenger::getInstance())
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         , dbg("model_decoder.csv")
 #endif
     {
@@ -313,7 +313,7 @@ public:
         this->embeddingForward(ids, embBuf, batchSize * inputSeqLen);
         this->accSeqLen += seqLen;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
@@ -451,7 +451,7 @@ public:
             }
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
@@ -469,7 +469,7 @@ public:
         else
             lastLayerNormForward(lnIn, lnOut, batchSize * seqLen);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
         if (!logitsAll)
             dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
@@ -484,7 +484,7 @@ public:
         else
             this->predictor->forward(ctx, lnOut, finalOut, batchSize * seqLen);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
         if (!logitsAll)
@@ -562,7 +562,7 @@ public:
             }
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
@@ -574,7 +574,7 @@ public:
         MlpOutT *lnOut = embBuf;
         lastLayerNormForward(lnIn, lnOut, logitRows);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
         dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
 #endif
@@ -583,7 +583,7 @@ public:
         float *finalOut = (float *)outBuf;
         this->predictor->forward(ctx, lnOut, finalOut, logitRows);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
         dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
@@ -1114,7 +1114,7 @@ private:
     int startId;
     int endId;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

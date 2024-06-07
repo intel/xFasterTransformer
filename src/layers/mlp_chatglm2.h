@@ -94,7 +94,7 @@ public:
         ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
                 convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
         ctx->mmHelper->packWeight(trans, convertedDownWeight, this->downWeight);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         this->dbg.debugPrint("convertedGateWeight [%d, %d](%d):\n", convertedGateWeight.Rows(),
                 convertedGateWeight.Cols(), convertedGateWeight.Stride());
         this->dbg.dumpMatrix(convertedGateWeight);

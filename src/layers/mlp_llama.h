@@ -14,10 +14,6 @@
 // ============================================================================
 #pragma once
 
-#ifdef UNDEBUG
-#undef NDEBUG
-#endif
-
 #include "bert_util.h"
 #include "copy_util.h"
 #include "debugger.h"
@@ -111,7 +107,7 @@ public:
         ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
 #endif
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("quantizedGateWeight:\n");
         dbg.dumpMatrix(quantizedGateWeight);
 
@@ -126,7 +122,7 @@ public:
         if (normW) { norm->setWeight(normW, nullptr, hiddenSize); }
     }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
@@ -149,7 +145,7 @@ public:
             norm->forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
         dbg.dumpMatrix(normBuffer);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
@@ -161,7 +157,7 @@ public:
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> gateWeight: [%d, %d] (%d)\n", gateWeight.Rows(), gateWeight.Cols(), gateWeight.Stride());
             dbg.dumpMatrix(gateWeight);
@@ -171,7 +167,7 @@ public:
 
             upProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(">>> upWeight: [%d, %d] (%d)\n", upWeight.Rows(), upWeight.Cols(), upWeight.Stride());
             dbg.dumpMatrix(upWeight);
             dbg.debugPrint(">>> up output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
@@ -189,7 +185,7 @@ public:
             auto bufSize = sizeof(ImT) * M * cols;
             ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
             xft::Matrix<ImT> siluBuf(t, M, cols, cols);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> enableCATMLP imBuffer: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
             dbg.dumpMatrix(imBuffer);
@@ -197,7 +193,7 @@ public:
             dbg.dumpMatrix(inBuffer);
 #endif
             catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("catWeights:\n");
             dbg.dumpMatrix(catWeights);
             dbg.debugPrint("gateUp output:\n");
@@ -208,7 +204,7 @@ public:
             downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> downWeight: [%d, %d] (%d)\n", downWeight.Rows(), downWeight.Cols(), downWeight.Stride());
         dbg.dumpMatrix(downWeight);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
@@ -385,7 +381,7 @@ protected:
     // LlamaRMSNorm param
     NORM_CLS *norm;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };
