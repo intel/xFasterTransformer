@@ -47,7 +47,7 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
 class Attention {
 public:
     Attention(int layerId, DecoderContext *ctx)
-        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(NORM_CLS(ctx)) {
+        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(ctx) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
         if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {

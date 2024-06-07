@@ -38,7 +38,7 @@ template <typename WeiT, typename InT = float, typename ImT = float, typename Ou
         typename NORM_CLS = xft::RmsNorm>
 class LlamaMLP {
 public:
-    LlamaMLP(DecoderContext *ctx) : norm(NORM_CLS(ctx)) {}
+    LlamaMLP(DecoderContext *ctx) : norm(ctx) {}
 
     // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
