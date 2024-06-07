@@ -60,8 +60,8 @@ public:
         int K = inputSize;
         int N = this->splitSize;
 
-        scaleWeight.Resize(N);
-        zeroWeight.Resize(N);
+        scaleWeight.Resize(1, N);
+        zeroWeight.Resize(1, N);
 
         xft::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
@@ -120,8 +120,8 @@ private:
     int splitOffset;
 
     xft::Matrix<WeiT> weight;
-    xft::Vector<float> scaleWeight; // if weight is int8
-    xft::Vector<float> zeroWeight; // if weight is int8
+    xft::Matrix<float> scaleWeight; // if weight is int8
+    xft::Matrix<float> zeroWeight; // if weight is int8
     xft::Vector<float> sumWeight; // if weight is int8
     float *bias = nullptr;
 };

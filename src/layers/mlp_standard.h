@@ -225,14 +225,14 @@ protected:
 
     //    private:
     xft::Matrix<WeiT> intermediateWeight;
-    xft::Vector<float> intermediateWeightScale;
-    xft::Vector<float> intermediateWeightZero;
+    xft::Matrix<float> intermediateWeightScale;
+    xft::Matrix<float> intermediateWeightZero;
     xft::Vector<float> intermediateWeightSum;
     xft::Vector<float> intermediateBias;
 
     xft::Matrix<WeiT> outputWeight;
-    xft::Vector<float> outputWeightScale;
-    xft::Vector<float> outputWeightZero;
+    xft::Matrix<float> outputWeightScale;
+    xft::Matrix<float> outputWeightZero;
     xft::Vector<float> outputWeightSum;
     xft::Vector<float> outputBias;
 

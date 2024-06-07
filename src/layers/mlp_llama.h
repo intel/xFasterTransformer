@@ -326,13 +326,13 @@ private:
     }
 
     void catGateUpWeights(xft::Matrix<WeiT> &gateWeight, xft::Matrix<WeiT> &upWeight,
-            xft::Vector<float> &gateWeightScale, xft::Vector<float> &gateWeightZero, xft::Vector<float> &gateWeightSum,
-            xft::Vector<float> &upWeightScale, xft::Vector<float> &upWeightZero, xft::Vector<float> &upWeightSum,
-            xft::Matrix<WeiT> &catWeights, xft::Vector<float> &catWeightsScale, xft::Vector<float> &catWeightsZero,
+            xft::Matrix<float> &gateWeightScale, xft::Matrix<float> &gateWeightZero, xft::Vector<float> &gateWeightSum,
+            xft::Matrix<float> &upWeightScale, xft::Matrix<float> &upWeightZero, xft::Vector<float> &upWeightSum,
+            xft::Matrix<WeiT> &catWeights, xft::Matrix<float> &catWeightsScale, xft::Matrix<float> &catWeightsZero,
             xft::Vector<float> &catWeightsSum) {
         catWeights.Resize(gateWeight.Rows(), gateWeight.Cols() + upWeight.Cols());
-        catWeightsScale.Resize(gateWeightScale.Size() + upWeightScale.Size());
-        catWeightsZero.Resize(gateWeightZero.Size() + upWeightZero.Size());
+        catWeightsScale.Resize(gateWeightScale.Rows(), gateWeightScale.Cols() + upWeightScale.Cols());
+        catWeightsZero.Resize(gateWeightZero.Rows(), gateWeightZero.Cols() + upWeightZero.Cols());
         catWeightsSum.Resize(gateWeightSum.Size() + upWeightSum.Size());
 
         int M = catWeights.Rows();
@@ -349,12 +349,15 @@ private:
             memcpy(catWeights.Data() + i * Stride + N, upWeight.Data() + i * N, N * sizeof(WeiT));
         }
 
-        M = gateWeightScale.Size();
-        N = upWeightScale.Size();
-        memcpy(catWeightsScale.Data(), gateWeightScale.Data(), M * sizeof(float));
-        memcpy(catWeightsScale.Data() + M, upWeightScale.Data(), N * sizeof(float));
-        memcpy(catWeightsZero.Data(), gateWeightZero.Data(), M * sizeof(float));
-        memcpy(catWeightsZero.Data() + M, upWeightZero.Data(), N * sizeof(float));
+        M = gateWeightScale.Rows();
+        Stride = catWeightsScale.Cols();
+        N = gateWeightScale.Cols();
+        for (uint64_t i = 0; i < M; ++i) {
+            memcpy(catWeightsScale.Data() + i * Stride, gateWeightScale.Data() + i * N, N * sizeof(float));
+            memcpy(catWeightsScale.Data() + i * Stride + N, upWeightScale.Data() + i * N, N * sizeof(float));
+            memcpy(catWeightsZero.Data() + i * Stride, gateWeightZero.Data() + i * N, N * sizeof(float));
+            memcpy(catWeightsZero.Data() + i * Stride + N, upWeightZero.Data() + i * N, N * sizeof(float));
+        }
         M = gateWeightSum.Size();
         N = upWeightSum.Size();
         memcpy(catWeightsSum.Data(), gateWeightSum.Data(), M * sizeof(float));
@@ -363,20 +366,20 @@ private:
 
 protected:
     xft::Matrix<WeiT> gateWeight;
-    xft::Vector<float> gateWeightScale; // For int8_t weight
-    xft::Vector<float> gateWeightZero; // For int8_t weight
+    xft::Matrix<float> gateWeightScale; // For int8_t weight
+    xft::Matrix<float> gateWeightZero; // For int8_t weight
     xft::Vector<float> gateWeightSum; // For int8_t weight
     xft::Matrix<WeiT> upWeight;
-    xft::Vector<float> upWeightScale; // For int8_t weight
-    xft::Vector<float> upWeightZero; // For int8_t weight
+    xft::Matrix<float> upWeightScale; // For int8_t weight
+    xft::Matrix<float> upWeightZero; // For int8_t weight
     xft::Vector<float> upWeightSum; // For int8_t weight
     xft::Matrix<WeiT> catWeights;
-    xft::Vector<float> catWeightsScale; // For int8_t weight
-    xft::Vector<float> catWeightsZero; // For int8_t weight
+    xft::Matrix<float> catWeightsScale; // For int8_t weight
+    xft::Matrix<float> catWeightsZero; // For int8_t weight
     xft::Vector<float> catWeightsSum; // For int8_t weight
     xft::Matrix<WeiT> downWeight;
-    xft::Vector<float> downWeightScale; // For int8_t weight
-    xft::Vector<float> downWeightZero; // For int8_t weight
+    xft::Matrix<float> downWeightScale; // For int8_t weight
+    xft::Matrix<float> downWeightZero; // For int8_t weight
     xft::Vector<float> downWeightSum; // For int8_t weight
 
     // LlamaRMSNorm param

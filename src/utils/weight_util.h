@@ -32,6 +32,47 @@
 
 namespace xft {
 
+inline bool fileExists(const std::string &filename) {
+    std::ifstream file(filename);
+    return file.good();
+}
+
+template <typename WeiT>
+struct Weight {
+    WeiT* w;
+    float* s;
+    float* z;
+
+    Weight() {
+        w = nullptr;
+        s = nullptr;
+        z = nullptr;
+    }
+    Weight (const Weight&) = delete;
+    Weight& operator= (const Weight&) = delete;
+    ~Weight() {
+        free(w);
+        free(s);
+        free(z);
+    }
+};
+
+inline int getGroupSize(const std::string &ini_file, std::string section_name = "") {
+    INIReader reader = INIReader(ini_file);
+    if (reader.ParseError() == 0 ) {
+        return -1;
+    } else {
+        if (section_name == "") {
+            if (!reader.Sections().empty()) {
+                section_name = *(reader.Sections().begin());
+            } else {
+                return -1;
+            }
+        }
+        return reader.GetInteger(section_name, "quant_groupsize", -1);
+    }
+}
+
 inline DataType getWeightType(const std::string &ini_file, std::string section_name = "") {
     DataType w_type;
     INIReader reader = INIReader(ini_file);
@@ -108,13 +149,13 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
     if constexpr (std::is_same_v<T, WT> == true) {
         // If T and WT are the same, directly read the file
         file_size = readFile(filename, ptr, size);
-        if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
+        REQUIRES(file_size == size, "read %s failed!", filename.c_str());
     } else {
         // If T and WT are different types, perform dynamic type conversion
         WT *w_ptr = nullptr;
         w_ptr = (WT *)xft::alloc(sizeof(WT) * size);
         file_size = readFile(filename, w_ptr, size);
-        if (required) REQUIRES(file_size == size, "read %s failed!", filename.c_str());
+        REQUIRES(file_size == size, "read %s failed!", filename.c_str());
 
         if constexpr ((std::is_same_v<T, float16_t> && std::is_same_v<WT, float>)
                 || (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float>)
@@ -154,7 +195,6 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
 
 template <typename T>
 int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataType::unknown, bool required = true) {
-
     // By default, read the config.ini configuration file
     // in the same directory as the model file to determine the data type of the file.
     if (w_type == DataType::unknown) {
@@ -163,8 +203,6 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         std::string configFilePath = dirPath + "/config.ini";
         w_type = getWeightType(configFilePath);
     }
-    //1 uint4x2 stores 2 uint4 value, so load size is halfed.
-    if constexpr (std::is_same_v<T, uint4x2_t>) { size = size / 2; }
     if (!ptr) { ptr = (T *)xft::alloc(size * sizeof(T)); }
     int file_size = 0;
     switch (w_type) {
@@ -176,6 +214,46 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
         default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
     }
     return file_size;
+}
+
+// load weight or qweight/scales/zeros to Weight<T> according to config.ini
+template <typename T>
+void loadWeight(std::string filename, Weight<T> &w, int rows, int cols) {
+    int size = rows * cols;
+
+    if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, uint4x2_t>) {
+        // INT8/INT4 quant, wbits = 8/4, qweight dtype: int8_t/uint4x2_t
+        std::size_t pos = filename.find_last_of("/\\");
+        std::string dirPath = filename.substr(0, pos);
+        std::string configFilePath = dirPath + "/config.ini";
+        int groupsize = getGroupSize(configFilePath);
+        int groups = groupsize == -1 ? 1 : rows / groupsize;
+
+        auto replace = [](std::string s, std::string a, std::string b) { return s.replace(s.find(a), a.length(), b);};
+
+        DataType t = DataType::int8;
+        if constexpr (std::is_same_v<T, uint4x2_t>) {
+            t = DataType::int4;
+
+            //1 uint4x2 stores 2 uint4 value, so load size is halfed.
+            size = size / 2;
+        }
+
+        auto qweightName = replace(filename, "weight", "qweight");
+        w.w = (T *)xft::alloc(size * sizeof(T));
+        loadWeight(qweightName, w.w, size, t);
+
+        auto scalesName = replace(filename, "weight", "scales");
+        w.s = (float *)xft::alloc(cols * sizeof(float));
+        loadWeight(scalesName, w.s, groups * cols, DataType::fp32);
+
+        auto zerosName = replace(filename, "weight", "zeros");
+        w.z = (float *)xft::alloc(cols * sizeof(float));
+        loadWeight(zerosName, w.z, groups * cols, DataType::fp32);
+    } else {
+        w.w = (T *)xft::alloc(size * sizeof(T));
+        loadWeight(filename, w.w, size);
+    }
 }
 
 template int loadWeightWithConvert<float, float>(float *, int, const std::string &, bool);

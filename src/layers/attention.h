@@ -123,23 +123,27 @@ public:
         float *concatScale = nullptr;
         float *concatZero = nullptr;
         if constexpr (std::is_same_v<OriWeiT, int8_t> || std::is_same_v<OriWeiT, uint4x2_t>) {
-            concatScale = (float *)malloc(responsibleCols * sizeof(float));
-            concatZero = (float *)malloc(responsibleCols * sizeof(float));
-            memcpy(concatScale, queryScale + this->startQHead * headSize, qResponsibleCols * sizeof(float));
-            memcpy(concatScale + qResponsibleCols, keyScale + this->startKVHead * headSize,
+            int qkvStride = (ctx->attHeadNum + ctx->kvHeadNum + ctx->kvHeadNum) * ctx->attHeadSize;
+            int groups = ctx->groupsize == -1 ? 1 : hiddenSize / ctx->groupsize;
+            concatScale = (float *)malloc(groups * responsibleCols * sizeof(float));
+            concatZero = (float *)malloc(groups * responsibleCols * sizeof(float));
+            for (int i = 0; i < groups; ++i) {
+            memcpy(concatScale + i * responsibleCols, queryScale + i * qkvStride + this->startQHead * headSize, qResponsibleCols * sizeof(float));
+            memcpy(concatScale + i * responsibleCols + qResponsibleCols, keyScale + i * qkvStride + this->startKVHead * headSize,
                     kvResponsibleCols * sizeof(float));
-            memcpy(concatScale + qResponsibleCols + kvResponsibleCols, valueScale + this->startKVHead * headSize,
+            memcpy(concatScale + i * responsibleCols + qResponsibleCols + kvResponsibleCols, valueScale + i * qkvStride + this->startKVHead * headSize,
                     kvResponsibleCols * sizeof(float));
-            memcpy(concatZero, queryZero + this->startQHead * headSize, qResponsibleCols * sizeof(float));
-            memcpy(concatZero + qResponsibleCols, keyZero + this->startKVHead * headSize,
+            memcpy(concatZero + i * responsibleCols, queryZero + i * qkvStride + this->startQHead * headSize, qResponsibleCols * sizeof(float));
+            memcpy(concatZero + i * responsibleCols + qResponsibleCols, keyZero + i * qkvStride + this->startKVHead * headSize,
                     kvResponsibleCols * sizeof(float));
-            memcpy(concatZero + qResponsibleCols + kvResponsibleCols, valueZero + this->startKVHead * headSize,
+            memcpy(concatZero + i * responsibleCols + qResponsibleCols + kvResponsibleCols, valueZero + i * qkvStride + this->startKVHead * headSize,
                     kvResponsibleCols * sizeof(float));
+            }
         }
 
         xft::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
-                convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
+                convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum, ctx->groupsize);
 
 #ifdef XFT_GPU
         xft::Matrix<WeiT> qkvWeightT;
@@ -182,7 +186,7 @@ public:
         xft::Matrix<WeiT> convertedOutWeight;
         ctx->mmHelper->convertWeight(trans, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, attnOutWeight, attnOutScale,
                 attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedOutWeight,
-                attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
+                attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, ctx->groupsize, true);
 
 #ifdef XFT_GPU
         xft::Matrix<WeiT> outWeightT;
@@ -1183,15 +1187,15 @@ protected:
 
     // query, key, value weighs
     xft::Matrix<WeiT> qkvWeight;
-    xft::Vector<float> qkvWeightScale; // if weight is int8
-    xft::Vector<float> qkvWeightZero; // if weight is int8
+    xft::Matrix<float> qkvWeightScale; // if weight is int8
+    xft::Matrix<float> qkvWeightZero; // if weight is int8
     xft::Vector<float> qkvWeightSum; // if weight is int8
     // query, key, value bias
     xft::Vector<float> qkvBias;
 
     xft::Matrix<WeiT> attnOutputWeight;
-    xft::Vector<float> attnOutputWeightScale; // if weight is int8
-    xft::Vector<float> attnOutputWeightZero; // if weight is int8
+    xft::Matrix<float> attnOutputWeightScale; // if weight is int8
+    xft::Matrix<float> attnOutputWeightZero; // if weight is int8
     xft::Vector<float> attnOutputWeightSum; // if weight is int8
     xft::Vector<float> attnOutputBias;
 
