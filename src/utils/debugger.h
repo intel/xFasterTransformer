@@ -114,6 +114,15 @@ public:
         }
     }
 
+#ifdef GPU
+    template <typename T>
+    void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
+    }
+
+    template <typename T>
+    void dumpMatrix(T *data, uint64_t rows, uint64_t cols, uint64_t stride, bool print_all = false) {
+    }
+#else
     template <typename T>
     void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
         std::ostringstream oss;
@@ -281,7 +290,7 @@ public:
             fflush(debugFile);
         }
     }
-
+#endif
     // Function to store float* data to a file
     template <typename T>
     void storeMatrix(const std::string &filename, const T *data, uint64_t rows, uint64_t cols) {

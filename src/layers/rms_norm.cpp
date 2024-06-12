@@ -45,7 +45,7 @@ RmsNormImp<T>::RmsNormImp(DecoderContext *ctx) {
 
 template <typename T>
 RmsNormImp<T>::~RmsNormImp() {
-    if (weight) { xft::dealloc(weight); }
+    if (weight) { xft::dealloc(weight, device); }
 }
 
 template <typename T>
@@ -69,7 +69,10 @@ void RmsNormImp<T>::setWeight(const float *w, const float *, int cols) {
 template <typename T>
 void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &, int cols) {
     this->normSize = cols;
-    loadWeight(modelPath, weight, cols);
+    float *weiBuf = (float *)xft::alloc(cols * sizeof(float));
+    loadWeight(modelPath, weiBuf, cols, DataType::fp32);
+    this->setWeight(weiBuf, nullptr, cols);
+    xft::dealloc(weiBuf);
 }
 
 #ifdef GPU

@@ -22,6 +22,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     const std::string emb_cos_str = "emb_cos";
     const std::string emb_sin_str = "emb_sin";
 
+    this->device = ctx->device;
     this->dim = ctx->attHeadSize;
     this->max_position_embeddings = ctx->maxPosEmbed;
     ctx->GetAttr("rope_theta", &this->base, 10000);
@@ -43,8 +44,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
         }
         xft::llamaSetCosSinCache(inv_freq, emb_cos, emb_sin, inv_freq_size, max_position_embeddings);
 #ifdef GPU
-        device = ctx->device;
-        if (device != nullptr) {
+        if (this->device != nullptr) {
             float *emb_cos_bak = emb_cos;
             float *emb_sin_bak = emb_sin;
             emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, device);

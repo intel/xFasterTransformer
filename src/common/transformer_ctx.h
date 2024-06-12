@@ -171,9 +171,8 @@ public:
             }
         }
 
-        this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
-        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
-        memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
+        this->rawBufSize = 0;
+        this->rawBuffer = nullptr;
 
         if (act == "relu") {
             this->actType = RELU;
@@ -245,8 +244,8 @@ public:
         return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, device, alignment);
     }
 
-    void freeBuffer(const std::string &name, void *device = nullptr) {
-        SimpleMemPool::instance().freeBuffer(name, device);
+    void freeBuffer(const std::string &name) {
+        SimpleMemPool::instance().freeBuffer(name);
     }
 
     void dump() {
@@ -291,10 +290,10 @@ public:
         uint64_t total = size1 + size2 + size3;
         if (total > this->rawBufSize) {
             this->rawBufSize = total;
-            free(this->rawBuffer);
+            if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
 
-            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
-            memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
+            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize, this->device);
+            xft::memsetv(this->rawBuffer, 0, sizeof(float) * rawBufSize, this->device);
         }
 
         // Assign the buffer
@@ -317,5 +316,9 @@ public:
         return rawBufSize - size1 - size2;
     }
 
-    ~DecoderContext() { free(this->rawBuffer); }
+    ~DecoderContext() {
+        xft::dealloc(this->rawBuffer, this->device);
+        if (this->mmHelper) delete this->mmHelper;
+        if (this->device) delete this->device;
+    }
 };

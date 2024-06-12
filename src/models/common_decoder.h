@@ -370,6 +370,15 @@ public:
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
+#ifdef GPU
+        size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
+        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
+        AttnInT *outBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
+        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
+        embBuf = embBufTmp;
+        outBuf = outBufTmp;
+#endif
+
         // Decoder: forward
         int layers_per_pp_stage = decoderBlock->size();
         for (int i = 0; i < layers_per_pp_stage; ++i) {
@@ -422,6 +431,15 @@ public:
                 }
             }
         }
+
+#ifdef GPU
+        embBufTmp = (AttnInT *)actBuffers->Data();
+        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
+        xft::dealloc(embBuf, ctx->device);
+        xft::dealloc(outBuf, ctx->device);
+        embBuf = embBufTmp;
+        outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
+#endif
 
 #ifdef PIPELINE_PARALLEL
         }

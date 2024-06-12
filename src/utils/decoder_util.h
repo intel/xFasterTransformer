@@ -28,6 +28,10 @@
 #include "transformer_ctx.h"
 #include "xdnn.h"
 
+#ifdef GPU
+#include <CL/sycl.hpp>
+#endif
+
 extern int getFlashThresh();
 extern bool enableCATMLP();
 extern bool enableSkipMsk();
@@ -444,6 +448,37 @@ public:
         return std::make_pair(maxVal, sum);
     }
 
+#ifdef GPU
+    template <typename T1, typename T2>
+    static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst, void *device = nullptr) {
+        int M = src.Rows();
+        int lds = src.Stride();
+        int N = lds / 2;
+        int ldd = dst.Stride();
+
+        if (device != nullptr) {
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+
+            if constexpr (std::is_same_v<T1, float16_t> && std::is_same_v<T2, float16_t>) {
+                const float16_t *src0 = src.Data();
+                const float16_t *src1 = src.Data() + N;
+                sycl::half *dest = (sycl::half *)dst.Data();
+
+                gpu_queue
+                        ->submit([&](sycl::handler &h) {
+                            h.parallel_for(M * N, [=](auto i) {
+                                int32_t row = i / N;
+                                int32_t col = i % N;
+                                dest[row * ldd + col] = ((sycl::half)src0[row * lds + col]
+                                        / ((sycl::half)1.0f + (sycl::half)sycl::native::exp(-src0[row * lds + col]))
+                                        * (sycl::half)src1[row * lds + col]);
+                            });
+                        })
+                        .wait();
+            }
+        }
+    }
+#else
     // compute silu on the left half and then add it with the right half
     template <typename T1, typename T2>
     static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst) {
@@ -469,6 +504,7 @@ public:
             }
         }
     }
+#endif
 
     // compute gelu on the left half and then add it with the right half
     template <typename T1, typename T2>

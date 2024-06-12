@@ -39,8 +39,8 @@ LayerNorm::LayerNorm(DecoderContext *ctx) {
 }
 
 LayerNorm::~LayerNorm() {
-    if (gamma) { xft::dealloc(gamma); }
-    if (beta) { xft::dealloc(beta); }
+    if (gamma) { xft::dealloc(gamma, device); }
+    if (beta) { xft::dealloc(beta, device); }
 }
 
 void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {

@@ -88,4 +88,16 @@ static inline void memcopy(void *dst, const void *src, size_t size, void *device
     memcpy(dst, src, size);
 }
 
+static inline void memsetv(void *dst, int ch, size_t size, void *device = nullptr) {
+#ifdef GPU
+    if (device != nullptr) {
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        gpu_queue->memset(dst, ch, size).wait();
+        return;
+    }
+#endif
+
+    memset(dst, ch, size);
+}
+
 } // namespace xft

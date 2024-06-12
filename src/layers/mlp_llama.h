@@ -98,7 +98,7 @@ public:
         int downWeiRows = it.second - it.first;
         int downWeiCols = hiddenSize;
         downWeightT.Resize(downWeiRows, downWeiCols);
-        ctx->mmHelper->transposeWeight(true, quantizedDownWeight, downWeightT);
+        ctx->mmHelper->transposeWeight(trans, quantizedDownWeight, downWeightT);
 
         WeiT *downWeiData = (WeiT *)xft::alloc(downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
         downWeight.Assign(downWeiData, downWeiRows, downWeiCols, downWeiCols);
@@ -184,7 +184,7 @@ public:
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
             const int cols = N / 2;
             auto bufSize = sizeof(ImT) * M * cols;
-            ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
+            ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize, ctx->device);
             xft::Matrix<ImT> siluBuf(t, M, cols, cols);
 #ifdef XFT_DEBUG
             dbg.debugPrint(
@@ -314,9 +314,9 @@ private:
 
         // Compute silu on the left half and then add it with the right half
         if (ctx->actType == DecoderContext::SILU) {
-            DecoderUtil::siluSum(output, siluBuf);
+            DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
-            DecoderUtil::siluSum(output, siluBuf);
+            DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
             DecoderUtil::geluSum(output, siluBuf);
         } else {

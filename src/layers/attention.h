@@ -144,7 +144,7 @@ public:
 #ifdef GPU
         xft::Matrix<WeiT> qkvWeightT;
         qkvWeightT.Resize(hiddenSize, responsibleCols);
-        ctx->mmHelper->transposeWeight(true, convertedqkvWeight, qkvWeightT);
+        ctx->mmHelper->transposeWeight(trans, convertedqkvWeight, qkvWeightT);
 
         WeiT *qkvWeiData = (WeiT *)xft::alloc(hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
         qkvWeight.Assign(qkvWeiData, hiddenSize, responsibleCols, responsibleCols);
@@ -187,7 +187,7 @@ public:
 #ifdef GPU
         xft::Matrix<WeiT> outWeightT;
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
-        ctx->mmHelper->transposeWeight(true, convertedOutWeight, outWeightT);
+        ctx->mmHelper->transposeWeight(trans, convertedOutWeight, outWeightT);
 
         WeiT *outWeiData
                 = (WeiT *)xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
@@ -326,12 +326,17 @@ public:
                 std::iota(posIds.begin(), posIds.end(), pastSeqLen);
             }
             qkpo.forward(query.Data(), key.Data(), query.Stride(), key.Stride(), qkShape, posIds.data());
-#ifdef GPU
-            int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
-            xft::memcopy(qkvMatMul.Data(), query.Data(), size, ctx->device); // error: need CPU ptr and GPU ptr
-#endif
         }
         t3.release();
+
+#ifdef GPU
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
+        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device); // error: need CPU ptr and GPU ptr
+        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+#endif
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
@@ -356,6 +361,12 @@ public:
         // For multiple nodes inference, not the whole result buffer
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
+#ifdef GPU
+        int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
+        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
+        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+#endif
+
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
@@ -369,15 +380,16 @@ public:
         }
         t4.release();
 
+#ifdef GPU
+        xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
+        attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        xft::dealloc(qkvTmp);
+#endif
+
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
-#endif
-
-#ifdef GPU
-        int64_t size = ctx->batchSize * ctx->inputSeqLen * qkvCols * sizeof(float);
-        xft::memcopy(qkvMatMul.Data(), attnSplit.Data(), size, ctx->device); // error: need CPU ptr and GPU ptr
 #endif
 
         TimeLine t5("Output");
