@@ -1,5 +1,15 @@
 # CHANGELOG
 # [Version v1.7.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.0)
+v1.7.1 - Continuous batching feature supports ChatGLM2/3.
+
+## Functionality
+- Add continuous batching support of ChatGLM2/3 models.
+- Qwen2Convert supports quantized Qwen2 models by GPTQ, such as GPTQ-Int8 and GPTQ-Int4, by param `from_quantized_model="gptq"`.
+
+## BUG fix
+- Fixed the segament fault error when running with more than 2 ranks in vllm-xft serving.
+
+# [Version v1.7.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.0)
 v1.7.0 - Continuous batching feature supported.
 
 ## Functionality
