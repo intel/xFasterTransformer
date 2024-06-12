@@ -448,8 +448,14 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE(
-                    "onednn_gemm_compute", onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute",
+                        xdnn_sgemm_f32f16f32_compute(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute",
@@ -566,9 +572,15 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_bias",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, (const InT *)nullptr, -1,
-                            matmul_kinds::BiasAdd));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_biasadd",
+                        xdnn_sgemm_f32f16f32_compute_biasadd(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_bias",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias,
+                                (const InT *)nullptr, -1, matmul_kinds::BiasAdd));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_biasadd",
@@ -689,9 +701,15 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_bias_relu",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, (const InT *)nullptr, -1,
-                            matmul_kinds::BiasAdd_Relu));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_biasadd_relu",
+                        xdnn_sgemm_f32f16f32_compute_biasadd_relu(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, bias));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_bias_relu",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias,
+                                (const InT *)nullptr, -1, matmul_kinds::BiasAdd_Relu));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_biasadd_relu",
@@ -804,9 +822,15 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_silu",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, (const float *)nullptr,
-                            (const InT *)nullptr, -1, matmul_kinds::Silu));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_silu",
+                        xdnn_sgemm_f32f16f32_compute_silu(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_silu",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc,
+                                (const float *)nullptr, (const InT *)nullptr, -1, matmul_kinds::Silu));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_silu",
@@ -925,9 +949,16 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_gelu",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, (const float *)nullptr,
-                            (const InT *)nullptr, -1, matmul_kinds::Gelu));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_gelu",
+                        xdnn_sgemm_f32f16f32_compute_gelu(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_gelu",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc,
+                                (const float *)nullptr, (const InT *)nullptr, -1, matmul_kinds::Gelu));
+            }
+
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_gelu",
@@ -1047,9 +1078,15 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_resmul",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, (const float *)nullptr,
-                            res, ldres, matmul_kinds::Resmul));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_resmul",
+                        xdnn_sgemm_f32f16f32_compute_resmul(
+                                transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB, beta, C, ldc, res, ldres));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_resmul",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc,
+                                (const float *)nullptr, res, ldres, matmul_kinds::Resmul));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_resmul",
@@ -1171,9 +1208,15 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
-            GEMMVERBOSE("onednn_gemm_compute_residential",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres,
-                            matmul_kinds::Residential));
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_residential",
+                        xdnn_sgemm_f32f16f32_compute_residential(transA, M, N, K, alpha, A, lda,
+                                (const XDNN_FP16 *)packedB, beta, C, ldc, bias, res, ldres));
+            } else {
+                GEMMVERBOSE("onednn_gemm_compute_residential",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres,
+                                matmul_kinds::Residential));
+            }
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_residential",
@@ -1296,19 +1339,26 @@ public:
         // FP16
         else if constexpr (std::is_same_v<WeiT, float16_t>) {
 #ifdef AVX512_FP32_WEIGHT_ONLY_FP16
+            if constexpr (std::is_same_v<InT, float> && std::is_same_v<OutT, float>) {
+                GEMMVERBOSE("xdnn_sgemm_f32f16f32_compute_resext",
+                        xdnn_sgemm_f32f16f32_compute_resext(transA, M, N, K, alpha, A, lda, (const XDNN_FP16 *)packedB,
+                                beta, C, ldc, bias, gamma, res, ldres));
+            } else {
 #pragma omp parallel for collapse(2)
-            for (uint64_t i = 0; i < M; ++i) {
-                for (int j = 0; j < N; ++j) {
-                    auto remain = N - j;
-                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
-                    auto v = xft::load_avx512(mask, &res[i * ldres + j]);
-                    v = _mm512_mul_ps(_mm512_set1_ps(gamma), v);
-                    xft::store_avx512(&res[i * ldres + j], mask, v);
+                for (uint64_t i = 0; i < M; ++i) {
+                    for (int j = 0; j < N; ++j) {
+                        auto remain = N - j;
+                        __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+                        auto v = xft::load_avx512(mask, &res[i * ldres + j]);
+                        v = _mm512_mul_ps(_mm512_set1_ps(gamma), v);
+                        xft::store_avx512(&res[i * ldres + j], mask, v);
+                    }
                 }
+
+                GEMMVERBOSE("onednn_gemm_compute_resext",
+                        onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres,
+                                matmul_kinds::Residential));
             }
-            GEMMVERBOSE("onednn_gemm_compute_resext",
-                    onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB, beta, C, ldc, bias, res, ldres,
-                            matmul_kinds::Residential));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
             if constexpr (std::is_same_v<InT, float>) {
                 GEMMVERBOSE("xdnn_hgemm_f32f16f32_compute_resext",
