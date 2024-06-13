@@ -69,3 +69,83 @@ OMP_NUM_THREADS=48 mpirun \
             --model ${MODEL_PATH} \
             --kv-cache-dtype fp16
 ```
+
+## Benchmarking vLLM-xFT
+
+### Downloading the vLLM
+```bash
+git clone https://github.com/Duyi-Wang/vllm.git && cd vllm/benchmarks
+```
+
+### Downloading the ShareGPT dataset
+You can download the dataset by running:
+```bash
+wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+```
+
+### Benchmark offline inference throughput.
+This script is used to benchmark the offline inference throughput of a specified model. It sets up the environment, defines the paths for the tokenizer, model, and dataset, and uses numactl to bind the process to appropriate CPU resources for optimized performance.
+```bash
+#!/bin/bash
+
+# Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+
+# Define the paths for the tokenizer and the model
+TOKEN_PATH=/data/models/Qwen2-7B-Instruct
+MODEL_PATH=/data/models/Qwen2-7B-Instruct-xft
+DATASET_PATH=ShareGPT_V3_unfiltered_cleaned_split.json
+
+# Use numactl to bind to appropriate CPU resources
+numactl -C 0-47 -l python benchmark_throughput.py \
+        --tokenizer ${TOKEN_PATH} \          # Path to the tokenizer
+        --model ${MODEL_PATH} \              # Path to the model
+        --dataset ${DATASET_PATH}            # Path to the dataset
+```
+
+### Benchmark online serving throughput.
+This guide explains how to benchmark the online serving throughput for a model. It includes instructions for setting up the server and running the client benchmark script.
+1. On the server side, you can refer to the following code to start the test API server:
+```bash
+#!/bin/bash
+
+# Preload libiomp5.so by following cmd or LD_PRELOAD=libiomp5.so manually
+export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+
+# Define the paths for the tokenizer and the model
+TOKEN_PATH=/data/models/Qwen2-7B-Instruct
+MODEL_PATH=/data/models/Qwen2-7B-Instruct-xft
+
+# Start the API server using numactl to bind to appropriate CPU resources
+numactl -C 0-47 -l python -m vllm.entrypoints.openai.api_server \
+        --model ${MODEL_PATH} \              # Path to the model
+        --tokenizer ${TOKEN_PATH} \          # Path to the tokenizer
+        --dtype bf16 \                       # Data type for the model (bfloat16)
+        --kv-cache-dtype fp16 \              # Data type for the key-value cache (float16)
+        --served-model-name xft \            # Name for the served model
+        --port 8000 \                        # Port number for the API server
+        --trust-remote-code                  # Trust remote code execution
+```
+
+2. On the client side, you can use `python benchmark_serving.py --help` to see the required configuration parameters. Here is a reference example:
+
+```bash
+$ python benchmark_serving.py --model xft --tokenizer /data/models/Qwen2-7B-Instruct --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json
+============ Serving Benchmark Result ============
+Successful requests:                     xxxx
+Benchmark duration (s):                  xxxx
+Total input tokens:                      xxxx
+Total generated tokens:                  xxxx
+Request throughput (req/s):              xxxx
+Input token throughput (tok/s):          xxxx
+Output token throughput (tok/s):         xxxx
+---------------Time to First Token----------------
+Mean TTFT (ms):                          xxxx
+Median TTFT (ms):                        xxxx
+P99 TTFT (ms):                           xxxx
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          xxx
+Median TPOT (ms):                        xxx
+P99 TPOT (ms):                           xxx
+==================================================
+```
