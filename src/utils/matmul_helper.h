@@ -226,8 +226,8 @@ public:
             int offset = trans ? rowOffset : colOffset;
             scaleWeight.Resize(size);
             zeroWeight.Resize(size);
-            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
-            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+            if (scales) memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            if (zeros) memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
@@ -242,8 +242,8 @@ public:
             int offset = trans ? rowOffset : colOffset;
             scaleWeight.Resize(size);
             zeroWeight.Resize(size);
-            memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
-            memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+            if (scales) memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
+            if (zeros) memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride() / 2;

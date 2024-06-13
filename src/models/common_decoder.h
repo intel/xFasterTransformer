@@ -256,7 +256,7 @@ public:
 
     virtual ~CommonDecoder() {
         if (this->inputTokens) free(this->inputTokens);
-        if (this->attnMask) free(this->attnMask);
+        if (this->attnMask) xft::alloc(this->attnMask);
 
         delete this->decoderBlock;
         delete this->predictor;

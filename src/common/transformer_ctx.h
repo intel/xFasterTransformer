@@ -321,6 +321,6 @@ public:
     }
 
     ~DecoderContext() {
-        xft::dealloc(this->rawBuffer, this->device);
+        if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
     }
 };
