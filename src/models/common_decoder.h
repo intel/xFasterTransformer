@@ -769,7 +769,7 @@ protected:
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
 #else
-            this->device.reset(nullptr);
+            this->device.reset(&nullptr);
 #endif
             this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
