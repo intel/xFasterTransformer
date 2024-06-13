@@ -356,7 +356,8 @@ public:
                 groupMeta->get(0)->setPastSeqLen(pastSeqLen);
                 groupMeta->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
                 SequencePool::getInstance().add(groupMeta);
-                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(groupMeta->get(0)->getSequenceID()));
+                TaskWaitingQueue::getInstance().push(
+                        SequencePool::getInstance().get(groupMeta->get(0)->getSequenceID()));
             }
         }
 
@@ -533,7 +534,7 @@ public:
     }
 
     std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
-        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0)
         // Assume input has been synced with master in higher level.
         TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
@@ -757,23 +758,22 @@ protected:
                 exit(-1);
             }
         } else {
-            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
-                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize,
-                    ppRank, ropeParamsPtr, useLogN, useNTK));
-
             int engineIdx = 0;
             if (env.getEngineKind() == xft::DeviceKind::iGPU && env.getEngineIndex() < 0) // Sequential assignment
                 engineIdx = ppRank * tpSize + tpRank;
             else // assignment through the user
                 engineIdx = env.getEngineIndex();
 
-            this->context->mmHelper = new MMHelper(env.getEngineKind(), engineIdx);
+            this->mmHelper.reset(new MMHelper(env.getEngineKind(), engineIdx));
 #ifdef GPU
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
-            this->context->device = new sycl::queue(devices[this->context->mmHelper->getEngineCount() + engineIdx]);
+            this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
 #else
-            this->context->device = nullptr;
+            this->device.reset(nullptr);
 #endif
+            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
+                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
+                    this->mmHelper.get(), this->device.get(), ppSize, ppRank, ropeParamsPtr, useLogN, useNTK));
         }
 
         return this->context.get();
@@ -1094,6 +1094,8 @@ protected:
 
     // Execution context
     std::shared_ptr<DecoderContext> context;
+    std::shared_ptr<MMHelper> mmHelper;
+    std::shared_ptr<void> device;
 
     // The initial input sequence length, which is the prompt token size
     int initSeqLen;

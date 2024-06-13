@@ -318,7 +318,7 @@ private:
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
             DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
-            DecoderUtil::geluSum(output, siluBuf);
+            DecoderUtil::geluSum(output, siluBuf,  ctx->device);
         } else {
             printf("ERROR: unsupported activation in MLP.\n");
             exit(-1);

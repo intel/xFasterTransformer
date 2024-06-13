@@ -481,7 +481,7 @@ public:
 #else
     // compute silu on the left half and then add it with the right half
     template <typename T1, typename T2>
-    static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst) {
+    static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst, void *device = nullptr) {
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
         int M = src.Rows();
@@ -508,7 +508,7 @@ public:
 
     // compute gelu on the left half and then add it with the right half
     template <typename T1, typename T2>
-    static void geluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst) {
+    static void geluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst, void *device = nullptr) {
         const __m512 c1 = _mm512_set1_ps(0.044715f);
         const __m512 c2 = _mm512_set1_ps(0.7978845608f);
         const __m512 vone = _mm512_set1_ps(1.0f);

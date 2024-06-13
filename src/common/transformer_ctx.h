@@ -131,7 +131,7 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
+            int _splitIdx, int _splits, MMHelper *mmHelper, void *device = nullptr, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
             bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
@@ -171,8 +171,12 @@ public:
             }
         }
 
-        this->rawBufSize = 0;
-        this->rawBuffer = nullptr;
+        this->mmHelper = mmHelper;
+        this->device = device;
+
+        this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
+        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize, this->device);
+        xft::memsetv(this->rawBuffer, 0, sizeof(float) * rawBufSize, this->device);
 
         if (act == "relu") {
             this->actType = RELU;
@@ -318,7 +322,5 @@ public:
 
     ~DecoderContext() {
         xft::dealloc(this->rawBuffer, this->device);
-        if (this->mmHelper) delete this->mmHelper;
-        if (this->device) delete this->device;
     }
 };
