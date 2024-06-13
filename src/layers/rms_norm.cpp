@@ -69,11 +69,10 @@ void RmsNormImp<T>::setWeight(const float *w, const float *, int cols) {
 
 template <typename T>
 void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &, int cols) {
+    float weightBuf[cols];
+    loadWeight(modelPath, weightBuf, cols);
     this->normSize = cols;
-    float *weiBuf = (float *)xft::alloc(cols * sizeof(float));
-    loadWeight(modelPath, weiBuf, cols, DataType::fp32);
-    this->setWeight(weiBuf, nullptr, cols);
-    xft::dealloc(weiBuf);
+    this->setWeight(weightBuf, nullptr, cols);
 }
 
 #ifdef GPU
