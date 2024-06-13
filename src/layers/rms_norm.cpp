@@ -52,6 +52,7 @@ template <typename T>
 void RmsNormImp<T>::setWeight(const float *w, const float *, int cols) {
     T weightBuf[cols];
     if constexpr (std::is_same_v<T, float>) {
+        xft::memcopy(weightBuf, w, cols * sizeof(float));
     } else if constexpr (std::is_same_v<T, float16_t>) {
         float16_t::cvt_float_to_float16(w, weightBuf, cols);
     } else if constexpr (std::is_same_v<T, bfloat16_t>) {
