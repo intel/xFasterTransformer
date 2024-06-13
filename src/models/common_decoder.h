@@ -768,8 +768,6 @@ protected:
 #ifdef GPU
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
-#else
-            this->device.reset(&nullptr);
 #endif
             this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
@@ -1095,7 +1093,7 @@ protected:
     // Execution context
     std::shared_ptr<DecoderContext> context;
     std::shared_ptr<MMHelper> mmHelper;
-    std::shared_ptr<void> device;
+    std::shared_ptr<void> device(nullptr);
 
     // The initial input sequence length, which is the prompt token size
     int initSeqLen;
