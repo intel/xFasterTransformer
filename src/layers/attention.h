@@ -329,6 +329,13 @@ public:
         }
         t3.release();
 
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
+        dbg.dumpMatrix(query);
+        dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
+        dbg.dumpMatrix(key);
+#endif
+
 #ifdef GPU
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
         ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
@@ -336,13 +343,6 @@ public:
         query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
         key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
         value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
-#endif
-
-#ifdef XFT_DEBUG
-        dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
-        dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)

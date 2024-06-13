@@ -83,7 +83,7 @@ void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iSt
     sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
     if constexpr (std::is_same_v<T, float>) {
         fastertransformer::invokeGeneralT5LayerNorm(
-                output, input, weight, (const float *)nullptr, epsilon, rows, iStride, gpu_queue);
+                output, input, weight, (const float *)nullptr, epsilon, rows, normSize, gpu_queue);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
         exit(-1);
@@ -105,7 +105,7 @@ void RmsNormImp<T>::forward(
     if constexpr (std::is_same_v<T, bfloat16_t>) {
         // TODO: Add BF16 RmsNorm Implemention.
         // fastertransformer::invokeGeneralT5LayerNorm(
-        //         output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, iStride, gpu_queue);
+        //         output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, normSize, gpu_queue);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
         exit(-1);
@@ -126,7 +126,7 @@ void RmsNormImp<T>::forward(
     sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
     if constexpr (std::is_same_v<T, float16_t>) {
         fastertransformer::invokeGeneralT5LayerNorm((sycl::half *)output, (const sycl::half *)input,
-                (const sycl::half *)weight, (const sycl::half *)nullptr, epsilon, rows, iStride, gpu_queue);
+                (const sycl::half *)weight, (const sycl::half *)nullptr, epsilon, rows, normSize, gpu_queue);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
         exit(-1);

@@ -80,7 +80,7 @@ public:
             int catWeiRows = quantizedCatWeights.Rows();
             int catWeiCols = quantizedCatWeights.Cols();
             catWeightsT.Resize(catWeiRows, catWeiCols);
-            ctx->mmHelper->transposeWeight(true, quantizedCatWeights, catWeightsT);
+            ctx->mmHelper->transposeWeight(trans, quantizedCatWeights, catWeightsT);
 
             WeiT *catWeiData = (WeiT *)xft::alloc(catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
             catWeights.Assign(catWeiData, catWeiRows, catWeiCols, catWeiCols);

@@ -374,7 +374,8 @@ public:
 #ifdef GPU
         size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
         AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
-        AttnInT *outBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
+        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
+                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
         xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
         embBuf = embBufTmp;
         outBuf = outBufTmp;
@@ -433,15 +434,6 @@ public:
             }
         }
 
-#ifdef GPU
-        embBufTmp = (AttnInT *)actBuffers->Data();
-        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
-        xft::dealloc(embBuf, ctx->device);
-        xft::dealloc(outBuf, ctx->device);
-        embBuf = embBufTmp;
-        outBuf = (MlpOutT *)(embBuf + batchSize * inputSeqLen * hiddenSize);
-#endif
-
 #ifdef PIPELINE_PARALLEL
         }
 
@@ -465,8 +457,8 @@ public:
             lnIn = outBuf;
 #pragma omp parallel for
             for (int b = 0; b < batchSize; ++b) {
-                memcpy(lnIn + b * hiddenSize, embBuf + ((b + 1) * inputSeqLen - 1) * hiddenSize,
-                        hiddenSize * sizeof(MlpOutT));
+                xft::memcopy(lnIn + b * hiddenSize, embBuf + ((b + 1) * inputSeqLen - 1) * hiddenSize,
+                        hiddenSize * sizeof(MlpOutT), ctx->device ? ctx->device : nullptr);
             }
         }
 
@@ -475,10 +467,11 @@ public:
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
 
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
-        else
+        } else {
             dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        }
 #endif
 
         // LN, as it supports inplace computing, input and output can be the same
@@ -490,10 +483,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
-        else
+        } else {
             dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        }
 #endif
 
         // Predictor
@@ -506,10 +500,21 @@ public:
 #ifdef XFT_DEBUG
         auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
-        else
+        } else {
             dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize);
+        }
+#endif
+
+#ifdef GPU
+        xft::dealloc(embBuf, ctx->device);
+        embBuf = (AttnInT *)actBuffers->Data();
+
+        float *finalOutTmp = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
+        xft::memcopy(finalOutTmp, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
+        xft::dealloc(outBuf, ctx->device);
+        finalOut = finalOutTmp;
 #endif
 
         // Expand the result to make it cover multiple beams

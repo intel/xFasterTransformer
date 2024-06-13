@@ -31,9 +31,11 @@ struct TypeSelector<bfloat16_t> {
     using OutType = bfloat16_t;
 };
 
-// template <>
-// struct TypeSelector<float16_t> {
-//     using InType = float16_t;
-//     using ImType = float16_t;
-//     using OutType = float16_t;
-// };
+#ifdef GPU
+template <>
+struct TypeSelector<float16_t> {
+    using InType = float16_t;
+    using ImType = float16_t;
+    using OutType = float16_t;
+};
+#endif

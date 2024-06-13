@@ -43,22 +43,24 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
             inv_freq[i] /= this->scaling_factor;
         }
         xft::llamaSetCosSinCache(inv_freq, emb_cos, emb_sin, inv_freq_size, max_position_embeddings);
-#ifdef GPU
-        if (this->device != nullptr) {
-            float *emb_cos_bak = emb_cos;
-            float *emb_sin_bak = emb_sin;
-            emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, device);
-            emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, device);
-            xft::memcopy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
-            xft::memcopy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
-            ctx->freeBuffer(emb_cos_str);
-            ctx->freeBuffer(emb_sin_str);
-        }
-#endif
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
     }
+
+#ifdef GPU
+    if (this->device != nullptr) {
+        float *emb_cos_bak = emb_cos;
+        float *emb_sin_bak = emb_sin;
+        emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+        emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+        if (!ctx->cached(inv_freq_str + "_gpu")) {
+            inv_freq = ctx->getBuffer<float>(inv_freq_str + "_gpu", inv_freq_size);
+            xft::memcopy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
+            xft::memcopy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
+        }
+    }
+#endif
 }
 
 // This API is deprecated, will delete after all rotary embed code refactor.

@@ -92,9 +92,9 @@ public:
 
     // Destructor to free all allocated memory on program termination
     ~SimpleMemPool() {
-        for (auto &entry : memoryMap) {
-            xft::dealloc(std::get<0>(entry.second), std::get<2>(entry.second));
-        }
+        // for (auto &entry : memoryMap) {
+        //     xft::dealloc(std::get<0>(entry.second), std::get<2>(entry.second));
+        // }
         memoryMap.clear();
     }
 };

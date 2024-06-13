@@ -56,21 +56,64 @@ public:
             sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
             gpu_queue
                     ->submit([&](sycl::handler &cgh) {
-                        auto out = sycl::stream(1024, 768, cgh);
+                        auto out = sycl::stream(10240, 7680, cgh);
                         cgh.parallel_for(sycl::nd_range<1>(1, 1), [=](sycl::nd_item<1> item) {
                             int idx_col = item.get_global_id(0);
                             if (idx_col == 0) {
-                                for (int row = 0; row < rows; ++row) {
-                                    for (int col = 0; col < cols; ++col) {
-                                        out << (float)buf[row * stride + col] << ", ";
+                                if (printAll == false) {
+                                    for (int row = 0; row < 6; ++row) {
+                                        for (int col = 0; col < 6; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << " ... ";
+                                        for (int col = cols - 6; col < cols; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << sycl::endl;
+                                    }
+                                    out << "..." << sycl::endl;
+                                    for (int row = rows - 6; row < rows; ++row) {
+                                        for (int col = 0; col < 6; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << " ... ";
+                                        for (int col = cols - 6; col < cols; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << sycl::endl;
                                     }
                                     out << sycl::endl;
+                                } else {
+                                    for (int row = 0; row < rows; ++row) {
+                                        for (int col = 0; col < 6; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << " ... ";
+                                        for (int col = cols - 6; col < cols; ++col) {
+                                            out << (float)buf[row * stride + col] << ", ";
+                                        }
+                                        out << sycl::endl;
+                                    }
                                 }
-                                out << sycl::endl;
                             }
                         });
                     })
                     .wait();
+        } else {
+            for (int row = 0; row < 6; ++row) {
+                for (int col = 0; col < 6; ++col) {
+                    std::cout << (float)buf[row * stride + col] << ", ";
+                }
+                std::cout << std::endl;
+            }
+            std::cout << "..." << std::endl;
+            for (int row = rows - 6; row < rows; ++row) {
+                for (int col = cols - 6; col < cols; ++col) {
+                    std::cout << (float)buf[row * stride + col] << ", ";
+                }
+                std::cout << std::endl;
+            }
+            std::cout << std::endl;
         }
 #endif
     }

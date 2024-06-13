@@ -460,8 +460,8 @@ public:
             sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
 
             if constexpr (std::is_same_v<T1, float16_t> && std::is_same_v<T2, float16_t>) {
-                const float16_t *src0 = src.Data();
-                const float16_t *src1 = src.Data() + N;
+                sycl::half *src0 = (sycl::half *)src.Data();
+                sycl::half *src1 = (sycl::half *)(src.Data() + N);
                 sycl::half *dest = (sycl::half *)dst.Data();
 
                 gpu_queue
@@ -469,9 +469,10 @@ public:
                             h.parallel_for(M * N, [=](auto i) {
                                 int32_t row = i / N;
                                 int32_t col = i % N;
-                                dest[row * ldd + col] = ((sycl::half)src0[row * lds + col]
-                                        / ((sycl::half)1.0f + (sycl::half)sycl::native::exp(-src0[row * lds + col]))
-                                        * (sycl::half)src1[row * lds + col]);
+                                sycl::half tmp0 = src0[row * lds + col];
+                                sycl::half tmp1 = src1[row * lds + col];
+                                dest[row * ldd + col] = tmp0 * tmp1
+                                        / ((sycl::half)1.0f + (sycl::half)sycl::native::exp(tmp0 * -1.0f));
                             });
                         })
                         .wait();
