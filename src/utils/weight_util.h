@@ -153,7 +153,7 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
 }
 
 template <typename T>
-int loadWeight(std::string filename, T *ptr, int size, DataType w_type = DataType::unknown, bool required = true) {
+int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataType::unknown, bool required = true) {
 
     // By default, read the config.ini configuration file
     // in the same directory as the model file to determine the data type of the file.
