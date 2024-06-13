@@ -1093,7 +1093,7 @@ protected:
     // Execution context
     std::shared_ptr<DecoderContext> context;
     std::shared_ptr<MMHelper> mmHelper;
-    std::shared_ptr<void> device(nullptr);
+    std::shared_ptr<void> device;
 
     // The initial input sequence length, which is the prompt token size
     int initSeqLen;
