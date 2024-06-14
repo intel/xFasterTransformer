@@ -24,7 +24,7 @@
 
 class SimpleMemPool {
 private:
-    std::unordered_map<std::string, std::pair<void *, size_t>> memoryMap;
+    std::unordered_map<std::string, std::tuple<void *, size_t, void *>> memoryMap;
 
     // Private constructor to enforce Singleton pattern
     SimpleMemPool() {}
@@ -46,7 +46,9 @@ public:
     }
 
     // Allocate or reallocate memory buffer based on name and size
-    void *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
+    void *getBuffer(const std::string &name, size_t size, void *device = nullptr, size_t alignment = 64) {
+        if (name.empty()) return nullptr;
+
         if (size == 0) {
             // std::cout << "[Warning] Try to allocate 0 bytes for buffer:" << name << std::endl;
             return nullptr;
@@ -55,17 +57,17 @@ public:
 
         if (it != memoryMap.end()) {
             // Buffer with the given name found
-            if (it->second.second >= size) {
+            if (std::get<1>(it->second) >= size) {
                 // Existing buffer size is sufficient, return it
-                return it->second.first;
+                return std::get<0>(it->second);
             } else {
                 // Reallocate the buffer
-                free(it->second.first);
+                xft::dealloc(std::get<0>(it->second), std::get<2>(it->second));
             }
         }
 
         // Allocate new aligned buffer
-        void *buffer = xft::alloc(size, alignment);
+        void *buffer = xft::alloc(size, device, alignment);
         if (buffer == nullptr) {
             // Allocation failed
             std::cerr << "Memory allocation failed for buffer:" << name << " size:" << size << std::endl;
@@ -73,16 +75,28 @@ public:
         }
 
         // Update or insert entry in the mapping
-        memoryMap[name] = std::make_pair(buffer, size);
+        memoryMap[name] = std::make_tuple(buffer, size, device);
 
         return buffer;
     }
 
+    // Free allocated memory based on name
+    void freeBuffer(const std::string &name) {
+        auto it = memoryMap.find(name);
+
+        if (it != memoryMap.end()) {
+            xft::dealloc(std::get<0>(it->second), std::get<2>(it->second));
+            memoryMap.erase(it->first);
+        }
+    }
+
     // Destructor to free all allocated memory on program termination
     ~SimpleMemPool() {
+#ifndef XFT_GPU
         for (auto &entry : memoryMap) {
-            free(entry.second.first);
+            xft::dealloc(std::get<0>(entry.second), std::get<2>(entry.second));
         }
+#endif
         memoryMap.clear();
     }
 };

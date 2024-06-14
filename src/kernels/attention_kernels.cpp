@@ -66,7 +66,7 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             small_sgemm_bf16bf16f32_b(true, m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)baseB, ldb, C, ldc, blkIndices,
                     cacheBlkStride, cacheBlkSize);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             if (b == 0 && i == 0) {
                 printf("Q * K, first head:\n");
                 auto p = C;
@@ -78,7 +78,7 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             // Softmax(Q * K)
             small_softmax_f32(C, scale, n);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             if (b == 0 && i == 0) {
                 printf("Softmax(Q * K), first head:\n");
                 auto p = C;
@@ -100,7 +100,7 @@ void crossAttention(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bflo
             small_sgemm_f32bf16bf16_b(false, m, n, k, C, lda, (XDNN_BF16 *)baseB, ldb, (XDNN_BF16 *)baseC, ldc,
                     blkIndices, cacheBlkStride, cacheBlkSize);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             if (b == 0 && i == 0) {
                 printf("Softmax(Q * K) * V, first head:\n");
                 auto p = C;

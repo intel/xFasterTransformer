@@ -66,4 +66,5 @@ private:
     float *inv_freq = nullptr;
     float *emb_cos = nullptr;
     float *emb_sin = nullptr;
+    void *device = nullptr;
 };

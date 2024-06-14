@@ -25,12 +25,12 @@
 #include "gemm_kernel_ext.h"
 #include "kvcache_tensor.h"
 #include "matmul_helper.h"
+#include "rms_norm.h"
+#include "rotary_embedding.h"
 #include "sequence.h"
 #include "simple_mem_pool.h"
 #include "transformer_ctx.h"
 #include "transformer_util.h"
-
-#include "rotary_embedding.h"
 
 /**
  * WeiT: weight data type
@@ -46,10 +46,13 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
         typename OutT = float, bool INPUT_AS_RESID = true>
 class Attention {
 public:
-    Attention(int layerId, DecoderContext *ctx) : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed) {
+    Attention(int layerId, DecoderContext *ctx)
+        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(ctx) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
-        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {
+            qkpo = LlamaRotaryEmbedding(ctx);
+        }
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
@@ -88,7 +91,6 @@ public:
         int qResponsibleCols = (this->endQHead - this->startQHead) * headSize;
         int kvResponsibleCols = (this->endKVHead - this->startKVHead) * headSize;
         int responsibleCols = qResponsibleCols + 2 * kvResponsibleCols;
-        qkvWeight.Resize(hiddenSize, responsibleCols);
 
         constexpr int sizeFactor = std::is_same_v<OriWeiT, uint4x2_t> ? 2 : 1;
 
@@ -138,13 +140,25 @@ public:
         xft::Matrix<WeiT> convertedqkvWeight;
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
+
+#ifdef XFT_GPU
+        xft::Matrix<WeiT> qkvWeightT;
+        qkvWeightT.Resize(hiddenSize, responsibleCols);
+        ctx->mmHelper->transposeWeight(trans, convertedqkvWeight, qkvWeightT);
+
+        WeiT *qkvWeiData = (WeiT *)xft::alloc(hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
+        qkvWeight.Assign(qkvWeiData, hiddenSize, responsibleCols, responsibleCols);
+        xft::memcopy(qkvWeight.Data(), qkvWeightT.Data(), hiddenSize * responsibleCols * sizeof(WeiT), ctx->device);
+#else
+        qkvWeight.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->packWeight(trans, convertedqkvWeight, qkvWeight);
+#endif
 
         free(concatBuf);
         free(concatScale);
         free(concatZero);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("attention qkv weight: [%d, %d] (%d)\n", convertedqkvWeight.Rows(), convertedqkvWeight.Cols(),
                 convertedqkvWeight.Stride());
         dbg.dumpMatrix(convertedqkvWeight);
@@ -165,16 +179,30 @@ public:
 
         // Weights for attention output
         // Horizontally split the weight, as the source (PyTorch weight) is transposed, thus looks like vertically
-        xft::Matrix<WeiT> convertedWeight;
+        xft::Matrix<WeiT> convertedOutWeight;
         ctx->mmHelper->convertWeight(trans, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, attnOutWeight, attnOutScale,
-                attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedWeight,
+                attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedOutWeight,
                 attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
-        ctx->mmHelper->packWeight(trans, convertedWeight, attnOutputWeight);
 
-#ifdef DEBUG
-        dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedWeight.Rows(), convertedWeight.Cols(),
-                convertedWeight.Stride());
-        dbg.dumpMatrix(convertedWeight);
+#ifdef XFT_GPU
+        xft::Matrix<WeiT> outWeightT;
+        outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
+        ctx->mmHelper->transposeWeight(trans, convertedOutWeight, outWeightT);
+
+        WeiT *outWeiData
+                = (WeiT *)xft::alloc(ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT), ctx->device);
+        attnOutputWeight.Assign(outWeiData, ctx->attHeadNum * ctx->attHeadSize, hiddenSize, hiddenSize);
+        int outWeightTSize = ctx->attHeadNum * ctx->attHeadSize * hiddenSize * sizeof(WeiT);
+        xft::memcopy(attnOutputWeight.Data(), outWeightT.Data(), outWeightTSize, ctx->device);
+#else
+        attnOutputWeight.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
+        ctx->mmHelper->packWeight(trans, convertedOutWeight, attnOutputWeight);
+#endif
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint(">>> attention output weight: [%d, %d] (%d)\n", convertedOutWeight.Rows(),
+                convertedOutWeight.Cols(), convertedOutWeight.Stride());
+        dbg.dumpMatrix(convertedOutWeight);
         dbg.debugPrint("attention output packed weight: [%d, %d] (%d)\n", attnOutputWeight.Rows(),
                 attnOutputWeight.Cols(), attnOutputWeight.Stride());
         dbg.dumpMatrix(attnOutputWeight);
@@ -194,7 +222,7 @@ public:
         if (doLNorm) this->norm.setWeight(gamma1, beta1, hiddenSize);
     }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
@@ -238,7 +266,7 @@ public:
         auto &qkvMatMul = ctx->qkvMatMul;
         xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");
         dbg.dumpMatrix(inputBuffer);
@@ -249,7 +277,7 @@ public:
             norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
         dbg.dumpMatrix(imBuffer);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
@@ -273,7 +301,7 @@ public:
         xft::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
         xft::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
@@ -301,11 +329,20 @@ public:
         }
         t3.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
         dbg.dumpMatrix(key);
+#endif
+
+#ifdef XFT_GPU
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
+        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device); // error: need CPU ptr and GPU ptr
+        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
@@ -324,6 +361,12 @@ public:
         // For multiple nodes inference, not the whole result buffer
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
+#ifdef XFT_GPU
+        int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
+        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
+        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+#endif
+
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
@@ -337,7 +380,13 @@ public:
         }
         t4.release();
 
-#ifdef DEBUG
+#ifdef XFT_GPU
+        xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
+        attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        xft::dealloc(qkvTmp);
+#endif
+
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
@@ -380,7 +429,7 @@ public:
         }
         t5.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
@@ -389,7 +438,7 @@ public:
         if (doLnAfter) {
             TimeLine t6("result.layer_norm");
             norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
             dbg.dumpMatrix(outBuffer);
@@ -423,7 +472,7 @@ public:
         auto &qkvMatMul = ctx->qkvMatMul;
         xft::Matrix<ImT> qkvGroupMatMul((ImT *)qkvMatMul.Data(), qkvRows, qkvCols, qkvStride);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward ----\n");
         dbg.debugPrint("input:\n");
         dbg.dumpMatrix(inputBuffer);
@@ -434,7 +483,7 @@ public:
             norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
         }
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
         dbg.dumpMatrix(imBuffer);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
@@ -458,7 +507,7 @@ public:
         xft::Matrix<ImT> key(qkvGroupMatMul, 0, inputBuffer.Rows(), qCols, kvCols);
         xft::Matrix<ImT> value(qkvGroupMatMul, 0, inputBuffer.Rows(), qkCols, kvCols);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
@@ -488,7 +537,7 @@ public:
         }
         t3.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
         dbg.dumpMatrix(query);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
@@ -524,7 +573,7 @@ public:
         }
         t4.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
         dbg.dumpMatrix(attnSplit);
@@ -567,7 +616,7 @@ public:
         }
         t5.release();
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
         dbg.dumpMatrix(outBuffer);
@@ -576,7 +625,7 @@ public:
         if (!doLnBefore) {
             TimeLine t6("result.layer_norm");
             norm.forward(outBuffer.Data(), outBuffer.Data(), outBuffer.Rows(), outBuffer.Stride(), outBuffer.Stride());
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
             dbg.dumpMatrix(outBuffer);
@@ -894,7 +943,7 @@ protected:
 
                     this->gemm1(A, keyMatInfo, C, m, n, headSize, lda, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Q * K, first head:\n");
                         auto p = scoreBuf;
@@ -907,7 +956,7 @@ protected:
                     // Softmax(Q * K)
                     this->softmax(ctx, C, getMask(attnMask, b, i, queryLen, keyLen), m, n, ldc, startSeq);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K), first head:\n");
                         auto p = scoreBuf;
@@ -925,7 +974,7 @@ protected:
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
                     this->gemm2(C, valueMat, output, m, headSize, keyLen, scoreStride, result.Stride());
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                     if (b == 0 && i == 0) {
                         dbg.debugPrint("Softmax(Q * K) * V, first head:\n");
                         auto p = output;
@@ -1166,7 +1215,7 @@ protected:
     int endQHead;
     int startKVHead;
     int endKVHead;
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

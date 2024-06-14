@@ -155,7 +155,7 @@ class CommonDecoder : public AbstractDecoder {
 public:
     CommonDecoder(const std::string &modelPath, const std::string &modelType)
         : messenger(Messenger::getInstance())
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         , dbg("model_decoder.csv")
 #endif
     {
@@ -256,7 +256,7 @@ public:
 
     virtual ~CommonDecoder() {
         if (this->inputTokens) free(this->inputTokens);
-        if (this->attnMask) free(this->attnMask);
+        if (this->attnMask) xft::dealloc(this->attnMask);
 
         delete this->decoderBlock;
         delete this->predictor;
@@ -313,7 +313,7 @@ public:
         this->embeddingForward(ids, embBuf, batchSize * inputSeqLen);
         this->accSeqLen += seqLen;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("---- embedding.forward ----\n");
         dbg.debugPrint("ids:\n");
         dbg.dumpMatrix(ids, batchSize, inputSeqLen, inputSeqLen);
@@ -342,21 +342,22 @@ public:
             // TODO: Error: different scope when dynamic loading so file
             // this->messenger.worldRecvFP32(embBuf, count, prev_world_rank, curr_world_rank);
             if (!SequencePool::getInstance().has(sequenceID)) {
-                auto *seqs = SequencePool::getInstance().newMeta(sequenceID, seqLen);
-                seqs->get(0)->setPastSeqLen(pastSeqLen);
-                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
+                auto *groupMeta = SequencePool::getInstance().newGroupMeta(sequenceID, seqLen);
+                groupMeta->get(0)->setPastSeqLen(pastSeqLen);
+                groupMeta->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(groupMeta);
             }
             TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(sequenceID));
         }
 
         if (!InputQueue::getInstance().empty()) {
             if (!TaskWaitingQueue::getInstance().isFull()) {
-                auto *seqs = InputQueue::getInstance().pop();
-                seqs->get(0)->setPastSeqLen(pastSeqLen);
-                seqs->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
-                SequencePool::getInstance().add(seqs->get(0)->getSequenceID(), seqs);
-                TaskWaitingQueue::getInstance().push(SequencePool::getInstance().get(seqs->get(0)->getSequenceID()));
+                auto *groupMeta = InputQueue::getInstance().pop();
+                groupMeta->get(0)->setPastSeqLen(pastSeqLen);
+                groupMeta->get(0)->allocBuffer<AttnInT>(hiddenSize, embBuf);
+                SequencePool::getInstance().add(groupMeta);
+                TaskWaitingQueue::getInstance().push(
+                        SequencePool::getInstance().get(groupMeta->get(0)->getSequenceID()));
             }
         }
 
@@ -368,6 +369,16 @@ public:
             runningTask = TaskWaitingQueue::getInstance().pop();
             sequenceID = runningTask->get(0)->getSequenceID();
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
+#endif
+
+#ifdef XFT_GPU
+        size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
+        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
+        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
+                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
+        embBuf = embBufTmp;
+        outBuf = outBufTmp;
 #endif
 
         // Decoder: forward
@@ -446,20 +457,21 @@ public:
             lnIn = outBuf;
 #pragma omp parallel for
             for (int b = 0; b < batchSize; ++b) {
-                memcpy(lnIn + b * hiddenSize, embBuf + ((b + 1) * inputSeqLen - 1) * hiddenSize,
-                        hiddenSize * sizeof(MlpOutT));
+                xft::memcopy(lnIn + b * hiddenSize, embBuf + ((b + 1) * inputSeqLen - 1) * hiddenSize,
+                        hiddenSize * sizeof(MlpOutT), ctx->device ? ctx->device : nullptr);
             }
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
 
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
-        else
+        } else {
             dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        }
 #endif
 
         // LN, as it supports inplace computing, input and output can be the same
@@ -469,33 +481,44 @@ public:
         else
             lastLayerNormForward(lnIn, lnOut, batchSize * seqLen);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
-        else
+        } else {
             dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        }
 #endif
 
         // Predictor
+        const int splitSize = this->predictor->getSplitSize();
         float *finalOut = (float *)outBuf;
         if (!logitsAll)
             this->predictor->forward(ctx, lnOut, finalOut, batchSize);
         else
             this->predictor->forward(ctx, lnOut, finalOut, batchSize * seqLen);
 
-#ifdef DEBUG
-        auto splitSize = this->predictor->getSplitSize();
+#ifdef XFT_DEBUG
         dbg.debugPrint("finalOut:\n");
-        if (!logitsAll)
+        if (!logitsAll) {
             dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
-        else
+        } else {
             dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize);
+        }
+#endif
+
+#ifdef XFT_GPU
+        xft::dealloc(embBuf, ctx->device);
+        embBuf = (AttnInT *)actBuffers->Data();
+
+        float *finalOutTmp = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
+        xft::memcopy(finalOutTmp, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
+        xft::dealloc(outBuf, ctx->device);
+        finalOut = finalOutTmp;
 #endif
 
         // Expand the result to make it cover multiple beams
         if (step == 0 && beamSize > 1) {
-            const int splitSize = this->predictor->getSplitSize();
             for (int b = userSideBS - 1; b >= 0; --b) {
                 float *src = finalOut + b * splitSize;
 #pragma omp parallel for
@@ -515,7 +538,7 @@ public:
     }
 
     std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seqs, bool logitsAll = false) {
-        // Assume all sequences are all prompts(step==0) or all decodes(step>0) 
+        // Assume all sequences are all prompts(step==0) or all decodes(step>0)
         // Assume input has been synced with master in higher level.
         TimeLine t("Decoder.forward");
         TimeLine t1("Decoder.embedding");
@@ -562,7 +585,7 @@ public:
             }
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
         dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
         dbg.debugPrint("LayerNorm In:\n");
@@ -574,7 +597,7 @@ public:
         MlpOutT *lnOut = embBuf;
         lastLayerNormForward(lnIn, lnOut, logitRows);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
         dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
 #endif
@@ -583,7 +606,7 @@ public:
         float *finalOut = (float *)outBuf;
         this->predictor->forward(ctx, lnOut, finalOut, logitRows);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
         dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
@@ -739,14 +762,20 @@ protected:
                 exit(-1);
             }
         } else {
-            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
-                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize, ppSize,
-                    ppRank, ropeParamsPtr, useLogN, useNTK));
-
+            int engineIdx = 0;
             if (env.getEngineKind() == xft::DeviceKind::iGPU && env.getEngineIndex() < 0) // Sequential assignment
-                this->context->mmHelper = new MMHelper(env.getEngineKind(), ppRank * tpSize + tpRank);
+                engineIdx = ppRank * tpSize + tpRank;
             else // assignment through the user
-                this->context->mmHelper = new MMHelper(env.getEngineKind(), env.getEngineIndex());
+                engineIdx = env.getEngineIndex();
+
+            this->mmHelper.reset(new MMHelper(env.getEngineKind(), engineIdx));
+#ifdef XFT_GPU
+            auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+            this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
+#endif
+            this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
+                    epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
+                    this->mmHelper.get(), this->device.get(), ppSize, ppRank, ropeParamsPtr, useLogN, useNTK));
         }
 
         return this->context.get();
@@ -765,7 +794,7 @@ protected:
         int kvSize = attHeadSize * kvHeadNum;
         int qkvSize = qSize + 2 * kvSize;
 
-#define ALLOC(size, alignment) xft::alloc((size), (alignment))
+#define ALLOC(size, alignment) xft::alloc((size), nullptr, (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;
@@ -1067,6 +1096,8 @@ protected:
 
     // Execution context
     std::shared_ptr<DecoderContext> context;
+    std::shared_ptr<MMHelper> mmHelper;
+    std::shared_ptr<void> device;
 
     // The initial input sequence length, which is the prompt token size
     int initSeqLen;
@@ -1105,7 +1136,7 @@ private:
     int startId;
     int endId;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

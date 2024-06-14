@@ -59,11 +59,11 @@ public:
         : layerIdx(_layerIdx)
         , attn(_layerIdx, _ctx)
         , mlp(_ctx)
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         , dbg(Debugger::formatStr("%d_%d.csv", _layerIdx, _ctx->splitIdx))
 #endif
     {
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         attn.setDebugger(dbg);
         mlp.setDebugger(dbg);
 #endif
@@ -126,7 +126,7 @@ private:
     ATTN_CLS attn;
     MLP_CLS mlp;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

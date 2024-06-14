@@ -17,6 +17,10 @@
 #include <iostream>
 #include <cstdio>
 
+#ifdef XFT_GPU
+#include <CL/sycl.hpp>
+#endif
+
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
 

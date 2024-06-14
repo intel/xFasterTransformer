@@ -237,7 +237,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
                 m, endSeq, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, (XDNN_BF16 *)C, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         if (b == 0 && i == 0) {
             auto B = key + offsets[b] * kvStride + kvHeadIdx * headSize;
             printf("mnk=%d,%d,%d, ldabc=%d,%d,%d, A[0]=%f, B[0]=%f, packedB[0]=%f\n", m, n, k, lda, ldb, ldc,
@@ -260,7 +260,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
             memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(bfloat16_t));
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         if (b == 0 && i == 0) {
             printf("Softmax(Q * Kᵀ), first head:\n");
             auto p = C;
@@ -290,7 +290,7 @@ void selfAttention_SeparateCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
                 m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedV, (XDNN_BF16 *)C, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         if (b == 0 && i == 0) {
             printf("Softmax(Q * Kᵀ) * V, first head:\n");
             auto p = C;
@@ -306,7 +306,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
         const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
         const Lambda2 &getVCache) {
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     printf("Q[0]=%f, K[0]=%f, V[0]=%f\n", (float)query[0], (float)key[0], (float)value[0]);
     printf("kvHeadNum=%d, headSize=%d, qStride=%d, kvStride=%d, batchSize=%d\n", kvHeadNum, headSize, qStride, kvStride,
             batchSize);
@@ -337,7 +337,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
     bfloat16_t *scores = (bfloat16_t *)SimpleMemPool::instance().getBuffer(
             "qkscore", threadNum * mBlockSize * maxScoreStride * sizeof(bfloat16_t));
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     printf("maxTokenSize=%d, tokenSizes[0]=%d, offsets[0]=%d, kvStride=%d\n", maxTokenSize, tokenSizes[0], offsets[0],
             kvStride);
 #endif
@@ -389,7 +389,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
                 xdnn_small_amx_sgemm_bf16bf16bf16_compute(
                         m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, (XDNN_BF16 *)C, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                 if (b == 0 && i == 0) {
                     printf("mnk=%d,%d,%d, ldabc=%d,%d,%d, A[0]=%f, B[0]=%f, packedB[0]=%f\n", m, n, k, lda, ldb, ldc,
                             (float)A[0], (float)B[0], (float)packedB[0]);
@@ -411,7 +411,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
                     memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(bfloat16_t));
                 }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                 if (b == 0 && i == 0) {
                     printf("Softmax(Q * Kᵀ), first head:\n");
                     auto p = C;
@@ -430,7 +430,7 @@ void selfAttention_FusedCopy(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
                 xdnn_small_amx_sgemm_bf16bf16bf16_compute(
                         m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedV, (XDNN_BF16 *)C, ldc);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
                 if (b == 0 && i == 0) {
                     printf("Softmax(Q * Kᵀ) * V, first head:\n");
                     auto p = C;

@@ -31,12 +31,14 @@ LlamaLLM<WeiT, KVCacheT>::LlamaLLM(const std::string &modelPath)
     setEmbeddingWeights(modelPath);
 
     // Final LN
+    finalLN = new RmsNorm(ctx);
     setFinalLnWeight(modelPath);
 }
 
 template <typename WeiT, typename KVCacheT>
 LlamaLLM<WeiT, KVCacheT>::~LlamaLLM() {
     delete embedding;
+    delete finalLN;
 }
 
 template <typename WeiT, typename KVCacheT>
@@ -46,7 +48,7 @@ void LlamaLLM<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath)
 
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
-    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
+    finalLN->setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
 }
 
 // Prepare attention_mask which is like:
@@ -121,17 +123,17 @@ void LlamaLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float16_t *output, int
 
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
-    finalLN.forward(input, output, rows);
+    finalLN->forward(input, output, rows);
 }
 
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
-    finalLN.forward(input, output, rows);
+    finalLN->forward(input, output, rows);
 }
 
 template <typename WeiT, typename KVCacheT>
 void LlamaLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16_t *output, int rows) {
-    finalLN.forward(input, output, rows);
+    finalLN->forward(input, output, rows);
 }
 
 IMPLEMENT_MODEL(LlamaLLM, llama)

@@ -15,15 +15,18 @@
 #pragma once
 
 #include "bfloat16.h"
+#include "transformer_ctx.h"
 #include "weight_util.h"
 
 namespace xft {
 
 // RMS normalization: only support the norm along last dimension
-class RmsNorm {
+template <typename T>
+class RmsNormImp {
 public:
-    RmsNorm();
-    ~RmsNorm();
+    RmsNormImp();
+    RmsNormImp(DecoderContext *ctx);
+    ~RmsNormImp();
 
     void setWeight(const float *w, const float *, int cols);
     void setWeight(const std::string &modelPath, const std::string &, int cols);
@@ -39,8 +42,8 @@ public:
     void forward(const bfloat16_t *input, bfloat16_t *output, int rows, int iStride = -1, int oStride = -1,
             float epsilon = 1e-6);
 
-    void forward(const float *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
-            float epsilon = 1e-6);
+    void forward(
+            const float *input, float16_t *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);
 
     void forward(const float16_t *input, float16_t *output, int rows, int iStride = -1, int oStride = -1,
             float epsilon = 1e-6);
@@ -49,7 +52,14 @@ private:
     int normSize;
 
     // the scale weight
-    float *weight = nullptr;
+    T *weight = nullptr;
+    void *device = nullptr;
 };
+
+#ifdef XFT_GPU
+using RmsNorm = RmsNormImp<float16_t>;
+#else
+using RmsNorm = RmsNormImp<float>;
+#endif
 
 } // namespace xft

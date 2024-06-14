@@ -24,6 +24,7 @@ public:
     TokenEmbedding(DecoderContext *ctx) {
         this->vocabSize = ctx->vocabSize;
         this->hiddenSize = ctx->hiddenSize;
+        this->device = ctx->device;
     }
 
     void setWeights(float *tokenEmb) {
@@ -59,4 +60,5 @@ private:
     int hiddenSize;
 
     T *embTable = nullptr;
+    void *device = nullptr;
 };

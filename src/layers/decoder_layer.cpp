@@ -85,6 +85,7 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
 
     using DECODER = Decoder<Attention<DataT, LlamaRotaryEmbedding, NormT>, LlamaMLP<DataT>>;
     static std::unordered_map<std::string, DECODER *> llama_layer_hub;
+    static MMHelper *mmHelper;
     static DecoderContext *ctx;
     static KVCacheManager<float16_t> *kvCacheMgr;
 
@@ -104,9 +105,9 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
             || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->intermediateSize != intermediateSize))) {
         if (ctx != nullptr) delete ctx;
         printf(">> create context: %d %d\n", hiddenSize, intermediateSize);
+        mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
         ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, intermediateSize, actType, 1e-6, 0,
-                0, maxPositions, maxPosEmbed, -1, 0, 1);
-        ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
+                0, maxPositions, maxPosEmbed, -1, 0, 1, mmHelper);
         if (kvCacheMgr != nullptr) delete kvCacheMgr;
         kvCacheMgr = new KVCacheManager<float16_t>(1);
     }
