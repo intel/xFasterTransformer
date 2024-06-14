@@ -66,7 +66,7 @@ public:
         xft::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
-#ifdef GPU
+#ifdef XFT_GPU
         xft::Matrix<WeiT> tWeight;
         tWeight.Resize(K, N);
         ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);

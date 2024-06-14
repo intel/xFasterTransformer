@@ -19,7 +19,7 @@
 #include "environment.h"
 #include <sys/mman.h>
 
-#ifdef GPU
+#ifdef XFT_GPU
 #include <CL/sycl.hpp>
 #endif
 
@@ -36,7 +36,7 @@ static inline void *alloc(size_t nbytes, void *device = nullptr, size_t alignmen
 
     void *data = nullptr;
 
-#ifdef GPU
+#ifdef XFT_GPU
     if (device != nullptr) {
         sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
         data = sycl::malloc_device<char>(nbytes, *gpu_queue);
@@ -66,7 +66,7 @@ static inline void *alloc(size_t nbytes, void *device = nullptr, size_t alignmen
 }
 
 static inline void dealloc(void *data, void *device = nullptr) {
-#ifdef GPU
+#ifdef XFT_GPU
     if (device != nullptr) {
         sycl::free(data, *static_cast<sycl::queue *>(device));
         return;
@@ -77,7 +77,7 @@ static inline void dealloc(void *data, void *device = nullptr) {
 }
 
 static inline void memcopy(void *dst, const void *src, size_t size, void *device = nullptr) {
-#ifdef GPU
+#ifdef XFT_GPU
     if (device != nullptr) {
         sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
         gpu_queue->memcpy(dst, src, size).wait();
@@ -89,7 +89,7 @@ static inline void memcopy(void *dst, const void *src, size_t size, void *device
 }
 
 static inline void memsetv(void *dst, int ch, size_t size, void *device = nullptr) {
-#ifdef GPU
+#ifdef XFT_GPU
     if (device != nullptr) {
         sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
         gpu_queue->memset(dst, ch, size).wait();

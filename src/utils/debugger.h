@@ -114,7 +114,7 @@ public:
         }
     }
 
-#ifdef GPU
+#ifdef XFT_GPU
     template <typename T>
     void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
     }

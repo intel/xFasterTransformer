@@ -17,7 +17,7 @@
 #include <iostream>
 #include <cstdio>
 
-#ifdef GPU
+#ifdef XFT_GPU
 #include <CL/sycl.hpp>
 #endif
 

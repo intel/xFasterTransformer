@@ -75,7 +75,7 @@ public:
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
 
-#ifdef GPU
+#ifdef XFT_GPU
             xft::Matrix<WeiT> catWeightsT;
             int catWeiRows = quantizedCatWeights.Rows();
             int catWeiCols = quantizedCatWeights.Cols();
@@ -93,7 +93,7 @@ public:
         // Horizontally split the down weight
         ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
                 downWeightScale, downWeightZero, downWeightSum);
-#ifdef GPU
+#ifdef XFT_GPU
         xft::Matrix<WeiT> downWeightT;
         int downWeiRows = it.second - it.first;
         int downWeiCols = hiddenSize;

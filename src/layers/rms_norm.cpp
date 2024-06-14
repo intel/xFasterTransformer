@@ -23,7 +23,7 @@
 #include "timeline.h"
 #include "transformer_ctx.h"
 
-#ifdef GPU
+#ifdef XFT_GPU
 #include "gpudnn/gpu_layernorm_kernels.h"
 #include <CL/sycl.hpp>
 #endif
@@ -76,7 +76,7 @@ void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &,
     this->setWeight(weightBuf, nullptr, cols);
 }
 
-#ifdef GPU
+#ifdef XFT_GPU
 template <typename T>
 void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");

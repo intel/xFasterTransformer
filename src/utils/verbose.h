@@ -51,7 +51,7 @@ public:
     static void print(std::string buf_name, T *buf, int rows, int cols, int stride, bool printAll = false,
             void *device = nullptr) {
         std::cout << buf_name.c_str() << ":" << std::endl;
-#ifdef GPU
+#ifdef XFT_GPU
         if (device != nullptr) {
             sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
             gpu_queue

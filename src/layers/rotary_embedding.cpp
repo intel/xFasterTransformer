@@ -48,7 +48,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
         exit(-1);
     }
 
-#ifdef GPU
+#ifdef XFT_GPU
     if (this->device != nullptr) {
         float *emb_cos_bak = emb_cos;
         float *emb_sin_bak = emb_sin;
@@ -105,7 +105,7 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position
 //   |_____|        |_____|
 //  head_size/2    head_size/2
 
-#ifdef GPU
+#ifdef XFT_GPU
 
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {

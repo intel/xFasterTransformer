@@ -386,7 +386,7 @@ void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, i
             maxSupportedSeqLength, qkShape, positionIds);
 }
 
-#ifdef GPU
+#ifdef XFT_GPU
 // For LLaMA
 template <typename T>
 static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, int qStride, int kStride,

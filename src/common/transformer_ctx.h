@@ -321,7 +321,7 @@ public:
     }
 
     ~DecoderContext() {
-#ifndef GPU
+#ifndef XFT_GPU
         if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
 #endif
     }

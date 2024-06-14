@@ -141,7 +141,7 @@ public:
         ctx->mmHelper->convertWeight(trans, hiddenSize, responsibleCols, concatBuf, concatScale, concatZero,
                 convertedqkvWeight, qkvWeightScale, qkvWeightZero, qkvWeightSum);
 
-#ifdef GPU
+#ifdef XFT_GPU
         xft::Matrix<WeiT> qkvWeightT;
         qkvWeightT.Resize(hiddenSize, responsibleCols);
         ctx->mmHelper->transposeWeight(trans, convertedqkvWeight, qkvWeightT);
@@ -184,7 +184,7 @@ public:
                 attnOutZero, this->startQHead * headSize, qResponsibleCols, false, convertedOutWeight,
                 attnOutputWeightScale, attnOutputWeightZero, attnOutputWeightSum, true);
 
-#ifdef GPU
+#ifdef XFT_GPU
         xft::Matrix<WeiT> outWeightT;
         outWeightT.Resize(ctx->attHeadNum * ctx->attHeadSize, hiddenSize);
         ctx->mmHelper->transposeWeight(trans, convertedOutWeight, outWeightT);
@@ -336,7 +336,7 @@ public:
         dbg.dumpMatrix(key);
 #endif
 
-#ifdef GPU
+#ifdef XFT_GPU
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
         ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
         xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device); // error: need CPU ptr and GPU ptr
@@ -361,7 +361,7 @@ public:
         // For multiple nodes inference, not the whole result buffer
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
-#ifdef GPU
+#ifdef XFT_GPU
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
         ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
         attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
@@ -380,7 +380,7 @@ public:
         }
         t4.release();
 
-#ifdef GPU
+#ifdef XFT_GPU
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
         xft::dealloc(qkvTmp);

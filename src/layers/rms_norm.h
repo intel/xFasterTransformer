@@ -56,7 +56,7 @@ private:
     void *device = nullptr;
 };
 
-#ifdef GPU
+#ifdef XFT_GPU
 using RmsNorm = RmsNormImp<float16_t>;
 #else
 using RmsNorm = RmsNormImp<float>;

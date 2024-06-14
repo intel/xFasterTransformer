@@ -65,7 +65,7 @@ void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, i
         float *cur_emb_sin, int inv_freq_size, const float *logn, int maxSupportedSeqLength, const int *qkShape,
         const int *positionIds);
 
-#ifdef GPU
+#ifdef XFT_GPU
 // For LLaMA
 void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,
         float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);

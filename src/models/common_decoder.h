@@ -371,7 +371,7 @@ public:
             TimeLine t("Decoder.Seq" + std::to_string(sequenceID) + ".Step");
 #endif
 
-#ifdef GPU
+#ifdef XFT_GPU
         size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
         AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
         AttnInT *outBufTmp = (AttnInT *)xft::alloc(
@@ -491,6 +491,7 @@ public:
 #endif
 
         // Predictor
+        const int splitSize = this->predictor->getSplitSize();
         float *finalOut = (float *)outBuf;
         if (!logitsAll)
             this->predictor->forward(ctx, lnOut, finalOut, batchSize);
@@ -498,7 +499,6 @@ public:
             this->predictor->forward(ctx, lnOut, finalOut, batchSize * seqLen);
 
 #ifdef XFT_DEBUG
-        auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
         if (!logitsAll) {
             dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
@@ -507,7 +507,7 @@ public:
         }
 #endif
 
-#ifdef GPU
+#ifdef XFT_GPU
         xft::dealloc(embBuf, ctx->device);
         embBuf = (AttnInT *)actBuffers->Data();
 
@@ -519,7 +519,6 @@ public:
 
         // Expand the result to make it cover multiple beams
         if (step == 0 && beamSize > 1) {
-            const int splitSize = this->predictor->getSplitSize();
             for (int b = userSideBS - 1; b >= 0; --b) {
                 float *src = finalOut + b * splitSize;
 #pragma omp parallel for
@@ -770,7 +769,7 @@ protected:
                 engineIdx = env.getEngineIndex();
 
             this->mmHelper.reset(new MMHelper(env.getEngineKind(), engineIdx));
-#ifdef GPU
+#ifdef XFT_GPU
             auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
             this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
 #endif

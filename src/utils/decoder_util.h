@@ -28,7 +28,7 @@
 #include "transformer_ctx.h"
 #include "xdnn.h"
 
-#ifdef GPU
+#ifdef XFT_GPU
 #include <CL/sycl.hpp>
 #endif
 
@@ -448,7 +448,7 @@ public:
         return std::make_pair(maxVal, sum);
     }
 
-#ifdef GPU
+#ifdef XFT_GPU
     template <typename T1, typename T2>
     static void siluSum(xft::Matrix<T1> &src, xft::Matrix<T2> &dst, void *device = nullptr) {
         int M = src.Rows();

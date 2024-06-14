@@ -59,7 +59,7 @@ void LayerNorm::setWeight(const std::string &gammaPath, const std::string &betaP
 
 // input and output are in shape of (rows, normSize)
 // TODO: column-wise parallel
-#ifdef GPU
+#ifdef XFT_GPU
 void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("LayerNorm.forward");
     const float *pgamma = gamma;

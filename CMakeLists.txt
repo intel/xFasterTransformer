@@ -20,7 +20,7 @@ project(xfastertransformer LANGUAGES C CXX)
 option(WITH_GPU "Build with GPU" OFF)
 if(WITH_GPU)
     message(STATUS "Notice: Building with GPU.")
-    add_definitions(-DGPU=true)
+    add_definitions(-DXFT_GPU=true)
     # Get compiler version
     execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
                     OUTPUT_VARIABLE ICPX_VERSION
