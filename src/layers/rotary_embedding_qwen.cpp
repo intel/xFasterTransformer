@@ -314,20 +314,21 @@ void QwenRotaryEmbedding::forward(
             maxSupportedSeqLength, qkShape, positionIds);
 }
 
+// For continuous batching
 void QwenRotaryEmbedding::forward(
         float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
-    printf("Unsupported QwenRotaryEmbedding in cb mode !\n");
-    exit(1);
+    xft::qwenApplyRotaryPosEmbed(query, key, cur_emb_cos, cur_emb_sin, qStride, kStride, this->dim, logn,
+            maxSupportedSeqLength, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void QwenRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
         int qHeads, int kHeads, int *positionIds) {
-    printf("Unsupported QwenRotaryEmbedding in cb mode !\n");
-    exit(1);
+    xft::qwenApplyRotaryPosEmbed(query, key, cur_emb_cos, cur_emb_sin, qStride, kStride, this->dim, logn,
+            maxSupportedSeqLength, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void QwenRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride, int kStride, int qHeads,
         int kHeads, int *positionIds) {
-    printf("Unsupported QwenRotaryEmbedding in cb mode !\n");
-    exit(1);
+    xft::qwenApplyRotaryPosEmbed(query, key, cur_emb_cos, cur_emb_sin, qStride, kStride, this->dim, logn,
+            maxSupportedSeqLength, totSeqLen, qHeads, kHeads, positionIds);
 }
