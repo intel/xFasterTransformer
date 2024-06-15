@@ -164,7 +164,7 @@ public:
         dbg.dumpMatrix(convertedqkvWeight);
         dbg.debugPrint(
                 "attention qkv packed weight: [%d, %d] (%d)\n", qkvWeight.Rows(), qkvWeight.Cols(), qkvWeight.Stride());
-        dbg.dumpMatrix(qkvWeight);
+        dbg.dumpMatrix(qkvWeight, false, ctx->device);
 #endif
 
         // Merged bias
@@ -205,7 +205,7 @@ public:
         dbg.dumpMatrix(convertedOutWeight);
         dbg.debugPrint("attention output packed weight: [%d, %d] (%d)\n", attnOutputWeight.Rows(),
                 attnOutputWeight.Cols(), attnOutputWeight.Stride());
-        dbg.dumpMatrix(attnOutputWeight);
+        dbg.dumpMatrix(attnOutputWeight, false, ctx->device);
 #endif
 
         // Attention output bias
@@ -269,7 +269,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");
-        dbg.dumpMatrix(inputBuffer);
+        dbg.dumpMatrix(inputBuffer, false, ctx->device);
 #endif
 
         if (doLnBefore) {
@@ -279,9 +279,9 @@ public:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
-        dbg.dumpMatrix(imBuffer);
+        dbg.dumpMatrix(imBuffer, false, ctx->device);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
-        dbg.dumpMatrix(this->qkvWeight);
+        dbg.dumpMatrix(this->qkvWeight, false, ctx->device);
 #endif
 
         // Query, Key, Value computed together
@@ -303,11 +303,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
-        dbg.dumpMatrix(value);
+        dbg.dumpMatrix(value, false, ctx->device);
 #endif
 
         // Apply post operations on query and key
@@ -331,9 +331,9 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
@@ -388,7 +388,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
-        dbg.dumpMatrix(attnSplit);
+        dbg.dumpMatrix(attnSplit, false, ctx->device);
 #endif
 
         TimeLine t5("Output");
@@ -431,7 +431,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
 
         if (doLnAfter) {
@@ -440,7 +440,7 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
-            dbg.dumpMatrix(outBuffer);
+            dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
         }
     }
@@ -455,7 +455,7 @@ public:
 
         auto hiddenSize = ctx->hiddenSize;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
-        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * hiddenSize);
+        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * hiddenSize, ctx->device);
         xft::Matrix<ImT> imBuffer(imBuf, totInSeqLen, hiddenSize, hiddenSize);
         xft::Matrix<OutT> outBuffer(output, totInSeqLen, hiddenSize, hiddenSize);
 
@@ -474,7 +474,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward ----\n");
         dbg.debugPrint("input:\n");
-        dbg.dumpMatrix(inputBuffer);
+        dbg.dumpMatrix(inputBuffer, false, ctx->device);
 #endif
 
         if (doLnBefore) {
@@ -484,9 +484,9 @@ public:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
-        dbg.dumpMatrix(imBuffer);
+        dbg.dumpMatrix(imBuffer, false, ctx->device);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
-        dbg.dumpMatrix(this->qkvWeight);
+        dbg.dumpMatrix(this->qkvWeight, false, ctx->device);
 #endif
 
         // Query, Key, Value computed together
@@ -508,11 +508,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
-        dbg.dumpMatrix(value);
+        dbg.dumpMatrix(value, false, ctx->device);
 #endif
 
         // Apply post operations on query and key
@@ -538,9 +538,9 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
@@ -595,7 +595,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
-        dbg.dumpMatrix(attnSplit);
+        dbg.dumpMatrix(attnSplit, false, ctx->device);
 #endif
 
         TimeLine t5("Output");
@@ -638,7 +638,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
 
         if (!doLnBefore) {
@@ -647,7 +647,7 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
-            dbg.dumpMatrix(outBuffer);
+            dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
         }
     }

@@ -522,8 +522,8 @@ void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key,
 
 // For LLaMA continous batching
 template <typename T>
-static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
-        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
     const int half = (dim + 1) / 2;
     const int heads = std::max(qHeads, kHeads);
     using namespace sycl;
@@ -532,32 +532,30 @@ static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, floa
     sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(totSeqLen));
     gpu_queue->submit([&](sycl::handler &cgh) {
         sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
-        sycl::range<2> globalSize(heads, totSeqLen);
-        sycl::range<2> workGroupSize(1, 1);
+        sycl::range<3> globalSize(heads, totSeqLen, half);
+        sycl::range<3> workGroupSize(1, 1, 1);
 
-        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<2> item) {
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {
             size_t idx_seq = item.get_global_id(0);
             size_t idx_head = item.get_global_id(1);
+            size_t idx_half = item.get_global_id(2);
             size_t pos = position[idx_seq];
 
-            sycl::half *q = (sycl::half *)(query + idx_seq * qStride + idx_head * dim);
-            sycl::half *k = (sycl::half *)(key + idx_seq * kStride + idx_head * dim);
+            sycl::half cos = (sycl::half)emb_cos[pos * half + idx_half];
+            sycl::half sin = (sycl::half)emb_sin[pos * half + idx_half];
 
-            for (int i = 0; i < half; i += 16) {
+            sycl::half *q = (sycl::half *)(query + idx_seq * qStride + idx_head * dim + idx_half);
+            sycl::half *k = (sycl::half *)(key + idx_seq * kStride + idx_head * dim + idx_half);
 
-                sycl::half cos = (sycl::half)emb_cos[pos * half + i];
-                sycl::half sin = (sycl::half)emb_sin[pos * half + i];
-
-                if (idx_head < qHeads) {
-                    auto q1 = q[0];
-                    q[0] = q1 * cos - q[half] * sin;
-                    q[half] = q[half] * cos + q1 * sin;
-                }
-                if (idx_head < kHeads) {
-                    auto k1 = k[0];
-                    k[0] = k1 * cos - k[half] * sin;
-                    k[half] = k[half] * cos + k1 * sin;
-                }
+            if (idx_head < qHeads) {
+                auto q1 = q[0];
+                q[0] = q1 * cos - q[half] * sin;
+                q[half] = q[half] * cos + q1 * sin;
+            }
+            if (idx_head < kHeads) {
+                auto k1 = k[0];
+                k[0] = k1 * cos - k[half] * sin;
+                k[half] = k[half] * cos + k1 * sin;
             }
         });
     });

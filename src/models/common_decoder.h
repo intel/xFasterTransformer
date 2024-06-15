@@ -464,13 +464,13 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         dbg.debugPrint("LayerNorm In:\n");
 
         if (!logitsAll) {
-            dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         }
 #endif
 
@@ -484,9 +484,9 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
         if (!logitsAll) {
-            dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         }
 #endif
 
@@ -501,9 +501,9 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("finalOut:\n");
         if (!logitsAll) {
-            dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
+            dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize);
+            dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize, false, ctx->device);
         }
 #endif
 
@@ -597,10 +597,10 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
-        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize, false, ctx->device);
         dbg.debugPrint("LayerNorm In:\n");
 
-        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize, false, ctx->device);
 #endif
 
         // Last normalization layer
@@ -609,7 +609,7 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
-        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize, false, ctx->device);
 #endif
 
         // Predictor
@@ -619,7 +619,7 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("finalOut:\n");
-        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
+        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize, false, ctx->device);
 #endif
 
 #ifdef XFT_GPU

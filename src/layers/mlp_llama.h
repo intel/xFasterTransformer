@@ -148,9 +148,9 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
-        dbg.dumpMatrix(normBuffer);
+        dbg.dumpMatrix(normBuffer, false, ctx->device);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-        dbg.dumpMatrix(inBuffer);
+        dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
 
         if (!enableCATMLP()) {
@@ -161,18 +161,18 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> gateWeight: [%d, %d] (%d)\n", gateWeight.Rows(), gateWeight.Cols(), gateWeight.Stride());
-            dbg.dumpMatrix(gateWeight);
+            dbg.dumpMatrix(gateWeight, false, ctx->device);
             dbg.debugPrint(">>> gate output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
 
             upProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
 #ifdef XFT_DEBUG
             dbg.debugPrint(">>> upWeight: [%d, %d] (%d)\n", upWeight.Rows(), upWeight.Cols(), upWeight.Stride());
-            dbg.dumpMatrix(upWeight);
+            dbg.dumpMatrix(upWeight, false, ctx->device);
             dbg.debugPrint(">>> up output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
             downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
 
@@ -189,29 +189,29 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> enableCATMLP imBuffer: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-            dbg.dumpMatrix(inBuffer);
+            dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
             catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
 #ifdef XFT_DEBUG
             dbg.debugPrint("catWeights:\n");
-            dbg.dumpMatrix(catWeights);
+            dbg.dumpMatrix(catWeights, false, ctx->device);
             dbg.debugPrint("gateUp output:\n");
-            dbg.dumpMatrix(siluBuf);
+            dbg.dumpMatrix(siluBuf, false, ctx->device);
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-            dbg.dumpMatrix(inBuffer);
+            dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
             downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
         }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> downWeight: [%d, %d] (%d)\n", downWeight.Rows(), downWeight.Cols(), downWeight.Stride());
-        dbg.dumpMatrix(downWeight);
+        dbg.dumpMatrix(downWeight, false, ctx->device);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-        dbg.dumpMatrix(inBuffer);
+        dbg.dumpMatrix(inBuffer, false, ctx->device);
         dbg.debugPrint(">>> final output: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(), outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
     }
 
