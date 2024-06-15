@@ -770,8 +770,10 @@ protected:
 
             this->mmHelper.reset(new MMHelper(env.getEngineKind(), engineIdx));
 #ifdef XFT_GPU
-            auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
-            this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
+            if (env.getEngineKind() == xft::DeviceKind::iGPU) {
+                auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+                this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
+            }
 #endif
             this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
