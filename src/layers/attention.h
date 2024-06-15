@@ -336,15 +336,6 @@ public:
         dbg.dumpMatrix(key);
 #endif
 
-#ifdef XFT_GPU
-        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
-        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
-        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device); // error: need CPU ptr and GPU ptr
-        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
-        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
-        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
-#endif
-
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
         // We initially introduced the code for ChatGLM, but eventually found it has no difference and was unnecessary.
         // However, we have chosen to keep it in the codebase in case it becomes useful for future models.
@@ -362,6 +353,13 @@ public:
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
 #ifdef XFT_GPU
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
+        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
         ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
         attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
@@ -384,6 +382,7 @@ public:
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
         xft::dealloc(qkvTmp);
+        xft::dealloc(attnSplitTmp);
 #endif
 
 #ifdef XFT_DEBUG
@@ -560,6 +559,19 @@ public:
         // For multiple nodes inference, not the whole result buffer
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
+#ifdef XFT_GPU
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
+        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+
+        int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
+        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
+        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+#endif
+
         if (seqs[0]->getStep() == 0) { // First token generation
             if (totInSeqLen > getFlashThresh() * seqs.size()) {
                 flashAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
@@ -572,6 +584,13 @@ public:
             fusedAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
         }
         t4.release();
+
+#ifdef XFT_GPU
+        xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
+        attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        xft::dealloc(qkvTmp);
+        xft::dealloc(attnSplitTmp);
+#endif
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),

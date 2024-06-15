@@ -571,6 +571,16 @@ public:
         // Embedding
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
 
+#ifdef XFT_GPU
+        size_t embBufSize = totInputSeqLen * hiddenSize * sizeof(AttnInT);
+        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
+        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
+                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
+        embBuf = embBufTmp;
+        outBuf = outBufTmp;
+#endif
+
         // Decoder block (all layers)
         decoderBlock->forward(ctx, seqs, embBuf, embBuf);
 
@@ -581,7 +591,7 @@ public:
             int offset = -1;
             for (int b = 0; b < batchSize; ++b) {
                 offset += seqs[b]->getInputSeqLen();
-                memcpy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT));
+                xft::memcopy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT), ctx->device);
             }
         }
 
@@ -604,12 +614,22 @@ public:
 
         // Predictor
         float *finalOut = (float *)outBuf;
+        auto splitSize = this->predictor->getSplitSize();
         this->predictor->forward(ctx, lnOut, finalOut, logitRows);
 
 #ifdef XFT_DEBUG
-        auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
         dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
+#endif
+
+#ifdef XFT_GPU
+        xft::dealloc(embBuf, ctx->device);
+        embBuf = (AttnInT *)actBuffers->Data();
+
+        float *finalOutTmp = (float *)(embBuf + totInputSeqLen * hiddenSize);
+        xft::memcopy(finalOutTmp, finalOut, logitRows * splitSize * sizeof(float), ctx->device);
+        xft::dealloc(outBuf, ctx->device);
+        finalOut = finalOutTmp;
 #endif
 
         return std::tuple<float *, int, int>(
