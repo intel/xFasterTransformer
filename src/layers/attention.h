@@ -521,19 +521,15 @@ public:
         if (ctx->maxPosEmbed > 0) {
             int qheads = this->endQHead - this->startQHead;
             int kheads = this->endKVHead - this->startKVHead;
-            int totInputSeqLen = 0;
-            for (auto seq : seqs) {
-                totInputSeqLen += seq->getInputSeqLen();
-            }
             // Use the default position ids
-            std::vector<int> posIds(totInputSeqLen);
+            std::vector<int> posIds(totInSeqLen);
             int loc = 0;
             for (auto seq : seqs) {
                 std::iota(posIds.begin() + loc, posIds.begin() + loc + seq->getInputSeqLen(), seq->getPastSeqLen());
                 loc += seq->getInputSeqLen();
             }
-            qkpo.forward(query.Data(), key.Data(), totInputSeqLen, query.Stride(), key.Stride(), qheads, kheads,
-                    posIds.data());
+            qkpo.forward(
+                    query.Data(), key.Data(), totInSeqLen, query.Stride(), key.Stride(), qheads, kheads, posIds.data());
         }
         t3.release();
 
