@@ -354,15 +354,15 @@ public:
 
 #ifdef XFT_GPU
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
-        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
-        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device);
-        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
-        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
-        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+        ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
+        xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvBufCPU, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvBufCPU + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvBufCPU + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
 
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
-        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
-        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+        ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
+        attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
 #endif
 
         if (pastSeqLen == 0) {
@@ -381,8 +381,6 @@ public:
 #ifdef XFT_GPU
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
-        xft::dealloc(qkvTmp);
-        xft::dealloc(attnSplitTmp);
 #endif
 
 #ifdef XFT_DEBUG
@@ -561,15 +559,15 @@ public:
 
 #ifdef XFT_GPU
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
-        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
-        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device);
-        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
-        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
-        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+        ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
+        xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvBufCPU, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvBufCPU + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvBufCPU + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
 
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
-        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
-        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+        ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
+        attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
 #endif
 
         if (seqs[0]->getStep() == 0) { // First token generation
@@ -588,8 +586,6 @@ public:
 #ifdef XFT_GPU
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
-        xft::dealloc(qkvTmp);
-        xft::dealloc(attnSplitTmp);
 #endif
 
 #ifdef XFT_DEBUG
