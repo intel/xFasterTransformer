@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <fstream>
 #include <string>
 #include "decoder_layer.h"
 #include "dtype.h"
