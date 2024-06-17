@@ -373,12 +373,12 @@ public:
 
 #ifdef XFT_GPU
         size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
-        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
-        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
-                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
-        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
-        embBuf = embBufTmp;
-        outBuf = outBufTmp;
+        AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
+        AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
+                "outBufGPU", actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
+        embBuf = embBufGPU;
+        outBuf = outBufGPU;
 #endif
 
         // Decoder: forward
@@ -508,13 +508,10 @@ public:
 #endif
 
 #ifdef XFT_GPU
-        xft::dealloc(embBuf, ctx->device);
         embBuf = (AttnInT *)actBuffers->Data();
-
-        float *finalOutTmp = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
-        xft::memcopy(finalOutTmp, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
-        xft::dealloc(outBuf, ctx->device);
-        finalOut = finalOutTmp;
+        float *finalOutCPU = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
+        xft::memcopy(finalOutCPU, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
+        finalOut = finalOutCPU;
 #endif
 
         // Expand the result to make it cover multiple beams
@@ -573,12 +570,12 @@ public:
 
 #ifdef XFT_GPU
         size_t embBufSize = totInputSeqLen * hiddenSize * sizeof(AttnInT);
-        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
-        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
-                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
-        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
-        embBuf = embBufTmp;
-        outBuf = outBufTmp;
+        AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
+        AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
+                "outBufGPU", actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
+        embBuf = embBufGPU;
+        outBuf = outBufGPU;
 #endif
 
         // Decoder block (all layers)
@@ -591,7 +588,8 @@ public:
             int offset = -1;
             for (int b = 0; b < batchSize; ++b) {
                 offset += seqs[b]->getInputSeqLen();
-                xft::memcopy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT), ctx->device);
+                xft::memcopy(
+                        lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT), ctx->device);
             }
         }
 
@@ -623,13 +621,10 @@ public:
 #endif
 
 #ifdef XFT_GPU
-        xft::dealloc(embBuf, ctx->device);
         embBuf = (AttnInT *)actBuffers->Data();
-
-        float *finalOutTmp = (float *)(embBuf + totInputSeqLen * hiddenSize);
-        xft::memcopy(finalOutTmp, finalOut, logitRows * splitSize * sizeof(float), ctx->device);
-        xft::dealloc(outBuf, ctx->device);
-        finalOut = finalOutTmp;
+        float *finalOutCPU = (float *)(embBuf + totInputSeqLen * hiddenSize);
+        xft::memcopy(finalOutCPU, finalOut, logitRows * splitSize * sizeof(float), ctx->device);
+        finalOut = finalOutCPU;
 #endif
 
         return std::tuple<float *, int, int>(

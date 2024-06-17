@@ -212,7 +212,7 @@ public:
             fflush(debugFile);
         }
 
-        if (data) xft::dealloc(data);
+        if (device != nullptr) xft::dealloc(data);
     }
 
     template <typename T>
@@ -319,7 +319,7 @@ public:
             fflush(debugFile);
         }
 
-        if (data) xft::dealloc(data);
+        if (device != nullptr) xft::dealloc(data);
     }
 
     // Function to store float* data to a file
