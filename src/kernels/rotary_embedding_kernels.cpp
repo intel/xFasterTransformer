@@ -607,7 +607,7 @@ static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, floa
     sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(totSeqLen));
     gpu_queue->submit([&](sycl::handler &cgh) {
         sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
-        sycl::range<3> globalSize(heads, totSeqLen, half);
+        sycl::range<3> globalSize(totSeqLen, heads, half);
         sycl::range<3> workGroupSize(1, 1, 1);
 
         cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {

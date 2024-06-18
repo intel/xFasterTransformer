@@ -1070,6 +1070,8 @@ protected:
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
+                        float16_t::cvt_float16_to_float(srcPtr, dstPtr, headSize);
                     } else {
                         printf("Not supported Type in Flash Attention yet\n");
                         exit(-1);
@@ -1137,6 +1139,8 @@ protected:
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
+                        float16_t::cvt_float16_to_float(srcPtr, dstPtr, headSize);
                     } else {
                         printf("Not supported Type in Flash Attention yet\n");
                         exit(-1);
