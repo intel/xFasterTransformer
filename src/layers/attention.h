@@ -164,7 +164,7 @@ public:
         dbg.dumpMatrix(convertedqkvWeight);
         dbg.debugPrint(
                 "attention qkv packed weight: [%d, %d] (%d)\n", qkvWeight.Rows(), qkvWeight.Cols(), qkvWeight.Stride());
-        dbg.dumpMatrix(qkvWeight);
+        dbg.dumpMatrix(qkvWeight, false, ctx->device);
 #endif
 
         // Merged bias
@@ -205,7 +205,7 @@ public:
         dbg.dumpMatrix(convertedOutWeight);
         dbg.debugPrint("attention output packed weight: [%d, %d] (%d)\n", attnOutputWeight.Rows(),
                 attnOutputWeight.Cols(), attnOutputWeight.Stride());
-        dbg.dumpMatrix(attnOutputWeight);
+        dbg.dumpMatrix(attnOutputWeight, false, ctx->device);
 #endif
 
         // Attention output bias
@@ -269,7 +269,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward (useSelfAttn=%d) ----\n", useSelfAttn);
         dbg.debugPrint("input:\n");
-        dbg.dumpMatrix(inputBuffer);
+        dbg.dumpMatrix(inputBuffer, false, ctx->device);
 #endif
 
         if (doLnBefore) {
@@ -279,9 +279,9 @@ public:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
-        dbg.dumpMatrix(imBuffer);
+        dbg.dumpMatrix(imBuffer, false, ctx->device);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
-        dbg.dumpMatrix(this->qkvWeight);
+        dbg.dumpMatrix(this->qkvWeight, false, ctx->device);
 #endif
 
         // Query, Key, Value computed together
@@ -303,11 +303,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
-        dbg.dumpMatrix(value);
+        dbg.dumpMatrix(value, false, ctx->device);
 #endif
 
         // Apply post operations on query and key
@@ -331,18 +331,9 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
-#endif
-
-#ifdef XFT_GPU
-        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
-        ImT *qkvTmp = (ImT *)xft::alloc(qkvSize);
-        xft::memcopy(qkvTmp, qkvGroupMatMul.Data(), qkvSize, ctx->device); // error: need CPU ptr and GPU ptr
-        query.Assign(qkvTmp, inputBuffer.Rows(), qCols, qkvCols);
-        key.Assign(qkvTmp + qCols, inputBuffer.Rows(), kvCols, qkvCols);
-        value.Assign(qkvTmp + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+        dbg.dumpMatrix(key, false, ctx->device);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
@@ -350,7 +341,6 @@ public:
         // However, we have chosen to keep it in the codebase in case it becomes useful for future models.
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
-        TimeLine t4("MHA");
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -362,11 +352,21 @@ public:
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
 #ifdef XFT_GPU
+        TimeLine tmcpyg2c("MHA.memcopyGPU2CPU");
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
+        xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvBufCPU, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvBufCPU + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvBufCPU + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
-        ImT *attnSplitTmp = (ImT *)xft::alloc(attnSplitSize);
-        attnSplit.Assign(attnSplitTmp, imBuffer.Rows(), qCols, qCols);
+        ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
+        attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
+        tmcpyg2c.release();
 #endif
 
+        TimeLine t4("MHA");
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
@@ -381,15 +381,16 @@ public:
         t4.release();
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("MHA.memcopyCPU2GPU");
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
-        xft::dealloc(qkvTmp);
+        tmcpyc2g.release();
 #endif
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
-        dbg.dumpMatrix(attnSplit);
+        dbg.dumpMatrix(attnSplit, false, ctx->device);
 #endif
 
         TimeLine t5("Output");
@@ -432,7 +433,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
 
         if (doLnAfter) {
@@ -441,7 +442,7 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
-            dbg.dumpMatrix(outBuffer);
+            dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
         }
     }
@@ -456,7 +457,7 @@ public:
 
         auto hiddenSize = ctx->hiddenSize;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
-        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * hiddenSize);
+        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * hiddenSize, ctx->device);
         xft::Matrix<ImT> imBuffer(imBuf, totInSeqLen, hiddenSize, hiddenSize);
         xft::Matrix<OutT> outBuffer(output, totInSeqLen, hiddenSize, hiddenSize);
 
@@ -475,7 +476,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("---- DecoderLayer.forward ----\n");
         dbg.debugPrint("input:\n");
-        dbg.dumpMatrix(inputBuffer);
+        dbg.dumpMatrix(inputBuffer, false, ctx->device);
 #endif
 
         if (doLnBefore) {
@@ -485,9 +486,9 @@ public:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
-        dbg.dumpMatrix(imBuffer);
+        dbg.dumpMatrix(imBuffer, false, ctx->device);
         dbg.debugPrint("qkvWeight [%d, %d]:\n", this->qkvWeight.Rows(), this->qkvWeight.Cols());
-        dbg.dumpMatrix(this->qkvWeight);
+        dbg.dumpMatrix(this->qkvWeight, false, ctx->device);
 #endif
 
         // Query, Key, Value computed together
@@ -509,11 +510,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d):\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d):\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
-        dbg.dumpMatrix(value);
+        dbg.dumpMatrix(value, false, ctx->device);
 #endif
 
         // Apply post operations on query and key
@@ -535,9 +536,9 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Q[%d,%d](%d) after post op:\n", query.Rows(), query.Cols(), query.Stride());
-        dbg.dumpMatrix(query);
+        dbg.dumpMatrix(query, false, ctx->device);
         dbg.debugPrint("K[%d,%d](%d) after post op:\n", key.Rows(), key.Cols(), key.Stride());
-        dbg.dumpMatrix(key);
+        dbg.dumpMatrix(key, false, ctx->device);
 #endif
 
         // Revise attnFactor before softmax (for some models, attnFactor may be not the default value)
@@ -545,7 +546,6 @@ public:
         // However, we have chosen to keep it in the codebase in case it becomes useful for future models.
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
-        TimeLine t4("MHA");
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -556,6 +556,22 @@ public:
         // For multiple nodes inference, not the whole result buffer
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
+#ifdef XFT_GPU
+        TimeLine tmcpyg2c("MHA.memcopyGPU2CPU");
+        int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
+        ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
+        xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
+        query.Assign(qkvBufCPU, inputBuffer.Rows(), qCols, qkvCols);
+        key.Assign(qkvBufCPU + qCols, inputBuffer.Rows(), kvCols, qkvCols);
+        value.Assign(qkvBufCPU + qCols + kvCols, inputBuffer.Rows(), kvCols, qkvCols);
+
+        int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
+        ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
+        attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
+        tmcpyg2c.release();
+#endif
+
+        TimeLine t4("MHA");
         if (seqs[0]->getStep() == 0) { // First token generation
             if (totInSeqLen > getFlashThresh() * seqs.size()) {
                 flashAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
@@ -569,10 +585,17 @@ public:
         }
         t4.release();
 
+#ifdef XFT_GPU
+        TimeLine tmcpyc2g("MHA.memcopyCPU2GPU");
+        xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
+        attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        tmcpyc2g.release();
+#endif
+
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention_%d (softmax * value): [%d, %d] (%d)\n", ctx->splitIdx, attnSplit.Rows(),
                 attnSplit.Cols(), attnSplit.Stride());
-        dbg.dumpMatrix(attnSplit);
+        dbg.dumpMatrix(attnSplit, false, ctx->device);
 #endif
 
         TimeLine t5("Output");
@@ -615,7 +638,7 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> attention output/projection[%d, %d] (%d):\n", outBuffer.Rows(), outBuffer.Cols(),
                 outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
 
         if (!doLnBefore) {
@@ -624,7 +647,7 @@ public:
 #ifdef XFT_DEBUG
             dbg.debugPrint("LayerNorm after attention: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(),
                     outBuffer.Stride());
-            dbg.dumpMatrix(outBuffer);
+            dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
         }
     }
@@ -1047,6 +1070,8 @@ protected:
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
+                        float16_t::cvt_float16_to_float(srcPtr, dstPtr, headSize);
                     } else {
                         printf("Not supported Type in Flash Attention yet\n");
                         exit(-1);
@@ -1114,6 +1139,8 @@ protected:
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
+                        float16_t::cvt_float16_to_float(srcPtr, dstPtr, headSize);
                     } else {
                         printf("Not supported Type in Flash Attention yet\n");
                         exit(-1);

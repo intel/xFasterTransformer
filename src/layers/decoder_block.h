@@ -122,7 +122,7 @@ public:
 
         // Copy final result to the output buffer
         if (inputBuf != outputBuf && layersOnDuty % 2 == 0) {
-            std::memcpy(outputBuf, inputBuf, totInSeqLen * ctx->hiddenSize * sizeof(T));
+            xft::memcopy(outputBuf, inputBuf, totInSeqLen * ctx->hiddenSize * sizeof(T), ctx->device);
         }
     }
 

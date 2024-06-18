@@ -76,69 +76,23 @@ void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &,
     this->setWeight(weightBuf, nullptr, cols);
 }
 
-#ifdef XFT_GPU
-template <typename T>
-void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    if constexpr (std::is_same_v<T, float>) {
-        fastertransformer::invokeGeneralT5LayerNorm(
-                output, input, weight, (const float *)nullptr, epsilon, rows, normSize, gpu_queue);
-    } else {
-        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
-        exit(-1);
-    }
-}
-
-template <typename T>
-void RmsNormImp<T>::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
-    exit(-1);
-}
-
-template <typename T>
-void RmsNormImp<T>::forward(
-        const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    if constexpr (std::is_same_v<T, bfloat16_t>) {
-        // TODO: Add BF16 RmsNorm Implemention.
-        // fastertransformer::invokeGeneralT5LayerNorm(
-        //         output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, normSize, gpu_queue);
-    } else {
-        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
-        exit(-1);
-    }
-}
-
-template <typename T>
-void RmsNormImp<T>::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
-    exit(-1);
-}
-
-template <typename T>
-void RmsNormImp<T>::forward(
-        const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
-    TimeLine t("RmsNorm.forward");
-    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
-    if constexpr (std::is_same_v<T, float16_t>) {
-        fastertransformer::invokeGeneralT5LayerNorm((sycl::half *)output, (const sycl::half *)input,
-                (const sycl::half *)weight, (const sycl::half *)nullptr, epsilon, rows, normSize, gpu_queue);
-    } else {
-        printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
-        exit(-1);
-    }
-}
-
-#else
 // input and output are in shape of (rows, normSize)
 template <typename T>
 void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+
     if constexpr (std::is_same_v<T, float>) {
+        if (device != nullptr) {
+#ifdef XFT_GPU
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+            fastertransformer::invokeGeneralT5LayerNorm(
+                    output, input, weight, (const float *)nullptr, epsilon, rows, normSize, gpu_queue);
+            return;
+#else
+            printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+        }
+
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
@@ -149,7 +103,17 @@ void RmsNormImp<T>::forward(const float *input, float *output, int rows, int iSt
 template <typename T>
 void RmsNormImp<T>::forward(const float *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+
     if constexpr (std::is_same_v<T, float>) {
+        if (device != nullptr) {
+#ifdef XFT_GPU
+            printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#else
+            printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+        }
+
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
@@ -161,7 +125,23 @@ template <typename T>
 void RmsNormImp<T>::forward(
         const bfloat16_t *input, bfloat16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+
     if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else if constexpr (std::is_same_v<T, bfloat16_t>) {
+        if (device != nullptr) {
+#ifdef XFT_GPU
+            // TODO: Add BF16 RmsNorm Implemention.
+            // sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+            // fastertransformer::invokeGeneralT5LayerNorm(
+            //         output, input, weight, (const bfloat16_t *)nullptr, epsilon, rows, normSize, gpu_queue);
+            printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#else
+            printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+        }
+
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
@@ -172,7 +152,17 @@ void RmsNormImp<T>::forward(
 template <typename T>
 void RmsNormImp<T>::forward(const float *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+
     if constexpr (std::is_same_v<T, float>) {
+        if (device != nullptr) {
+#ifdef XFT_GPU
+            printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
+            exit(-1);
+#else
+            printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+        }
+
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
@@ -184,14 +174,27 @@ template <typename T>
 void RmsNormImp<T>::forward(
         const float16_t *input, float16_t *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("RmsNorm.forward");
+
     if constexpr (std::is_same_v<T, float>) {
+        rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
+    } else if constexpr (std::is_same_v<T, float16_t>) {
+        if (device != nullptr) {
+#ifdef XFT_GPU
+            sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+            fastertransformer::invokeGeneralT5LayerNorm((sycl::half *)output, (const sycl::half *)input,
+                    (const sycl::half *)weight, (const sycl::half *)nullptr, epsilon, rows, normSize, gpu_queue);
+            return;
+#else
+            printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+        }
+
         rmsNorm(output, input, weight, rows, normSize, iStride, oStride, epsilon);
     } else {
         printf("%s:%d: Could not forward in RmsNorm with undefined data type.\n", __FILE__, __LINE__);
         exit(-1);
     }
 }
-#endif
 
 template class RmsNormImp<float>;
 template class RmsNormImp<float16_t>;

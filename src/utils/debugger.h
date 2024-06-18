@@ -23,9 +23,9 @@
 #include <sstream>
 #include <string>
 
+#include "environment.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
-#include "environment.h"
 #include "uint4x2.h"
 
 class Debugger {
@@ -101,33 +101,38 @@ public:
     void outputStream(std::ostringstream &oss, T val, bool isFinished = false) {
         if (isFinished == false) {
             if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
-                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", " << float(val.get_v2()) << ", ";
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", "
+                    << float(val.get_v2()) << ", ";
             } else {
                 oss << std::setprecision(8) << std::setw(15) << std::right << float(val) << ", ";
             }
         } else {
             if constexpr (std::is_same_v<T, uint4x2_t> || std::is_same_v<T, nf4x2_t>) {
-                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", " << float(val.get_v2()) << std::endl;
+                oss << std::setprecision(8) << std::setw(15) << std::right << float(val.get_v1()) << ", "
+                    << float(val.get_v2()) << std::endl;
             } else {
                 oss << std::setprecision(8) << std::setw(15) << std::right << float(val) << std::endl;
             }
         }
     }
 
-#ifdef XFT_GPU
     template <typename T>
-    void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
-    }
-
-    template <typename T>
-    void dumpMatrix(T *data, uint64_t rows, uint64_t cols, uint64_t stride, bool print_all = false) {
-    }
-#else
-    template <typename T>
-    void dumpMatrix(xft::Matrix<T> &m, bool print_all = false) {
+    void dumpMatrix(xft::Matrix<T> &matrix, bool print_all = false, void *device = nullptr) {
         std::ostringstream oss;
-        uint64_t rows = m.Rows();
-        uint64_t cols = m.Cols();
+        xft::Matrix<T> m;
+        uint64_t rows = matrix.Rows();
+        uint64_t cols = matrix.Cols();
+        uint64_t stride = matrix.Stride();
+        T *data = nullptr;
+
+        if (device != nullptr) {
+            size_t size = rows * stride * sizeof(T);
+            data = (T *)xft::alloc(size);
+            xft::memcopy(data, matrix.Data(), size, device);
+            m.Assign(data, rows, cols, stride);
+        } else {
+            m.Assign(matrix.Data(), rows, cols, stride);
+        }
 
         // Collect values to string
         if (print_all == true) {
@@ -206,11 +211,23 @@ public:
             fwrite(str.c_str(), sizeof(char), str.size(), debugFile);
             fflush(debugFile);
         }
+
+        if (device != nullptr) xft::dealloc(data);
     }
 
     template <typename T>
-    void dumpMatrix(T *data, uint64_t rows, uint64_t cols, uint64_t stride, bool print_all = false) {
+    void dumpMatrix(
+            T *input, uint64_t rows, uint64_t cols, uint64_t stride, bool print_all = false, void *device = nullptr) {
         std::ostringstream oss;
+        T *data = nullptr;
+
+        if (device != nullptr) {
+            size_t size = rows * stride * sizeof(T);
+            data = (T *)xft::alloc(size);
+            xft::memcopy(data, input, size, device);
+        } else {
+            data = input;
+        }
 
         // Collect values to string
         if (print_all == true) {
@@ -225,39 +242,47 @@ public:
                 for (uint64_t i = 0; i < rows; ++i) {
                     if (cols <= 12) {
                         for (uint64_t j = 0; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     } else {
                         for (uint64_t j = 0; j < 6; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
 
                         oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
                         for (uint64_t j = cols - 6; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     }
-                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1])
+                        << std::endl;
                 }
             } else {
                 for (uint64_t i = 0; i < 6; ++i) {
                     if (cols <= 12) {
                         for (uint64_t j = 0; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     } else {
                         for (uint64_t j = 0; j < 6; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
 
                         oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
                         for (uint64_t j = cols - 6; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     }
-                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1])
+                        << std::endl;
                 }
 
                 oss << std::setprecision(8) << std::setw(15) << std::right << "..." << std::endl;
@@ -265,20 +290,24 @@ public:
                 for (uint64_t i = rows - 6; i < rows; ++i) {
                     if (cols < 10) {
                         for (uint64_t j = 0; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     } else {
                         for (uint64_t j = 0; j < 6; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
 
                         oss << std::setprecision(8) << std::setw(15) << std::right << "..., ";
 
                         for (uint64_t j = cols - 6; j < cols - 1; ++j) {
-                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j]) << ", ";
+                            oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + j])
+                                << ", ";
                         }
                     }
-                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1]) << std::endl;
+                    oss << std::setprecision(8) << std::setw(15) << std::right << float(data[i * stride + cols - 1])
+                        << std::endl;
                 }
             }
         }
@@ -289,8 +318,10 @@ public:
             fwrite(str.c_str(), sizeof(char), str.size(), debugFile);
             fflush(debugFile);
         }
+
+        if (device != nullptr) xft::dealloc(data);
     }
-#endif
+
     // Function to store float* data to a file
     template <typename T>
     void storeMatrix(const std::string &filename, const T *data, uint64_t rows, uint64_t cols) {

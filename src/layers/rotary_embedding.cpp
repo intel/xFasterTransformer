@@ -16,6 +16,7 @@
 
 #include "allocator.h"
 #include "compile_util.h"
+#include "timeline.h"
 
 LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     const std::string inv_freq_str = "inv_freq";
@@ -105,30 +106,20 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position
 //   |_____|        |_____|
 //  head_size/2    head_size/2
 
+void LlamaRotaryEmbedding::forward(
+        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
 #ifdef XFT_GPU
-
-void LlamaRotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    xft::llamaApplyRotaryPosEmbeding(this->device,
-            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
-}
-
-void LlamaRotaryEmbedding::forward(
-        bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    xft::llamaApplyRotaryPosEmbeding(this->device,
-            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
-}
-
-void LlamaRotaryEmbedding::forward(
-        float16_t *query, float16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    xft::llamaApplyRotaryPosEmbeding(this->device,
-            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
-}
-
+        xft::llamaApplyRotaryPosEmbeding(this->device,
+                query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
 #else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
 
-void LlamaRotaryEmbedding::forward(
-        float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
     int dim = inv_freq_size * 2;
     REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 
@@ -175,33 +166,92 @@ void LlamaRotaryEmbedding::forward(
 
 void LlamaRotaryEmbedding::forward(
         bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+    xft::llamaApplyRotaryPosEmbeding(this->device,
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbeding(
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(
         float16_t *query, float16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+    xft::llamaApplyRotaryPosEmbeding(this->device,
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbeding(
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
-#endif // GPU
-
 // For continuous batching
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+                query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
         int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+                query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride, int kStride,
         int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+            query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }

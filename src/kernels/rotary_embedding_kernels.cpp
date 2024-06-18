@@ -53,6 +53,7 @@ void llamaSetCosSinCache(
 //     return q_embed, k_embed
 //
 
+// For LLaMA
 template <typename T>
 static inline void llamaApplyRotaryPosEmbeding(T *query, T *key, int qStride, int kStride, float *emb_cos,
         float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
@@ -129,6 +130,7 @@ void llamaApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, 
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
+// For LLaMA continous batching
 template <typename T>
 static inline void llamaApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
         int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
@@ -541,7 +543,6 @@ static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, i
     const int half_head_size = (head_size + 1) / 2;
     using namespace sycl;
 
-    // Reorder input
     sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
     sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
     gpu_queue->submit([&](sycl::handler &cgh) {
@@ -558,8 +559,8 @@ static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, i
             const sycl::half cos = (sycl::half)emb_cos[pos * half_head_size + idx_half_head_dim];
             const sycl::half sin = (sycl::half)emb_sin[pos * half_head_size + idx_half_head_dim];
 
-            sycl::half *q = (sycl::half *)query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim;
-            sycl::half *k = (sycl::half *)key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim;
+            sycl::half *q = (sycl::half *)(query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim);
+            sycl::half *k = (sycl::half *)(key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim);
 
             if (idx_head_num < qHeads) {
                 auto q1 = q[0];
@@ -592,6 +593,66 @@ void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key,
         float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
     llamaApplyRotaryPosEmbeding<sycl::half>(device, (sycl::half *)query, (sycl::half *)key, qStride, kStride, emb_cos,
             emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+// For LLaMA continous batching
+template <typename T>
+static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    const int half = (dim + 1) / 2;
+    const int heads = std::max(qHeads, kHeads);
+    using namespace sycl;
+
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(totSeqLen));
+    gpu_queue->submit([&](sycl::handler &cgh) {
+        sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
+        sycl::range<3> globalSize(totSeqLen, heads, half);
+        sycl::range<3> workGroupSize(1, 1, 1);
+
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {
+            size_t idx_seq = item.get_global_id(0);
+            size_t idx_head = item.get_global_id(1);
+            size_t idx_half = item.get_global_id(2);
+            size_t pos = position[idx_seq];
+
+            sycl::half cos = (sycl::half)emb_cos[pos * half + idx_half];
+            sycl::half sin = (sycl::half)emb_sin[pos * half + idx_half];
+
+            sycl::half *q = (sycl::half *)(query + idx_seq * qStride + idx_head * dim + idx_half);
+            sycl::half *k = (sycl::half *)(key + idx_seq * kStride + idx_head * dim + idx_half);
+
+            if (idx_head < qHeads) {
+                auto q1 = q[0];
+                q[0] = q1 * cos - q[half] * sin;
+                q[half] = q[half] * cos + q1 * sin;
+            }
+            if (idx_head < kHeads) {
+                auto k1 = k[0];
+                k[0] = k1 * cos - k[half] * sin;
+                k[half] = k[half] * cos + k1 * sin;
+            }
+        });
+    });
+    gpu_queue->wait();
+}
+
+void llamaApplyRotaryPosEmbed(void *device, float *query, float *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<float>(
+            device, query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void llamaApplyRotaryPosEmbed(void *device, bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<bfloat16_t>(
+            device, query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void llamaApplyRotaryPosEmbed(void *device, float16_t *query, float16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<sycl::half>(device, (sycl::half *)query, (sycl::half *)key, emb_cos, emb_sin, qStride,
+            kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 #endif
 

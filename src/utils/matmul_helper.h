@@ -1687,7 +1687,7 @@ private:
 
         matmul::primitive_desc *matmul_pd;
         matmul *matmul_prim;
-        std::string key = create_key(transA, M, N, K, postAlg, packedB);
+        std::string key = create_key(transA, M, N, K, postAlg, (const float *)nullptr);
         auto it = matmul_hub.find(key);
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
@@ -1762,7 +1762,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            std::string key = create_key(transA, M, N, K, postAlg, packedB);
+            std::string key = create_key(transA, M, N, K, postAlg, (const float *)nullptr);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
         }

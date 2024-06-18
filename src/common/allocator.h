@@ -21,6 +21,7 @@
 
 #ifdef XFT_GPU
 #include <CL/sycl.hpp>
+#define NDEBUG
 #endif
 
 namespace xft {

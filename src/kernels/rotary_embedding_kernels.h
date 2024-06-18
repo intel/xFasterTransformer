@@ -97,6 +97,16 @@ void llamaApplyRotaryPosEmbeding(void *device, bfloat16_t *query, bfloat16_t *ke
 
 void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key, int qStride, int kStride,
         float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+// For LLaMA continous batching
+void llamaApplyRotaryPosEmbed(void *device, float *query, float *key, float *embCos, float *embSin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void llamaApplyRotaryPosEmbed(void *device, bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void llamaApplyRotaryPosEmbed(void *device, float16_t *query, float16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
 #endif
 
 } // namespace xft

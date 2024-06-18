@@ -371,13 +371,15 @@ public:
 #endif
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("Decoder.memcopyCPU2GPU");
         size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
-        AttnInT *embBufTmp = (AttnInT *)xft::alloc(embBufSize, ctx->device);
-        AttnInT *outBufTmp = (AttnInT *)xft::alloc(
-                actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
-        xft::memcopy(embBufTmp, embBuf, embBufSize, ctx->device);
-        embBuf = embBufTmp;
-        outBuf = outBufTmp;
+        AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
+        AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
+                "outBufGPU", actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
+        embBuf = embBufGPU;
+        outBuf = outBufGPU;
+        tmcpyc2g.release();
 #endif
 
         // Decoder: forward
@@ -463,13 +465,13 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", batchSize * inputSeqLen, hiddenSize, hiddenSize);
-        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         dbg.debugPrint("LayerNorm In:\n");
 
         if (!logitsAll) {
-            dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnIn, batchSize, hiddenSize, hiddenSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnIn, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         }
 #endif
 
@@ -483,9 +485,9 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
         if (!logitsAll) {
-            dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnOut, batchSize, hiddenSize, hiddenSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize);
+            dbg.dumpMatrix(lnOut, batchSize * inputSeqLen, hiddenSize, hiddenSize, false, ctx->device);
         }
 #endif
 
@@ -500,20 +502,19 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("finalOut:\n");
         if (!logitsAll) {
-            dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize);
+            dbg.dumpMatrix(finalOut, batchSize, splitSize, splitSize, false, ctx->device);
         } else {
-            dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize);
+            dbg.dumpMatrix(finalOut, batchSize * inputSeqLen, splitSize, splitSize, false, ctx->device);
         }
 #endif
 
 #ifdef XFT_GPU
-        xft::dealloc(embBuf, ctx->device);
+        TimeLine tmcpyg2c("Decoder.memcopyGPU2CPU");
         embBuf = (AttnInT *)actBuffers->Data();
-
-        float *finalOutTmp = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
-        xft::memcopy(finalOutTmp, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
-        xft::dealloc(outBuf, ctx->device);
-        finalOut = finalOutTmp;
+        float *finalOutCPU = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
+        xft::memcopy(finalOutCPU, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
+        finalOut = finalOutCPU;
+        tmcpyg2c.release();
 #endif
 
         // Expand the result to make it cover multiple beams
@@ -570,6 +571,18 @@ public:
         // Embedding
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
 
+#ifdef XFT_GPU
+        TimeLine tmcpyc2g("Decoder.memcopyCPU2GPU");
+        size_t embBufSize = totInputSeqLen * hiddenSize * sizeof(AttnInT);
+        AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
+        AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
+                "outBufGPU", actBuffers->Rows() * actBuffers->Cols() * sizeof(float) - embBufSize, ctx->device);
+        xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
+        embBuf = embBufGPU;
+        outBuf = outBufGPU;
+        tmcpyc2g.release();
+#endif
+
         // Decoder block (all layers)
         decoderBlock->forward(ctx, seqs, embBuf, embBuf);
 
@@ -580,16 +593,17 @@ public:
             int offset = -1;
             for (int b = 0; b < batchSize; ++b) {
                 offset += seqs[b]->getInputSeqLen();
-                memcpy(lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT));
+                xft::memcopy(
+                        lnIn + b * hiddenSize, embBuf + offset * hiddenSize, hiddenSize * sizeof(MlpOutT), ctx->device);
             }
         }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(">>> DecoderLayer Output[%d, %d] (%d):\n", logitRows, hiddenSize, hiddenSize);
-        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(embBuf, logitRows, hiddenSize, hiddenSize, false, ctx->device);
         dbg.debugPrint("LayerNorm In:\n");
 
-        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(lnIn, logitRows, hiddenSize, hiddenSize, false, ctx->device);
 #endif
 
         // Last normalization layer
@@ -598,17 +612,26 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm Out:\n");
-        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize);
+        dbg.dumpMatrix(lnOut, logitRows, hiddenSize, hiddenSize, false, ctx->device);
 #endif
 
         // Predictor
         float *finalOut = (float *)outBuf;
+        auto splitSize = this->predictor->getSplitSize();
         this->predictor->forward(ctx, lnOut, finalOut, logitRows);
 
 #ifdef XFT_DEBUG
-        auto splitSize = this->predictor->getSplitSize();
         dbg.debugPrint("finalOut:\n");
-        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize);
+        dbg.dumpMatrix(finalOut, logitRows, splitSize, splitSize, false, ctx->device);
+#endif
+
+#ifdef XFT_GPU
+        TimeLine tmcpyg2c("Decoder.memcopyGPU2CPU");
+        embBuf = (AttnInT *)actBuffers->Data();
+        float *finalOutCPU = (float *)(embBuf + totInputSeqLen * hiddenSize);
+        xft::memcopy(finalOutCPU, finalOut, logitRows * splitSize * sizeof(float), ctx->device);
+        finalOut = finalOutCPU;
+        tmcpyg2c.release();
 #endif
 
         return std::tuple<float *, int, int>(
@@ -764,8 +787,10 @@ protected:
 
             this->mmHelper.reset(new MMHelper(env.getEngineKind(), engineIdx));
 #ifdef XFT_GPU
-            auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
-            this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
+            if (env.getEngineKind() == xft::DeviceKind::iGPU) {
+                auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+                this->device.reset(new sycl::queue(devices[this->mmHelper->getEngineCount() + engineIdx]));
+            }
 #endif
             this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
