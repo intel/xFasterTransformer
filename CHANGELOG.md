@@ -1,5 +1,15 @@
 # CHANGELOG
-# [Version v1.7.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.0)
+# [Version v1.7.2](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.2)
+v1.7.2 - Continuous batching feature supports Qwen 1.0 & hybrid data types.
+
+## Functionality
+- Add continuous batching support of Qwen 1.0 models.
+- Enable hybrid data types for continuous batching feature, including `BF16_FP16, BF16_INT8, BF16_W8A8, BF16_INT4, BF16_NF4, W8A8_INT8, W8A8_int4, W8A8_NF4`.
+
+## BUG fix
+- Fixed the convert fault in Baichuan1 models.
+
+# [Version v1.7.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.1)
 v1.7.1 - Continuous batching feature supports ChatGLM2/3.
 
 ## Functionality
