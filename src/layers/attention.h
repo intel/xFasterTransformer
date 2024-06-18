@@ -341,7 +341,6 @@ public:
         // However, we have chosen to keep it in the codebase in case it becomes useful for future models.
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
-        TimeLine t4("MHA");
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -353,6 +352,7 @@ public:
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
 #ifdef XFT_GPU
+        TimeLine tmcpyg2c("MHA.memcopyGPU2CPU");
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
         ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
         xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
@@ -363,8 +363,10 @@ public:
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
         ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
         attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
+        tmcpyg2c.release();
 #endif
 
+        TimeLine t4("MHA");
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
@@ -379,8 +381,10 @@ public:
         t4.release();
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("MHA.memcopyCPU2GPU");
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        tmcpyc2g.release();
 #endif
 
 #ifdef XFT_DEBUG
@@ -542,7 +546,6 @@ public:
         // However, we have chosen to keep it in the codebase in case it becomes useful for future models.
         if (getScalingCoeff() != 0) { ctx->attFactor = getScalingCoeff(); }
 
-        TimeLine t4("MHA");
         if constexpr (!INPUT_AS_RESID) { // Swap inputBuffer and imBuffer
             auto tmp = imBuffer.Data();
             int rows = imBuffer.Rows(), cols = imBuffer.Cols(), stride = imBuffer.Stride();
@@ -554,6 +557,7 @@ public:
         xft::Matrix<ImT> attnSplit(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
 
 #ifdef XFT_GPU
+        TimeLine tmcpyg2c("MHA.memcopyGPU2CPU");
         int64_t qkvSize = qkvRows * qkvStride * sizeof(ImT);
         ImT *qkvBufCPU = (ImT *)ctx->getBuffer<ImT>("qkvBufCPU", qkvSize);
         xft::memcopy(qkvBufCPU, qkvGroupMatMul.Data(), qkvSize, ctx->device);
@@ -564,8 +568,10 @@ public:
         int64_t attnSplitSize = imBuffer.Rows() * qCols * sizeof(ImT);
         ImT *attnSplitCPU = (ImT *)ctx->getBuffer<ImT>("attnSplitCPU", attnSplitSize);
         attnSplit.Assign(attnSplitCPU, imBuffer.Rows(), qCols, qCols);
+        tmcpyg2c.release();
 #endif
 
+        TimeLine t4("MHA");
         if (seqs[0]->getStep() == 0) { // First token generation
             if (totInSeqLen > getFlashThresh() * seqs.size()) {
                 flashAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
@@ -580,8 +586,10 @@ public:
         t4.release();
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("MHA.memcopyCPU2GPU");
         xft::memcopy(imBuffer.Data(), attnSplit.Data(), attnSplitSize, ctx->device);
         attnSplit.Assign(imBuffer.Data(), imBuffer.Rows(), qCols, qCols);
+        tmcpyc2g.release();
 #endif
 
 #ifdef XFT_DEBUG

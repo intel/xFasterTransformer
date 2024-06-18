@@ -371,6 +371,7 @@ public:
 #endif
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("Decoder.memcopyCPU2GPU");
         size_t embBufSize = batchSize * inputSeqLen * hiddenSize * sizeof(AttnInT);
         AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
         AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
@@ -378,6 +379,7 @@ public:
         xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
         embBuf = embBufGPU;
         outBuf = outBufGPU;
+        tmcpyc2g.release();
 #endif
 
         // Decoder: forward
@@ -507,10 +509,12 @@ public:
 #endif
 
 #ifdef XFT_GPU
+        TimeLine tmcpyg2c("Decoder.memcopyGPU2CPU");
         embBuf = (AttnInT *)actBuffers->Data();
         float *finalOutCPU = (float *)(embBuf + batchSize * inputSeqLen * hiddenSize);
         xft::memcopy(finalOutCPU, finalOut, batchSize * splitSize * sizeof(float), ctx->device);
         finalOut = finalOutCPU;
+        tmcpyg2c.release();
 #endif
 
         // Expand the result to make it cover multiple beams
@@ -568,6 +572,7 @@ public:
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
 
 #ifdef XFT_GPU
+        TimeLine tmcpyc2g("Decoder.memcopyCPU2GPU");
         size_t embBufSize = totInputSeqLen * hiddenSize * sizeof(AttnInT);
         AttnInT *embBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>("embBufGPU", embBufSize, ctx->device);
         AttnInT *outBufGPU = (AttnInT *)ctx->getBuffer<AttnInT>(
@@ -575,6 +580,7 @@ public:
         xft::memcopy(embBufGPU, embBuf, embBufSize, ctx->device);
         embBuf = embBufGPU;
         outBuf = outBufGPU;
+        tmcpyc2g.release();
 #endif
 
         // Decoder block (all layers)
@@ -620,10 +626,12 @@ public:
 #endif
 
 #ifdef XFT_GPU
+        TimeLine tmcpyg2c("Decoder.memcopyGPU2CPU");
         embBuf = (AttnInT *)actBuffers->Data();
         float *finalOutCPU = (float *)(embBuf + totInputSeqLen * hiddenSize);
         xft::memcopy(finalOutCPU, finalOut, logitRows * splitSize * sizeof(float), ctx->device);
         finalOut = finalOutCPU;
+        tmcpyg2c.release();
 #endif
 
         return std::tuple<float *, int, int>(
