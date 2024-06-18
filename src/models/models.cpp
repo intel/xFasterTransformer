@@ -742,14 +742,14 @@ std::vector<int32_t> Model::finalize() {
     }
 }
 
-std::tuple<float *, int, int> Model::forward(bool logits_all) {
+std::tuple<float *, int, int> Model::forward(bool logitsAll) {
     // This forward will sync and gather all logits.
     // Return is a tuple of (logits, totalSeqSize, VocabSize)
     // TODO: Deprecate the following Path
     // Old path reture is (logits, offset, size)
     if (searcher != nullptr) {
         int64_t dims[3] = {batchSize, 1, seqLen};
-        return decoder->forward(inputIds.data(), dims, 0, logits_all);
+        return decoder->forward(inputIds.data(), dims, 0, logitsAll);
     }
     // TODO: checking waiting queue
     if (workingGroup.empty()) {
@@ -768,10 +768,10 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         }
     }
 
-    std::tuple<float *, int, int> result = decoder->forward(workingSeqs, logits_all);
+    std::tuple<float *, int, int> result = decoder->forward(workingSeqs, logitsAll);
 
     int totalSeqSize = workingSeqs.size();
-    if (logits_all && workingSeqs[0]->getStep() == 0) {
+    if (logitsAll && workingSeqs[0]->getStep() == 0) {
         totalSeqSize = 0;
         for (auto x : workingSeqs) {
             totalSeqSize += x->getInputSeqLen();

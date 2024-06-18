@@ -74,7 +74,7 @@ public:
 
     bool isDone();
 
-    std::tuple<float *, int, int> forward(bool logits_all = true);
+    std::tuple<float *, int, int> forward(bool logitsAll = true);
 
     std::vector<int32_t> generate();
 

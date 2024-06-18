@@ -72,10 +72,12 @@ public:
         }
     }
 
-    // TODO
-    std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seq, bool logits_all = false) {
-        throw std::logic_error("Method not implemented");
-        return std::make_tuple(nullptr, 0, 0);
+    std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seq, bool logitsAll = false) {
+        if (seq[0]->getStep() == 0) {
+            return firstModel->forward(seq, logitsAll);
+        } else {
+            return nextModel->forward(seq, logitsAll);
+        }
     }
 
     void reorderCache(int *idx, int size) { return firstModel->reorderCache(idx, size); }
