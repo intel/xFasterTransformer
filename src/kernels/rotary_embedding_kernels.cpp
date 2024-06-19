@@ -241,7 +241,7 @@ static inline void chatglm2ApplyRotaryPosEmbeding(T *query, T *key, int qStride,
     for (int head = 0; head < head_num; ++head) {
         for (int bs = 0; bs < batch_size; ++bs) {
             for (int seq = 0; seq < seq_len; ++seq) {
-                T *pF = query + seq * qStride + head * dim;
+                T *pF = query + bs * seq_len * qStride + seq * qStride + head * dim;
 
                 int pos = position_ids[seq];
                 float *pcos = emb_cos + pos * dim;
