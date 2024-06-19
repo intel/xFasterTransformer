@@ -50,8 +50,9 @@ void ShmReduction::ShmResize(int rank, size_t size) {
     // shm_unlink(shmCtx_.name);
 
     // alloc and map new shm
-    total_size = total_size - shmCtx_.nbytes + size;
     shmCtx_.nbytes = size;
+    shmCtx_.nblocks = (size + SHM_BLOCK_SIZE - 1) / SHM_BLOCK_SIZE;
+    total_size = sizeof(int) * shmCtx_.nstates + shmCtx_.nbytes + shmCtx_.nblocks * shmCtx_.nstates;
     // Truncate the shared memory to the desired size
     if (rank == 0 && ftruncate(shmCtx_.fp, total_size) == -1) {
         perror("shm ftruncate failed.");
