@@ -53,6 +53,7 @@ void llamaSetCosSinCache(
 //     return q_embed, k_embed
 //
 
+// For LLaMA
 template <typename T>
 static inline void llamaApplyRotaryPosEmbeding(T *query, T *key, int qStride, int kStride, float *emb_cos,
         float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
@@ -129,6 +130,7 @@ void llamaApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, 
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
+// For LLaMA continous batching
 template <typename T>
 static inline void llamaApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
         int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
@@ -235,12 +237,11 @@ static inline void chatglm2ApplyRotaryPosEmbeding(T *query, T *key, int qStride,
     const int head_num = qk_shape[2] + qk_shape[4];
     const int half = inv_freq_size;
 
-#pragma omp parallel for
+#pragma omp parallel for collapse(3)
     for (int head = 0; head < head_num; ++head) {
-        int off = head * dim;
         for (int bs = 0; bs < batch_size; ++bs) {
             for (int seq = 0; seq < seq_len; ++seq) {
-                T *pF = query + off;
+                T *pF = query + bs * seq_len * qStride + seq * qStride + head * dim;
 
                 int pos = position_ids[seq];
                 float *pcos = emb_cos + pos * dim;
@@ -271,7 +272,6 @@ static inline void chatglm2ApplyRotaryPosEmbeding(T *query, T *key, int qStride,
                     xft::store_avx512(&pF[i], mask, tmp0);
                     xft::store_avx512(&pF[i + 16], mask, tmp1);
                 }
-                off += qStride;
             }
         }
     }
@@ -293,6 +293,71 @@ void chatglm2ApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStrid
         float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
     chatglm2ApplyRotaryPosEmbeding<float16_t>(
             query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+// For ChatGLM2/3 continous batching
+
+template <typename T>
+static inline void chatglm2ApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int inv_freq_size, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    int dim = inv_freq_size * 2;
+    const int head_num = qHeads + kHeads;
+    const int half = inv_freq_size;
+
+#pragma omp parallel for collapse(2)
+    for (int head = 0; head < head_num; ++head) {
+        for (int seq = 0; seq < totSeqLen; ++seq) {
+            T *pF = query + seq * qStride + head * dim;
+
+            int pos = positionIds[seq];
+            float *pcos = emb_cos + pos * dim;
+            float *psin = emb_sin + pos * dim;
+
+            for (int i = 0; i < half; i += 32) {
+                __mmask16 mask = 0xffff;
+                __m512 tmp0, tmp1, pCosVec, pSinVec, qVec0, qVec1;
+                //TODO:  can directly load/save with shuffle??
+                tmp0 = _mm512_maskz_loadu_ps(mask, &pcos[i]);
+                tmp1 = _mm512_maskz_loadu_ps(mask, &pcos[i + 16]);
+                chatglm2PrepareSinCos(tmp0, tmp1, &pCosVec);
+
+                tmp0 = _mm512_maskz_loadu_ps(mask, &psin[i]);
+                tmp1 = _mm512_maskz_loadu_ps(mask, &psin[i + 16]);
+                chatglm2PrepareSinCos(tmp0, tmp1, &pSinVec);
+
+                tmp0 = xft::load_avx512(mask, &pF[i]);
+                tmp1 = xft::load_avx512(mask, &pF[i + 16]);
+
+                chatglm2InterleaveQK(tmp0, tmp1, &qVec0, &qVec1);
+
+                __m512 qNew0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
+                __m512 qNew1 = _mm512_fmadd_ps(qVec0, pSinVec, _mm512_mul_ps(qVec1, pCosVec));
+
+                chatglm2DeinterleaveQK(qNew0, qNew1, &tmp0, &tmp1);
+
+                xft::store_avx512(&pF[i], mask, tmp0);
+                xft::store_avx512(&pF[i + 16], mask, tmp1);
+            }
+        }
+    }
+}
+
+void chatglm2ApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    chatglm2ApplyRotaryPosEmbed<float>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void chatglm2ApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    chatglm2ApplyRotaryPosEmbed<bfloat16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void chatglm2ApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    chatglm2ApplyRotaryPosEmbed<float16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 template <typename T>
@@ -385,5 +450,210 @@ void qwenApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, i
     qwenApplyRotaryPosEmbeding<float16_t>(query, key, qStride, kStride, cur_emb_cos, cur_emb_sin, inv_freq_size, logn,
             maxSupportedSeqLength, qkShape, positionIds);
 }
+
+template <typename T>
+static inline void qwenApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, const float *logn, int maxSupportedSeqLength, int totSeqLen, int qHeads, int kHeads,
+        const int *positionIds) {
+    const int half = (dim + 1) / 2;
+    const int heads = std::max(qHeads, kHeads);
+
+#pragma omp parallel for collapse(2)
+    for (int head = 0; head < heads; ++head) {
+        for (int seq = 0; seq < totSeqLen; ++seq) {
+            int pos = positionIds[seq];
+
+            float *pcos = emb_cos + pos * dim;
+            float *psin = emb_sin + pos * dim;
+
+            T *q = query + seq * qStride + head * dim;
+            T *k = key + seq * kStride + head * dim;
+
+            __m512 pScale = _mm512_set1_ps(logn[pos]);
+
+            // Process chunks of 16 elements at a time
+            for (int i = 0; i < half; i += 16) {
+                int remain = half - i;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+                __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
+                __m512 pCosHalfVec = _mm512_maskz_loadu_ps(mask, &pcos[i + half]);
+                __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
+                __m512 pSinHalfVec = _mm512_maskz_loadu_ps(mask, &psin[i + half]);
+
+                if (head < qHeads) {
+                    __m512 qVec = xft::load_avx512(mask, &q[i]);
+                    __m512 qHalfVec = xft::load_avx512(mask, &q[i + half]);
+                    __m512 qNew
+                            = _mm512_mul_ps(_mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec)), pScale);
+                    __m512 qHalfNew = _mm512_mul_ps(
+                            _mm512_fmadd_ps(qHalfVec, pCosHalfVec, _mm512_mul_ps(qVec, pSinHalfVec)), pScale);
+                    xft::store_avx512(&q[i], mask, qNew);
+                    xft::store_avx512(&q[i + half], mask, qHalfNew);
+                }
+
+                if (head < kHeads) {
+                    __m512 kVec = xft::load_avx512(mask, &k[i]);
+                    __m512 kHalfVec = xft::load_avx512(mask, &k[i + half]);
+                    __m512 kNew = _mm512_fmsub_ps(kVec, pCosVec, _mm512_mul_ps(kHalfVec, pSinVec));
+                    __m512 kHalfNew = _mm512_fmadd_ps(kHalfVec, pCosHalfVec, _mm512_mul_ps(kVec, pSinHalfVec));
+                    xft::store_avx512(&k[i], mask, kNew);
+                    xft::store_avx512(&k[i + half], mask, kHalfNew);
+                }
+            }
+        }
+    }
+}
+
+void qwenApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, const float *logn, int maxSupportedSeqLength, int totSeqLen, int qHeads, int kHeads,
+        const int *positionIds) {
+    qwenApplyRotaryPosEmbed<float>(query, key, emb_cos, emb_sin, qStride, kStride, dim, logn, maxSupportedSeqLength,
+            totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void qwenApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, const float *logn, int maxSupportedSeqLength, int totSeqLen, int qHeads, int kHeads,
+        const int *positionIds) {
+    qwenApplyRotaryPosEmbed<bfloat16_t>(query, key, emb_cos, emb_sin, qStride, kStride, dim, logn,
+            maxSupportedSeqLength, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void qwenApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, const float *logn, int maxSupportedSeqLength, int totSeqLen, int qHeads, int kHeads,
+        const int *positionIds) {
+    qwenApplyRotaryPosEmbed<float16_t>(query, key, emb_cos, emb_sin, qStride, kStride, dim, logn, maxSupportedSeqLength,
+            totSeqLen, qHeads, kHeads, positionIds);
+}
+
+#ifdef XFT_GPU
+// For LLaMA
+template <typename T>
+static inline void llamaApplyRotaryPosEmbeding(void *device, T *query, T *key, int qStride, int kStride,
+        const float *emb_cos, const float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    int dim = inv_freq_size * 2;
+    REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
+
+    const int batchSize = qkShape[0];
+    const int seqLen = qkShape[1];
+    const int qHeads = qkShape[2];
+    const int kHeads = qkShape[4];
+    const int head_num = std::max(qHeads, kHeads);
+    const int head_size = qkShape[3];
+    const int half_head_size = (head_size + 1) / 2;
+    using namespace sycl;
+
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(seqLen));
+    gpu_queue->submit([&](sycl::handler &cgh) {
+        sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
+        sycl::range<3> globalSize(batchSize * seqLen, head_num, half_head_size);
+        sycl::range<3> workGroupSize(1, 1, 1);
+
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {
+            size_t idx_bs_seq = item.get_global_id(0);
+            size_t idx_head_num = item.get_global_id(1);
+            size_t idx_half_head_dim = item.get_global_id(2);
+
+            size_t pos = position[idx_bs_seq % seqLen];
+            const sycl::half cos = (sycl::half)emb_cos[pos * half_head_size + idx_half_head_dim];
+            const sycl::half sin = (sycl::half)emb_sin[pos * half_head_size + idx_half_head_dim];
+
+            sycl::half *q = (sycl::half *)(query + idx_bs_seq * qStride + idx_head_num * head_size + idx_half_head_dim);
+            sycl::half *k = (sycl::half *)(key + idx_bs_seq * kStride + idx_head_num * head_size + idx_half_head_dim);
+
+            if (idx_head_num < qHeads) {
+                auto q1 = q[0];
+                q[0] = q1 * cos - q[half_head_size] * sin;
+                q[half_head_size] = q[half_head_size] * cos + q1 * sin;
+            }
+            if (idx_head_num < kHeads) {
+                auto k1 = k[0];
+                k[0] = k1 * cos - k[half_head_size] * sin;
+                k[half_head_size] = k[half_head_size] * cos + k1 * sin;
+            }
+        });
+    });
+    gpu_queue->wait();
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,
+        float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<float>(
+            device, query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, bfloat16_t *query, bfloat16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<bfloat16_t>(
+            device, query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void llamaApplyRotaryPosEmbeding(void *device, float16_t *query, float16_t *key, int qStride, int kStride,
+        float *emb_cos, float *emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    llamaApplyRotaryPosEmbeding<sycl::half>(device, (sycl::half *)query, (sycl::half *)key, qStride, kStride, emb_cos,
+            emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+// For LLaMA continous batching
+template <typename T>
+static inline void llamaApplyRotaryPosEmbed(void *device, T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    const int half = (dim + 1) / 2;
+    const int heads = std::max(qHeads, kHeads);
+    using namespace sycl;
+
+    sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+    sycl::buffer<int, 1> positionIdsBuf(positionIds, sycl::range<1>(totSeqLen));
+    gpu_queue->submit([&](sycl::handler &cgh) {
+        sycl::accessor position(positionIdsBuf, cgh, sycl::read_only);
+        sycl::range<3> globalSize(totSeqLen, heads, half);
+        sycl::range<3> workGroupSize(1, 1, 1);
+
+        cgh.parallel_for(sycl::nd_range(globalSize, workGroupSize), [=](sycl::nd_item<3> item) {
+            size_t idx_seq = item.get_global_id(0);
+            size_t idx_head = item.get_global_id(1);
+            size_t idx_half = item.get_global_id(2);
+            size_t pos = position[idx_seq];
+
+            sycl::half cos = (sycl::half)emb_cos[pos * half + idx_half];
+            sycl::half sin = (sycl::half)emb_sin[pos * half + idx_half];
+
+            sycl::half *q = (sycl::half *)(query + idx_seq * qStride + idx_head * dim + idx_half);
+            sycl::half *k = (sycl::half *)(key + idx_seq * kStride + idx_head * dim + idx_half);
+
+            if (idx_head < qHeads) {
+                auto q1 = q[0];
+                q[0] = q1 * cos - q[half] * sin;
+                q[half] = q[half] * cos + q1 * sin;
+            }
+            if (idx_head < kHeads) {
+                auto k1 = k[0];
+                k[0] = k1 * cos - k[half] * sin;
+                k[half] = k[half] * cos + k1 * sin;
+            }
+        });
+    });
+    gpu_queue->wait();
+}
+
+void llamaApplyRotaryPosEmbed(void *device, float *query, float *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<float>(
+            device, query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void llamaApplyRotaryPosEmbed(void *device, bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<bfloat16_t>(
+            device, query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void llamaApplyRotaryPosEmbed(void *device, float16_t *query, float16_t *key, float *emb_cos, float *emb_sin,
+        int qStride, int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    llamaApplyRotaryPosEmbed<sycl::half>(device, (sycl::half *)query, (sycl::half *)key, emb_cos, emb_sin, qStride,
+            kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+#endif
 
 } // namespace xft

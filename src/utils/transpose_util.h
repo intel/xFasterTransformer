@@ -14,7 +14,7 @@
 // ============================================================================
 #ifndef _TRANSPOSE_H
 #define _TRANSPOSE_H
-#include <assert.h>
+
 #include <immintrin.h>
 #include <stdio.h>
 

@@ -26,7 +26,7 @@ static bool compare(const float *result, const float *ground_truth, const int si
 }
 
 TEST(RotrayEmbedding, RotrayEmbeddingTest) {
-    int bs = 2, seq = 2, headnum = 2, dim = 2;
+    const int bs = 2, seq = 2, headnum = 2, dim = 2;
     int max_len = 10;
     int stride = bs * seq, size = bs * seq * headnum * dim;
 
@@ -57,7 +57,7 @@ TEST(RotrayEmbedding, RotrayEmbeddingTest) {
 }
 
 TEST(RotrayEmbedding, BF16Test) {
-    int bs = 2, seq = 2, headnum = 2, dim = 2;
+    const int bs = 2, seq = 2, headnum = 2, dim = 2;
     int max_len = 10;
     int stride = bs * seq, size = bs * seq * headnum * dim;
 

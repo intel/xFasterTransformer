@@ -12,17 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-
-from .llama_convert import LlamaConvert
-from .llama_convert import LlamaConvert as DeepseekConvert
-from .llama_convert import LlamaConvert as YiConvert
-from .llama_convert import LlamaConvert as GemmaConvert
-from .chatglm_convert import ChatGLMConvert
-from .chatglm2_convert import ChatGLM2Convert
-from .chatglm3_convert import ChatGLM3Convert
-from .opt_convert import OPTConvert
-from .baichuan_convert import BaichuanConvert
-from .baichuan2_convert import Baichuan2Convert
-from .qwen_convert import QwenConvert
-from .qwen2_convert import Qwen2Convert
-from .yarn_llama_convert import YaRNLlamaConvert
+import os
+def get_env():
+    libiomp_path = os.path.dirname(os.path.abspath(__file__)) + "/libiomp5.so"
+    env = f"LD_PRELOAD={libiomp_path}"
+    if os.getenv("LD_PRELOAD"):
+        env = f"{env}:{os.getenv('LD_PRELOAD')}"
+    return env

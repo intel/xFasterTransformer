@@ -16,12 +16,14 @@
 
 #include "allocator.h"
 #include "compile_util.h"
+#include "timeline.h"
 
 LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
     const std::string inv_freq_str = "inv_freq";
     const std::string emb_cos_str = "emb_cos";
     const std::string emb_sin_str = "emb_sin";
 
+    this->device = ctx->device;
     this->dim = ctx->attHeadSize;
     this->max_position_embeddings = ctx->maxPosEmbed;
     ctx->GetAttr("rope_theta", &this->base, 10000);
@@ -46,6 +48,20 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(DecoderContext *ctx) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
     }
+
+#ifdef XFT_GPU
+    if (this->device != nullptr) {
+        float *emb_cos_bak = emb_cos;
+        float *emb_sin_bak = emb_sin;
+        emb_cos = ctx->getBuffer<float>(emb_cos_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+        emb_sin = ctx->getBuffer<float>(emb_sin_str + "_gpu", max_position_embeddings * inv_freq_size, device);
+        if (!ctx->cached(inv_freq_str + "_gpu")) {
+            inv_freq = ctx->getBuffer<float>(inv_freq_str + "_gpu", inv_freq_size);
+            xft::memcopy(emb_cos, emb_cos_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
+            xft::memcopy(emb_sin, emb_sin_bak, max_position_embeddings * inv_freq_size * sizeof(float), device);
+        }
+    }
+#endif
 }
 
 // This API is deprecated, will delete after all rotary embed code refactor.
@@ -92,6 +108,18 @@ LlamaRotaryEmbedding::LlamaRotaryEmbedding(const int dim, const int max_position
 
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbeding(this->device,
+                query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     int dim = inv_freq_size * 2;
     REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
 
@@ -138,29 +166,92 @@ void LlamaRotaryEmbedding::forward(
 
 void LlamaRotaryEmbedding::forward(
         bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    xft::llamaApplyRotaryPosEmbeding(query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+    xft::llamaApplyRotaryPosEmbeding(this->device,
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
+    xft::llamaApplyRotaryPosEmbeding(
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(
         float16_t *query, float16_t *key, int qStride, int kStride, const int *qkShape, const int *positionIds) {
-    xft::llamaApplyRotaryPosEmbeding(query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+    xft::llamaApplyRotaryPosEmbeding(this->device,
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
+    xft::llamaApplyRotaryPosEmbeding(
+            query, key, qStride, kStride, emb_cos, emb_sin, inv_freq_size, qkShape, positionIds);
 }
 
 // For continuous batching
 void LlamaRotaryEmbedding::forward(
         float *query, float *key, int totSeqLen, int qStride, int kStride, int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+                query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(bfloat16_t *query, bfloat16_t *key, int totSeqLen, int qStride, int kStride,
         int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+                query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
 void LlamaRotaryEmbedding::forward(float16_t *query, float16_t *key, int totSeqLen, int qStride, int kStride,
         int qHeads, int kHeads, int *positionIds) {
+    TimeLine t("LlamaRotaryEmbedding.forward");
+
+    if (device != nullptr) {
+#ifdef XFT_GPU
+        xft::llamaApplyRotaryPosEmbed(this->device,
+            query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
+        return;
+
+#else
+        printf("[Warning] %s:%d: Defined GPU device, but did not use it.\n", __FILE__, __LINE__);
+#endif
+    }
+
     xft::llamaApplyRotaryPosEmbed(
             query, key, emb_cos, emb_sin, qStride, kStride, this->dim, totSeqLen, qHeads, kHeads, positionIds);
 }

@@ -73,9 +73,19 @@ void Model::initMaxSeqLen() {
 
 void Model::exitSlaves() {
     if (decoder->getRank() == 0) {
-        configuration.numBeams = 0;
-        Messenger &messenger = decoder->getMessenger();
-        messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+        if (searcher != nullptr) {
+            configuration.numBeams = 0;
+            Messenger &messenger = decoder->getMessenger();
+            messenger.broadcast((int *)&configuration, sizeof(SearcherConfig) / sizeof(int));
+            return;
+        } else {
+            // Only work for Model::set_input(std::vector<int32_t> &inputIds_, std::vector<int32_t> &seqLens_,
+            // std::vector<int> seqIDs, std::vector<int> &maxLen)
+            // TODO: Add support for other continuous batching interface
+            Messenger &messenger = decoder->getMessenger();
+            int dim[4] = {-1, -1, -1, -1};
+            messenger.broadcast(dim, 4);
+        }
     }
 }
 
@@ -564,26 +574,41 @@ std::vector<int> Model::set_input(
 }
 
 std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, std::vector<int32_t> &seqLens_,
-        std::vector<int> seqIDs, const std::vector<int> &maxLen) {
+        std::vector<int> seqIDs, std::vector<int> &maxLen) {
     // inputIds_: for prompt(1st token), contains all tokens of the batch
     //              for decode(next token), contains the next token of the batch, size equal to batchSize
     // seqLens_: used for prompt(1st token), the length of each sequence in the batch
-    // seqIDs_: used for decode(next token), the sequence IDs of the batch
-    // maxLen_: used for prompt(1st token), the max length of each sequence in the batch,
+    // seqIDs: used for decode(next token), the sequence IDs of the batch
+    // maxLen: used for prompt(1st token), the max length of each sequence in the batch,
     //          empty means the maxSeqLen, size = 1 means all seq use the same maxLen,
     //          size = batchSize means each seq has its own maxLen.
     Messenger &messenger = Messenger::getInstance();
     SequencePool &seqPool = SequencePool::getInstance();
     KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     workingGroup.clear();
-    batchSize = seqLens_.size();
 
     if (messenger.getSize() > 1) {
-        // TODO: Sync input and sampling param in distributed mode.
-        // [batch_size, total_length, seqID_size, maxLen]
-    }
-    if (seqIDs.empty()) {
+        // [total_length, batch_size, seqID_size, maxLen_size]
+        int dim[4] = {static_cast<int>(inputIds_.size()), static_cast<int>(seqLens_.size()),
+                static_cast<int>(seqIDs.size()), static_cast<int>(maxLen.size())};
+        messenger.broadcast(dim, 4);
 
+        if (messenger.getRank() != 0) {
+            if (dim[0] < 0) { exit(0); }
+            inputIds_.resize(dim[0]);
+            seqLens_.resize(dim[1]);
+            seqIDs.resize(dim[2]);
+            maxLen.resize(dim[3]);
+        }
+
+        messenger.broadcast(inputIds_.data(), dim[0]);
+        if (dim[1] != 0) { messenger.broadcast(seqLens_.data(), dim[1]); }
+        if (dim[2] != 0) { messenger.broadcast(seqIDs.data(), dim[2]); }
+        if (dim[3] != 0) { messenger.broadcast(maxLen.data(), dim[3]); }
+    }
+
+    if (seqIDs.empty()) {
+        batchSize = seqLens_.size();
         if (!(maxLen.size() == batchSize || maxLen.size() == 1 || maxLen.empty())) {
             printf("[ERROR] maxLen size and batch size mismatch.\n");
             exit(-1);
@@ -618,6 +643,7 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, std::vector<i
             printf("[ERROR] Input size and seqIDs size mismatch.\n");
             exit(-1);
         }
+        batchSize = seqIDs.size();
         for (int i = 0; i < batchSize; i++) {
             auto group = seqPool.get(seqIDs[i]);
             if (group == nullptr) {
@@ -638,7 +664,21 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, std::vector<i
 }
 
 bool Model::freeSeqs(std::vector<int> &seqIDs) {
-    // TODO: Sync
+    Messenger &messenger = Messenger::getInstance();
+    // Sync
+    if (messenger.getSize() > 1) {
+        // Get correct size
+        int size = seqIDs.size();
+        messenger.broadcast(&size, 1);
+
+        // Broadcast seqIDs
+        if (messenger.getRank() != 0) { seqIDs.resize(size); }
+        if (seqIDs.size() != 0) { messenger.broadcast(seqIDs.data(), size); }
+    }
+
+    // If size is empty(), return true
+    if (seqIDs.size() == 0) { return true; }
+
     KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     SequencePool &seqPool = SequencePool::getInstance();
     bool ret = true;
@@ -702,11 +742,14 @@ std::vector<int32_t> Model::finalize() {
     }
 }
 
-std::tuple<float *, int, int> Model::forward(bool logits_all) {
+std::tuple<float *, int, int> Model::forward(bool logitsAll) {
+    // This forward will sync and gather all logits.
+    // Return is a tuple of (logits, totalSeqSize, VocabSize)
     // TODO: Deprecate the following Path
+    // Old path reture is (logits, offset, size)
     if (searcher != nullptr) {
         int64_t dims[3] = {batchSize, 1, seqLen};
-        return decoder->forward(inputIds.data(), dims, 0, logits_all);
+        return decoder->forward(inputIds.data(), dims, 0, logitsAll);
     }
     // TODO: checking waiting queue
     if (workingGroup.empty()) {
@@ -725,7 +768,50 @@ std::tuple<float *, int, int> Model::forward(bool logits_all) {
         }
     }
 
-    return decoder->forward(workingSeqs, logits_all);
+    std::tuple<float *, int, int> result = decoder->forward(workingSeqs, logitsAll);
+
+    int totalSeqSize = workingSeqs.size();
+    if (logitsAll && workingSeqs[0]->getStep() == 0) {
+        totalSeqSize = 0;
+        for (auto x : workingSeqs) {
+            totalSeqSize += x->getInputSeqLen();
+        }
+    }
+
+    Messenger &messenger = decoder->getMessenger();
+    if (messenger.getSize() > 1) {
+        // Sync and gather all logits
+        float *outBuf = std::get<0>(result);
+
+        int workers = messenger.getSize();
+        int splitSize = vocabSize / workers;
+        std::vector<long unsigned int> recvCount(workers);
+        std::vector<long unsigned int> splitSizes(workers);
+        for (int i = 0; i < workers; i++) {
+            splitSizes[i] = splitSize;
+            if (i < vocabSize % workers) { splitSizes[i]++; }
+            recvCount[i] = splitSizes[i] * totalSeqSize;
+        }
+        // warning: vocabSize * totalSeqSize may exceed the range of int when seq and batch size is large.
+        logits.resize(vocabSize * totalSeqSize);
+        logitsRecvBuf.resize(vocabSize * totalSeqSize);
+        messenger.allgatherv(outBuf, recvCount[messenger.getRank()], logitsRecvBuf.data(), recvCount);
+
+        // Reorder
+        int offset = 0;
+        for (int i = 0; i < workers; ++i) {
+            for (int j = 0; j < totalSeqSize; ++j) {
+                memcpy(logits.data() + (offset + j * vocabSize),
+                        logitsRecvBuf.data() + offset * totalSeqSize + j * splitSizes[i],
+                        splitSizes[i] * sizeof(float));
+            }
+            offset += splitSizes[i];
+        }
+
+        return std::tuple<float *, int, int>(logits.data(), totalSeqSize, vocabSize);
+    } else {
+        return std::tuple<float *, int, int>(std::get<0>(result), totalSeqSize, vocabSize);
+    }
 }
 
 // We assume all gen kwargs in the batch are the same
@@ -745,7 +831,18 @@ std::vector<int32_t> Model::generate() {
         }
     } else {
         // TODO
-        std::tuple<float *, int, int> result = forward(false);
+        // Assume that all sequences in the group are all prompts or all decodes.
+        // Prepare input data for the decoder.
+        std::vector<SequenceMeta *> workingSeqs;
+        for (auto x : workingGroup) {
+            workingSeqs.push_back(x->get(0));
+            if (x->getGroupSize() > 1 && x->getStep() > 1) {
+                for (int32_t i = 1; i < x->getGroupSize(); i++) {
+                    workingSeqs.push_back(x->get(i));
+                }
+            }
+        }
+        std::tuple<float *, int, int> result = decoder->forward(workingSeqs, false);
         float *outBuf = std::get<0>(result);
         int sampleOffset = std::get<1>(result);
         int sampleSize = std::get<2>(result);

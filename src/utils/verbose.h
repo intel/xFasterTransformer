@@ -41,6 +41,7 @@ public:
         printf("xft_verbose,exec,cpu,api,%s,m%dn%dk%d,%.6lf\n", api_func, M, N, K, ms);
         fflush(stdout);
     }
+
     static void matrix(int rows, int cols, int stride, size_t totalmem) {
         printf("xft_verbose,matrix:rows%d_cols%d_stride%d,use:%zu bytes of memory\n", rows, cols, stride, totalmem);
         fflush(stdout);

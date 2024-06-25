@@ -86,7 +86,8 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
         const float scale) {
 
-    int rowOffsets[batchSize] = {0};
+    int rowOffsets[batchSize];
+    memset(rowOffsets, 0 , batchSize * sizeof(int));
     for (int i = 1; i < batchSize; i++) {
         rowOffsets[i] = rowOffsets[i - 1] + tokenSizes[i - 1];
     }
@@ -178,49 +179,49 @@ void testSelfAttention(
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest1) {
-    int batchSize = 1;
+    const int batchSize = 1;
     int tokenSizes[batchSize] = {80};
     testSelfAttention(128, 2, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest2) {
-    int batchSize = 1;
+    const int batchSize = 1;
     int tokenSizes[batchSize] = {100};
     testSelfAttention(128, 6, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest3) {
-    int batchSize = 2;
+    const int batchSize = 2;
     int tokenSizes[batchSize] = {100, 200};
     testSelfAttention(128, 8, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest4) {
-    int batchSize = 3;
+    const int batchSize = 3;
     int tokenSizes[batchSize] = {100, 101, 102};
     testSelfAttention(128, 8, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest5) {
-    int batchSize = 4;
+    const int batchSize = 4;
     int tokenSizes[batchSize] = {100, 55, 111, 203};
     testSelfAttention(128, 8, 2, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, FusedCopyTest1) {
-    int batchSize = 1;
+    const int batchSize = 1;
     int tokenSizes[batchSize] = {100};
     testSelfAttention(128, 2, 2, tokenSizes, batchSize, false);
 }
 
 TEST(AttentionKernelsTest, FusedCopyTest2) {
-    int batchSize = 2;
+    const int batchSize = 2;
     int tokenSizes[batchSize] = {100, 101};
     testSelfAttention(128, 4, 4, tokenSizes, batchSize, false);
 }
 
 TEST(AttentionKernelsTest, FusedCopyTest3) {
-    int batchSize = 4;
+    const int batchSize = 4;
     int tokenSizes[batchSize] = {100, 101, 102, 103};
     testSelfAttention(128, 4, 4, tokenSizes, batchSize, false);
 }

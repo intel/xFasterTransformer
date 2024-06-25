@@ -31,17 +31,24 @@ LayerNorm::LayerNorm() {
     normSize = 0;
 }
 
+LayerNorm::LayerNorm(DecoderContext *ctx) {
+    device = ctx->device;
+    gamma = nullptr;
+    beta = nullptr;
+    normSize = 0;
+}
+
 LayerNorm::~LayerNorm() {
-    if (gamma) { free(gamma); }
-    if (beta) { free(beta); }
+    if (gamma) { xft::dealloc(gamma, device); }
+    if (beta) { xft::dealloc(beta, device); }
 }
 
 void LayerNorm::setWeight(const float *gamma, const float *beta, int cols) {
     this->normSize = cols;
-    this->gamma = (float *)xft::alloc(cols * sizeof(float));
-    this->beta = (float *)xft::alloc(cols * sizeof(float));
-    memcpy(this->gamma, gamma, cols * sizeof(float));
-    memcpy(this->beta, beta, cols * sizeof(float));
+    this->gamma = (float *)xft::alloc(cols * sizeof(float), device);
+    this->beta = (float *)xft::alloc(cols * sizeof(float), device);
+    xft::memcopy(this->gamma, gamma, cols * sizeof(float), device);
+    xft::memcopy(this->beta, beta, cols * sizeof(float), device);
 }
 
 void LayerNorm::setWeight(const std::string &gammaPath, const std::string &betaPath, int cols) {
@@ -52,11 +59,21 @@ void LayerNorm::setWeight(const std::string &gammaPath, const std::string &betaP
 
 // input and output are in shape of (rows, normSize)
 // TODO: column-wise parallel
+#ifdef XFT_GPU
+void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
+    TimeLine t("LayerNorm.forward");
+    const float *pgamma = gamma;
+    const float *pbeta = beta;
+    // TODO: Add LayerNorm Impl
+    printf("%s:%d: Could not forward in LayerNorm with undefined data type.\n", __FILE__, __LINE__);
+    exit(-1);
+}
+#else
 void LayerNorm::forward(const float *input, float *output, int rows, int iStride, int oStride, float epsilon) {
     TimeLine t("LayerNorm.forward");
     const float *pgamma = gamma;
     const float *pbeta = beta;
     invokeLayerNorm(output, input, pgamma, pbeta, rows, normSize, iStride, oStride);
 }
-
+#endif
 } // namespace xft

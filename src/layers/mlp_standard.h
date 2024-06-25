@@ -71,7 +71,7 @@ public:
         }
     }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
@@ -99,9 +99,9 @@ public:
 
         auto &imInput = doLnBefore ? (INPUT_AS_RESID ? resultBuffer1 : resultBuffer2) : resultBuffer2;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("layer norm after attention:\n");
-        dbg.dumpMatrix(imInput);
+        dbg.dumpMatrix(imInput, false, ctx->device);
 #endif
 
         // intermediate
@@ -110,9 +110,9 @@ public:
             case DecoderContext::GELU: intermediate_gelu(ctx, imInput, imBuffer); break;
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("intermediate:\n");
-        dbg.dumpMatrix(imBuffer);
+        dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
 
         // dense in output
@@ -149,17 +149,17 @@ public:
             }
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("output:\n");
-        dbg.dumpMatrix(resultBuffer1);
+        dbg.dumpMatrix(resultBuffer1, false, ctx->device);
 #endif
 
         // layerNorm
         if (!doLnBefore) { DecoderUtil::layerNorm(resultBuffer1, resultBuffer1, gamma2, beta2); }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("final output:\n");
-        dbg.dumpMatrix(resultBuffer1);
+        dbg.dumpMatrix(resultBuffer1, false, ctx->device);
 #endif
     }
 
@@ -239,7 +239,7 @@ protected:
     // layerNorm param
     xft::Vector<float> gamma2, beta2;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

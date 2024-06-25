@@ -15,8 +15,14 @@
 #pragma once
 #include <cstdio>
 #include <cstdlib>
-#include <sys/mman.h>
+#include <cstring>
 #include "environment.h"
+#include <sys/mman.h>
+
+#ifdef XFT_GPU
+#include <CL/sycl.hpp>
+#define NDEBUG
+#endif
 
 namespace xft {
 
@@ -26,10 +32,22 @@ static inline bool is_thp_alloc(size_t nbytes) {
     return (Env::getInstance().getTHPEnabled() && (nbytes >= g_thp_threshold));
 }
 
-static inline void *alloc(size_t nbytes, size_t alignment = 64) {
+static inline void *alloc(size_t nbytes, void *device = nullptr, size_t alignment = 64) {
     if (nbytes == 0) { return nullptr; }
 
-    void *data;
+    void *data = nullptr;
+
+#ifdef XFT_GPU
+    if (device != nullptr) {
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        data = sycl::malloc_device<char>(nbytes, *gpu_queue);
+        if (data == nullptr) {
+            printf("Unable to allocate buffer with size of %zu in GPU.\n", nbytes);
+            exit(-1);
+        }
+        return data;
+    }
+#endif
 
     int err = posix_memalign(&data, alignment, nbytes);
     if (err != 0) {
@@ -47,4 +65,40 @@ static inline void *alloc(size_t nbytes, size_t alignment = 64) {
 
     return data;
 }
+
+static inline void dealloc(void *data, void *device = nullptr) {
+#ifdef XFT_GPU
+    if (device != nullptr) {
+        sycl::free(data, *static_cast<sycl::queue *>(device));
+        return;
+    }
+#endif
+
+    free(data);
+}
+
+static inline void memcopy(void *dst, const void *src, size_t size, void *device = nullptr) {
+#ifdef XFT_GPU
+    if (device != nullptr) {
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        gpu_queue->memcpy(dst, src, size).wait();
+        return;
+    }
+#endif
+
+    memcpy(dst, src, size);
+}
+
+static inline void memsetv(void *dst, int ch, size_t size, void *device = nullptr) {
+#ifdef XFT_GPU
+    if (device != nullptr) {
+        sycl::queue *gpu_queue = static_cast<sycl::queue *>(device);
+        gpu_queue->memset(dst, ch, size).wait();
+        return;
+    }
+#endif
+
+    memset(dst, ch, size);
+}
+
 } // namespace xft

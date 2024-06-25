@@ -13,6 +13,7 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
+#include <fstream>
 #include <string>
 #include "decoder_layer.h"
 #include "dtype.h"
@@ -121,7 +122,7 @@ public:
 
         // Copy final result to the output buffer
         if (inputBuf != outputBuf && layersOnDuty % 2 == 0) {
-            std::memcpy(outputBuf, inputBuf, totInSeqLen * ctx->hiddenSize * sizeof(T));
+            xft::memcopy(outputBuf, inputBuf, totInSeqLen * ctx->hiddenSize * sizeof(T), ctx->device);
         }
     }
 
@@ -147,7 +148,7 @@ private:
         int kvSize = attHeadSize * kvHeadNum;
         int qkvSize = qSize + 2 * kvSize;
 
-#define ALLOC(size, alignment) xft::alloc((size), (alignment))
+#define ALLOC(size, alignment) xft::alloc((size), nullptr, (alignment))
         OriWeiT *qkvWeight = (OriWeiT *)ALLOC(hiddenSize * qkvSize * sizeof(OriWeiT), 64);
         float *qkvScales = nullptr;
         float *qkvZeros = nullptr;

@@ -14,7 +14,7 @@
 // ============================================================================
 #include <cmath>
 
-#include "opt_decoder.h"
+#include "kvcache_tensor.h"
 #include "gtest/gtest.h"
 
 template <typename T = float>

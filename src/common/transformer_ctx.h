@@ -112,7 +112,8 @@ struct DecoderContext {
     xft::Matrix<float> qkvMatMul; // query, key, value
     xft::Matrix<float> imOut; // intermediate output
 
-    MMHelper *mmHelper;
+    MMHelper *mmHelper = nullptr;
+    void *device = nullptr;
 
     std::string configPath;
     INIReader configReader;
@@ -130,7 +131,7 @@ private:
 public:
     DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
             float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
+            int _splitIdx, int _splits, MMHelper *mmHelper, void *device = nullptr, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
             bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
@@ -170,9 +171,12 @@ public:
             }
         }
 
+        this->mmHelper = mmHelper;
+        this->device = device;
+
         this->rawBufSize = 4 * 32 * intermediateSize + 4 * attHeadNum * 32 * 32; // assume bs=4, seq=32
-        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
-        memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
+        this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize, this->device);
+        xft::memsetv(this->rawBuffer, 0, sizeof(float) * rawBufSize, this->device);
 
         if (act == "relu") {
             this->actType = RELU;
@@ -240,8 +244,12 @@ public:
     bool cached(const std::string &name) { return SimpleMemPool::instance().cached(name); }
 
     template <typename T>
-    T *getBuffer(const std::string &name, size_t size, size_t alignment = 64) {
-        return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, alignment);
+    T *getBuffer(const std::string &name, size_t size, void *device = nullptr, size_t alignment = 64) {
+        return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, device, alignment);
+    }
+
+    void freeBuffer(const std::string &name) {
+        SimpleMemPool::instance().freeBuffer(name);
     }
 
     void dump() {
@@ -286,10 +294,10 @@ public:
         uint64_t total = size1 + size2 + size3;
         if (total > this->rawBufSize) {
             this->rawBufSize = total;
-            free(this->rawBuffer);
+            if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
 
-            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize);
-            memset(this->rawBuffer, 0, sizeof(float) * rawBufSize);
+            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize, this->device);
+            xft::memsetv(this->rawBuffer, 0, sizeof(float) * rawBufSize, this->device);
         }
 
         // Assign the buffer
@@ -312,5 +320,9 @@ public:
         return rawBufSize - size1 - size2;
     }
 
-    ~DecoderContext() { free(this->rawBuffer); }
+    ~DecoderContext() {
+#ifndef XFT_GPU
+        if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
+#endif
+    }
 };

@@ -43,15 +43,15 @@ public:
             OriWeiT *upW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             if (trans) {
                 int blockSize = colSplit * hiddenSize;
-                memcpy(gateW, gate_upW + ctx->splitIdx * blockSize, blockSize * sizeof(OriWeiT));
-                memcpy(upW, gate_upW + intermediateSize * hiddenSize + ctx->splitIdx * blockSize,
+                memcpy(gateW, gate_upW + range.first * hiddenSize, blockSize * sizeof(OriWeiT));
+                memcpy(upW, gate_upW + intermediateSize * hiddenSize + range.first * hiddenSize,
                         blockSize * sizeof(OriWeiT));
             } else {
                 const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
+                    memcpy(gateW + i * colSplit, weightPTR + range.first, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
-                    memcpy(upW + i * colSplit, weightPTR + ctx->splitIdx * colSplit, colSplit * sizeof(OriWeiT));
+                    memcpy(upW + i * colSplit, weightPTR + range.first, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
             }
@@ -76,10 +76,9 @@ public:
                 OriWeiT *gateUpW = (OriWeiT *)malloc(hiddenSize * colSplitStride * sizeof(OriWeiT));
                 const OriWeiT *weightPTR = gate_upW;
                 for (int i = 0; i < hiddenSize; i++) {
-                    memcpy(gateUpW + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
-                            colSplit * sizeof(OriWeiT));
+                    memcpy(gateUpW + i * colSplitStride, weightPTR + range.first, colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
-                    memcpy(gateUpW + colSplit + i * colSplitStride, weightPTR + ctx->splitIdx * colSplit,
+                    memcpy(gateUpW + colSplit + i * colSplitStride, weightPTR + range.first,
                             colSplit * sizeof(OriWeiT));
                     weightPTR += intermediateSize;
                 }
@@ -95,14 +94,14 @@ public:
         ctx->mmHelper->convertWeight(ctx, trans, intermediateSize, hiddenSize, downW, nullptr, nullptr, false,
                 convertedDownWeight, this->downWeightScale, this->downWeightZero, this->downWeightSum);
         ctx->mmHelper->packWeight(trans, convertedDownWeight, this->downWeight);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         this->dbg.debugPrint("convertedGateWeight [%d, %d](%d):\n", convertedGateWeight.Rows(),
                 convertedGateWeight.Cols(), convertedGateWeight.Stride());
         this->dbg.dumpMatrix(convertedGateWeight);
 
         this->dbg.debugPrint("packed convertedGateWeight [%d, %d](%d):\n", this->gateWeight.Rows(),
                 this->gateWeight.Cols(), this->gateWeight.Stride());
-        this->dbg.dumpMatrix(this->gateWeight);
+        this->dbg.dumpMatrix(this->gateWeight, false, ctx->device);
 
         this->dbg.debugPrint("convertedUpWeight [%d, %d](%d):\n", convertedUpWeight.Rows(), convertedUpWeight.Cols(),
                 convertedUpWeight.Stride());
@@ -110,7 +109,7 @@ public:
 
         this->dbg.debugPrint("packed convertedUpWeight [%d, %d](%d):\n", this->upWeight.Rows(), this->upWeight.Cols(),
                 this->upWeight.Stride());
-        this->dbg.dumpMatrix(this->upWeight);
+        this->dbg.dumpMatrix(this->upWeight, false, ctx->device);
 
         this->dbg.debugPrint("convertedDownWeight [%d, %d](%d):\n", convertedDownWeight.Rows(),
                 convertedDownWeight.Cols(), convertedDownWeight.Stride());
@@ -118,12 +117,13 @@ public:
 
         this->dbg.debugPrint("packed convertedDownWeight [%d, %d](%d):\n", this->downWeight.Rows(),
                 this->downWeight.Cols(), this->downWeight.Stride());
-        this->dbg.dumpMatrix(this->downWeight);
+        this->dbg.dumpMatrix(this->downWeight, false, ctx->device);
 #endif
         // norm.setWeight(normW, NULL, hiddenSize);
-        if (normW) {
-            this->normWeight.Resize(hiddenSize);
-            memcpy(this->normWeight.Data(), normW, sizeof(float) * hiddenSize);
-        }
+
+        if (normW) { norm.setWeight(normW, nullptr, hiddenSize); }
     }
+
+private:
+    using LlamaMLP<WeiT, InT, ImT, OutT>::norm;
 };

@@ -49,7 +49,7 @@ class AutoModel:
 
     def set_input_cb(
         self,
-        input_ids: Optional[Union[List[int], List[List[int]], torch.Tensor]],
+        input_ids: Optional[Union[List[int], List[List[int]], torch.Tensor]] = None,
         seq_ids: Optional[Union[List[int], torch.Tensor]] = None,
         max_length: Optional[Union[int, List[int], torch.Tensor]] = None,
     ):
@@ -81,7 +81,10 @@ class AutoModel:
     def forward_cb(self):
         return self.model.forward_cb()
 
-    def free_seqs(self, seq_ids):
+    def free_seqs(self, seq_ids: Optional[Union[List[int], torch.Tensor]] = None):
+        if isinstance(seq_ids, list):
+            seq_ids = torch.tensor(seq_ids, dtype=torch.int64)
+
         return self.model.free_seqs(seq_ids)
 
     @classmethod

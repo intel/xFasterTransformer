@@ -87,14 +87,17 @@ void test_AttentionLLaMA(void) {
     int nextTokenNum = 1;
 
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + kvSize, oProj);
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + qSize + kvSize,
+            oProj);
     pastSeqLen += inputSeqLen;
     currentSeqLen = nextTokenNum;
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + kvSize, oProj);
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + qSize + kvSize,
+            oProj);
     pastSeqLen += nextTokenNum;
     compareAttentionLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum,
-            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + kvSize, oProj);
+            kvHeadNum, maxPositions, maxPosEmbed, hiddenSize, qkvProj, qkvProj + qSize, qkvProj + qSize + kvSize,
+            oProj);
 
     free(qkvProj);
     free(oProj);

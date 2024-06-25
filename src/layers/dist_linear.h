@@ -59,14 +59,25 @@ public:
 
         int K = inputSize;
         int N = this->splitSize;
-        weight.Resize(K, N);
+
         scaleWeight.Resize(N);
         zeroWeight.Resize(N);
 
         xft::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
                 true, K, N, w + splitOffset * K, nullptr, nullptr, quantizedWeight, scaleWeight, zeroWeight, sumWeight);
+#ifdef XFT_GPU
+        xft::Matrix<WeiT> tWeight;
+        tWeight.Resize(K, N);
+        ctx->mmHelper->transposeWeight(true, quantizedWeight, tWeight);
+
+        WeiT *input_data = (WeiT *)xft::alloc(K * N * sizeof(WeiT), ctx->device);
+        weight.Assign(input_data, K, N, N);
+        xft::memcopy(weight.Data(), tWeight.Data(), tWeight.Rows() * tWeight.Cols() * sizeof(WeiT), ctx->device);
+#else
+        weight.Resize(K, N);
         ctx->mmHelper->packWeight(true, quantizedWeight, weight);
+#endif
 
         // Copy Bias
         if (b) {

@@ -12,27 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
+from .baichuan_convert import BaichuanConvert
 
-cmake_minimum_required(VERSION 3.18)
+from torch import nn
 
-# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24.0")
-    cmake_policy(SET CMP0135 NEW)
-endif()
+class Baichuan2Convert(BaichuanConvert):
+    """
+    Convert huggingface Baichuan2 model. Use https://huggingface.co/baichuan-inc
+    """
 
-project(dependency NONE)
+    def __init__(self):
+        super().__init__()
 
-include(ExternalProject)
-
-# cmake-format: off
-ExternalProject_Add(xdnn_lib
-  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/xdnn_v1.5.1.tar.gz
-  URL_HASH          MD5=9ac7a7031b542eca2d9ec80d4c0f8be2
-  TIMEOUT           60
-  SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/xdnn
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND     ""
-  INSTALL_COMMAND   ""
-  TEST_COMMAND      ""
-)
-# cmake-format: on
+    def _head_process(self, param):
+        # NormHead
+        return nn.functional.normalize(param)

@@ -14,16 +14,12 @@
 // ============================================================================
 #pragma once
 
-#ifdef UNDEBUG
-#undef NDEBUG
-#endif
-
 #include "bert_util.h"
 #include "copy_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
 #include "matmul_helper.h"
-#include "rmsnorm_kernels.h"
+#include "rms_norm.h"
 #include "simple_mem_pool.h"
 #include "singleton.h"
 #include "timeline.h"
@@ -38,12 +34,11 @@
 // def forward(self, x):
 //         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 // But please also be noted: we extended the MLP to include layer norm
-template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float>
-class LlamaMLP : public SingletonBase<LlamaMLP<WeiT>> {
+template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float,
+        typename NORM_CLS = xft::RmsNorm>
+class LlamaMLP {
 public:
-    LlamaMLP() {}
-
-    LlamaMLP(DecoderContext *ctx) {}
+    LlamaMLP(DecoderContext *ctx) : norm(ctx) {}
 
     // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
@@ -61,7 +56,6 @@ public:
         xft::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
 
         auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
-        downWeight.Resize(it.second - it.first, hiddenSize);
 
         ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
                 gateWeightScale, gateWeightZero, gateWeightSum);
@@ -80,15 +74,41 @@ public:
                     catWeightsSum);
             quantizedGateWeight.Release();
             quantizedUpWeight.Release();
+
+#ifdef XFT_GPU
+            xft::Matrix<WeiT> catWeightsT;
+            int catWeiRows = quantizedCatWeights.Rows();
+            int catWeiCols = quantizedCatWeights.Cols();
+            catWeightsT.Resize(catWeiRows, catWeiCols);
+            ctx->mmHelper->transposeWeight(trans, quantizedCatWeights, catWeightsT);
+
+            WeiT *catWeiData = (WeiT *)xft::alloc(catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
+            catWeights.Assign(catWeiData, catWeiRows, catWeiCols, catWeiCols);
+            xft::memcopy(catWeights.Data(), catWeightsT.Data(), catWeiRows * catWeiCols * sizeof(WeiT), ctx->device);
+#else
             catWeights.Resize(quantizedCatWeights.Rows(), quantizedCatWeights.Cols());
             ctx->mmHelper->packWeight(trans, quantizedCatWeights, catWeights);
+#endif
         }
         // Horizontally split the down weight
         ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
                 downWeightScale, downWeightZero, downWeightSum);
-        ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+#ifdef XFT_GPU
+        xft::Matrix<WeiT> downWeightT;
+        int downWeiRows = it.second - it.first;
+        int downWeiCols = hiddenSize;
+        downWeightT.Resize(downWeiRows, downWeiCols);
+        ctx->mmHelper->transposeWeight(trans, quantizedDownWeight, downWeightT);
 
-#ifdef DEBUG
+        WeiT *downWeiData = (WeiT *)xft::alloc(downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
+        downWeight.Assign(downWeiData, downWeiRows, downWeiCols, downWeiCols);
+        xft::memcopy(downWeight.Data(), downWeightT.Data(), downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
+#else
+        downWeight.Resize(it.second - it.first, hiddenSize);
+        ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
+#endif
+
+#ifdef XFT_DEBUG
         dbg.debugPrint("quantizedGateWeight:\n");
         dbg.dumpMatrix(quantizedGateWeight);
 
@@ -100,13 +120,10 @@ public:
 #endif
 
         // LlamaRMSNorm
-        if (normW) {
-            normWeight.Resize(hiddenSize);
-            memcpy(normWeight.Data(), normW, sizeof(float) * hiddenSize);
-        }
+        if (normW) { norm.setWeight(normW, nullptr, hiddenSize); }
     }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
@@ -126,15 +143,14 @@ public:
                 (ImT *)ctx->normBuf.Data(), ctx->normBuf.Rows(), ctx->normBuf.Cols(), ctx->normBuf.Stride());
 
         if (doLnBefore == true) {
-            xft::rmsNorm(normBuffer.Data(), inBuffer.Data(), normWeight.Data(), M, hiddenSize, inBuffer.Stride(),
-                    normBuffer.Stride(), 1e-6);
+            norm.forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint("LayerNorm before MLP:\n");
-        dbg.dumpMatrix(normBuffer);
+        dbg.dumpMatrix(normBuffer, false, ctx->device);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-        dbg.dumpMatrix(inBuffer);
+        dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
 
         if (!enableCATMLP()) {
@@ -142,21 +158,21 @@ public:
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> gateWeight: [%d, %d] (%d)\n", gateWeight.Rows(), gateWeight.Cols(), gateWeight.Stride());
-            dbg.dumpMatrix(gateWeight);
+            dbg.dumpMatrix(gateWeight, false, ctx->device);
             dbg.debugPrint(">>> gate output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
 
             upProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(">>> upWeight: [%d, %d] (%d)\n", upWeight.Rows(), upWeight.Cols(), upWeight.Stride());
-            dbg.dumpMatrix(upWeight);
+            dbg.dumpMatrix(upWeight, false, ctx->device);
             dbg.debugPrint(">>> up output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
             downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
 
@@ -168,34 +184,34 @@ public:
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
             const int cols = N / 2;
             auto bufSize = sizeof(ImT) * M * cols;
-            ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize);
+            ImT *t = (ImT *)SimpleMemPool::instance().getBuffer("mlp_silu", bufSize, ctx->device);
             xft::Matrix<ImT> siluBuf(t, M, cols, cols);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint(
                     ">>> enableCATMLP imBuffer: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
-            dbg.dumpMatrix(imBuffer);
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-            dbg.dumpMatrix(inBuffer);
+            dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
             catGateUpProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer, siluBuf);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
             dbg.debugPrint("catWeights:\n");
-            dbg.dumpMatrix(catWeights);
+            dbg.dumpMatrix(catWeights, false, ctx->device);
             dbg.debugPrint("gateUp output:\n");
-            dbg.dumpMatrix(siluBuf);
+            dbg.dumpMatrix(siluBuf, false, ctx->device);
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-            dbg.dumpMatrix(inBuffer);
+            dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
             downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
         }
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         dbg.debugPrint(">>> downWeight: [%d, %d] (%d)\n", downWeight.Rows(), downWeight.Cols(), downWeight.Stride());
-        dbg.dumpMatrix(downWeight);
+        dbg.dumpMatrix(downWeight, false, ctx->device);
         dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
-        dbg.dumpMatrix(inBuffer);
+        dbg.dumpMatrix(inBuffer, false, ctx->device);
         dbg.debugPrint(">>> final output: [%d, %d] (%d)\n", outBuffer.Rows(), outBuffer.Cols(), outBuffer.Stride());
-        dbg.dumpMatrix(outBuffer);
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
 #endif
     }
 
@@ -298,11 +314,11 @@ private:
 
         // Compute silu on the left half and then add it with the right half
         if (ctx->actType == DecoderContext::SILU) {
-            DecoderUtil::siluSum(output, siluBuf);
+            DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
-            DecoderUtil::siluSum(output, siluBuf);
+            DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
-            DecoderUtil::geluSum(output, siluBuf);
+            DecoderUtil::geluSum(output, siluBuf,  ctx->device);
         } else {
             printf("ERROR: unsupported activation in MLP.\n");
             exit(-1);
@@ -364,9 +380,9 @@ protected:
     xft::Vector<float> downWeightSum; // For int8_t weight
 
     // LlamaRMSNorm param
-    xft::Vector<float> normWeight;
+    NORM_CLS norm;
 
-#ifdef DEBUG
+#ifdef XFT_DEBUG
     Debugger dbg;
 #endif
 };

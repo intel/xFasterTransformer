@@ -23,36 +23,58 @@
 #include "sgemm_f32f16bf16.h"
 #include "sgemm_f32f16f32.h"
 
-// Single thread small gemm
+// Single thread small gemm for Q*K GEMM
+// FP32 KV Cache versions
 void small_gemm_transb(const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+
+// FP16 KV Cache versions
 void small_gemm_transb(const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(
         const bfloat16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(
+        const float16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+
+// BF16 KV Cache versions
+void small_gemm_transb(
         const bfloat16_t *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc);
+
+// INT8 KV Cache versions
 void small_gemm_transb(
         const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb, int ldc);
 void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
         int lda, int ldb, int ldc);
+void small_gemm_transb(const float16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace xft {
-// Single thread small gemm
+
+// Single thread small gemm for Score*V GEMM
+// FP32 KV Cache versions
 void small_gemm(
         const float *A, const float *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc = false);
+
+// FP16 KV Cache versions
 void small_gemm(
         const float *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc, bool acc = false);
-void small_gemm(const float *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc,
-        bool acc = false);
 void small_gemm(const float *A, const float16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
+void small_gemm(const float *A, const float16_t *B, float16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
+
+// BF16 KV Cache versions
+void small_gemm(const float *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc,
         bool acc = false);
 void small_gemm(const float *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
         bool acc = false);
 
-// INT8 versions
+// INT8 KV Cache versions
 void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb,
         int ldc, bool acc = false);
 void small_gemm(const float *A, const int8_t *B, const float *bScale, bfloat16_t *C, int M, int N, int K, int lda,
         int ldb, int ldc, bool acc = false);
+void small_gemm(const float *A, const int8_t *B, const float *bScale, float16_t *C, int M, int N, int K, int lda,
+        int ldb, int ldc, bool acc = false);
+
 } // namespace xft

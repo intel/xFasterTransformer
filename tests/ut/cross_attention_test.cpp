@@ -97,7 +97,7 @@ static void crossAttentionRef(bfloat16_t *output, const bfloat16_t *query, const
 
         // Score = Softmax(Q * Kᵀ)
         softmaxRef(pscore, presentSeqLen);
-#ifdef DEBUG
+#ifdef XFT_DEBUG
         printf("pscore: ");
         for (int i = 0; i < presentSeqLen; ++i) {
             printf("%.6f ", pscore[i]);

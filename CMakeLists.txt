@@ -20,7 +20,7 @@ project(xfastertransformer LANGUAGES C CXX)
 option(WITH_GPU "Build with GPU" OFF)
 if(WITH_GPU)
     message(STATUS "Notice: Building with GPU.")
-    add_definitions(-DGPU=true)
+    add_definitions(-DXFT_GPU=true)
     # Get compiler version
     execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
                     OUTPUT_VARIABLE ICPX_VERSION
@@ -33,10 +33,6 @@ else()
                     OUTPUT_VARIABLE GCC_VERSION
                     OUTPUT_STRIP_TRAILING_WHITESPACE)
     message(STATUS "Notice: GCC version: ${GCC_VERSION}")
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -73,10 +69,16 @@ if(GCC_VERSION VERSION_GREATER_EQUAL "10.1")
     endif()
 endif()
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
     message(STATUS "Notice: Using Debug mode.")
     set(CMAKE_C_FLAGS "-O0 -g")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g")
+    add_definitions(-DXFT_DEBUG=true)
+    add_definitions(-DSTEP_BY_STEP_ATTN=true)
 else()
     message(STATUS "Notice: Using Release mode.")
     set(CMAKE_C_FLAGS "-O2")
@@ -185,14 +187,14 @@ else()
     add_definitions(-DAVX512_FP16_WEIGHT_ONLY_INT4=true)
     add_definitions(-DAVX512_FP32_WEIGHT_ONLY_NF4=true)
     # add_definitions(-DAVX512_FP16_WEIGHT_ONLY_NF4=true)
+    # Enable AMX_FP16 optimization 
+    # add_definitions(-DAMX_FP16_WEIGHT_ONLY_FP16=true)
 endif()
 
-# add_definitions(-DDEBUG=true)
-# add_definitions(-DSTEP_BY_STEP_ATTN=true)
 add_definitions(-DUSE_SHM=true)
 option(XFT_BUILD_TESTS "Build xfastertransformer unit tests" OFF)
 if(XFT_BUILD_TESTS)
-add_definitions(-DUNDEBUG=true)
+    add_definitions(-DUNDEBUG=true)
 endif()
 
 # timeline event

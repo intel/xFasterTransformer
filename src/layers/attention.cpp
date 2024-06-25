@@ -77,15 +77,16 @@ void AttentionLLaMAImpl(DataType dt, int batchSize, int inputSeqLen, int attHead
 
     using ATTENTION = Attention<DataT, LlamaRotaryEmbedding, RmsNorm>;
     static std::unordered_map<std::string, ATTENTION *> llama_attention_hub;
+    static MMHelper *mmHelper;
     static DecoderContext *ctx;
     static KVCacheManager<float16_t> *kvCacheMgr;
 
     if (ctx == nullptr || (ctx != nullptr && (ctx->hiddenSize != hiddenSize || ctx->attHeadSize != attHeadDim))) {
         if (ctx != nullptr) delete ctx;
         printf(">> create context: %d %d\n", hiddenSize, attHeadDim);
+        mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
         ctx = new DecoderContext(1, hiddenSize, attHeadDim, attHeadNum, kvHeadNum, 1, "silu", 1e-6, 0, 0, maxPositions,
-                maxPosEmbed, -1, 0, 1);
-        ctx->mmHelper = new MMHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
+                maxPosEmbed, -1, 0, 1, mmHelper);
         if (kvCacheMgr != nullptr) delete kvCacheMgr;
         kvCacheMgr = new KVCacheManager<float16_t>(1);
     }

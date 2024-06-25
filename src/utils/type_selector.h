@@ -30,3 +30,21 @@ struct TypeSelector<bfloat16_t> {
     using ImType = bfloat16_t;
     using OutType = bfloat16_t;
 };
+
+#ifdef XFT_GPU  
+template <>
+struct TypeSelector<float16_t> {
+    using InType = float16_t;
+    using ImType = float16_t;
+    using OutType = float16_t;
+};
+#endif
+
+#ifdef AMX_FP16_WEIGHT_ONLY_FP16
+template <>
+struct TypeSelector<float16_t> {
+    using InType = float16_t;
+    using ImType = float16_t;
+    using OutType = float16_t;
+};
+#endif

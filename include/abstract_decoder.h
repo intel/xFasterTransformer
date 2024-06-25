@@ -36,9 +36,9 @@ public:
     //    |               |             |             |||||||||||||||             |          |
     //    v               |_____________|_____________|||||||||||||||_____________|__________|
     //                    |<----------------------- vocabSize  ----------------------------->|
-    virtual std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logits_all = false) = 0;
+    virtual std::tuple<float *, int, int> forward(int *ids, int64_t *dims, int step, bool logitsAll = false) = 0;
 
-    virtual std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seq, bool logits_all = false) = 0;
+    virtual std::tuple<float *, int, int> forward(std::vector<xft::SequenceMeta *> &seq, bool logitsAll = false) = 0;
 
     // Reorder cached keys and values, size=batchSize*beamSize
     virtual void reorderCache(int *idx, int size) = 0;

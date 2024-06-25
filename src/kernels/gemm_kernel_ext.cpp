@@ -456,6 +456,11 @@ void small_gemm_transb(
 }
 
 void small_gemm_transb(
+        const float16_t *A, const float16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
+    small_gemm_transb<float16_t, float16_t>(A, B, C, M, N, K, lda, ldb, ldc);
+}
+
+void small_gemm_transb(
         const bfloat16_t *A, const bfloat16_t *B, float *C, int M, int N, int K, int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, bfloat16_t>(A, B, C, M, N, K, lda, ldb, ldc);
 }
@@ -484,5 +489,11 @@ void small_gemm_transb(const float *A, const int8_t *B, const float *bScale, flo
 void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
         int lda, int ldb, int ldc) {
     small_gemm_transb<bfloat16_t, int8_t>(A, B, C, M, N, K, lda, ldb, ldc);
+    if (bScale) { apply_scale(C, bScale, M, N, ldc); }
+}
+
+void small_gemm_transb(const float16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
+        int lda, int ldb, int ldc) {
+    small_gemm_transb<float16_t, int8_t>(A, B, C, M, N, K, lda, ldb, ldc);
     if (bScale) { apply_scale(C, bScale, M, N, ldc); }
 }

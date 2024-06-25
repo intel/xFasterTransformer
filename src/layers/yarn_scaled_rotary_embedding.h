@@ -65,6 +65,4 @@ private:
     int maxSeqLenCached = -1;
     int invFreqSize = -1;
     float *invFreq;
-    float *embCos = nullptr;
-    float *embSin = nullptr;
 };
