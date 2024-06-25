@@ -31,7 +31,7 @@ struct TypeSelector<bfloat16_t> {
     using OutType = bfloat16_t;
 };
 
-#ifdef XFT_GPU  
+#ifdef XFT_GPU
 template <>
 struct TypeSelector<float16_t> {
     using InType = float16_t;
@@ -40,7 +40,7 @@ struct TypeSelector<float16_t> {
 };
 #endif
 
-#ifdef AMX_FP16_WEIGHT_ONLY_FP16
+#ifdef AVX512_FP16_WEIGHT_ONLY_FP16
 template <>
 struct TypeSelector<float16_t> {
     using InType = float16_t;
@@ -48,3 +48,35 @@ struct TypeSelector<float16_t> {
     using OutType = float16_t;
 };
 #endif
+
+template <typename T>
+struct AttnTypeSelector;
+
+template <>
+struct AttnTypeSelector<float> {
+#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
+    using type = bfloat16_t;
+#elif defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+    using type = float16_t;
+#else
+    using type = float;
+#endif
+};
+
+template <>
+struct AttnTypeSelector<bfloat16_t> {
+#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
+    using type = bfloat16_t;
+#else
+    using type = float;
+#endif
+};
+
+template <>
+struct AttnTypeSelector<float16_t> {
+#if defined(AVX512_FP16_WEIGHT_ONLY_FP16)
+    using type = float16_t;
+#else
+    using type = float;
+#endif
+};

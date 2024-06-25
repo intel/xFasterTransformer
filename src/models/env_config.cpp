@@ -41,16 +41,6 @@ int getFlashThresh() {
     return envFlashThresh;
 }
 
-bool enableSkipMsk() {
-    // Skip masked attn in flash attention for better perf of long sequence, default disabled
-    static int skipMsk = -1;
-    if (skipMsk == -1) {
-        skipMsk = (getenv("ENABLE_SKIP_MASK") ? atoi(getenv("ENABLE_SKIP_MASK")) : 0);
-        if (skipMsk == 1) printf("ENABLE_SKIP_MASK is enabled for ignoring mask Q*K.\n");
-    }
-    return skipMsk == 1;
-}
-
 bool kvTrans() {
     // Transpose KV Tensor to [batchSize, headNum, seqLen, headSize] for better perf of long sequence, default disabled
     // TODO: add support for reorder and expand when beam_search>1

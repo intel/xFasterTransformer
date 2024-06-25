@@ -34,7 +34,6 @@
 
 extern int getFlashThresh();
 extern bool enableCATMLP();
-extern bool enableSkipMsk();
 
 class DecoderUtil {
 public:
@@ -554,16 +553,31 @@ public:
 
             dnnl_sgemm(ta[0], tb[0], m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
 
-        } else if (std::is_same_v<T, bfloat16_t>) {
+        } else {
             CBLAS_TRANSPOSE ta, tb;
             ta = transa ? CblasTrans : CblasNoTrans;
             tb = transb ? CblasTrans : CblasNoTrans;
 
-            cblas_gemm_bf16bf16f32(CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_BF16 *)(A), lda,
-                    (const MKL_BF16 *)(B), ldb, beta, C, ldc);
-        } else {
-            printf("Datatype Not supported yet\n");
-            exit(-1);
+            if (std::is_same_v<T, bfloat16_t>) {
+                cblas_gemm_bf16bf16f32(CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_BF16 *)(A), lda,
+                        (const MKL_BF16 *)(B), ldb, beta, C, ldc);
+            } else if (std::is_same_v<T, float16_t>) {
+                static int mkl_enable_inst = -1;
+                if (mkl_enable_inst == -1) {
+#ifdef AMX_FP16_WEIGHT_ONLY_FP16
+                    // AMX FP16
+                    mkl_enable_inst = mkl_enable_instructions(MKL_ENABLE_AVX512_E5);
+#else
+                    // AVX512_FP16, skip E4 avoiding illegal instruction error
+                    mkl_enable_inst = mkl_enable_instructions(MKL_ENABLE_AVX512_E3);
+#endif
+                }
+                cblas_gemm_f16f16f32(CblasRowMajor, ta, tb, m, n, k, alpha, (const MKL_F16 *)(A), lda,
+                        (const MKL_F16 *)(B), ldb, beta, C, ldc);
+            } else {
+                printf("Datatype Not supported yet\n");
+                exit(-1);
+            }
         }
     }
 
@@ -805,14 +819,5 @@ public:
 
         sgemm((T *)AB, C, expABC, m, n, k, k, vStride, n, false, false);
         updateOutTile(output, expABC, preSum, sum, preMax, max, m, n, stride);
-    }
-
-    static bool skipMskAttn(const float *attnMask, int m, int n, int stride) {
-        float lowest = std::numeric_limits<float>::lowest();
-        // left bottom is lowest
-        if (attnMask[(m - 1) * stride] == lowest)
-            return true;
-        else
-            return false;
     }
 };

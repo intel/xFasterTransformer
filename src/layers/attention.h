@@ -31,6 +31,7 @@
 #include "simple_mem_pool.h"
 #include "transformer_ctx.h"
 #include "transformer_util.h"
+#include "type_selector.h"
 
 /**
  * WeiT: weight data type
@@ -50,9 +51,7 @@ public:
         : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(ctx) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
-        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) {
-            qkpo = LlamaRotaryEmbedding(ctx);
-        }
+        if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
@@ -1030,11 +1029,8 @@ protected:
     void flashAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
             xft::Matrix<ImT> &result, KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue,
             const float *attnMask, int pastSeqLen) {
-#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-        using AttnT = bfloat16_t;
-#else
-        using AttnT = float;
-#endif
+        using AttnT = typename AttnTypeSelector<ImT>::type;
+
         // How many heads this task should do
         int batchSize = ctx->batchSize;
         int respQHeads = this->endQHead - this->startQHead;
@@ -1068,6 +1064,8 @@ protected:
                     AttnT *dstPtr = kvBuf + seq * kvStride + i;
                     if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float16_t> && std::is_same_v<ImT, float>) {
+                        float16_t::cvt_float_to_float16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
@@ -1099,11 +1097,8 @@ protected:
     void flashAttention(DecoderContext *ctx, xft::Matrix<ImT> &query, xft::Matrix<ImT> &key, xft::Matrix<ImT> &value,
             xft::Matrix<ImT> &result, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, std::vector<xft::SequenceMeta *> &seqs) {
-#if defined(AVX512_BF16_WEIGHT_ONLY_BF16)
-        using AttnT = bfloat16_t;
-#else
-        using AttnT = float;
-#endif
+        using AttnT = typename AttnTypeSelector<ImT>::type;
+
         // How many heads this task should do
         int batchSize = seqs.size();
         int respQHeads = this->endQHead - this->startQHead;
@@ -1137,6 +1132,8 @@ protected:
                     AttnT *dstPtr = kvBuf + seq * kvStride + i;
                     if constexpr (std::is_same_v<AttnT, bfloat16_t> && std::is_same_v<ImT, float>) {
                         bfloat16_t::cvt_float_to_bfloat16(srcPtr, dstPtr, headSize);
+                    } else if constexpr (std::is_same_v<AttnT, float16_t> && std::is_same_v<ImT, float>) {
+                        float16_t::cvt_float_to_float16(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, bfloat16_t>) {
                         bfloat16_t::cvt_bfloat16_to_float(srcPtr, dstPtr, headSize);
                     } else if constexpr (std::is_same_v<AttnT, float> && std::is_same_v<ImT, float16_t>) {
