@@ -187,6 +187,8 @@ else()
     add_definitions(-DAVX512_FP16_WEIGHT_ONLY_INT4=true)
     add_definitions(-DAVX512_FP32_WEIGHT_ONLY_NF4=true)
     # add_definitions(-DAVX512_FP16_WEIGHT_ONLY_NF4=true)
+    # Enable AMX_FP16 optimization 
+    # add_definitions(-DAMX_FP16_WEIGHT_ONLY_FP16=true)
 endif()
 
 add_definitions(-DUSE_SHM=true)
