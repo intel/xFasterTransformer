@@ -59,7 +59,7 @@ struct Weight {
 
 inline int getGroupSize(const std::string &ini_file, std::string section_name = "") {
     INIReader reader = INIReader(ini_file);
-    if (reader.ParseError() == 0 ) {
+    if (reader.ParseError() != 0 ) {
         return -1;
     } else {
         if (section_name == "") {
@@ -244,11 +244,11 @@ void loadWeight(std::string filename, Weight<T> &w, int rows, int cols) {
         loadWeight(qweightName, w.w, size, t);
 
         auto scalesName = replace(filename, "weight", "scales");
-        w.s = (float *)xft::alloc(cols * sizeof(float));
+        w.s = (float *)xft::alloc(groups * cols * sizeof(float));
         loadWeight(scalesName, w.s, groups * cols, DataType::fp32);
 
         auto zerosName = replace(filename, "weight", "zeros");
-        w.z = (float *)xft::alloc(cols * sizeof(float));
+        w.z = (float *)xft::alloc(groups * cols * sizeof(float));
         loadWeight(zerosName, w.z, groups * cols, DataType::fp32);
     } else {
         w.w = (T *)xft::alloc(size * sizeof(T));
