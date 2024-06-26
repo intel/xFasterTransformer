@@ -92,11 +92,11 @@ public:
         TimeLine t("DistLinear.forward");
         if (bias) {
             ctx->mmHelper->compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias, ctx->groupsize);
 
         } else {
             ctx->mmHelper->compute(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, ctx->groupsize);
         }
     }
 

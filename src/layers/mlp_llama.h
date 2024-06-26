@@ -234,11 +234,11 @@ private:
         ImT *C = output.Data();
 
         if (ctx->actType == DecoderContext::SILU) {
-            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, ctx->groupsize);
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
-            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute_silu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, ctx->groupsize);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
-            ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute_gelu(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, ctx->groupsize);
         } else {
             printf("ERROR: unsupported activation in MLP.\n");
             exit(-1);
@@ -262,7 +262,7 @@ private:
         const float *sumB = upWeightSum.Data();
         ImT *C = output.Data();
 
-        ctx->mmHelper->compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc);
+        ctx->mmHelper->compute_resmul(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, C, ldc, ctx->groupsize);
     }
 
     void downProj(DecoderContext *ctx, xft::Matrix<ImT> &input, xft::Matrix<OutT> &output,
@@ -286,9 +286,9 @@ private:
 
         if (isMaster) {
             ctx->mmHelper->compute_residential(
-                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
+                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr, ctx->groupsize);
         } else {
-            ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, ctx->groupsize);
         }
     }
 
@@ -310,7 +310,7 @@ private:
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, ctx->groupsize);
 
         // Compute silu on the left half and then add it with the right half
         if (ctx->actType == DecoderContext::SILU) {

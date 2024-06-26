@@ -126,26 +126,26 @@ public:
                 ctx->mmHelper->compute_residential(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
                         imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
                         outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
-                        resultBuffer1.Stride(), pbias, resultBuffer2.Data(), resultBuffer2.Stride());
+                        resultBuffer1.Stride(), pbias, resultBuffer2.Data(), resultBuffer2.Stride(), ctx->groupsize);
             } else {
                 float *pbias = outputBias.Data();
                 if (outputBias.Size() == 0) { pbias = nullptr; }
                 ctx->mmHelper->compute_resext(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
                         imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
                         outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
-                        resultBuffer1.Stride(), pbias, gamma, resultBuffer2.Data(), resultBuffer2.Stride());
+                        resultBuffer1.Stride(), pbias, gamma, resultBuffer2.Data(), resultBuffer2.Stride(), ctx->groupsize);
             }
         } else {
             if (outputBias.Size() == 0) {
                 ctx->mmHelper->compute(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
                         imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
                         outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
-                        resultBuffer1.Stride());
+                        resultBuffer1.Stride(), ctx->groupsize);
             } else {
                 ctx->mmHelper->compute_bias(false, imBuffer.Rows(), outputWeight.Cols(), imBuffer.Cols(), 1.0f,
                         imBuffer.Data(), imBuffer.Stride(), outputWeight.Data(), outputWeightScale.Data(),
                         outputWeightZero.Data(), outputWeightSum.Data(), 0.0f, resultBuffer1.Data(),
-                        resultBuffer1.Stride(), outputBias.Data());
+                        resultBuffer1.Stride(), outputBias.Data(), ctx->groupsize);
             }
         }
 
@@ -168,13 +168,13 @@ protected:
         ctx->mmHelper->compute_biasadd_relu(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(),
                 input.Stride(), intermediateWeight.Data(), intermediateWeightScale.Data(),
                 intermediateWeightZero.Data(), intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride(),
-                intermediateBias.Data());
+                intermediateBias.Data(), ctx->groupsize);
     }
 
     void intermediate_gelu(DecoderContext *ctx, xft::Matrix<float> &input, xft::Matrix<float> &output) {
         ctx->mmHelper->compute(false, input.Rows(), output.Cols(), input.Cols(), 1.0f, input.Data(), input.Stride(),
                 intermediateWeight.Data(), intermediateWeightScale.Data(), intermediateWeightZero.Data(),
-                intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride());
+                intermediateWeightSum.Data(), 0.0f, output.Data(), output.Stride(), ctx->groupsize);
 
         float *pbias = intermediateBias.Data();
         float factor = 0.7978845608; // np.sqrt(2 / np.pi)
