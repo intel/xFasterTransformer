@@ -1573,18 +1573,18 @@ private:
         Resext,
     };
 
-    std::string create_key(bool transA, int M, int N, int K, int matmul_kind, const void *packedB = nullptr) {
+    std::string create_key(bool transA, int M, int N, int K, int matmul_kind) {
         std::stringstream key;
-        key << transA << "_" << M << "_" << N << "_" << K << "_" << matmul_kind << "_" << packedB;
+        key << transA << "_" << M << "_" << N << "_" << K << "_" << matmul_kind;
         return key.str();
     }
 
     // Cache primitive_desc and matmul
     bool cache_matmul_primitive(dnnl::matmul::primitive_desc *matmul_pd, dnnl::matmul *matmul_prim, bool transA, int M,
-            int N, int K, int matmul_kind, const void *packedB = nullptr) {
+            int N, int K, int matmul_kind) {
         // If M < primitiveCacheM or a power of 2, then cache.
-        if (M <= primitiveCacheM || !(M & 1)) {
-            std::string key = create_key(transA, M, N, K, matmul_kind, packedB);
+        if (M <= primitiveCacheM || ((M & (M - 1)) == 0)) {
+            std::string key = create_key(transA, M, N, K, matmul_kind);
             std::tuple<dnnl::matmul::primitive_desc *, dnnl::matmul *> value(matmul_pd, matmul_prim);
             matmul_hub[key] = value;
             return true;
