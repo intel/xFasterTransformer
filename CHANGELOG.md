@@ -1,4 +1,11 @@
 # CHANGELOG
+# [Version v1.7.3](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.2)
+v1.7.3
+
+## BUG fix
+- Fixed SHM reduceAdd & rope error when batch size is large.
+- Fixed the issue of abnormal usage of oneDNN primitive cache.
+
 # [Version v1.7.2](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.2)
 v1.7.2 - Continuous batching feature supports Qwen 1.0 & hybrid data types.
 
