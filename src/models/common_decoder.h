@@ -216,7 +216,6 @@ public:
             dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
             REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");
             REQUIRES(quantZerosDataType == "fp32", "zeros should be fp32 data type.");
-            REQUIRES(quantGroupsize == -1, "Quantization with groupsize is not supported.");
         }
 
         // Buffer related (not initialized)
@@ -228,7 +227,7 @@ public:
         // Context
         DecoderContext *ctx = getDecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                 epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, useLogN, useNTK,
-                ropeParamsPtr);
+                ropeParamsPtr, quantGroupsize);
 
         ctx->ResetConfigReader(configPath);
 
@@ -761,7 +760,7 @@ protected:
     DecoderContext *getDecoderContext(int layers, const int hiddenSize, const int headSize, const int attHeadNum,
             const int kvHeadNum, const int imSize, const std::string &act, const float epsilon, int vocabSize,
             int embeddingSize, int maxPositions, int maxPosEmbed, int maxSeqLength, bool useLogN, bool useNTK,
-            RopeParams *ropeParamsPtr) {
+            RopeParams *ropeParamsPtr, int groupsize) {
         Env &env = Env::getInstance();
         int tpSize = messenger.getSize();
         int tpRank = messenger.getRank();
@@ -794,7 +793,7 @@ protected:
 #endif
             this->context.reset(new DecoderContext(layers, hiddenSize, headSize, attHeadNum, kvHeadNum, imSize, act,
                     epsilon, vocabSize, embeddingSize, maxPositions, maxPosEmbed, maxSeqLength, tpRank, tpSize,
-                    this->mmHelper.get(), this->device.get(), ppSize, ppRank, ropeParamsPtr, useLogN, useNTK));
+                    this->mmHelper.get(), this->device.get(), ppSize, ppRank, ropeParamsPtr, useLogN, useNTK, 0, groupsize));
         }
 
         return this->context.get();
