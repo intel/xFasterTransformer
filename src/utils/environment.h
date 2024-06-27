@@ -68,6 +68,9 @@ public:
     // get OneCCL Enabled
     bool getOneCCLEnabled() { return oneCCLEnabled; }
 
+    // get Primitive Cache M
+    int getPrimitiveCacheM() { return primitiveCacheM; }
+
 private:
     Env() {
         // init Verbose
@@ -105,6 +108,9 @@ private:
 
         // init OneCCL Enabled
         initOneCCLEnabled();
+
+        // init Primitive Cache M
+        initPrimitiveCacheM();
     }
 
     // Verbose
@@ -259,5 +265,20 @@ private:
     void initOneCCLEnabled() {
         char *xftOneCCLValue = getenv("XFT_ONECCL");
         oneCCLEnabled = xftOneCCLValue != nullptr ? std::atoi(xftOneCCLValue) : false;
+    }
+
+    // XFT_PRIMITIVE_CACHE_M
+    int primitiveCacheM = 256;
+    void initPrimitiveCacheM() {
+        char *xFTPrimitiveCacheMValue = getenv("XFT_PRIMITIVE_CACHE_M");
+        if (xFTPrimitiveCacheMValue != NULL) {
+            int value = atoi(xFTPrimitiveCacheMValue);
+            if (value >= 0)
+                primitiveCacheM = value;
+            else
+                printf("[ERROR] XFT_PRIMITIVE_CACHE_M value need to be greater than or equal to 0.\n");
+        } else {
+            primitiveCacheM = 256;
+        }
     }
 };
