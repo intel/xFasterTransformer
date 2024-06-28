@@ -41,6 +41,8 @@ public:
         this->headNum_ = headNum;
         this->headSize_ = headSize;
         this->layers_ = layers;
+        // The KV Cache location configured in "KV_CACHE_LOCATION"
+        this->allocNode = getenv("KV_CACHE_LOCATION") ? atoi(getenv("KV_CACHE_LOCATION")) : -1;
     }
 
     ~KVCacheMgrImpl() {
@@ -89,7 +91,7 @@ public:
         // User specified maxSeqLen needs to be <= model's configured maxSeqLen
         auto maxLen = maxSeqLen > 0 ? std::min(maxSeqLen, maxSeqLen_) : maxSeqLen_;
         for (int i = 0; i < 2 * layers_; ++i) {
-            cache[i].resize(maxLen, 1, headNum_, headSize_);
+            cache[i].resize(maxLen, 1, headNum_, headSize_, this->allocNode);
         }
 
         sequenceCaches.insert({seqID, cache});
@@ -186,6 +188,7 @@ private:
     int headNum_;
     int headSize_;
     int layers_;
+    int allocNode;
 };
 
 class KVCacheMgr {

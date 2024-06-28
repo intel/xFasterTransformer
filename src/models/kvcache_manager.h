@@ -69,6 +69,7 @@ public:
     void reorderCache(int *idx, int size, int initSeqLen, int accSeqLen);
 
 private:
+    int allocNode;
     int layers; // how many layers
     KVCacheTensor<KVCacheT> *cachedKeys; // all accumulated keys
     KVCacheTensor<KVCacheT> *cachedValues; // all accumulated values

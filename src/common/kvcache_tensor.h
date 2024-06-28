@@ -24,6 +24,7 @@
 #include "allocator.h"
 #include "bfloat16.h"
 #include "float16.h"
+#include "numa_allocator.h"
 
 extern bool kvTrans();
 
@@ -67,23 +68,23 @@ template <typename T>
 class KVCacheTensor {
 public:
     KVCacheTensor()
-        : maxSeqLen(0), batchSize(0), headNum(0), headSize(0), data(nullptr), allocSize(0), scales(nullptr) {}
+        : maxSeqLen(0), batchSize(0), headNum(0), headSize(0), data(nullptr), allocSize(0), scales(nullptr), scalesAllocSize(0) {}
 
     ~KVCacheTensor() {
-        if (this->data) { free(this->data); }
-        if (this->scales) { free(this->scales); }
+        if (this->data) { xft_numa_free(this->data, allocSize); }
+        if (this->scales) { xft_numa_free(this->scales, scalesAllocSize); }
     }
 
-    void resize(int maxSeqLen, int batchSize, int headNum, int headSize) {
+    void resize(int maxSeqLen, int batchSize, int headNum, int headSize, int allocNode) {
         this->maxSeqLen = maxSeqLen;
         this->batchSize = batchSize;
         this->headNum = headNum;
         this->headSize = headSize;
 
-        uint64_t requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * headSize;
+        uint64_t requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * headSize * sizeof(T);
         if (requiredSize > allocSize) {
-            if (this->data) { free(this->data); }
-            this->data = (T *)xft::alloc(requiredSize * sizeof(T));
+            if (this->data) { xft_numa_free(this->data, allocSize); }
+            this->data = (T *)xft_numa_alloc_onnode(requiredSize, allocNode);
             if (!this->data) {
                 printf("Failed to alloc mem for KV Cache [%d][%d][%d][%d].\n", maxSeqLen, batchSize, headNum, headSize);
                 exit(-1);
@@ -91,8 +92,16 @@ public:
             allocSize = requiredSize;
         }
 
-        if (this->scales) { free(this->scales); }
-        this->scales = (float *)xft::alloc((uint64_t)maxSeqLen * batchSize * headNum * sizeof(float));
+        requiredSize = (uint64_t)maxSeqLen * batchSize * headNum * sizeof(float);
+        if (requiredSize > scalesAllocSize) {
+            if (this->scales) { xft_numa_free(this->scales, scalesAllocSize); }
+            this->scales = (float *)xft_numa_alloc_onnode(requiredSize, allocNode);
+            if (!this->scales) {
+                printf("Failed to alloc mem for KV Cache scales [%d][%d][%d][%d].\n", maxSeqLen, batchSize, headNum, headSize);
+                exit(-1);
+            }
+            scalesAllocSize = requiredSize;
+        }
     }
 
     int getBatchSize() const { return batchSize; }
@@ -188,15 +197,15 @@ public:
      * initSeqLen: initial sequence length, which is the prompt token size
      * accSeqLen: accumulated sequence length
     */
-    void reorder(int *idx, int size, int initSeqLen, int accSeqLen) {
+    void reorder(int *idx, int size, int initSeqLen, int accSeqLen, int allocNode) {
         const int cols = this->getHeadNum() * this->getHeadSize();
         const int batchSize = this->getBatchSize();
 
         T *pdata = this->data + initSeqLen * batchSize * cols;
 
         // Temporary buffer used for reorder
-        T *extraKeyBuf = (T *)xft::alloc((batchSize - 1) * cols * sizeof(T));
-
+        uint64_t requiredSize = (uint64_t)(batchSize - 1) * cols * sizeof(T);
+        T *extraKeyBuf = (T *)xft_numa_alloc_onnode(requiredSize, allocNode);
         for (int seq = initSeqLen; seq < accSeqLen; ++seq) { // Reorder is not needed for the first few lines
             int extraBufIdx = 0;
             int remapped[batchSize];
@@ -260,7 +269,7 @@ public:
             pdata += batchSize * cols;
         }
 
-        free(extraKeyBuf);
+        xft_numa_free(extraKeyBuf, requiredSize);
     }
 
 private:
@@ -327,4 +336,5 @@ private:
 
     // The scale factor for each head (if T is int8)
     float *scales;
+    uint64_t scalesAllocSize;
 };

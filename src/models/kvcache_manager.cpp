@@ -23,17 +23,19 @@
 
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
+    // The KV Cache location configured in "KV_CACHE_LOCATION"
+    this->allocNode = getenv("KV_CACHE_LOCATION") ? atoi(getenv("KV_CACHE_LOCATION")) : -1;
     if (prefix && this->cachedPrefixKeys == nullptr) {
         this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
         this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
     }
     for (int i = 0; i < this->layers; ++i) {
         if (prefix) {
-            this->cachedPrefixKeys[i].resize(maxSeqLen, 1, headsPerSplit, headSize);
-            this->cachedPrefixValues[i].resize(maxSeqLen, 1, headsPerSplit, headSize);
+            this->cachedPrefixKeys[i].resize(maxSeqLen, 1, headsPerSplit, headSize, this->allocNode);
+            this->cachedPrefixValues[i].resize(maxSeqLen, 1, headsPerSplit, headSize, this->allocNode);
         } else {
-            this->cachedKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
-            this->cachedValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize);
+            this->cachedKeys[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize, this->allocNode);
+            this->cachedValues[i].resize(maxSeqLen, batchSize, headsPerSplit, headSize, this->allocNode);
         }
     }
 }
@@ -100,10 +102,10 @@ void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, 
         int layer = i / 2;
         if (i % 2 == 0) {
             KVCacheTensor<KVCacheT> &keyTensor = this->getKey(layer);
-            keyTensor.reorder(idx, size, initSeqLen, accSeqLen);
+            keyTensor.reorder(idx, size, initSeqLen, accSeqLen, this->allocNode);
         } else {
             KVCacheTensor<KVCacheT> &valueTensor = this->getValue(layer);
-            valueTensor.reorder(idx, size, initSeqLen, accSeqLen);
+            valueTensor.reorder(idx, size, initSeqLen, accSeqLen, this->allocNode);
         }
     }
 }
