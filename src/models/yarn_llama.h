@@ -38,9 +38,11 @@ public:
 
     void embeddingForward(int *ids, float *output, int tokenSize);
     void embeddingForward(int *ids, bfloat16_t *output, int tokenSize);
+    void embeddingForward(int *ids, float16_t *output, int tokenSize);
 
     void lastLayerNormForward(float *input, float *output, int rows);
     void lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows);
+    void lastLayerNormForward(float16_t *input, float16_t *output, int rows);
 
 private:
     void setEmbeddingWeights(const std::string &modelPath);
