@@ -71,6 +71,9 @@ public:
     // get Primitive Cache M
     int getPrimitiveCacheM() { return primitiveCacheM; }
 
+    // get KV Cache Location
+    int getKVCacheLocation() { return primitiveCacheM; }
+
 private:
     Env() {
         // init Verbose
@@ -279,6 +282,18 @@ private:
                 printf("[ERROR] XFT_PRIMITIVE_CACHE_M value need to be greater than or equal to 0.\n");
         } else {
             primitiveCacheM = 256;
+        }
+    }
+
+    // KV_CACHE_LOCATION
+    int kvCacheLocation = -1;
+    void initKVCacheLocation() {
+        // The KV Cache location configured in "KV_CACHE_LOCATION"
+        char *xft_kvcache_location_value = getenv("KV_CACHE_LOCATION");
+        if (xft_kvcache_location_value != NULL) {
+            int value = atoi(xft_kvcache_location_value);
+            if (value >= 0)
+                kvCacheLocation = value;
         }
     }
 };
