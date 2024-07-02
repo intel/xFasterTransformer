@@ -13,10 +13,11 @@
 // limitations under the License.
 // ============================================================================
 #pragma once
-
-#include <vector>
-#include "kvcache_tensor.h"
 #include <unordered_map>
+#include <vector>
+
+#include "environment.h"
+#include "kvcache_tensor.h"
 
 namespace xft {
 
@@ -42,7 +43,7 @@ public:
         this->headSize_ = headSize;
         this->layers_ = layers;
         // The KV Cache location configured in "KV_CACHE_LOCATION"
-        this->allocNode = getenv("KV_CACHE_LOCATION") ? atoi(getenv("KV_CACHE_LOCATION")) : -1;
+        this->allocNode = Env::getInstance().getPrimitiveCacheM();
     }
 
     ~KVCacheMgrImpl() {

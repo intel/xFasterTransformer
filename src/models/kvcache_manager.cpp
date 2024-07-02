@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#include "kvcache_manager.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include "allocator.h"
 #include "bfloat16.h"
+#include "environment.h"
 #include "float16.h"
+#include "kvcache_manager.h"
 
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
     // The KV Cache location configured in "KV_CACHE_LOCATION"
-    this->allocNode = getenv("KV_CACHE_LOCATION") ? atoi(getenv("KV_CACHE_LOCATION")) : -1;
+    this->allocNode = Env::getInstance().getPrimitiveCacheM();
     if (prefix && this->cachedPrefixKeys == nullptr) {
         this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
         this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
