@@ -43,7 +43,7 @@ public:
         this->headSize_ = headSize;
         this->layers_ = layers;
         // The KV Cache location configured in "KV_CACHE_LOCATION"
-        this->allocNode = Env::getInstance().getPrimitiveCacheM();
+        this->allocNode = Env::getInstance().getKVCacheLocation();
     }
 
     ~KVCacheMgrImpl() {

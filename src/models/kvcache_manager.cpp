@@ -25,7 +25,7 @@
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::resize(int maxSeqLen, int batchSize, int headsPerSplit, int headSize, bool prefix) {
     // The KV Cache location configured in "KV_CACHE_LOCATION"
-    this->allocNode = Env::getInstance().getPrimitiveCacheM();
+    this->allocNode = Env::getInstance().getKVCacheLocation();
     if (prefix && this->cachedPrefixKeys == nullptr) {
         this->cachedPrefixKeys = new KVCacheTensor<KVCacheT>[layers];
         this->cachedPrefixValues = new KVCacheTensor<KVCacheT>[layers];
