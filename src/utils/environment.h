@@ -72,7 +72,7 @@ public:
     int getPrimitiveCacheM() { return primitiveCacheM; }
 
     // get KV Cache Location
-    int getKVCacheLocation() { return primitiveCacheM; }
+    int getKVCacheLocation() { return kvCacheLocation; }
 
 private:
     Env() {
@@ -114,6 +114,9 @@ private:
 
         // init Primitive Cache M
         initPrimitiveCacheM();
+
+        // init KV Cache Location
+        initKVCacheLocation();
     }
 
     // Verbose
