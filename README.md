@@ -42,6 +42,7 @@ xFasterTransformer is an exceptionally optimized solution for large language mod
     - [MLServer](#mlserver)
   - [Benchmark](#benchmark)
   - [Support](#support)
+  - [Accepted Papers](#accepted-papers)
   - [Q\&A](#qa)
 
 ## Models overview
@@ -387,6 +388,21 @@ Benchmark scripts are provided to get the model inference performance quickly.
 
 - xFasterTransformer email: xft.maintainer@intel.com
 - xFasterTransformer [wechat](https://github.com/intel/xFasterTransformer/wiki)
+
+## Accepted Papers
+- ICLR'2024 on practical ML for limited/low resource settings: [Distributed Inference Performance Optimization for LLMs on CPUs](https://arxiv.org/abs/2407.00029)
+- ICML'2024 on Foundation Models in the Wild: Inference Performance Optimization for Large Language Models on CPUs
+- IEEE ICSESS 2024: All-in-one Approach for Large Language Models Inference
+
+If xFT is useful for your research, please cite:
+```latex
+@article{he2024distributed,
+  title={Distributed Inference Performance Optimization for LLMs on CPUs},
+  author={He, Pujiang and Zhou, Shan and Li, Changqing and Huang, Wenhuan and Yu, Weifei and Wang, Duyi and Meng, Chen and Gui, Sheng},
+  journal={arXiv preprint arXiv:2407.00029},
+  year={2024}
+}
+```
 
 ## Q&A
 
