@@ -275,6 +275,8 @@ public:
             TimeLine t1("input.layer_norm");
             norm.forward(inputBuffer.Data(), imBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
                     imBuffer.Stride(), epsilon);
+        } else {
+            imBuffer.Assign(inputBuffer.Data(), inputBuffer.Rows(), inputBuffer.Cols(), inputBuffer.Stride());
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("layer norm:\n");
