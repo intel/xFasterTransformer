@@ -42,6 +42,7 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
     - [MLServer](#mlserver)
   - [性能测试](#性能测试)
   - [技术支持](#技术支持)
+  - [已接收的论文](#已接收的论文)
   - [问题与回答](#问题与回答)
 
 ## 模型概览
@@ -61,7 +62,7 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |       Llama        | &#10004; | &#10004; |  &#10004;  |
 |       Llama2       | &#10004; | &#10004; |  &#10004;  |
 |       Llama3       | &#10004; | &#10004; |  &#10004;  |
-|     Baichuan1      | &#10004; | &#10004; |   &#10004; |
+|     Baichuan       | &#10004; | &#10004; |   &#10004; |
 |     Baichuan2      | &#10004; | &#10004; |   &#10004; |
 |        QWen        | &#10004; | &#10004; |  &#10004;  |
 |        QWen2       | &#10004; | &#10004; |  &#10004;  |
@@ -175,6 +176,7 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     - ChatGLM3Convert
     - OPTConvert
     - BaichuanConvert
+    - Baichuan2Convert
     - QwenConvert
     - Qwen2Convert
     - DeepseekConvert
@@ -389,6 +391,21 @@ xFasterTransformer 是 [FastChat](https://github.com/lm-sys/FastChat)的官方�
 
 - xFasterTransformer 邮件: xft.maintainer@intel.com
 - xFasterTransformer [微信](https://github.com/intel/xFasterTransformer/wiki)
+
+## 已接收的论文
+ - ICLR'2024关于有限/低资源环境下的实用机器学习：[Distributed Inference Performance Optimization for LLMs on CPUs](https://arxiv.org/abs/2407.00029)
+ - ICML'2024关于基础模型在野外：Inference Performance Optimization for Large Language Models on CPUs
+ - IEEE ICSESS 2024：All-in-one Approach for Large Language Models Inference
+
+如果xFT对您的研究有帮助，请引用：
+ ```latex
+ @article{he2024distributed,
+   title={Distributed Inference Performance Optimization for LLMs on CPUs},
+   author={He, Pujiang and Zhou, Shan and Li, Changqing and Huang, Wenhuan and Yu, Weifei and Wang, Duyi and Meng, Chen and Gui, Sheng},
+   journal={arXiv preprint arXiv:2407.00029},
+   year={2024}
+ }
+ ```
 
 ## 问题与回答
 
