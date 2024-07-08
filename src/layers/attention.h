@@ -371,8 +371,12 @@ public:
         if (pastSeqLen == 0) {
             if (ctx->inputSeqLen > getFlashThresh()) {
                 flashAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
-            } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
-                selfAttentionBF16(ctx, query, key, value, attnSplit, presentKey, presentValue);
+            } else if constexpr ((std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>)
+#if defined(AMX_FP16_WEIGHT_ONLY_FP16)
+                    || (std::is_same_v<InT, float16_t> && std::is_same_v<OutT, float16_t>)
+#endif
+            ) {
+                selfAttention16bits(ctx, query, key, value, attnSplit, presentKey, presentValue);
             } else {
                 fusedAttention(ctx, query, key, value, attnSplit, presentKey, presentValue, attnMask, pastSeqLen);
             }
@@ -576,8 +580,12 @@ public:
         if (seqs[0]->getStep() == 0) { // First token generation
             if (totInSeqLen > getFlashThresh() * seqs.size()) {
                 flashAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
-            } else if constexpr (std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>) {
-                selfAttentionBF16(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
+            } else if constexpr ((std::is_same_v<InT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t>)
+#if defined(AMX_FP16_WEIGHT_ONLY_FP16)
+                    || (std::is_same_v<InT, float16_t> && std::is_same_v<OutT, float16_t>)
+#endif
+            ) {
+                selfAttention16bits(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
             } else {
                 fusedAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
             }
@@ -654,9 +662,9 @@ public:
     }
 
 protected:
-    template <typename KVCacheT>
-    void selfAttentionBF16(DecoderContext *ctx, xft::Matrix<bfloat16_t> &query, xft::Matrix<bfloat16_t> &key,
-            xft::Matrix<bfloat16_t> &value, xft::Matrix<bfloat16_t> &result, KVCacheTensor<KVCacheT> &presentKey,
+    template <typename T, typename KVCacheT>
+    void selfAttention16bits(DecoderContext *ctx, xft::Matrix<T> &query, xft::Matrix<T> &key,
+            xft::Matrix<T> &value, xft::Matrix<T> &result, KVCacheTensor<KVCacheT> &presentKey,
             KVCacheTensor<KVCacheT> &presentValue) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
@@ -674,9 +682,9 @@ protected:
                 [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
     }
 
-    template <typename KVCacheT>
-    void selfAttentionBF16(DecoderContext *ctx, xft::Matrix<bfloat16_t> &query, xft::Matrix<bfloat16_t> &key,
-            xft::Matrix<bfloat16_t> &value, xft::Matrix<bfloat16_t> &result,
+    template <typename T, typename KVCacheT>
+    void selfAttention16bits(DecoderContext *ctx, xft::Matrix<T> &query, xft::Matrix<T> &key,
+            xft::Matrix<T> &value, xft::Matrix<T> &result,
             std::vector<KVCacheTensor<KVCacheT> *> &keyCaches, std::vector<KVCacheTensor<KVCacheT> *> &valueCaches,
             std::vector<xft::SequenceMeta *> &seqs) {
         int responsibleQHeads = this->endQHead - this->startQHead;
