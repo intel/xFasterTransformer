@@ -19,6 +19,7 @@
 #include <omp.h>
 #include "aligned_type.h"
 #include "amx_sgemm_bf16bf16bf16.h"
+#include "amx_sgemm_f16f16f16.h"
 #include "bfloat16.h"
 #include "compile_util.h"
 #include "copy_util.h"
@@ -107,9 +108,23 @@ void small_amx_gemm_16bits_compute(int m, int n, int k, T *A, int lda, T *packed
 
     if (std::is_same_v<T, bfloat16_t>) {
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
-                m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, (XDNN_BF16 *)C, ldc);
+                m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, ldb, (XDNN_BF16 *)C, ldc);
     } else {
-        //xdnn_small_amx_sgemm_f16f16f16_compute(m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc);
+        xdnn_small_amx_sgemm_f16f16f16_compute(m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc);
+    }
+}
+
+template <typename T>
+void small_softmax(T *data, float scale, int elements) {
+    static_assert(std::is_same_v<T, float> || std::is_same_v<T, bfloat16_t> || std::is_same_v<T, float16_t>,
+            "Unsupported data type for small_softmax");
+
+    if constexpr (std::is_same_v<T, float>) {
+        small_softmax_f32(data, scale, elements);
+    } else if constexpr (std::is_same_v<T, bfloat16_t>) {
+        small_softmax_bf16((XDNN_BF16 *)data, scale, elements);
+    } else if constexpr (std::is_same_v<T, float16_t>) {
+        DecoderUtil::computeSoftmax(data, scale, elements);
     }
 }
 
@@ -266,7 +281,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
         for (int seq = 0; seq < endSeq - startSeq; ++seq) {
             int elements = startSeq + seq + 1;
             if (alibiSlopes == nullptr) {
-                small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+                small_softmax(C + seq * ldc, scale, elements);
             } else {
                 DecoderUtil::alibiSoftmax(C + seq * ldc, scale, alibiSlopes[i], elements);
             }
@@ -416,7 +431,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
                 for (int seq = 0; seq < endSeq - startSeq; ++seq) {
                     int elements = startSeq + seq + 1;
                     if (alibiSlopes == nullptr) {
-                        small_softmax_bf16((XDNN_BF16 *)(C + seq * ldc), scale, elements);
+                        small_softmax(C + seq * ldc, scale, elements);
                     } else {
                         DecoderUtil::alibiSoftmax(C + seq * ldc, scale, alibiSlopes[i], elements);
                     }
@@ -765,7 +780,7 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
                 for (int seq = 0; seq < queryLen; ++seq) {
                     int elements = pastSeqLens[b] + seq + 1;
                     if (alibiSlopes == nullptr) {
-                        small_softmax_f32(S + seq * keyLen, scale, elements);
+                        small_softmax(S + seq * keyLen, scale, elements);
                     } else {
                         DecoderUtil::alibiSoftmax(S + seq * keyLen, scale, alibiSlopes[i], elements);
                     }
