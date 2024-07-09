@@ -336,6 +336,49 @@ public:
         }
     }
 
+    // General version
+    static void computeSoftmax(float16_t *data, float scale, int size) {
+        int vecs = (size + 15) / 16; // how many avx512 vectors
+        __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
+
+        __m512 vsum = _mm512_set1_ps(0);
+
+        // maxVal is used to avoid exp(x) = inf
+        float maxVal = std::numeric_limits<float>::lowest();
+        __m512 vmax = _mm512_set1_ps(maxVal);
+        __m512 vfactor = _mm512_set1_ps(scale);
+
+        int i = 0;
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
+            vmax = _mm512_mask_max_ps(vmax, k, vmax, vx * vfactor);
+        }
+
+        maxVal = _mm512_reduce_max_ps(vmax);
+        vmax = _mm512_set1_ps(maxVal);
+
+        // Compute vexp(vx - vmax) and sum it
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
+            vx = BertUtil::vexp(vx * vfactor - vmax);
+            xft::store_avx512(data + i * 16, k, vx);
+            vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
+        }
+
+        float sum = _mm512_reduce_add_ps(vsum);
+        __m512 vrsum = _mm512_set1_ps(1.0f / sum);
+
+        // Compute exp/sum(exp) and store
+        for (i = 0; i < vecs; ++i) {
+            __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
+            vx = vx * vrsum;
+            xft::store_avx512(data + i * 16, k, vx);
+        }
+    }
+
     // Softmax: skip the calculation when attention mask is the lowest value
     static void softmaxSkipMask(float *data, const float *attnMask, int size, float scale) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
