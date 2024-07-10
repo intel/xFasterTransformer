@@ -117,7 +117,7 @@ docker run -it \
     -e "https_proxy=$https_proxy" \
     intel/xfastertransformer:latest
 ```
-**Notice!!!**: Please enlarge `--shm-size` if  **bus error** occurred while running in the multi-ranks mode . The default docker limits the shared memory size to 64MB and our implementation uses many shared memories to achieve a  better performance.
+**Notice!!!**: Please enlarge `--shm-size` if  **bus error** occurred while running in the multi-ranks mode. The default docker limits the shared memory size to 64MB and our implementation uses many shared memories to achieve a  better performance.
 
 ### Built from source
 #### Prepare Environment
