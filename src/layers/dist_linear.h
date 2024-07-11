@@ -60,8 +60,8 @@ public:
         int K = inputSize;
         int N = this->splitSize;
 
-        scaleWeight.Resize(N);
-        zeroWeight.Resize(N);
+        scaleWeight.Resize(1, N);
+        zeroWeight.Resize(1, N);
 
         xft::Matrix<WeiT> quantizedWeight;
         ctx->mmHelper->convertWeight(
@@ -92,11 +92,11 @@ public:
         TimeLine t("DistLinear.forward");
         if (bias) {
             ctx->mmHelper->compute_bias(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, bias, ctx->groupsize);
 
         } else {
             ctx->mmHelper->compute(false, batchSize, splitSize, inputSize, 1.0f, input, inputSize, weight.Data(),
-                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize);
+                    scaleWeight.Data(), zeroWeight.Data(), sumWeight.Data(), 0.0f, output, splitSize, ctx->groupsize);
         }
     }
 
@@ -120,8 +120,8 @@ private:
     int splitOffset;
 
     xft::Matrix<WeiT> weight;
-    xft::Vector<float> scaleWeight; // if weight is int8
-    xft::Vector<float> zeroWeight; // if weight is int8
+    xft::Matrix<float> scaleWeight; // if weight is int8
+    xft::Matrix<float> zeroWeight; // if weight is int8
     xft::Vector<float> sumWeight; // if weight is int8
     float *bias = nullptr;
 };

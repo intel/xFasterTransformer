@@ -108,7 +108,7 @@ public:
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
             int splitOffset, int splitSize, bool verticalSplit, xft::Matrix<WeiT> &convertedWeight,
-            xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight,
+            xft::Matrix<float> &scaleWeight, xft::Matrix<float> &zeroWeight, xft::Vector<float> &sumWeight, int groupsize,
             bool unused) {
         // transform trans cases to no trans cases
         if (trans) {
@@ -164,8 +164,8 @@ public:
         // FP32 -> INT8/W8A8
         else if constexpr (std::is_same_v<OriWeiT, float>
                 && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
-            scaleWeight.Resize(trans ? rowSize : colSize);
-            zeroWeight.Resize(trans ? rowSize : colSize);
+            scaleWeight.Resize(1, trans ? rowSize : colSize);
+            zeroWeight.Resize(1, trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT8
             xdnn_sgemm_f32s8f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
@@ -184,8 +184,8 @@ public:
 
         // FP32 -> UINT4
         else if constexpr (std::is_same_v<OriWeiT, float> && std::is_same_v<WeiT, uint4x2_t>) {
-            scaleWeight.Resize(trans ? rowSize : colSize);
-            zeroWeight.Resize(trans ? rowSize : colSize);
+            scaleWeight.Resize(1, trans ? rowSize : colSize);
+            zeroWeight.Resize(1, trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT4
             xdnn_sgemm_f32u4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
@@ -203,8 +203,8 @@ public:
 
         // FP32 -> NF4
         else if constexpr (std::is_same_v<OriWeiT, float> && std::is_same_v<WeiT, nf4x2_t>) {
-            scaleWeight.Resize(trans ? rowSize : colSize);
-            zeroWeight.Resize(trans ? rowSize : colSize);
+            scaleWeight.Resize(1, trans ? rowSize : colSize);
+            zeroWeight.Resize(1, trans ? rowSize : colSize);
             const float *src = weight + rowOffset * cols + colOffset;
 #ifdef AVX512_FP32_WEIGHT_ONLY_NF4
             xdnn_sgemm_f32nf4f32_quantize(trans, trans ? rowSize : colSize, trans ? colSize : rowSize, src, cols,
@@ -223,12 +223,15 @@ public:
         // INT8 -> INT8/W8A8
         else if constexpr (std::is_same_v<OriWeiT, int8_t>
                 && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
-            int size = trans ? rowSize : colSize;
-            int offset = trans ? rowOffset : colOffset;
-            scaleWeight.Resize(size);
-            zeroWeight.Resize(size);
-            if (scales) memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
-            if (zeros) memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+            int size = colSize;
+            int groups = groupsize == -1 ? 1 : rowSize / groupsize;
+            int offset = colOffset;
+            scaleWeight.Resize(groups, size);
+            zeroWeight.Resize(groups, size);
+            for (int i = 0; i < groups; i++) {
+                memcpy(scaleWeight.Data() + i * size, scales + i * cols + offset, size * sizeof(float));
+                memcpy(zeroWeight.Data() + i * size, zeros + i * cols + offset, size * sizeof(float));
+            }
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
@@ -239,12 +242,15 @@ public:
 
         // UINT4 -> UINT4
         else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, uint4x2_t>) {
-            int size = trans ? rowSize : colSize;
-            int offset = trans ? rowOffset : colOffset;
-            scaleWeight.Resize(size);
-            zeroWeight.Resize(size);
-            if (scales) memcpy(scaleWeight.Data(), scales + offset, size * sizeof(float));
-            if (zeros) memcpy(zeroWeight.Data(), zeros + offset, size * sizeof(float));
+            int size = colSize;
+            int groups = groupsize == -1 ? 1 : rowSize / groupsize;
+            int offset = colOffset;
+            scaleWeight.Resize(groups, size);
+            zeroWeight.Resize(groups, size);
+            for (int i = 0; i < groups; i++) {
+                memcpy(scaleWeight.Data() + i * size, scales + i * cols + offset, size * sizeof(float));
+                memcpy(zeroWeight.Data() + i * size, zeros + i * cols + offset, size * sizeof(float));
+            }
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
                 WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride() / 2;
@@ -257,11 +263,12 @@ public:
         else if constexpr (std::is_same_v<OriWeiT, int8_t> && std::is_same_v<WeiT, bfloat16_t>) {
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
+		int group_offset = groupsize == -1 ? 0 : i / groupsize;
                 for (uint64_t j = 0; j < colSize; j++) {
                     const int8_t src = weight[(rowOffset + i) * cols + colOffset + j];
                     bfloat16_t *dst = convertedWeight.Data() + i * convertedWeight.Stride() + j;
-                    float scale = scales[colOffset + j];
-                    float zero = zeros[colOffset + j];
+                    float scale = scales[group_offset * colSize + colOffset + j];
+                    float zero = zeros[group_offset * colSize + colOffset + j];
                     *dst = static_cast<bfloat16_t>(scale * src + zero);
                 }
             }
@@ -271,13 +278,14 @@ public:
         else if constexpr (std::is_same_v<OriWeiT, uint4x2_t> && std::is_same_v<WeiT, bfloat16_t>) {
 #pragma omp parallel for
             for (uint64_t i = 0; i < rowSize; i++) {
+		int group_offset = groupsize == -1 ? 0 : i / groupsize;
                 for (uint64_t j = 0; j < colSize; j+=2) {
                     const uint4x2_t *src = weight + (rowOffset + i) * cols / 2 + colOffset / 2 + j / 2;
                     bfloat16_t *dst = convertedWeight.Data() + i * convertedWeight.Stride() + j;
-                    float scale1 = scales[colOffset + j];
-                    float scale2 = scales[colOffset + j + 1];
-                    float zero1 = zeros[colOffset + j];
-                    float zero2 = zeros[colOffset + j + 1];
+                    float scale1 = scales[group_offset * colSize + colOffset + j];
+                    float scale2 = scales[group_offset * colSize + colOffset + j + 1];
+                    float zero1 = zeros[group_offset * colSize + colOffset + j];
+                    float zero2 = zeros[group_offset * colSize + colOffset + j + 1];
                     dst[0] = static_cast<bfloat16_t>(scale1 * src->get_v1() + zero1);
                     dst[1] = static_cast<bfloat16_t>(scale2 * src->get_v2() + zero2);
                 }
@@ -305,7 +313,7 @@ public:
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
             int numSplit, int splitIdx, bool verticalSplit, xft::Matrix<WeiT> &quantizedWeight,
-            xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight) {
+            xft::Matrix<float> &scaleWeight, xft::Matrix<float> &zeroWeight, xft::Vector<float> &sumWeight, int groupsize = -1) {
         int totalSize = verticalSplit ? cols : rows;
         std::pair<int, int> range = SplitUtil::getTaskRange(totalSize, numSplit, splitIdx);
 
@@ -313,23 +321,23 @@ public:
         int splitOffset = range.first;
 
         convertWeight(trans, rows, cols, weight, scales, zeros, splitOffset, splitSize, verticalSplit, quantizedWeight,
-                scaleWeight, zeroWeight, sumWeight, true);
+                scaleWeight, zeroWeight, sumWeight, groupsize, true);
     }
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(bool trans, int rows, int cols, const OriWeiT *weight, const float *scales, const float *zeros,
-            xft::Matrix<WeiT> &quantizedWeight, xft::Vector<float> &scaleWeight, xft::Vector<float> &zeroWeight,
-            xft::Vector<float> &sumWeight) {
+            xft::Matrix<WeiT> &quantizedWeight, xft::Matrix<float> &scaleWeight, xft::Matrix<float> &zeroWeight,
+            xft::Vector<float> &sumWeight, int groupsize = -1) {
         convertWeight(trans, rows, cols, weight, scales, zeros, 1, 0, true, quantizedWeight, scaleWeight, zeroWeight,
-                sumWeight);
+                sumWeight, groupsize);
     }
 
     template <typename OriWeiT, typename WeiT>
     void convertWeight(DecoderContext *ctx, bool trans, int rows, int cols, const OriWeiT *weight, const float *scales,
-            const float *zeros, bool verticalSplit, xft::Matrix<WeiT> &quantizedWeight, xft::Vector<float> &scaleWeight,
-            xft::Vector<float> &zeroWeight, xft::Vector<float> &sumWeight) {
+            const float *zeros, bool verticalSplit, xft::Matrix<WeiT> &quantizedWeight, xft::Matrix<float> &scaleWeight,
+            xft::Matrix<float> &zeroWeight, xft::Vector<float> &sumWeight) {
         convertWeight(trans, rows, cols, weight, scales, zeros, ctx->numSplit, ctx->splitIdx, verticalSplit,
-                quantizedWeight, scaleWeight, zeroWeight, sumWeight);
+                quantizedWeight, scaleWeight, zeroWeight, sumWeight, ctx->groupsize);
     }
 
     template <typename WeiT>
@@ -481,7 +489,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE(
@@ -559,7 +567,7 @@ public:
                     xdnn_sgemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute",
-                    xdnn_hgemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
+                    xdnn_hgemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -570,7 +578,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic));
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Basic, groupsize));
         }
 
         // INT4
@@ -582,7 +590,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute",
                     xdnn_hgemm_f32u4f32_compute(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB, scaleB,
-                            zeroB, beta, C, ldc));
+                            zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -609,7 +617,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_bias(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc,
-            const float *bias) {
+            const float *bias, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_biasadd",
@@ -692,7 +700,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_biasadd",
                     xdnn_hgemm_f32s8f32_compute_biasadd(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -703,7 +711,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_biasadd",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd));
+                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd, groupsize));
         }
 
         // INT4
@@ -715,7 +723,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_biasadd",
                     xdnn_hgemm_f32u4f32_compute_biasadd(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc, bias));
+                            scaleB, zeroB, beta, C, ldc, bias, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -742,7 +750,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_biasadd_relu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc,
-            const float *bias) {
+            const float *bias, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_biasadd_relu",
@@ -818,7 +826,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_biasadd_relu",
                     xdnn_hgemm_f32s8f32_compute_biasadd_relu(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -829,7 +837,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_biasadd_relu",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu));
+                            zeroB, sumB, beta, C, ldc, bias, nullptr, 0, 0.0f, matmul_kinds::BiasAdd_Relu, groupsize));
         }
 
         // INT4
@@ -841,7 +849,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_biasadd_relu",
                     xdnn_hgemm_f32u4f32_compute_biasadd_relu(transA, M, N, K, alpha, A, lda,
-                            (const XDNN_UINT4x2 *)packedB, scaleB, zeroB, beta, C, ldc, bias));
+                            (const XDNN_UINT4x2 *)packedB, scaleB, zeroB, beta, C, ldc, bias, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -867,7 +875,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     void compute_silu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_silu",
@@ -945,7 +953,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_silu",
                     xdnn_hgemm_f32s8f32_compute_silu(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -956,7 +964,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_silu",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu));
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Silu, groupsize));
         }
 
         // INT4
@@ -964,11 +972,11 @@ public:
 #ifdef AVX512_FP32_WEIGHT_ONLY_INT4
             GEMMVERBOSE("xdnn_sgemm_f32u4f32_compute_silu",
                     xdnn_sgemm_f32u4f32_compute_silu(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc));
+                            scaleB, zeroB, beta, C, ldc, groupsize));
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_silu",
                     xdnn_hgemm_f32u4f32_compute_silu(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc));
+                            scaleB, zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -994,7 +1002,7 @@ public:
 
     template <typename InT, typename WeiT, typename OutT>
     void compute_gelu(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_gelu",
@@ -1073,7 +1081,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_gelu",
                     xdnn_hgemm_f32s8f32_compute_gelu(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1084,7 +1092,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_gelu",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Gelu));
+                            zeroB, sumB, beta, C, ldc, nullptr, nullptr, 0, 0.0f, matmul_kinds::Gelu, groupsize));
         }
 
         // INT4
@@ -1096,7 +1104,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_gelu",
                     xdnn_hgemm_f32u4f32_compute_gelu(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc));
+                            scaleB, zeroB, beta, C, ldc, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1123,7 +1131,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_resmul(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, const InT *res,
-            int ldres) {
+            int ldres, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_resmul",
@@ -1206,7 +1214,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_resmul",
                     xdnn_hgemm_f32s8f32_compute_resmul(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1217,7 +1225,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_resmul",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, nullptr, res, ldres, 0.0f, matmul_kinds::Resmul));
+                            zeroB, sumB, beta, C, ldc, nullptr, res, ldres, 0.0f, matmul_kinds::Resmul, groupsize));
         }
 
         // INT4
@@ -1229,7 +1237,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_resmul",
                     xdnn_hgemm_f32u4f32_compute_resmul(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc, res, ldres));
+                            scaleB, zeroB, beta, C, ldc, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1256,7 +1264,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_residential(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, const float *bias,
-            const InT *res, int ldres) {
+            const InT *res, int ldres, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_residential",
@@ -1341,7 +1349,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_residential",
                     xdnn_hgemm_f32s8f32_compute_residential(
-                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres));
+                            transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1352,7 +1360,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_residential",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, bias, res, ldres, 0.0f, matmul_kinds::Residential));
+                            zeroB, sumB, beta, C, ldc, bias, res, ldres, 0.0f, matmul_kinds::Residential, groupsize));
         }
 
         // INT4
@@ -1364,7 +1372,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_residential",
                     xdnn_hgemm_f32u4f32_compute_residential(transA, M, N, K, alpha, A, lda,
-                            (const XDNN_UINT4x2 *)packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres));
+                            (const XDNN_UINT4x2 *)packedB, scaleB, zeroB, beta, C, ldc, bias, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1391,7 +1399,7 @@ public:
     template <typename InT, typename WeiT, typename OutT>
     void compute_resext(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
             const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc, const float *bias,
-            float gamma, InT *res, int ldres) {
+            float gamma, InT *res, int ldres, int groupsize) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE("xdnn_sgemm_compute_resext",
@@ -1499,7 +1507,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT8)
             GEMMVERBOSE("xdnn_hgemm_f32s8f32_compute_resext",
                     xdnn_hgemm_f32s8f32_compute_resext(transA, M, N, K, alpha, A, lda, packedB, scaleB, zeroB, beta, C,
-                            ldc, bias, gamma, res, ldres));
+                            ldc, bias, gamma, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT8 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -1510,7 +1518,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, w8a8_t>) {
             GEMMVERBOSE("onednn_amx_gemm_f32s8f32_compute_resext",
                     onednn_amx_gemm_f32s8f32_compute(transA, M, N, K, alpha, A, lda, (const int8_t *)packedB, scaleB,
-                            zeroB, sumB, beta, C, ldc, bias, res, ldres, gamma, matmul_kinds::Resext));
+                            zeroB, sumB, beta, C, ldc, bias, res, ldres, gamma, matmul_kinds::Resext, groupsize));
         }
 
         // INT4
@@ -1522,7 +1530,7 @@ public:
 #elif defined(AVX512_FP16_WEIGHT_ONLY_INT4)
             GEMMVERBOSE("xdnn_hgemm_f32u4f32_compute_resext",
                     xdnn_hgemm_f32u4f32_compute_resext(transA, M, N, K, alpha, A, lda, (const XDNN_UINT4x2 *)packedB,
-                            scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres));
+                            scaleB, zeroB, beta, C, ldc, bias, gamma, res, ldres, groupsize));
 #else
             printf("%s:%d: Need to define WEIGHT_ONLY_INT4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
@@ -2472,11 +2480,16 @@ private:
 
     void onednn_amx_gemm_f32s8f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
             const int8_t *B, const float *scaleB, const float *zeroB, const float *sumB, float beta, float *C, int ldc,
-            const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind) {
+            const float *bias, const float *res, int ldres, float gamma, matmul_kinds kind, int groupsize) {
         if (transA || (N % 16) != 0 || alpha != 1.0f || beta != 0.0f) {
             printf("%s:%d: Not implemented.\n", __FILE__, __LINE__);
             exit(-1);
         }
+
+	if (groupsize != -1) {
+            printf("%s:%d: W8A8 with groupsize not implemented.\n", __FILE__, __LINE__);
+            exit(-1);
+	}
 
         // split M dimension if M*N is too big
         const int max_MN = 4 * 1024 * 1024;

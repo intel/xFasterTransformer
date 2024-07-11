@@ -311,7 +311,6 @@ class Qwen2Convert(BaseModelConvert):
             config[sec_name]["quant_qweight_data_type"] = "int8" if self.wbits == 8 else "uint4"
             config[sec_name]["quant_scales_data_type"] = "fp32"
             config[sec_name]["quant_zeros_data_type"] = "fp32"
-            assert quantize_config["group_size"] == -1, "Only column wise quantization is supported."
             config[sec_name]["quant_groupsize"] = str(quantize_config["group_size"])
             # config[sec-name]["quant_scheme"] = "sym" if quantize_config["sym"] == True else "asym"
 
@@ -409,7 +408,7 @@ class Qwen2Convert(BaseModelConvert):
                 # for uint4, zeros = - scales * qzeros
                 if self.wbits == 8:
                     qzeros = qzeros - 128  # uint8 to int8
-                qzeros = torch.flatten(qzeros).float()
+                qzeros = qzeros.reshape(qzeros.shape[0], -1).float()
                 scales = state_dict["model." + name.replace("qzeros", "scales")].float()
                 zeros = -scales * qzeros
                 model_named_parameters[name] = zeros
