@@ -42,6 +42,7 @@ xFasterTransformer为大语言模型（LLM）在CPU X86平台上的部署提供�
     - [MLServer](#mlserver)
   - [性能测试](#性能测试)
   - [技术支持](#技术支持)
+  - [论文发表](#论文发表)
   - [问题与回答](#问题与回答)
 
 ## 模型概览
@@ -389,6 +390,30 @@ xFasterTransformer 是 [FastChat](https://github.com/lm-sys/FastChat)的官方�
 
 - xFasterTransformer 邮件: xft.maintainer@intel.com
 - xFasterTransformer [微信](https://github.com/intel/xFasterTransformer/wiki)
+
+
+## 论文发表
+- ICLR'2024 on practical ML for limited/low resource settings: [Distributed Inference Performance Optimization for LLMs on CPUs](https://arxiv.org/abs/2407.00029)
+- ICML'2024 on Foundation Models in the Wild: [Inference Performance Optimization for Large Language Models on CPUs](https://arxiv.org/abs/2407.07304)
+- IEEE ICSESS 2024: All-in-one Approach for Large Language Models Inference
+
+如果你觉得xFT对你的研究有帮助，请引用:
+```latex
+@article{he2024distributed,
+  title={Distributed Inference Performance Optimization for LLMs on CPUs},
+  author={He, Pujiang and Zhou, Shan and Li, Changqing and Huang, Wenhuan and Yu, Weifei and Wang, Duyi and Meng, Chen and Gui, Sheng},
+  journal={arXiv preprint arXiv:2407.00029},
+  year={2024}
+}
+```
+and
+```latex
+@inproceedings{he2024inference,
+  title={Inference Performance Optimization for Large Language Models on CPUs},
+  author={He, Pujiang and Zhou, Shan and Huang, Wenhuan and Li, Changqing and Wang, Duyi and Guo, Bin and Meng, Chen and Gui, Sheng and Yu, Weifei and Xie, Yi},
+  booktitle={ICML 2024 Workshop on Foundation Models in the Wild}
+}
+```
 
 ## 问题与回答
 

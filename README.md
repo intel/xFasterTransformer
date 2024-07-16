@@ -391,7 +391,7 @@ Benchmark scripts are provided to get the model inference performance quickly.
 
 ## Accepted Papers
 - ICLR'2024 on practical ML for limited/low resource settings: [Distributed Inference Performance Optimization for LLMs on CPUs](https://arxiv.org/abs/2407.00029)
-- ICML'2024 on Foundation Models in the Wild: Inference Performance Optimization for Large Language Models on CPUs
+- ICML'2024 on Foundation Models in the Wild: [Inference Performance Optimization for Large Language Models on CPUs](https://arxiv.org/abs/2407.07304)
 - IEEE ICSESS 2024: All-in-one Approach for Large Language Models Inference
 
 If xFT is useful for your research, please cite:
@@ -401,6 +401,14 @@ If xFT is useful for your research, please cite:
   author={He, Pujiang and Zhou, Shan and Li, Changqing and Huang, Wenhuan and Yu, Weifei and Wang, Duyi and Meng, Chen and Gui, Sheng},
   journal={arXiv preprint arXiv:2407.00029},
   year={2024}
+}
+```
+and
+```latex
+@inproceedings{he2024inference,
+  title={Inference Performance Optimization for Large Language Models on CPUs},
+  author={He, Pujiang and Zhou, Shan and Huang, Wenhuan and Li, Changqing and Wang, Duyi and Guo, Bin and Meng, Chen and Gui, Sheng and Yu, Weifei and Xie, Yi},
+  booktitle={ICML 2024 Workshop on Foundation Models in the Wild}
 }
 ```
 
