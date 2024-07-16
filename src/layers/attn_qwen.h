@@ -18,11 +18,22 @@
 #include "attention.h"
 #include "common_decoder.h"
 #include "rms_norm.h"
+#include "type_selector.h"
 
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS = RmsNorm>
-class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS> {
+class QwenAttention : public Attention<WeiT, QKPO_CLS, NORM_CLS, typename TypeSelector<WeiT>::InType,
+                              typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true> {
 public:
-    QwenAttention(int layerId, DecoderContext *ctx) : Attention<WeiT, QKPO_CLS, NORM_CLS>(layerId, ctx) {
+    QwenAttention(int layerId, DecoderContext *ctx)
+        : Attention<WeiT, QKPO_CLS, NORM_CLS, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                typename TypeSelector<WeiT>::OutType, true>(layerId, ctx) {
         this->qkpo.init_logn(ctx->maxSeqLength, ctx->useLogN, ctx->useNTK);
     }
+};
+
+template <typename WeiT, typename QKPO_CLS, typename NORM_CLS>
+struct AttnTypeExtractor<QwenAttention<WeiT, QKPO_CLS, NORM_CLS>> {
+    using Tin = typename TypeSelector<WeiT>::InType;
+    using Tim = typename TypeSelector<WeiT>::ImType;
+    using Tout = typename TypeSelector<WeiT>::OutType;
 };

@@ -18,7 +18,10 @@
 
 template <typename WeiT, typename KVCacheT>
 QwenLLM<WeiT, KVCacheT>::QwenLLM(const std::string &modelPath)
-    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>, LlamaMLP<WeiT>, KVCacheT>(modelPath, "qwen") {
+    : CommonDecoder<QwenAttention<WeiT, QwenRotaryEmbedding, RmsNorm>,
+            LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                    typename TypeSelector<WeiT>::OutType>,
+            KVCacheT>(modelPath, "qwen") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -106,7 +109,27 @@ void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float *output, int toke
 }
 
 template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, bfloat16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
+}
+
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::embeddingForward(int *ids, float16_t *output, int tokenSize) {
+    embedding->forward(ids, output, tokenSize);
+}
+
+template <typename WeiT, typename KVCacheT>
 void QwenLLM<WeiT, KVCacheT>::lastLayerNormForward(float *input, float *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
+
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::lastLayerNormForward(bfloat16_t *input, bfloat16_t *output, int rows) {
+    finalLN.forward(input, output, rows);
+}
+
+template <typename WeiT, typename KVCacheT>
+void QwenLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16_t *output, int rows) {
     finalLN.forward(input, output, rows);
 }
 
