@@ -175,6 +175,10 @@ if [[ ${input_tokens} -ge 2048 ]]; then
     export ENABLE_SKIP_MASK=1
 fi
 
+if [[ ${batch_size} -gt 256 ]]; then
+    export XFT_PRIMITIVE_CACHE_M=${batch_size}
+fi
+
 sockets_num=$(lscpu | grep "Socket(s)" | awk -F ':' '{print $2}')
 cores_per_socket=$(lscpu | grep "Core(s) per socket" | awk -F ':' '{print $2}')
 numa_nodes=$(lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}')
@@ -221,7 +225,7 @@ elif [ "${numa_nodes}" -eq 8 ]; then
 elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
     #HBM flat Quad-mode, Confirm that there are 2 HBM memory nodes and 2 DRAM memory nodes through "nuamctl -H"
     # or EMR SNC-2 mode
-    numa_nodes_info=$(lscpu | grep "NUMA node3 CPU(s):" | awk -F ':' '{print $2}')
+    numa_nodes_info=$(lscpu | grep "NUMA node3 CPU(s):" | awk -F ':' '{gsub(" ", "", $2);print $2}')
     if [ "$numa_nodes_info" == "" ]; then
         Info "SPR-HBM Quad mode"
         export OMP_NUM_THREADS=${cores_per_numa}
