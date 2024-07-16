@@ -1739,6 +1739,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, postAlg);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -1812,7 +1813,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, postAlg);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, postAlg);
         }
 
         // Repack and convert input data.
@@ -1875,6 +1876,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     template <typename Tin, typename Twei, typename Tout>
@@ -1890,6 +1897,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, postAlg);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -1950,7 +1958,7 @@ private:
             }
             matmul_prim = new matmul(*matmul_pd);
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, postAlg);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, postAlg);
         }
 
         // Repack and convert input data.
@@ -1991,6 +1999,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     template <typename Tin, typename Twei, typename Tout>
@@ -2006,6 +2020,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -2039,7 +2054,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd);
+            isCached = (matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd);
         }
 
         // Repack and convert input data.
@@ -2082,6 +2097,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     template <typename Tin, typename Twei, typename Tout>
@@ -2097,6 +2118,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, matmul_kinds::BiasAdd_Relu);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -2138,7 +2160,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd_Relu);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd_Relu);
         }
 
         // Repack and convert input data.
@@ -2181,6 +2203,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     template <typename Tin, typename Twei, typename Tout>
@@ -2196,6 +2224,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, matmul_kinds::Resmul);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -2239,7 +2268,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Resmul);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Resmul);
         }
 
         // Repack and convert input data.
@@ -2298,6 +2327,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     template <typename Tin,  typename Twei, typename Tout>
@@ -2314,6 +2349,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, matmul_kinds::Residential);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -2364,7 +2400,7 @@ private:
             }
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Residential);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Residential);
         }
 
         // Repack and convert input data.
@@ -2416,6 +2452,12 @@ private:
 
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     void onednn_amx_gemm_s8s8s32(bool transA, int M, int N, int K, float alpha, const int8_t *A, int lda,
@@ -2430,6 +2472,7 @@ private:
         matmul *matmul_prim;
         std::string key = create_key(transA, M, N, K, matmul_kinds::Basic);
         auto it = matmul_hub.find(key);
+        bool isCached = true;
         if (it != matmul_hub.end()) {
             matmul_pd = std::get<0>(it->second);
             matmul_prim = std::get<1>(it->second);
@@ -2450,7 +2493,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Basic);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::Basic);
         }
 
         auto input_mem = memory(matmul_pd->src_desc(), *engine, const_cast<int8_t *>(A));
@@ -2468,6 +2511,12 @@ private:
         TimeLine t2("onednn_gemm_s8s8s32.execute_primitive");
         matmul_prim->execute(*stream, matmul_args);
         stream->wait();
+
+        // Free primitive_desc and matmul if not cached.
+        if (!isCached) {
+            delete matmul_pd;
+            delete matmul_prim;
+        }
     }
 
     void onednn_amx_gemm_f32s8f32_compute(bool transA, int M, int N, int K, float alpha, const float *A, int lda,
