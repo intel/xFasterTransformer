@@ -56,13 +56,14 @@ public:
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {
             // We are responsible for the range [startQHead, endQHead)
-            auto range = getTaskRange(ctx->attHeadNum, ctx->numSplit, ctx->splitIdx);
-            this->startQHead = range.first;
-            this->endQHead = range.second;
+            auto range = SplitUtil::getHeadRange(ctx->attHeadNum, ctx->kvHeadNum, ctx->numSplit, ctx->splitIdx);
+            auto qRange = range.first;
+            this->startQHead = qRange.first;
+            this->endQHead = qRange.second;
 
-            int expandFactor = ctx->attHeadNum / ctx->kvHeadNum;
-            this->startKVHead = startQHead / expandFactor;
-            this->endKVHead = (this->endQHead - 1) / expandFactor + 1;
+            auto kvRange = range.second;
+            this->startKVHead = kvRange.first;
+            this->endKVHead = kvRange.second;
         }
 
         // Unexpected case
@@ -169,7 +170,7 @@ public:
         // Merged bias
         if (queryBias && keyBias && valueBias) {
             qkvBias.Resize(responsibleCols);
-            memcpy(qkvBias.Data(), queryBias + ctx->splitIdx * qResponsibleCols, sizeof(float) * qResponsibleCols);
+            memcpy(qkvBias.Data(), queryBias + this->startQHead * headSize, sizeof(float) * qResponsibleCols);
             memcpy(qkvBias.Data() + qResponsibleCols, keyBias + this->startKVHead * headSize,
                     sizeof(float) * kvResponsibleCols);
             memcpy(qkvBias.Data() + qResponsibleCols + kvResponsibleCols, valueBias + this->startKVHead * headSize,
@@ -668,6 +669,7 @@ protected:
             KVCacheTensor<KVCacheT> &presentValue) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
+        int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         int tokenSizes[ctx->batchSize];
         for (int i = 0; i < ctx->batchSize; ++i) {
@@ -679,7 +681,8 @@ protected:
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), ctx->batchSize, tokenSizes,
                 ctx->attFactor, alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return presentKey.getSequence(seqIdx, b, headIdx); },
-                [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); });
+                [&](int b, int headIdx, int seqIdx) { return presentValue.getSequence(seqIdx, b, headIdx); },
+                [&](int qHeadIdx) { return (this->startQHead + qHeadIdx) / groupNum - this->startKVHead; });
     }
 
     template <typename T, typename KVCacheT>
@@ -689,6 +692,7 @@ protected:
             std::vector<xft::SequenceMeta *> &seqs) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
+        int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         int batchSize = seqs.size();
         int tokenSizes[batchSize];
@@ -701,7 +705,8 @@ protected:
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, tokenSizes, ctx->attFactor,
                 alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); },
-                [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); });
+                [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); },
+                [&](int qHeadIdx) { return (this->startQHead + qHeadIdx) / groupNum - this->startKVHead; });
     }
 
     template <typename T, typename KVCacheT>
@@ -710,6 +715,7 @@ protected:
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, std::vector<xft::SequenceMeta *> &seqs) {
         int responsibleQHeads = this->endQHead - this->startQHead;
         int responsibleKVHeads = this->endKVHead - this->startKVHead;
+        int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         int batchSize = seqs.size();
 
@@ -721,13 +727,19 @@ protected:
             pastSeqLens[i] = seqs[i]->getPastSeqLen();
         }
 
+        // headMap for imbalanced distributed GQA
+        std::function<int(int)> headMap = nullptr;
+        if (groupNum % ctx->numSplit != 0)
+            headMap = [&](int qHeadIdx) { return (this->startQHead + qHeadIdx) / groupNum - this->startKVHead; };
+
         // TODO: non-causal case handle
         xft::crossAttnByHead<T, KVCacheT>(
                 result.Data(), query.Data(), key.Data(), value.Data(), responsibleQHeads, responsibleKVHeads,
                 ctx->attHeadSize, result.Stride(), query.Stride(), key.Stride(), batchSize, inputSeqLens, pastSeqLens,
                 true, ctx->attFactor, alibiSlopes, ctx->numThreads,
                 [&](int b, int headIdx) { return keyCaches[b]->getHead(0, headIdx); },
-                [&](int b, int headIdx) { return valueCaches[b]->getHead(0, headIdx); });
+                [&](int b, int headIdx) { return valueCaches[b]->getHead(0, headIdx); },
+                headMap);
     }
 
     int getMBlockSize(int inputSeqLen, int headSize, int minVal = 6) {
@@ -888,7 +900,6 @@ protected:
         int responsibleHeads = this->endQHead - this->startQHead;
         int batchSize = ctx->batchSize;
         int headSize = ctx->attHeadSize;
-        int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         // If M_dimension/input_seq_len is big (1K, 2K, etc), need to split it to make sure the intermediate result in cache
         // to make sure it works better (the logic here is trying to make sure each head of BMM result [seq * seq] in cache)
@@ -955,7 +966,7 @@ protected:
                     if (!kvCopied) { copyKVCache(ctx, key, presentKey, pastSeqLen, b, i); }
 
                     // Q * K
-                    auto keyMatInfo = presentKey.getHead(b, i / groupNum);
+                    auto keyMatInfo = presentKey.getHead(b, (this->startQHead + i) / groupNum - this->startKVHead);
                     int m = endSeq - startSeq;
                     int k = ctx->attHeadSize;
                     int n = pastSeqLen + ctx->inputSeqLen;
@@ -998,7 +1009,7 @@ protected:
                     if (!kvCopied) { copyKVCache(ctx, value, presentValue, pastSeqLen, b, i); }
 
                     // Softmax * V
-                    auto valueMat = presentValue.getHead(b, i / groupNum);
+                    auto valueMat = presentValue.getHead(b, (this->startQHead + i) / groupNum - this->startKVHead);
                     auto output = result.Row(b * ctx->inputSeqLen + startSeq) + i * ctx->attHeadSize;
                     this->gemm2(C, valueMat, output, m, headSize, keyLen, scoreStride, result.Stride());
 
@@ -1028,8 +1039,12 @@ protected:
         xft::crossAttnShardedHead<ImT, KVCacheT>(
                 result.Data(), query.Data(), ctx->inputSeqLen, presentSeqLen, responsibleHeads, ctx->attHeadSize,
                 result.Stride(), query.Stride(), batchSize, ctx->attFactor, ctx->numThreads,
-                [&](int b, int qHeadIdx) { return presentKey.getHead(b, qHeadIdx / groupNum); },
-                [&](int b, int qHeadIdx) { return presentValue.getHead(b, qHeadIdx / groupNum); },
+                [&](int b, int qHeadIdx) {
+                    return presentKey.getHead(b, (this->startQHead + qHeadIdx) / groupNum - this->startKVHead);
+                },
+                [&](int b, int qHeadIdx) {
+                    return presentValue.getHead(b, (this->startQHead + qHeadIdx) / groupNum - this->startKVHead);
+                },
                 [&](int b, int qHeadIdx, int srcLen, int tgtLen) {
                     return getMask(attnMask, b, qHeadIdx, srcLen, tgtLen);
                 });
@@ -1050,6 +1065,7 @@ protected:
         int kvCols = respKVHeads * headSize;
         int qkvCols = qCols + kvCols * 2;
         float scale = ctx->attFactor;
+        const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         int totalTokenSize = 0;
         int inputSeqLens[batchSize], pastSeqLens[batchSize];
@@ -1097,7 +1113,8 @@ protected:
         // [batch, src, head, headsize]
         xft::selfScaledDpAttention<ImT, AttnT>(result.Data(), query.Data(), k, v, respQHeads, respKVHeads, headSize,
                 result.Stride(), query.Stride(), kvStride, batchSize, inputSeqLens, pastSeqLens, true, alibiSlopes,
-                attnMask, scale, ctx->numThreads);
+                attnMask, scale, ctx->numThreads,
+                [&](int qHeadIdx) { return (this->startQHead + qHeadIdx) / groupNum - this->startKVHead; });
 
         // copy current key/values to cache
         copyKVCache(ctx, key, value, presentKey, presentValue, pastSeqLen);
@@ -1118,6 +1135,7 @@ protected:
         int kvCols = respKVHeads * headSize;
         int qkvCols = qCols + kvCols * 2;
         float scale = ctx->attFactor;
+        const int groupNum = ctx->attHeadNum / ctx->kvHeadNum;
 
         int totalTokenSize = 0;
         int inputSeqLens[batchSize], pastSeqLens[batchSize];
@@ -1165,39 +1183,11 @@ protected:
         // [batch, src, head, headsize]
         xft::selfScaledDpAttention<ImT, AttnT>(result.Data(), query.Data(), k, v, respQHeads, respKVHeads, headSize,
                 result.Stride(), query.Stride(), kvStride, batchSize, inputSeqLens, pastSeqLens, true, alibiSlopes,
-                nullptr, scale, ctx->numThreads);
+                nullptr, scale, ctx->numThreads,
+                [&](int qHeadIdx) { return (this->startQHead + qHeadIdx) / groupNum - this->startKVHead; });
 
         // copy current key/values to cache
         copyKVCache(ctx, key, value, keyCaches, valueCaches, seqs);
-    }
-
-private:
-    std::pair<int, int> getTaskRange(int N, int splits, int splitIdx) {
-        int startId, endId;
-
-        if (N % splits == 0) {
-            int tasksPerSplit = N / splits;
-            startId = splitIdx * tasksPerSplit;
-            endId = startId + tasksPerSplit;
-        } else {
-            int baseTasksPerSplit = N / splits;
-            int remainingTasks = N % splits;
-
-            // Each split has (baseTasksPerSplit + 1) tasks
-            if (splitIdx < remainingTasks) {
-                int tasksPerSplit = baseTasksPerSplit + 1;
-                startId = splitIdx * tasksPerSplit;
-                endId = startId + tasksPerSplit;
-            }
-            // Each split has 'baseTasksPerSplit' tasks
-            else {
-                int taskOffset = (baseTasksPerSplit + 1) * remainingTasks;
-                startId = taskOffset + (splitIdx - remainingTasks) * baseTasksPerSplit;
-                endId = startId + baseTasksPerSplit;
-            }
-        }
-
-        return std::make_pair(startId, endId);
     }
 
 protected:

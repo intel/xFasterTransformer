@@ -57,4 +57,43 @@ public:
 
         return std::make_pair(ret.first * gran, ret.second * gran);
     }
+
+    static std::pair<std::pair<int, int>, std::pair<int, int>> getHeadRange(
+            int qHeads, int kvHeads, int splits, int splitIdx) {
+        int startId, endId;
+        int kvStartId, kvEndId;
+
+        // split query heads
+        if (qHeads % splits == 0) {
+            int tasksPerSplit = qHeads / splits;
+            startId = splitIdx * tasksPerSplit;
+            endId = startId + tasksPerSplit;
+        } else {
+            int baseTasksPerSplit = qHeads / splits;
+            int remainingTasks = qHeads % splits;
+
+            // Each split has (baseTasksPerSplit + 1) tasks
+            if (splitIdx < remainingTasks) {
+                int tasksPerSplit = baseTasksPerSplit + 1;
+                startId = splitIdx * tasksPerSplit;
+                endId = startId + tasksPerSplit;
+            }
+            // Each split has 'baseTasksPerSplit' tasks
+            else {
+                int taskOffset = (baseTasksPerSplit + 1) * remainingTasks;
+                startId = taskOffset + (splitIdx - remainingTasks) * baseTasksPerSplit;
+                endId = startId + baseTasksPerSplit;
+            }
+        }
+
+        // split key-value based on queries
+        int expandFactor = qHeads / kvHeads;
+        kvStartId = startId / expandFactor;
+        kvEndId = (endId - 1) / expandFactor + 1;
+
+        auto qRange = std::make_pair(startId, endId);
+        auto kvRange = std::make_pair(kvStartId, kvEndId);
+
+        return std::make_pair(qRange, kvRange);
+    }
 };

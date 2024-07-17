@@ -35,7 +35,7 @@
 #endif
 
 #ifndef ALIGNED_SIZE
-#define ALIGNED_SIZE(size, align) (((size) + (align)-1) / (align) * (align))
+#define ALIGNED_SIZE(size, align) (((size) + (align) - 1) / (align) * (align))
 #endif
 
 namespace xft {
@@ -110,7 +110,8 @@ void small_amx_gemm_16bits_compute(int m, int n, int k, T *A, int lda, T *packed
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
                 m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, ldb, (XDNN_BF16 *)C, ldc);
     } else {
-        xdnn_small_amx_sgemm_f16f16f16_compute(m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc);
+        xdnn_small_amx_sgemm_f16f16f16_compute(
+                m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc);
     }
 }
 
@@ -130,10 +131,10 @@ void small_softmax(T *data, float scale, int elements) {
 
 // Self attention while KV cache copy is separated
 template <bool fusedPack, typename T, typename Lambda1, typename Lambda2>
-void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHeadNum,
-        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
-        const Lambda2 &getVCache) {
+void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHeadNum, int kvHeadNum, int headSize,
+        int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
+        const float *alibiSlopes, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache,
+        std::function<int(int)> headMap = nullptr) {
     constexpr int mBlockSize = 32;
 
     int totalTokenSize = 0; // total token size
@@ -235,7 +236,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
         int groupNum = qHeadNum / kvHeadNum;
 
         int tid = omp_get_thread_num();
-        int kvHeadIdx = i / groupNum;
+        int kvHeadIdx = (headMap == nullptr) ? i / groupNum : headMap(i);
         int locationIdx = (fusedPack ? tid : b * kvHeadNum + kvHeadIdx);
         T *packedB = packBuf + locationIdx * (kPackSize + vPackSize);
         T *packedV = packedB + kPackSize;
@@ -329,10 +330,9 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
 }
 
 template <typename T, typename Lambda1, typename Lambda2>
-void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum,
-        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
-        const Lambda2 &getVCache) {
+void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum, int kvHeadNum, int headSize,
+        int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
+        const float *alibiSlopes, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache) {
 #ifdef XFT_DEBUG
     printf("Q[0]=%f, K[0]=%f, V[0]=%f\n", (float)query[0], (float)key[0], (float)value[0]);
     printf("kvHeadNum=%d, headSize=%d, qStride=%d, kvStride=%d, batchSize=%d\n", kvHeadNum, headSize, qStride, kvStride,
@@ -470,10 +470,9 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
 }
 
 template <typename T, typename Lambda1, typename Lambda2>
-void selfAttention(T *output, T *query, T *key, T *value, int qHeadNum,
-        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
-        const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKCache,
-        const Lambda2 &getVCache) {
+void selfAttention(T *output, T *query, T *key, T *value, int qHeadNum, int kvHeadNum, int headSize, int oStride,
+        int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale, const float *alibiSlopes,
+        int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache, std::function<int(int)> headMap = nullptr) {
     // Revise threadNum if not set
     if (unlikely(threadNum <= 0)) {
 #pragma omp parallel
@@ -491,7 +490,7 @@ void selfAttention(T *output, T *query, T *key, T *value, int qHeadNum,
                 batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache);
     } else {
         selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
-                kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache);
+                kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache, headMap);
     }
 }
 
@@ -716,7 +715,7 @@ template <typename T, typename KVCacheT, typename Lambda1, typename Lambda2>
 void crossAttnByHead(T *output, const T *query, const T *key, const T *value, int qHeadNum, int kvHeadNum, int headSize,
         int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens, const int *pastSeqLens,
         bool causal, const float scale, const float *alibiSlopes, int threadNum, const Lambda1 &getKHead,
-        const Lambda2 &getVHead) {
+        const Lambda2 &getVHead, std::function<int(int)> headMap = nullptr) {
 
     int responsibleHeads = qHeadNum;
     int groupNum = qHeadNum / kvHeadNum;
@@ -726,24 +725,30 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
     size_t scoreSizePerThr = 0;
     for (int i = 0; i < batchSize; ++i) {
         scoreSizePerThr = std::max(scoreSizePerThr, (size_t)inputSeqLens[i] * (inputSeqLens[i] + pastSeqLens[i]));
-        inputOffsets[i] = (i > 0 ? inputOffsets[i - 1] + inputSeqLens[i] : 0);
+        inputOffsets[i] = (i > 0 ? inputOffsets[i - 1] + inputSeqLens[i - 1] : 0);
     }
 
     scoreSizePerThr = ALIGNED_SIZE(scoreSizePerThr, 16);
     size_t scoreSize = scoreSizePerThr * threadNum;
     float *scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * scoreSize);
 
-#pragma omp parallel for collapse(3)
-    for (int kvh = 0; kvh < kvHeadNum; ++kvh) {
-        for (int b = 0; b < batchSize; ++b) {
-            for (int groupOff = 0; groupOff < groupNum; ++groupOff) {
-                int i = kvh * groupNum + groupOff;
+    int outerHeadNum = kvHeadNum;
+    int innerHeadNum = groupNum;
+    if (headMap != nullptr) {
+        outerHeadNum = 1;
+        innerHeadNum = responsibleHeads;
+    }
 
+#pragma omp parallel for collapse(3)
+    for (int outh = 0; outh < outerHeadNum; ++outh) {
+        for (int b = 0; b < batchSize; ++b) {
+            for (int inh = 0; inh < innerHeadNum; ++inh) {
+                int i = outh * innerHeadNum + inh;
                 // Copy current key to cached keys (if needed)
-                int kvHdx = kvh;
+                int kvHdx = (headMap == nullptr) ? i / groupNum : headMap(i);
                 auto keyMatInfo = getKHead(b, kvHdx);
                 auto valueMat = getVHead(b, kvHdx);
-                bool bCopyCache = (i % groupNum == 0);
+                bool bCopyCache = (headMap == nullptr) ? (i % groupNum == 0) : (i == 0 || headMap(i - 1) != headMap(i));
 
                 // Q * K
                 auto Q = query + inputOffsets[b] * qStride + i * headSize;
@@ -811,9 +816,9 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
                         xft::copy(result + t * oStride, f32Out + t * headSize, headSize);
                     }
                 }
-            } // end for groupOff
+            } // end for inner head
         } // end for b
-    } // end for kvh
+    } // end for outer head
 }
 
 // scaled dot-product attention: bmm1 + softmax + bmm2
@@ -822,7 +827,7 @@ template <typename T, typename AttnT>
 void selfScaledDpAttention(T *output, const T *query, const AttnT *key, const AttnT *value, int qHeadNum, int kvHeadNum,
         int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *inputSeqLens,
         const int *pastSeqLens, bool causal, const float *alibiSlopes, const float *attnMask, const float scale,
-        int threadNum) {
+        int threadNum, std::function<int(int)> headMap = nullptr) {
     // output = softmax(query * trans(key)) * value
     // causal = True: llama-family, chatglm2; extra alibiSlopes for baichuan
     // causal = False: just chatglm (prefixLLM, 0:startid) need attnMask for now
@@ -847,7 +852,7 @@ void selfScaledDpAttention(T *output, const T *query, const AttnT *key, const At
     int srcBlk = std::min(256, minBlk);
     int tgtBlk = std::min(512, maxTgtLen);
 
-    int numGroup = qHeadNum / kvHeadNum;
+    int groupNum = qHeadNum / kvHeadNum;
 
     int numArr = 7;
     int arrStride = (4 + tgtBlk + 2 * headSize) * srcBlk;
@@ -907,7 +912,8 @@ void selfScaledDpAttention(T *output, const T *query, const AttnT *key, const At
                     max[tid][ii] = std::numeric_limits<float>::lowest();
                 }
 
-                uint64_t tgtOff = seqStartLoc[b] * kvStride + (h / numGroup) * headSize;
+                int kvHeadIdx = (headMap == nullptr) ? h / groupNum : headMap(h);
+                uint64_t tgtOff = seqStartLoc[b] * kvStride + kvHeadIdx * headSize;
                 const AttnT *k = key + tgtOff;
                 const AttnT *v = value + tgtOff;
                 // split the target len dimension

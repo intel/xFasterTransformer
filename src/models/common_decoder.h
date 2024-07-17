@@ -823,6 +823,7 @@ protected:
         int maxPositions = ctx->maxPositions;
         int layers = this->decoderBlock->size();
         int workers = this->messenger.getSize();
+        int rank = this->messenger.getRank();
 
         // Prepare buffers
         int logitsLen = logitsAll ? batchSize * seqLen : userSideBS * beamSize;
@@ -841,7 +842,10 @@ protected:
         // Cached keys/values
         // The maximum sequence length is to be the same as maxPositions, at most
         // And the cache always needs to account for beam size
-        int headsPerSplit = (ctx->kvHeadNum + workers - 1) / workers;
+        auto ranges = SplitUtil::getHeadRange(ctx->attHeadNum, ctx->kvHeadNum, workers, rank);
+        auto kvRange = ranges.second;
+        int headsPerSplit = kvRange.second - kvRange.first;
+
         this->kvCacheMgr->resize(prefix ? this->prefixSeqLen : maxPositions, userSideBS * beamSize, headsPerSplit,
                 ctx->attHeadSize, prefix);
     }

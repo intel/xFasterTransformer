@@ -20,8 +20,8 @@
 #include <cstring>
 #include <string>
 
-#include "allocator.h"
 #include <filesystem>
+#include "allocator.h"
 
 #include "INIReader.h"
 #include "my_types.h"
@@ -129,10 +129,11 @@ private:
     uint64_t size3;
 
 public:
-    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize, const std::string &act,
-            float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions, int _maxPosEmbed, int _maxSeqLength,
-            int _splitIdx, int _splits, MMHelper *mmHelper, void *device = nullptr, int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr,
-            bool _useLogN = true, bool _useNTK = true, int numThreads = 0)
+    DecoderContext(int _layers, int _hiddenSize, int _headSize, int _attHeadNum, int _kvHeadNum, int _imSize,
+            const std::string &act, float epsilon, int _vocabSize, int _embeddingSize, int _maxPositions,
+            int _maxPosEmbed, int _maxSeqLength, int _splitIdx, int _splits, MMHelper *mmHelper, void *device = nullptr,
+            int _ppSize = 1, int _ppRank = 0, RopeParams *_ropeParamsPtr = nullptr, bool _useLogN = true,
+            bool _useNTK = true, int numThreads = 0)
         : layers(_layers)
         , hiddenSize(_hiddenSize)
         , attHeadSize(_headSize)
@@ -154,9 +155,7 @@ public:
         , tpSize(_splits)
         , tpRank(_splitIdx)
         , epsilon(epsilon) {
-        if (attHeadNum != 0) {
-            this->attFactor = 1 / sqrtf(attHeadSize);
-        }
+        if (attHeadNum != 0) { this->attFactor = 1 / sqrtf(attHeadSize); }
 
         // Set the default value (don't worry, it can be changed later)
         this->batchSize = 1;
@@ -248,9 +247,7 @@ public:
         return (T *)SimpleMemPool::instance().getBuffer(name, sizeof(T) * size, device, alignment);
     }
 
-    void freeBuffer(const std::string &name) {
-        SimpleMemPool::instance().freeBuffer(name);
-    }
+    void freeBuffer(const std::string &name) { SimpleMemPool::instance().freeBuffer(name); }
 
     void dump() {
         printf("batch_size=%d\n", batchSize);
@@ -272,10 +269,13 @@ public:
     // |         |  imOut  | tmpBuf |
     void resize(int totalInSeqLen) {
         // Check total required size
-        int responsibleHead
-                = splitIdx < (attHeadNum % numSplit) ? (attHeadNum / numSplit + 1) : (attHeadNum / numSplit);
-        int qCols = responsibleHead * attHeadSize;
-        int kCols = qCols / (attHeadNum / kvHeadNum);
+        auto ranges = SplitUtil::getHeadRange(attHeadNum, kvHeadNum, numSplit, splitIdx);
+        auto qRange = ranges.first;
+        auto kvRange = ranges.second;
+        int responsibleQHead = qRange.second - qRange.first;
+        int responsibleKVHead = kvRange.second - kvRange.first;
+        int qCols = responsibleQHead * attHeadSize;
+        int kCols = responsibleKVHead * attHeadSize;
         int vCols = kCols;
         int qkvCols = qCols + kCols + vCols;
         int mlpFactor = (this->actType == GELU || this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
