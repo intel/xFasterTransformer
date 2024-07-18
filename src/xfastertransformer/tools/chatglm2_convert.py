@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ import configparser
 import multiprocessing
 import numpy as np
 import os
+
+import torch
 
 from transformers import AutoModel
 
@@ -120,7 +122,7 @@ class ChatGLM2Convert(BaseModelConvert):
             os.makedirs(output_dir)
 
         # load the model
-        model = AutoModel.from_pretrained(input_dir, trust_remote_code=True)
+        model = AutoModel.from_pretrained(input_dir, trust_remote_code=True).to(dtype=torch.float16)
 
         hf_config = vars(model.config)
         print("hf_config= {}".format(hf_config))
@@ -162,6 +164,7 @@ class ChatGLM2Convert(BaseModelConvert):
             )
             multi_query_group_num = config[self.model_type]["kv_head_num"] = str(hf_config["multi_query_group_num"])
             config[self.model_type]["pad_id"] = str(hf_config["pad_token_id"])
+            config[self.model_type]["rope_ratio"] = str(hf_config.get("rope_ratio", 1))
 
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)

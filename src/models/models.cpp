@@ -23,6 +23,7 @@
 #include "chatglm.h"
 #include "chatglm2.h"
 #include "chatglm3.h"
+#include "chatglm4.h"
 #include "datatypes.h"
 #include "gemma.h"
 #include "hybrid_model.h"

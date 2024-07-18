@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Intel Corporation
+# Copyright (c) 2023-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -100,6 +100,33 @@ def build_inputs_chatglm(tokenizer, query: str, padding, history: List[Tuple[str
     inputs = tokenizer(prompt, return_tensors="pt", padding=padding).input_ids
     return inputs
 
+def build_inputs_chatglm4(
+    tokenizer: PreTrainedTokenizer,
+    query: str,
+    padding,
+    history: List[Tuple[str, str]] = None,
+    system: str = "You are a helpful assistant.",
+    max_window_size: int = 6144,
+    chat_format: str = "chatml",
+):
+    if history is None:
+        history = []
+
+    _history = history + [(query, None)]
+    messages = []
+    for idx, (user_msg, model_msg) in enumerate(_history):
+        print(f"user_msg={user_msg}, model_msg={model_msg}")
+        if idx == len(_history) - 1 and not model_msg:
+            messages.append({"role": "user", "content": user_msg})
+            break
+        if user_msg:
+            messages.append({"role": "user", "content": user_msg})
+        if model_msg:
+            messages.append({"role": "model", "content": model_msg})
+
+    prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+    model_inputs = tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt")
+    return model_inputs
 
 def build_inputs_baichuan(tokenizer, query: str, padding, history: List[Tuple[str, str]] = []):
     inputs = tokenizer(query, return_tensors="pt", padding=padding).input_ids
@@ -265,7 +292,10 @@ if __name__ == "__main__":
                 input_prompt = DEFAULT_PROMPT
                 print("[Use default prompt]:" + input_prompt)
 
-            if args.chat and "chatglm" in args.model_path.lower():
+            if "glm-4" in args.model_path.lower():
+                input_ids = build_inputs_chatglm4(tokenizer, input_prompt, args.padding)
+                stop_words_ids = [[151329], [151336], [151338]]
+            elif args.chat and "chatglm" in args.model_path.lower():
                 input_ids = build_inputs_chatglm(tokenizer, input_prompt, args.padding)
             elif "baichuan" in args.model_path.lower():
                 input_ids = build_inputs_baichuan(tokenizer, input_prompt, args.padding)

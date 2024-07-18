@@ -39,6 +39,7 @@ _import_structure = {
         "ChatGLMConvert",
         "ChatGLM2Convert",
         "ChatGLM3Convert",
+        "ChatGLM4Convert",
         "OPTConvert",
         "BaichuanConvert",
         "Baichuan2Convert",
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from .tools import ChatGLMConvert
     from .tools import ChatGLM2Convert
     from .tools import ChatGLM3Convert
+    from .tools import ChatGLM4Convert
     from .tools import OPTConvert
     from .tools import BaichuanConvert
     from .tools import Baichuan2Convert

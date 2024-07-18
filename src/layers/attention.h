@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include "matmul_helper.h"
 #include "rms_norm.h"
 #include "rotary_embedding.h"
+#include "rotary_embedding_chatglm2.h"
 #include "sequence.h"
 #include "simple_mem_pool.h"
 #include "transformer_ctx.h"
@@ -52,6 +53,7 @@ public:
 
         //todo(marvin): clear this code after all rotary_emb refactor
         if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
+        if constexpr (std::is_same<QKPO_CLS, ChatGLM2RotaryEmbedding>::value) { qkpo = ChatGLM2RotaryEmbedding(ctx); }
 
         // Group attention or multi-head attention (multi-head attn is a special case of group attn)
         if (ctx->attHeadNum % ctx->kvHeadNum == 0) {

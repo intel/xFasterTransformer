@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+
 #include "bfloat16.h"
 #include "float16.h"
 #include "rotary_embedding_kernels.h"
+#include "transformer_ctx.h"
 
 /*  Sample:
         int bs = 2 headnum = 3 seq = 4  dim = 6;
@@ -34,6 +36,7 @@
 
 class ChatGLM2RotaryEmbedding {
 public:
+    ChatGLM2RotaryEmbedding(DecoderContext *ctx);
     ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings = 32768, const float base = 10000.0);
 
     ~ChatGLM2RotaryEmbedding() {}
@@ -53,11 +56,15 @@ public:
             int *positionIds);
 
 private:
-    void glm2CalEmb();
+    void glm2CalEmb(const float *);
     void interleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1);
     void deinterleave_qk(__m512 a, __m512 b, __m512 *result0, __m512 *result1);
     void prepare_sincos(__m512 a, __m512 b, __m512 *result);
 
 private:
-    static bool initialized;
+    int inv_freq_size = -1;
+    int dim = -1;
+    int max_position_embeddings = -1;
+    float *emb_cos = nullptr;
+    float *emb_sin = nullptr;
 };

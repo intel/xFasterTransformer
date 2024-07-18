@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Intel Corporation
+// Copyright (c) 2023-2024 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,40 +17,70 @@
 #include "allocator.h"
 #include "compile_util.h"
 
-static int max_seq_len_cached = -1;
-static int inv_freq_size = -1;
-static float *inv_freq;
-static float *emb_cos = nullptr;
-static float *emb_sin = nullptr;
+ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(DecoderContext *ctx) {
+    const std::string inv_freq_str = "inv_freq";
+    const std::string emb_cos_str = "emb_cos";
+    const std::string emb_sin_str = "emb_sin";
 
-bool ChatGLM2RotaryEmbedding::initialized = false;
+    bool initialized = false;
+    float base = -1;
+    int rope_ratio = 1;
 
-// dim: equals to head size
-ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
-    if (!initialized) {
+    this->dim = ctx->attHeadSize;
+    this->max_position_embeddings = ctx->maxPosEmbed;
+    ctx->GetAttr("rope_theta", &base, 10000.0f);
+    ctx->GetAttr("rope_ratio", &rope_ratio, 1);
+
+    // Add from GLM4 new config: https://huggingface.co/THUDM/glm-4-9b-chat/blob/main/modeling_chatglm.py#L107
+    base = base * rope_ratio;
+
+    this->inv_freq_size = (dim + 1) / 2;
+
+    if (ctx->cached(emb_cos_str)) {
         initialized = true;
+    }
 
-        max_seq_len_cached = max_position_embeddings;
-        inv_freq_size = (dim + 1) / 2;
-        inv_freq = (float *)malloc(inv_freq_size * sizeof(float));
+    this->emb_cos = ctx->getBuffer<float>(emb_cos_str, max_position_embeddings * inv_freq_size * 2);
+    this->emb_sin = ctx->getBuffer<float>(emb_sin_str, max_position_embeddings * inv_freq_size * 2);
+
+    if (!initialized) {
+        float *inv_freq = (float *)malloc(this->inv_freq_size * sizeof(float));
+
 #pragma omp parallel for
         for (size_t i = 0; i < inv_freq_size; i++) {
             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
         }
-
-        glm2CalEmb();
+        glm2CalEmb(inv_freq);
+        free(inv_freq);
     } else if (dim != inv_freq_size * 2) {
         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
         exit(-1);
     }
+}
+
+// This API is deprecated, will delete after all rotary embed code refactor.
+ChatGLM2RotaryEmbedding::ChatGLM2RotaryEmbedding(const int dim, const int max_position_embeddings, const float base) {
+        //     if (!initialized) {
+        //         initialized = true;
+
+        //         this->max_position_embeddings = max_position_embeddings;
+        //         inv_freq_size = (dim + 1) / 2;
+        //         inv_freq = (float *)malloc(inv_freq_size * sizeof(float));
+        // #pragma omp parallel for
+        //         for (size_t i = 0; i < inv_freq_size; i++) {
+        //             inv_freq[i] = 1.0 / pow(base, float(i * 2) / dim);
+        //         }
+
+        //         glm2CalEmb();
+        //     } else if (dim != inv_freq_size * 2) {
+        //         printf("Incorrect dim=%d, inv_freq_size=%d\n", dim, inv_freq_size);
+        //         exit(-1);
+        //     }
 };
 
-void ChatGLM2RotaryEmbedding::glm2CalEmb() {
-    emb_cos = (float *)xft::alloc(max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
-    emb_sin = (float *)xft::alloc(max_seq_len_cached * (inv_freq_size * 2) * sizeof(float));
-
+void ChatGLM2RotaryEmbedding::glm2CalEmb(const float *inv_freq) {
 #pragma omp parallel for
-    for (size_t i = 0; i < max_seq_len_cached; i++) {
+    for (size_t i = 0; i < this->max_position_embeddings; i++) {
         float *pcos = emb_cos + i * inv_freq_size * 2;
         float *psin = emb_sin + i * inv_freq_size * 2;
 

@@ -59,6 +59,7 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |      ChatGLM       | &#10004;  | &#10004; |   &#10004;   |
 |      ChatGLM2      | &#10004;  | &#10004; |   &#10004;   |
 |      ChatGLM3      | &#10004;  | &#10004; |   &#10004;   |
+|        GLM4        | &#10004;  | &#10004; |   &#10004;   |
 |       Llama        | &#10004;  | &#10004; |   &#10004;   |
 |       Llama2       | &#10004;  | &#10004; |   &#10004;   |
 |       Llama3       | &#10004;  | &#10004; |   &#10004;   |
@@ -172,7 +173,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     - GemmaConvert
     - ChatGLMConvert
     - ChatGLM2Convert
-    - ChatGLM3Convert
+    - ChatGLM4Convert
     - OPTConvert
     - BaichuanConvert
     - Baichuan2Convert
