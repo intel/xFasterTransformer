@@ -316,7 +316,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
             }
         }
 
-        small_amx_gemm_16bits_compute(m, n, k, A, lda, packedV, tokens, C, ldc);
+        small_amx_gemm_16bits_compute(m, n, endSeq, A, lda, packedV, tokens, C, ldc);
 
 #ifdef XFT_DEBUG
         if (b == 0 && i == 0) {
@@ -414,7 +414,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
                 auto C = scores + tid * mBlockSize * maxScoreStride;
 
                 small_amx_gemm_16bits_compute(
-                        m, n, k, A, lda, packedB, headSize, C, ldc);
+                        m, endSeq, k, A, lda, packedB, headSize, C, ldc);
 
 #ifdef XFT_DEBUG
                 if (b == 0 && i == 0) {
@@ -454,7 +454,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
                 A = C;
                 C = (T *)output + (offsets[b] + startSeq) * ldc + i * headSize;
 
-                small_amx_gemm_16bits_compute(m, n, k, A, lda, packedV, tokens, C, ldc);
+                small_amx_gemm_16bits_compute(m, n, endSeq, A, lda, packedV, tokens, C, ldc);
 
 #ifdef XFT_DEBUG
                 if (b == 0 && i == 0) {
