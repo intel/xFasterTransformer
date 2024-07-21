@@ -2054,7 +2054,7 @@ private:
             matmul_prim = new matmul(*matmul_pd);
 
             // Cache primitive_desc and matmul
-            isCached = (matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd);
+            isCached = cache_matmul_primitive(matmul_pd, matmul_prim, transA, M, N, K, matmul_kinds::BiasAdd);
         }
 
         // Repack and convert input data.
