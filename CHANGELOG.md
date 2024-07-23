@@ -1,4 +1,28 @@
 # CHANGELOG
+# [Version v1.8.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.0)
+v1.8.0 Continuous Batching on Single ARC GPU and AMX_FP16 Support.
+
+# Highlight
+- Continuous Batching on Single ARC GPU is supported and can be integrated by `vllm-xft`.
+- Introduce Intel AMX instructions support for `float16` data type.
+
+# Models
+- Support ChatGLM4 series models.
+- Introduce BF16/FP16 full path support for Qwen series models.
+
+## BUG fix
+- Fixed memory leak of oneDNN primitive cache.
+- Fixed SPR-HBM flat QUAD mode detect issue in benchmark scripts.
+- Fixed heads Split error for distributed Grouped-query attention(GQA).
+- Fixed an issue with the invokeAttentionLLaMA API.
+
+# [Version v1.7.3](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.3)
+v1.7.3
+
+## BUG fix
+- Fixed SHM reduceAdd & rope error when batch size is large.
+- Fixed the issue of abnormal usage of oneDNN primitive cache.
+
 # [Version v1.7.2](https://github.com/intel/xFasterTransformer/releases/tag/v1.7.2)
 v1.7.2 - Continuous batching feature supports Qwen 1.0 & hybrid data types.
 
