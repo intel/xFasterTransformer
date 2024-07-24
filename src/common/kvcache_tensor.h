@@ -25,8 +25,6 @@
 #include "bfloat16.h"
 #include "float16.h"
 
-extern bool kvTrans();
-
 /**
  * Tensor specially designed for KV Cache
  * Naturaly, it could be represented in the shape of [seq_length][batch_size][head_num][head_size]
@@ -104,7 +102,7 @@ public:
         // scale is in [batchSize, headNum, seq]
         float *scale = scales + (uint64_t)batchIdx * headNum * maxSeqLen + (uint64_t)headIdx * maxSeqLen + seqIdx;
 
-        if (kvTrans()) {
+        if (Env::getInstance().getKVTransEnabled()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
             T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize
                     + (uint64_t)headIdx * maxSeqLen * headSize + (uint64_t)seqIdx * headSize;
@@ -122,9 +120,10 @@ public:
         // scale is in [batchSize, headNum, seq]
         float *scale = scales + (uint64_t)batchIdx * headNum * maxSeqLen + (uint64_t)headIdx * maxSeqLen;
 
-        if (kvTrans()) {
+        if (Env::getInstance().getKVTransEnabled()) {
             // [batchSize, headNum, seq, headSize] but also need to modify expand and reorder function
-            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize + (uint64_t)headIdx * maxSeqLen * headSize;
+            T *addr = data + (uint64_t)batchIdx * headNum * maxSeqLen * headSize
+                    + (uint64_t)headIdx * maxSeqLen * headSize;
             return std::make_tuple(addr, headSize, scale);
         } else {
             // [seqLen, batchSize, headNum, headSize] but also need to modify expand and reorder function
@@ -152,23 +151,29 @@ public:
             return;
         }
 
-        if (!kvTrans()) {
+        if (!Env::getInstance().getKVTransEnabled()) {
 #pragma omp parallel for
             for (int seq = 0; seq < seqLen; ++seq) {
                 for (int b = batchSize - 1; b > 0; --b) {
                     T *dst = getSequence(seq, b, 0);
                     T *src = getSequence(seq, b / beamSize, 0);
-                    memcpy(dst, src, sizeof(T) * headNum * headSize);
+                    memcpy(dst.first, src.first, sizeof(T) * headNum * headSize);
                 }
             }
         } else {
-            printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
-            exit(-1);
+#pragma omp parallel for collapse(2)
+            for (int b = batchSize - 1; b > 0; --b) {
+                for (int h = 0; h < headNum; ++h) {
+                    auto dst = getHead(b, h);
+                    auto src = getHead(b / beamSize, h);
+                    memcpy(std::get<0>(dst), std::get<0>(src), sizeof(T) * seqLen * headSize);
+                }
+            }
         }
     }
 
     void expandOneSequence(int userSideBS, int beamSize, int seq) {
-        if (!kvTrans()) {
+        if (!Env::getInstance().getKVTransEnabled()) {
             for (int b = batchSize - 1; b > 0; --b) {
                 auto dst = getSequence(seq, b, 0);
                 auto src = getSequence(seq, b / beamSize, 0);
@@ -176,8 +181,15 @@ public:
                 if constexpr (std::is_same_v<T, int8_t>) { memcpy(dst.second, src.second, sizeof(float) * headNum); }
             }
         } else {
-            printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
-            exit(-1);
+#pragma omp parallel for collapse(2)
+            for (int b = batchSize - 1; b > 0; --b) {
+                for (int h = 0; h < headNum; ++h) {
+                    auto dst = getSequence(seq, b, h);
+                    auto src = getSequence(seq, b / beamSize, h);
+                    memcpy(dst.first, src.first, sizeof(T) * headSize);
+                    if constexpr (std::is_same_v<T, int8_t>) { memcpy(dst.second, src.second, sizeof(float)); }
+                }
+            }
         }
     }
 
@@ -189,15 +201,26 @@ public:
      * accSeqLen: accumulated sequence length
     */
     void reorder(int *idx, int size, int initSeqLen, int accSeqLen) {
-        const int cols = this->getHeadNum() * this->getHeadSize();
         const int batchSize = this->getBatchSize();
-
-        T *pdata = this->data + initSeqLen * batchSize * cols;
-
+        int cols, stride, outerStride, nloops;
+        T *pdata;
+        if (!Env::getInstance().getKVTransEnabled()) {
+            cols = this->getHeadNum() * this->getHeadSize();
+            outerStride = batchSize * cols;
+            stride = cols;
+            pdata = this->data + initSeqLen * batchSize * cols;
+            nloops = accSeqLen - initSeqLen;
+        } else {
+            cols = (accSeqLen - initSeqLen) * this->getHeadSize();
+            outerStride = maxSeqLen * this->getHeadSize();
+            stride = maxSeqLen * this->getHeadNum() * this->getHeadSize();
+            pdata = this->data + initSeqLen * this->getHeadSize();
+            nloops = this->getHeadNum();
+        }
         // Temporary buffer used for reorder
         T *extraKeyBuf = (T *)xft::alloc((batchSize - 1) * cols * sizeof(T));
 
-        for (int seq = initSeqLen; seq < accSeqLen; ++seq) { // Reorder is not needed for the first few lines
+        for (int n = 0; n < nloops; ++n) { // Reorder is not needed for the first few lines
             int extraBufIdx = 0;
             int remapped[batchSize];
             memcpy(remapped, idx, batchSize * sizeof(int));
@@ -207,7 +230,7 @@ public:
                 if (from < i) { // The source line already reordered
                     // Current line will be used in future, thus save to extra buffer
                     if (valueExist(remapped + i + 1, batchSize - i - 1, i)) {
-                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * cols, cols * sizeof(T));
+                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * stride, cols * sizeof(T));
 
                         // When need line i, should look into temporary buffer, (extraBufIdx - batchSize) < 0, always
                         std::replace(remapped + i + 1, remapped + batchSize, i, extraBufIdx - batchSize);
@@ -215,14 +238,14 @@ public:
                     }
 
                     if (from < 0) { // copy from extraBuf
-                        skippableCopy(pdata + i * cols, extraKeyBuf + (from + batchSize) * cols, cols);
+                        skippableCopy(pdata + i * stride, extraKeyBuf + (from + batchSize) * cols, cols);
                     } else {
-                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
+                        skippableCopy(pdata + i * stride, pdata + from * stride, cols);
                     }
                 } else if (from > i) {
                     // Just need to swap
                     if (remapped[from] == i) {
-                        swapValues(pdata + i * cols, pdata + from * cols, cols);
+                        swapValues(pdata + i * stride, pdata + from * stride, cols);
 
                         // Update the map information
                         std::transform(remapped + i + 1, remapped + batchSize, remapped + i + 1, [&](int num) {
@@ -236,28 +259,27 @@ public:
                     }
                     // Current line will be used in future, thus save to extra buffer
                     else if (valueExist(remapped + i + 1, batchSize - i - 1, i)) {
-                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * cols, cols * sizeof(T));
+                        memcpy(extraKeyBuf + extraBufIdx * cols, pdata + i * stride, cols * sizeof(T));
 
                         // When need line i, should look into temporary buffer, (extraBufIdx - batchSize) < 0, always
                         std::replace(remapped + i + 1, remapped + batchSize, i, extraBufIdx - batchSize);
                         extraBufIdx += 1;
 
-                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
+                        skippableCopy(pdata + i * stride, pdata + from * stride, cols);
 
                         // When need line 'from', should look into line i
                         std::replace(remapped + i + 1, remapped + batchSize, from, i);
                     }
                     // Current line will never be used in futre, just overwrite it
                     else {
-                        skippableCopy(pdata + i * cols, pdata + from * cols, cols);
+                        skippableCopy(pdata + i * stride, pdata + from * stride, cols);
 
                         // When need line 'from', should look into line i
                         std::replace(remapped + i + 1, remapped + batchSize, from, i);
                     }
                 }
             }
-
-            pdata += batchSize * cols;
+            pdata += outerStride;
         }
 
         free(extraKeyBuf);

@@ -47,6 +47,18 @@ public:
     // get AMX Threshold M
     int getAMXThresholdM() { return AMXThresholdMValue; }
 
+    // get FLASH_ATTN_THRESHOLD
+    int getFlashAttnThreshold() { return FlashAttnThresholdValue; }
+
+    // get ENABLE_CAT_MLP
+    bool getMlpCatEnabled() { return MlpCatEnabled; }
+
+    // get ENABLE_TUNED_COMM
+    bool getTunedCommEnabled() { return TunedCommEnabled; }
+
+    // get ENABLE_KV_TRANS
+    bool getKVTransEnabled() { return KVTransEnabled; }
+
     // get THP_enabled
     bool getTHPEnabled() { return thpEnabled; }
 
@@ -87,6 +99,18 @@ private:
 
         // init AMX Threshold M
         initAMXThresholdM();
+
+        // init FLASH_ATTN_THRESHOLD
+        initFlashAttnThreshold();
+
+        // init ENABLE_CAT_MLP
+        initMlpCatEnabled();
+
+        // init ENABLE_TUNED_COMM
+        initTunedCommEnabled();
+
+        // init ENABLE_KV_TRANS
+        initKVTransEnabled();
 
         // init THPEnabled
         initTHPEnabled();
@@ -213,6 +237,48 @@ private:
         } else {
             AMXThresholdMValue = 1;
         }
+    }
+
+    // FLASH_ATTN_THRESHOLD
+    int FlashAttnThresholdValue = 8192;
+    void initFlashAttnThreshold() {
+        // > threshold to enable flash attention, default 8192
+        char *flashAttnThresholdValue = getenv("FLASH_ATTN_THRESHOLD");
+        if (flashAttnThresholdValue != NULL) {
+            int value = atoi(flashAttnThresholdValue);
+            if (value >= 0)
+                FlashAttnThresholdValue = value;
+            else
+                printf("[ERROR] FLASH_ATTN_THRESHOLD value need to be greater than or equal to 0.\n");
+        }
+        printf("[INFO] SeqLen > FLASH_ATTN_THRESHOLD(%d) will enable FlashAttn.\n", FlashAttnThresholdValue);
+    }
+
+    // ENABLE_CAT_MLP
+    bool MlpCatEnabled = true;
+    void initMlpCatEnabled() {
+        // combine gate&up and calculate together, default enabled
+        char *mlpCatValue = getenv("ENABLE_CAT_MLP");
+        MlpCatEnabled = mlpCatValue != nullptr ? std::atoi(mlpCatValue) == 1 : true;
+    }
+
+    // ENABLE_TUNED_COMM
+    bool TunedCommEnabled = true;
+    void initTunedCommEnabled() {
+        // Tuning between shm and ccl reduceAdd methods to find the faster way, default enabled
+        char *tunedCommValue = getenv("ENABLE_TUNED_COMM");
+        TunedCommEnabled = tunedCommValue != nullptr ? std::atoi(tunedCommValue) == 1 : true;
+        if (TunedCommEnabled) { printf("[INFO] ENABLE_TUNED_COMM is enabled for faster reduceAdd.\n"); }
+    }
+
+    // ENABLE_KV_TRANS
+    bool KVTransEnabled = true;
+    void initKVTransEnabled() {
+        // Transpose KV Tensor to [batchSize, headNum, seqLen, headSize] for better perf of long sequence, default disabled
+        // TODO: add support for reorder and expand when beam_search>1
+        char *kvTransValue = getenv("ENABLE_KV_TRANS");
+        KVTransEnabled = kvTransValue != nullptr ? std::atoi(kvTransValue) == 1 : true;
+        if (KVTransEnabled) { printf("[INFO] ENABLE_KV_TRANS is enabled for faster decoding.\n"); }
     }
 
     // ENABLE_THP

@@ -32,9 +32,6 @@
 #include <CL/sycl.hpp>
 #endif
 
-extern int getFlashThresh();
-extern bool enableCATMLP();
-
 class DecoderUtil {
 public:
 #if __AVX512F__

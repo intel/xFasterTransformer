@@ -167,14 +167,6 @@ if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"
 fi
 
-if [[ ${beam_width} -eq 1 ]] && [[ ${input_tokens} -ge 1024 ]]; then
-    export ENABLE_KV_TRANS=1
-fi
-
-if [[ ${input_tokens} -ge 2048 ]]; then
-    export ENABLE_SKIP_MASK=1
-fi
-
 if [[ ${batch_size} -gt 256 ]]; then
     export XFT_PRIMITIVE_CACHE_M=${batch_size}
 fi

@@ -29,8 +29,6 @@
 #include "timeline.h"
 #include "verbose.h"
 
-extern bool tunedComm();
-
 class Messenger {
 private:
     Messenger() {
@@ -109,7 +107,7 @@ public:
         TimeLine t("Messenger.reduceAdd");
         static std::unordered_map<size_t, int> tuned_map;
 #ifdef USE_SHM
-        if (tunedComm() && localRanksFlag && pshm != nullptr) {
+        if (Env::getInstance().getTunedCommEnabled() && localRanksFlag && pshm != nullptr) {
             size_t commSize = sizeof(T) * count;
             if (sizeof(T) * count > pshm->getSHMSize()) { pshm->ShmResize(rank, commSize); }
 

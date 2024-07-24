@@ -38,7 +38,7 @@ public:
         auto range = SplitUtil::getTaskRange(intermediateSize, ctx->numSplit, ctx->splitIdx);
         int colSplit = range.second - range.first;
 
-        if (!enableCATMLP()) {
+        if (!Env::getInstance().getMlpCatEnabled()) {
             OriWeiT *gateW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             OriWeiT *upW = (OriWeiT *)malloc(hiddenSize * colSplit * sizeof(OriWeiT));
             if (trans) {

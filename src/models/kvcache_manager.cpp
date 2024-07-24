@@ -65,7 +65,7 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
     int headNum = dstTensors[0]->getHeadNum();
     int headSize = dstTensors[0]->getHeadSize();
 
-    if (!kvTrans()) {
+    if (!Env::getInstance().getKVTransEnabled()) {
 #pragma omp parallel for collapse(2)
         for (int i = 0; i < 2; ++i) {
             for (int seq = 0; seq < seqLen; ++seq) {
@@ -80,8 +80,25 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
             }
         }
     } else {
-        printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in Prefix mode for now.\n");
-        exit(-1);
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < 2; ++i) {
+            for (int b = userSideBS - 1; b >= 0; --b) {
+                auto srcInfo = srcTensors[i]->getHead(b, 0);
+                auto src = std::get<0>(srcInfo);
+                auto srcStride = std::get<1>(srcInfo);
+                auto srcScales = std::get<2>(srcInfo);
+                for (int h = 0; h < headNum; ++h) {
+                    auto dstInfo = dstTensors[i]->getHead(b, h);
+                    auto dst = std::get<0>(srcInfo);
+                    auto dstStride = std::get<1>(srcInfo);
+                    auto dstScales = std::get<2>(srcInfo);
+                    memcpy(dst, src, sizeof(KVCacheT) * seqLen * headSize);
+                    if constexpr (std::is_same_v<KVCacheT, int8_t>) {
+                        memcpy(dstScales, srcScales, sizeof(float) * seqLen);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -89,11 +106,6 @@ void KVCacheManager<KVCacheT>::expandPrefixCache(int layerId, int userSideBS, in
 // TODO: move to KVCacheTensor is better
 template <typename KVCacheT>
 void KVCacheManager<KVCacheT>::reorderCache(int *idx, int size, int initSeqLen, int accSeqLen) {
-    if (kvTrans()) {
-        printf("Unsupported kv tensor optimization [ENABLE_KV_TRANS] in beam search for now.\n");
-        exit(-1);
-    }
-
     // Reorder for all the layers
 #pragma omp parallel for
     for (int i = 0; i < 2 * this->layers; ++i) {

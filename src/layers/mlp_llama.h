@@ -62,7 +62,7 @@ public:
         ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight,
                 upWeightScale, upWeightZero, upWeightSum);
 
-        if (!enableCATMLP()) {
+        if (!Env::getInstance().getMlpCatEnabled()) {
             gateWeight.Resize(hiddenSize, it.second - it.first);
             upWeight.Resize(hiddenSize, it.second - it.first);
             ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
@@ -153,7 +153,7 @@ public:
         dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
 
-        if (!enableCATMLP()) {
+        if (!Env::getInstance().getMlpCatEnabled()) {
             xft::Matrix<ImT> imBuffer(
                     (ImT *)ctx->imOut.Data(), ctx->imOut.Rows(), ctx->imOut.Cols(), ctx->imOut.Stride());
             gateProj(ctx, doLnBefore ? normBuffer : inBuffer, imBuffer);
@@ -318,7 +318,7 @@ private:
         } else if (ctx->actType == DecoderContext::SWIGLU) { // chatglm2/3
             DecoderUtil::siluSum(output, siluBuf, ctx->device);
         } else if (ctx->actType == DecoderContext::GELU) { // gemma
-            DecoderUtil::geluSum(output, siluBuf,  ctx->device);
+            DecoderUtil::geluSum(output, siluBuf, ctx->device);
         } else {
             printf("ERROR: unsupported activation in MLP.\n");
             exit(-1);
