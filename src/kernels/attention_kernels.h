@@ -129,6 +129,58 @@ void small_softmax(T *data, float scale, int elements) {
     }
 }
 
+// Split heads into threads, in a balanced approach
+// tokenSizes: in array of token size for each sample
+// threadEndHead: out array of global end head index for each thread
+static void splitHeads(const int *tokenSizes, int *threadEndHead, const int batchSize, const int qHeadNum,
+        const int mBlockSize, const int threadNum) {
+    int computes[batchSize];
+    int64_t totalComputes = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        int blocks = (tokenSizes[i] + mBlockSize - 1) / mBlockSize;
+        computes[i] = blocks * (blocks + 1) / 2;
+        totalComputes += computes[i];
+    }
+
+    totalComputes *= qHeadNum;
+    float computesPerTask = 1.0f * totalComputes / threadNum;
+    int64_t lastEndCompute = 0; // end compute index for previous thread
+    int curBatchIdx = 0; // current search position of batch
+    int curHeadInBatch = 0; // current search position of head
+
+    for (int i = 0; i < threadNum; ++i) {
+        float targetEndCompute = (i + 1) * computesPerTask;
+        int64_t curCompute = lastEndCompute;
+        int endHead = (i > 0 ? threadEndHead[i - 1] : 0);
+        while (curCompute < targetEndCompute && curBatchIdx < batchSize) {
+            // Try all remaining heads of current sample
+            auto endCompute = curCompute + (qHeadNum - curHeadInBatch) * computes[curBatchIdx];
+            if (endCompute < targetEndCompute) {
+                curCompute = endCompute;
+                endHead += qHeadNum - curHeadInBatch;
+                ++curBatchIdx;
+                curHeadInBatch = 0;
+            } else {
+                int increaseHead = (int)((targetEndCompute - curCompute) / computes[curBatchIdx] + 0.5);
+                if (curHeadInBatch + increaseHead > qHeadNum) { // revise if too big
+                    increaseHead = qHeadNum - curHeadInBatch;
+                }
+                curCompute += increaseHead * computes[curBatchIdx];
+                endHead += increaseHead;
+                curHeadInBatch += increaseHead;
+                if (curHeadInBatch >= qHeadNum) {
+                    ++curBatchIdx;
+                    curHeadInBatch = 0;
+                }
+                break;
+            }
+        }
+
+        threadEndHead[i] = endHead;
+        lastEndCompute = curCompute;
+    }
+}
+
 // Self attention while KV cache copy is separated
 template <bool fusedPack, typename T, typename Lambda1, typename Lambda2>
 void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHeadNum, int kvHeadNum, int headSize,
@@ -349,10 +401,13 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
     int maxTokenSize = 0; // max token size of all inputs
     int curOff = 0; // current offset
     int offsets[batchSize]; // offset for each input
+    bool allSameSize = true; // if all sequences are in the same size
+    int firstTokenSize = tokenSizes[0]; // the size of the first sequence
     for (int i = 0; i < batchSize; ++i) {
         offsets[i] = curOff;
         curOff += tokenSizes[i];
         if (tokenSizes[i] > maxTokenSize) { maxTokenSize = tokenSizes[i]; }
+        if (tokenSizes[i] != firstTokenSize) { allSameSize = false; }
     }
 
     // Prepare buffers (packing buffer and score buffer)
@@ -369,9 +424,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
             kvStride);
 #endif
 
-#pragma omp parallel for collapse(2)
-    for (int b = 0; b < batchSize; ++b) {
-        for (int i = 0; i < qHeadNum; ++i) {
+    auto oneHeadCompute = [&](int b, int i) {
             int tid = omp_get_thread_num();
             const int tokens = tokenSizes[b];
             const int mBlockNum = (tokens + mBlockSize - 1) / mBlockSize;
@@ -465,8 +518,30 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
                 }
 #endif
             } // end for mb
-        } // end for i
-    } // end for b
+        };
+
+    if (allSameSize) {
+#pragma omp parallel for collapse(2)
+        for (int b = 0; b < batchSize; ++b) {
+            for (int h = 0; h < qHeadNum; ++h) {
+                oneHeadCompute(b, h);
+            }
+        }
+    }
+    else {
+        int threadEndHead[threadNum];
+        splitHeads(tokenSizes, threadEndHead, batchSize, qHeadNum, mBlockSize, threadNum);
+
+        parallel_for(threadNum, [&](int taskIdx) {
+            int startIdx = (taskIdx == 0 ? 0 : threadEndHead[taskIdx - 1]);
+            int endIdx = threadEndHead[taskIdx];
+            for (int idx = startIdx; idx < endIdx; ++idx) {
+                int b = idx / qHeadNum;
+                int h = idx % qHeadNum;
+                oneHeadCompute(b, h);
+            }
+        });
+    }
 }
 
 template <typename T, typename Lambda1, typename Lambda2>
