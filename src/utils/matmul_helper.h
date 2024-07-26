@@ -1574,9 +1574,26 @@ private:
     };
 
     std::string create_key(bool transA, int M, int N, int K, int matmul_kind) {
-        std::stringstream key;
-        key << transA << "_" << M << "_" << N << "_" << K << "_" << matmul_kind;
-        return key.str();
+        auto intToHex = [](int value, char *buf) {
+            const char hexDigits[] = "0123456789ABCDEF";
+            for (int i = 7; i >= 0; --i) {
+                buf[i] = hexDigits[value & 0xF]; // Get the last 4 bits of value
+                value >>= 4; // Shift right by 4 bits to process the next hex digit
+            }
+        };
+
+        char buf[40] = {0};
+        buf[0] = transA ? '1' : '0';
+        buf[1] = '_';
+        intToHex(M, buf + 2);
+        buf[10] = '_';
+        intToHex(N, buf + 11);
+        buf[19] = '_';
+        intToHex(K, buf + 20);
+        buf[28] = '_';
+        intToHex(matmul_kind, buf + 29);
+
+        return std::string(buf);
     }
 
     // Cache primitive_desc and matmul
