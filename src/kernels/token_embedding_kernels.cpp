@@ -44,4 +44,12 @@ template void tokenEmbedding<bfloat16_t, float16_t>(
         bfloat16_t *output, const int *tokenId, const float16_t *weight, const int tokenSize, const int hiddenSize);
 template void tokenEmbedding<float16_t, bfloat16_t>(
         float16_t *output, const int *tokenId, const bfloat16_t *weight, const int tokenSize, const int hiddenSize);
+
+void invokeTokenEmbedding(DataType dt, void *output, void *tokenId, const void *weight, const int tokenSize, const int hiddenSize) {
+    if (dt == DataType::bf16) {
+        tokenEmbedding((float *)output, (const int *)tokenId, (const bfloat16_t *)weight, tokenSize, hiddenSize);
+    } else if (dt == DataType::fp16) {
+        tokenEmbedding((float *)output, (const int *)tokenId, (const float16_t *)weight, tokenSize, hiddenSize);
+    }
+}
 } // namespace xft

@@ -21,6 +21,7 @@
 #include "gtest/gtest.h"
 
 #include "token_embedding_kernels.h"
+#include "layers_token_embedding.h"
 
 template <typename OutT, typename WeiT>
 static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, const int tokenSize) {
@@ -52,9 +53,49 @@ static void TestTokenEmbeddingKernel(const int vocabSize, const int hiddenSize, 
     free(output);
 }
 
+template <typename T>
+static void TestInvokeTokenEmbedding(const int vocabSize, const int hiddenSize, const int tokenSize) {
+    T *embTable = (T *)aligned_alloc(64, vocabSize * hiddenSize * sizeof(T));
+    int *tokenId = (int *)aligned_alloc(64, tokenSize * sizeof(int));
+    float *output = (float *)aligned_alloc(64, tokenSize * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < vocabSize; i++) {
+        for (int j = 0; j < hiddenSize; j++) {
+            embTable[i * hiddenSize + j] = static_cast<T>(rand()) / RAND_MAX;
+        }
+    }
+
+    for (int i = 0; i < tokenSize; i++) {
+        tokenId[i] = rand() % vocabSize;
+    }
+
+    if constexpr (std::is_same<T, float16_t>::value) {
+        xft::invokeTokenEmbedding(xft::DataType::fp16, output, tokenId, embTable, tokenSize, hiddenSize);
+    } else if constexpr (std::is_same<T, bfloat16_t>::value) {
+        xft::invokeTokenEmbedding(xft::DataType::bf16, output, tokenId, embTable, tokenSize, hiddenSize);
+    }
+
+    for (int i = 0; i < tokenSize; i++) {
+        int id = tokenId[i];
+        for (int j = 0; j < hiddenSize; j++) {
+            EXPECT_FLOAT_EQ(float(output[i * hiddenSize + j]), float(embTable[id * hiddenSize + j]));
+        }
+    }
+
+    free(embTable);
+    free(tokenId);
+    free(output);
+}
+// add
+
 #define UT_EMBEDDING(MN, OutT, WeiT, VS, HS, BS, SL)                               \
     TEST(TokenEmbeddingKernel, MN##_BS##BS##_Lens##SL##_OutT##OutT##_WeiT##WeiT) { \
         TestTokenEmbeddingKernel<OutT, WeiT>((VS), (HS), (BS) * (SL));             \
+    }
+
+#define UT_EMBEDDING_LAYER(MN, WeiT, VS, HS, BS, SL)                               \
+    TEST(TokenEmbeddingLayer, MN##_BS##BS##_Lens##SL##OutT##_WeiT##WeiT) { \
+        TestInvokeTokenEmbedding<WeiT>((VS), (HS), (BS) * (SL));             \
     }
 
 UT_EMBEDDING(Llama2_7B, float_t, float16_t, 32000, 4096, 1, 64);
@@ -66,6 +107,16 @@ UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 64);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 256);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 1, 512);
 UT_EMBEDDING(Llama2_7B, float16_t, float16_t, 32000, 4096, 8, 512);
+
+UT_EMBEDDING_LAYER(Llama2_7B, float16_t, 32000, 4096, 1, 64);
+UT_EMBEDDING_LAYER(Llama2_7B, float16_t, 32000, 4096, 1, 256);
+UT_EMBEDDING_LAYER(Llama2_7B, float16_t, 32000, 4096, 1, 512);
+UT_EMBEDDING_LAYER(Llama2_7B, float16_t, 32000, 4096, 8, 512);
+
+UT_EMBEDDING_LAYER(Llama2_7B, bfloat16_t, 32000, 4096, 1, 64);
+UT_EMBEDDING_LAYER(Llama2_7B, bfloat16_t, 32000, 4096, 1, 256);
+UT_EMBEDDING_LAYER(Llama2_7B, bfloat16_t, 32000, 4096, 1, 512);
+UT_EMBEDDING_LAYER(Llama2_7B, bfloat16_t, 32000, 4096, 8, 512);
 
 // UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 64);
 // UT_EMBEDDING(Llama2_7B, bfloat16_t, bfloat16_t, 32000, 4096, 1, 256);
