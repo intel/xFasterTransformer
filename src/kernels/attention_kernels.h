@@ -564,8 +564,13 @@ void selfAttention(T *output, T *query, T *key, T *value, int qHeadNum, int kvHe
         selfAttention_FusedCopy(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride, kvStride,
                 batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache);
     } else {
-        selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
-                kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache, headMap);
+        if (batchSize * kvHeadNum >= threadNum) {
+            selfAttention_SeparateCopy<true>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
+                    kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache, headMap);
+        } else {
+            selfAttention_SeparateCopy<false>(output, query, key, value, qHeadNum, kvHeadNum, headSize, oStride, qStride,
+                    kvStride, batchSize, tokenSizes, scale, alibiSlopes, threadNum, getKCache, getVCache, headMap);
+        }
     }
 }
 
