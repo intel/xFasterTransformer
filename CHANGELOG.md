@@ -1,4 +1,16 @@
 # CHANGELOG
+# [Version v1.8.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.1)
+v1.8.1 
+
+## Functionality
+- Expose the interface of embedding lookup.
+
+## Performance
+- Optimized the performance of grouped query attention (GQA).
+- Enhanced the performance of creating keys for the oneDNN primitive cache.
+- Set the [bs][nh][seq][hs] layout as the default for KV Cache, resulting in better performance.
+- Improved the task split imbalance issue in self-attention.
+  
 # [Version v1.8.0](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.0)
 v1.8.0 Continuous Batching on Single ARC GPU and AMX_FP16 Support.
 
