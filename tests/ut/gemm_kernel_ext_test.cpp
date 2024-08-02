@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
+#include "datatypes.h"
 #include "gemm_kernel_ext.h"
+#include "layers_gemm.h"
 
 #include <cmath>
 #include <random>
@@ -274,6 +276,84 @@ void test_small_gemm(int M, int N, int K, bool acc) {
     delete[] refC;
 }
 
+void test_invoke_gemm_bf16(int M, int N, int K, bool acc) {
+    const int lda = K;
+    const int ldb = N;
+    const int ldc = N;
+    bfloat16_t *A = new bfloat16_t[M * K];
+    bfloat16_t *B = new bfloat16_t[K * N];
+    bfloat16_t *C = new bfloat16_t[M * N];
+    bfloat16_t *refC = new bfloat16_t[M * N];
+
+    // Generate random data for A, B, C
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<float> distr(-1.0f, 1.0f);
+    for (int i = 0; i < M * K; i++) {
+        A[i] = static_cast<bfloat16_t>(distr(rng));
+    }
+    for (int i = 0; i < K * N; i++) {
+        B[i] = static_cast<bfloat16_t>(distr(rng));
+    }
+    for (int i = 0; i < M * N; i++) {
+        C[i] = static_cast<bfloat16_t>(distr(rng));
+        refC[i] = C[i];
+    }
+
+    xft::invokeGemm(xft::DataType::bf16, false, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
+    gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+
+    // Compare results
+    float eps = 5 * 1e-1;
+    for (int i = 0; i < M * N; i++) {
+        EXPECT_NEAR(C[i], refC[i], eps);
+    }
+
+    delete[] A;
+    delete[] B;
+    delete[] C;
+    delete[] refC;
+}
+
+void test_invoke_gemm_fp16(int M, int N, int K, bool acc) {
+    const int lda = K;
+    const int ldb = N;
+    const int ldc = N;
+    float16_t *A = new float16_t[M * K];
+    float16_t *B = new float16_t[K * N];
+    float16_t *C = new float16_t[M * N];
+    float16_t *refC = new float16_t[M * N];
+
+    // Generate random data for A, B, C
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<float> distr(-1.0f, 1.0f);
+    for (int i = 0; i < M * K; i++) {
+        A[i] = static_cast<float16_t>(distr(rng));
+    }
+    for (int i = 0; i < K * N; i++) {
+        B[i] = static_cast<float16_t>(distr(rng));
+    }
+    for (int i = 0; i < M * N; i++) {
+        C[i] = static_cast<float16_t>(distr(rng));
+        refC[i] = C[i];
+    }
+
+    xft::invokeGemm(xft::DataType::fp16, false, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
+    gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+
+    // Compare results
+    float eps = 5 * 1e-2;
+    for (int i = 0; i < M * N; i++) {
+        EXPECT_NEAR(C[i], refC[i], eps);
+    }
+
+    delete[] A;
+    delete[] B;
+    delete[] C;
+    delete[] refC;
+}
+
 void test_small_gemm_int8(int M, int N, int K) {
     const int lda = K;
     const int ldb = N;
@@ -372,6 +452,20 @@ TEST(small_gemm, small_gemm_f32bf16bf16) {
         test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 100, 1 + rand() % 100, false);
         test_small_gemm<float, bfloat16_t, bfloat16_t>(m, 100, 1 + rand() % 100, true);
     }
+}
+
+TEST(invoke_gemm, invoke_gemm_test_bf16) {
+    test_invoke_gemm_bf16(2, 1024, 2048, false);
+    test_invoke_gemm_bf16(4, 1024, 2048, false);
+    test_invoke_gemm_bf16(8, 1024, 2048, false);
+    test_invoke_gemm_bf16(1024, 1024, 2048, false);
+}
+
+TEST(invoke_gemm, invoke_gemm_test_fp16) {
+    test_invoke_gemm_fp16(2, 1024, 2048, false);
+    test_invoke_gemm_fp16(4, 1024, 2048, false);
+    test_invoke_gemm_fp16(8, 1024, 2048, false);
+    test_invoke_gemm_fp16(1024, 1024, 2048, false);
 }
 
 int main(int argc, char **argv) {

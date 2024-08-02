@@ -25,6 +25,7 @@
 
 #include "compile_util.h"
 #include "intrinsics_util.h"
+#include "matmul_helper.h"
 
 template <typename TA, typename TB, int M, int N>
 void small_gemm_transb(const TA *A, const TB *B, float *C, int K, int lda, int ldb, int ldc) {
@@ -492,8 +493,26 @@ void small_gemm_transb(const bfloat16_t *A, const int8_t *B, const float *bScale
     if (bScale) { apply_scale(C, bScale, M, N, ldc); }
 }
 
-void small_gemm_transb(const float16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K,
-        int lda, int ldb, int ldc) {
+void small_gemm_transb(const float16_t *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
+        int ldb, int ldc) {
     small_gemm_transb<float16_t, int8_t>(A, B, C, M, N, K, lda, ldb, ldc);
     if (bScale) { apply_scale(C, bScale, M, N, ldc); }
 }
+
+namespace xft {
+void invokeGemm(xft::DataType dt, bool transA, int M, int N, int K, float alpha, void *A, int lda, void *B, float beta,
+        void *C, int ldc, void *bias = nullptr, void *res = nullptr, int ldres = -1) {
+    MMHelper mmHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
+    if (dt == xft::DataType::bf16) {
+        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const bfloat16_t *)(A), lda,
+                (const bfloat16_t *)(B), beta, (bfloat16_t *)(C), ldc, (const bfloat16_t *)(bias),
+                (const bfloat16_t *)(res), ldres);
+    } else if (dt == xft::DataType::fp16) {
+        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const float16_t *)(A), lda, (const float16_t *)(B),
+                beta, (float16_t *)(C), ldc, (const float16_t *)(bias), (const float16_t *)(res), ldres);
+    } else if (dt == xft::DataType::fp32) {
+        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const float *)(A), lda, (const float *)(B), beta,
+                (float *)(C), ldc, (const float *)(bias), (const float *)(res), ldres);
+    }
+}
+} // namespace xft
