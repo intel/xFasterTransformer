@@ -500,18 +500,18 @@ void small_gemm_transb(const float16_t *A, const int8_t *B, const float *bScale,
 }
 
 namespace xft {
-void invokeGemm(xft::DataType dt, bool transA, int M, int N, int K, float alpha, void *A, int lda, void *B, float beta,
+void invokeGemm(xft::DataType dt, bool transA, bool transB, int M, int N, int K, float alpha, void *A, int lda, void *B, float beta,
         void *C, int ldc, void *bias = nullptr, void *res = nullptr, int ldres = -1) {
     MMHelper mmHelper(Env::getInstance().getEngineKind(), Env::getInstance().getEngineIndex());
     if (dt == xft::DataType::bf16) {
-        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const bfloat16_t *)(A), lda,
+        mmHelper.invoke_onednn_gemm_compute(transA, transB, M, N, K, alpha, (const bfloat16_t *)(A), lda,
                 (const bfloat16_t *)(B), beta, (bfloat16_t *)(C), ldc, (const bfloat16_t *)(bias),
                 (const bfloat16_t *)(res), ldres);
     } else if (dt == xft::DataType::fp16) {
-        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const float16_t *)(A), lda, (const float16_t *)(B),
+        mmHelper.invoke_onednn_gemm_compute(transA, transB, M, N, K, alpha, (const float16_t *)(A), lda, (const float16_t *)(B),
                 beta, (float16_t *)(C), ldc, (const float16_t *)(bias), (const float16_t *)(res), ldres);
     } else if (dt == xft::DataType::fp32) {
-        mmHelper.invoke_onednn_gemm_compute(transA, M, N, K, alpha, (const float *)(A), lda, (const float *)(B), beta,
+        mmHelper.invoke_onednn_gemm_compute(transA, transB, M, N, K, alpha, (const float *)(A), lda, (const float *)(B), beta,
                 (float *)(C), ldc, (const float *)(bias), (const float *)(res), ldres);
     }
 }

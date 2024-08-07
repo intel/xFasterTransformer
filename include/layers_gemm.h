@@ -18,7 +18,7 @@
 
 namespace xft {
 
-void invokeGemm(DataType dt, bool transA, int M, int N, int K, float alpha, void *A, int lda, void *packedB, float beta,
+void invokeGemm(DataType dt, bool transA, bool transB, int M, int N, int K, float alpha, void *A, int lda, void *packedB, float beta,
         void *C, int ldc, void *bias = nullptr, void *res = nullptr, int ldres = -1);
 
 } // namespace xft

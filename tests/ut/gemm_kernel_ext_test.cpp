@@ -219,6 +219,36 @@ void gemm_ref(const TA *A, const TB *B, TC *C, int M, int N, int K, int lda, int
     }
 }
 
+template <typename T>
+float *transpose(T *X, int m, int n) {
+    float *XT = new float[m * n];
+    for (int i = 0; i < m; ++i) {
+        for (int j = 0; j < n; ++j) {
+            XT[j * m + i] = (float)X[i * n + j];
+        }
+    }
+    return XT;
+}
+
+template <typename TA, typename TB, typename TC>
+void gemm_ref_transpose(const TA *A, const TB *B, TC *C, int m1, int k1, int k2, int n2, int m3, int n3) {
+    float *AT = transpose(A, m1, k1); // AT: [k1, m1]
+    float *BT = transpose(B, k2, n2); // BT: [n2, k2]
+
+    for (int i = 0; i < k1; i++) {
+        for (int j = 0; j < k2; j++) {
+            float dot_product = 0;
+            for (int k = 0; k < m1; k++) {
+                dot_product += AT[i * m1 + k] * BT[k * k2 + j];
+            }
+            C[i * k2 + j] = dot_product;
+        }
+    }
+
+    delete[] AT;
+    delete[] BT;
+}
+
 static void gemm_bint8_ref(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda,
         int ldb, int ldc) {
     // Loop over the rows of A
@@ -276,7 +306,7 @@ void test_small_gemm(int M, int N, int K, bool acc) {
     delete[] refC;
 }
 
-void test_invoke_gemm_bf16(int M, int N, int K, bool acc) {
+void test_invoke_gemm_bf16(bool transA, bool transB, int M, int N, int K, bool acc) {
     const int lda = K;
     const int ldb = N;
     const int ldc = N;
@@ -300,8 +330,18 @@ void test_invoke_gemm_bf16(int M, int N, int K, bool acc) {
         refC[i] = C[i];
     }
 
-    xft::invokeGemm(xft::DataType::bf16, false, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
-    gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+    xft::invokeGemm(xft::DataType::bf16, transA, transB, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
+    if (transA == false and transB == false) {
+        gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+    } else if (transA == true and transB == true) {
+        int m1 = K;
+        int k1 = M;
+        int k2 = N;
+        int n2 = K;
+        int m3 = M;
+        int n3 = N;
+        gemm_ref_transpose(A, B, refC, m1, k1, k2, n2, m3, n3);
+    }
 
     // Compare results
     float eps = 5 * 1e-1;
@@ -315,7 +355,7 @@ void test_invoke_gemm_bf16(int M, int N, int K, bool acc) {
     delete[] refC;
 }
 
-void test_invoke_gemm_fp16(int M, int N, int K, bool acc) {
+void test_invoke_gemm_fp16(bool transA, bool transB, int M, int N, int K, bool acc) {
     const int lda = K;
     const int ldb = N;
     const int ldc = N;
@@ -339,8 +379,18 @@ void test_invoke_gemm_fp16(int M, int N, int K, bool acc) {
         refC[i] = C[i];
     }
 
-    xft::invokeGemm(xft::DataType::fp16, false, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
-    gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+    xft::invokeGemm(xft::DataType::fp16, transA, transB, M, N, K, 1.0f, A, lda, B, 0.0f, C, ldc);
+    if (transA == false and transB == false) {
+        gemm_ref(A, B, refC, M, N, K, lda, ldb, ldc, acc);
+    } else if (transA == true and transB == true) {
+        int m1 = K;
+        int k1 = M;
+        int k2 = N;
+        int n2 = K;
+        int m3 = M;
+        int n3 = N;
+        gemm_ref_transpose(A, B, refC, m1, k1, k2, n2, m3, n3);
+    }
 
     // Compare results
     float eps = 5 * 1e-2;
@@ -455,17 +505,27 @@ TEST(small_gemm, small_gemm_f32bf16bf16) {
 }
 
 TEST(invoke_gemm, invoke_gemm_test_bf16) {
-    test_invoke_gemm_bf16(2, 1024, 2048, false);
-    test_invoke_gemm_bf16(4, 1024, 2048, false);
-    test_invoke_gemm_bf16(8, 1024, 2048, false);
-    test_invoke_gemm_bf16(1024, 1024, 2048, false);
+    test_invoke_gemm_bf16(false, false, 2, 1024, 2048, false);
+    test_invoke_gemm_bf16(false, false, 4, 1024, 2048, false);
+    test_invoke_gemm_bf16(false, false, 8, 1024, 2048, false);
+    test_invoke_gemm_bf16(false, false, 1024, 1024, 2048, false);
+
+    test_invoke_gemm_bf16(true, true, 2, 1024, 2048, false);
+    test_invoke_gemm_bf16(true, true, 4, 1024, 2048, false);
+    test_invoke_gemm_bf16(true, true, 8, 1024, 2048, false);
+    test_invoke_gemm_bf16(true, true, 1024, 1024, 2048, false);
 }
 
 TEST(invoke_gemm, invoke_gemm_test_fp16) {
-    test_invoke_gemm_fp16(2, 1024, 2048, false);
-    test_invoke_gemm_fp16(4, 1024, 2048, false);
-    test_invoke_gemm_fp16(8, 1024, 2048, false);
-    test_invoke_gemm_fp16(1024, 1024, 2048, false);
+    test_invoke_gemm_fp16(false, false, 2, 1024, 2048, false);
+    test_invoke_gemm_fp16(false, false, 4, 1024, 2048, false);
+    test_invoke_gemm_fp16(false, false, 8, 1024, 2048, false);
+    test_invoke_gemm_fp16(false, false, 1024, 1024, 2048, false);
+
+    test_invoke_gemm_fp16(true, true, 2, 1024, 2048, false);
+    test_invoke_gemm_fp16(true, true, 4, 1024, 2048, false);
+    test_invoke_gemm_fp16(true, true, 8, 1024, 2048, false);
+    test_invoke_gemm_fp16(true, true, 1024, 1024, 2048, false);
 }
 
 int main(int argc, char **argv) {

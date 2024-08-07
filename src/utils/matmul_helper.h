@@ -60,11 +60,27 @@ public:
     }
 
     template <typename Tin, typename Twei, typename Tout, typename Tbias = float>
-    void invoke_onednn_gemm_compute(bool transA, int M, int N, int K, float alpha, const Tin *A, int lda, const Twei *B,
+    void invoke_onednn_gemm_compute(bool transA, bool transB, int M, int N, int K, float alpha, const Tin *A, int lda, const Twei *B,
             float beta, Tout *C, int ldc, const Tbias *bias = nullptr, const Tin *res = nullptr, int ldres = -1) {
         xft::Matrix<Twei> packedB;
         xft::Matrix<Twei> matrixB;
-        matrixB.Resize(K, N);
+
+        int rows = transB ? N : K;
+        int cols = transB ? K : N;
+        matrixB.Resize(rows, cols);
+
+        // TODO: Need further performance optimization for tanspose
+        Tin* AT = (Tin*)malloc(M * K * sizeof(Tin));
+        if (transA) {
+#pragma omp parallel for
+            for (int i = 0; i < K; i++) {
+                for (int j = 0; j < M; j++) {
+                    AT[j * K + i] = A[i * M + j];
+                }
+            }
+        } else {
+            memcpy(AT, A, M * K * sizeof(Tin));
+        }
 
 #pragma omp parallel for
         for (uint64_t i = 0; i < K; i++) {
@@ -73,13 +89,14 @@ public:
             memcpy(dst, src, N * sizeof(Twei));
         }
 
-        packWeight(transA, matrixB, packedB);
+        packWeight(transB, matrixB, packedB);
 
         if constexpr (std::is_same_v<Twei, bfloat16_t>) {
-            onednn_amx_gemm_compute(transA, M, N, K, alpha, A, lda, packedB.Data(), beta, C, ldc);
+            onednn_amx_gemm_compute(transA, M, N, K, alpha, AT, lda, packedB.Data(), beta, C, ldc);
         } else {
-            onednn_gemm_compute(transA, M, N, K, alpha, A, lda, packedB.Data(), beta, C, ldc);
+            onednn_gemm_compute(transA, M, N, K, alpha, AT, lda, packedB.Data(), beta, C, ldc);
         }
+        free(AT);
     }
 
     ~MMHelper() {
