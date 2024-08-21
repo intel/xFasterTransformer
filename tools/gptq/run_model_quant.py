@@ -106,9 +106,9 @@ if __name__ == '__main__':
 
     # TODO: read from config.ini in xFT
     model_type = args.model_type
-    input_model_path = args.input_model_path
-    if not os.path.exists(input_model_path) or not os.path.isdir(input_model_path):
-        raise ValueError("Invalid input_model_path. The path does not exist or is not a directory.")
+    input_model_path = os.path.abspath(args.input_model_path)
+    if not os.path.isdir(input_model_path):
+        raise ValueError(f"The provided input model path '{input_model_path}' is not a valid directory.")
     output_model_path = args.output_model_path
     model_configs = get_model_configs(os.path.join(input_model_path, "config.ini"))
     wbits = args.wbits # Support 4 bits or 8 bits
