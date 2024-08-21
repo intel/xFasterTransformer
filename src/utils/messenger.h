@@ -29,6 +29,10 @@
 #include "timeline.h"
 #include "verbose.h"
 
+inline void* loadCommHelperLibrary() {
+    return dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+}
+
 class Messenger {
 private:
     Messenger() {
@@ -44,7 +48,7 @@ private:
             return;
         }
 
-        commHelperHanlde = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        commHelperHanlde = loadCommHelperLibrary();
         if (commHelperHanlde == nullptr) {
             printf("Failed to load xft_comm_helper library from path error code: %s\n", dlerror());
             exit(-1);
@@ -236,7 +240,7 @@ private:
     Messenger &operator=(const Messenger &messenger) = delete;
 
     static void mpi_finalize() {
-        void *handle = dlopen("libxft_comm_helper.so", RTLD_NOW | RTLD_LOCAL);
+        void *handle = loadCommHelperLibrary();
         if (handle != nullptr) {
             void (*helperMpiFinalize)() = (void (*)())dlsym(handle, "mpiFinalize");
             (*helperMpiFinalize)();
