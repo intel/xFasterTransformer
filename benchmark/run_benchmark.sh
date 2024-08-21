@@ -222,8 +222,14 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
         Info "SPR-HBM Quad mode"
         export OMP_NUM_THREADS=${cores_per_numa}
         Info "OMP_NUM_THREADS: ${cores_per_numa}"
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+        run_cmd=""
+        if [ "$sockets" == "1" ]; then
+            run_cmd="bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+        else
+            run_cmd="mpirun \
+            -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+        fi
+
         if [ "$sockets" == "2" ]; then
             run_cmd+=" : \
             -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
@@ -246,8 +252,14 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
     Info "#SPR-SP 4-socket Quad mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    run_cmd="mpirun \
-    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    run_cmd=""
+    if [ "$sockets" == "1" ]; then
+        run_cmd="bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    else
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    fi
+
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
@@ -265,8 +277,14 @@ elif [ "${numa_nodes}" -eq 2 ]; then
     Info "Quad mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    run_cmd="mpirun \
-    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    run_cmd=""
+    if [ "$sockets" == "1" ]; then
+        run_cmd="bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    else
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    fi
+
     if [ "$sockets" == "2" ]; then
         run_cmd+=" : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
@@ -276,8 +294,7 @@ elif [ "${numa_nodes}" -eq 1 ]; then
     Info "General Test mode"
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-    run_cmd="mpirun \
-    -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+    run_cmd="bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
 else
     Error "Please double check the memory nodes"
 fi
