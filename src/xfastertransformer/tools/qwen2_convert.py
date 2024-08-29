@@ -265,18 +265,16 @@ class Qwen2Convert(BaseModelConvert):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        super().prepare_model_file_for_quantized_model(input_dir)
+
         # load AutoGPTQ quantized model
-        from auto_gptq import AutoGPTQForCausalLM
-
-        model = AutoGPTQForCausalLM.from_quantized(
-            input_dir,
-            inject_fused_attention=False,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-        )
-
+        from transformers import GPTQConfig
+        # don't panic here bits=4, if your model is quantized to int8, the latter code will correct the bits.
+        gptq_config = GPTQConfig(bits=4, use_exllama=False) 
+        model = AutoModelForCausalLM.from_pretrained(input_dir, torch_dtype="auto", device_map="auto",
+                                                     quantization_config=gptq_config)
         hf_config = vars(model.config)
-        quantize_config = vars(model.quantize_config)
+        quantize_config = model.config.quantization_config
 
         sec_name = hf_config["model_type"]
 

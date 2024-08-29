@@ -95,6 +95,20 @@ class BaseModelConvert:
             traceback.print_exc()
             check_transformers_version_compatibility(input_dir)
 
+    def prepare_model_file_for_quantized_model(self, input_dir):
+        if not os.path.exists(input_dir + "/config.json"):
+            raise Exception("config.json is not existed in %s, please check it." % input_dir)
+        conf = dict()
+        with open(input_dir + "/config.json") as f:
+            conf = json.load(f)
+        if not "quantization_config" in conf:
+            raise Exception("quantization_config is not in %s/config.json, please check if it is a quantized model." % input_dir)
+        # if model file name is customized, create a symlink to model.safetensors
+        if "model_file_base_name" in conf['quantization_config']:
+            src_path = "%s/%s.safetensors" % (input_dir, conf['quantization_config']['model_file_base_name'])
+            os.symlink(src_path, input_dir+"/model.safetensors")
+        return
+
     def split_and_convert(self, input_dir, output_dir, dtype, processes):
         pass
 

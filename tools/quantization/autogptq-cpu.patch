@@ -1,0 +1,126 @@
+diff --git a/auto_gptq/modeling/_base.py b/auto_gptq/modeling/_base.py
+index 5914754..673975b 100644
+--- a/auto_gptq/modeling/_base.py
++++ b/auto_gptq/modeling/_base.py
+@@ -243,7 +243,7 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             raise ValueError
+ 
+         force_layer_back_to_cpu = False
+-        if get_device(layers[0]) == CPU:
++        if get_device(layers[0]) == CPU and torch.cuda.is_available():
+             layers[0] = layers[0].to(CUDA_0)
+             force_layer_back_to_cpu = True
+ 
+@@ -277,7 +277,8 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             if module is not None:
+                 move_to_device(module, ori_outside_layer_module_devices[module_name])
+ 
+-        torch.cuda.empty_cache()
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
+ 
+         inside_layer_modules = self.inside_layer_modules
+         if not self.quantize_config.true_sequential:
+@@ -287,7 +288,7 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             logger.info(f"Start quantizing layer {i + 1}/{len(layers)}")
+             layer = layers[i]
+             force_layer_back_to_cpu = False
+-            if get_device(layer) == CPU:
++            if get_device(layer) == CPU and torch.cuda.is_available():
+                 move_to_device(layer, CUDA_0)
+                 force_layer_back_to_cpu = True
+             cur_layer_device = get_device(layer)
+@@ -372,7 +373,8 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             del gptq
+             del layer_inputs
+             layer_inputs, layer_outputs = layer_outputs, []  # TODO: is it really OK to cache only the first positional argument?
+-            torch.cuda.empty_cache()
++            if torch.cuda.is_available():
++                torch.cuda.empty_cache()
+ 
+         pack_model(
+             model=self.model,
+@@ -393,7 +395,8 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+ 
+         self._quantized = True
+ 
+-        torch.cuda.empty_cache()
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
+ 
+     @property
+     def device(self):
+@@ -666,7 +669,8 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             model_init_kwargs["device_map"] = None
+             model_init_kwargs["low_cpu_mem_usage"] = False
+ 
+-        torch.cuda.empty_cache()
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
+ 
+         merged_kwargs = {**model_init_kwargs, **cached_file_kwargs}
+         model = AutoModelForCausalLM.from_pretrained(pretrained_model_name_or_path, **merged_kwargs)
+@@ -816,7 +820,8 @@ class BaseGPTQForCausalLM(nn.Module, PushToHubMixin):
+             # format marlin requires marlin kernel
+             use_marlin = True
+ 
+-        marlin_compatible = _validate_marlin_device_support()
++        if torch.cuda.is_available():
++            marlin_compatible = _validate_marlin_device_support()
+         if use_marlin and not MARLIN_AVAILABLE:
+             raise TypeError("use_marlin is true but Marlin is not available due to cuda/device support.")
+ 
+diff --git a/auto_gptq/quantization/gptq.py b/auto_gptq/quantization/gptq.py
+index cda3e7a..a1a23a6 100644
+--- a/auto_gptq/quantization/gptq.py
++++ b/auto_gptq/quantization/gptq.py
+@@ -166,7 +166,8 @@ class GPTQ:
+                 logger.debug(torch.sum((self.layer(self.inp1) - self.out1) ** 2))
+                 logger.debug(torch.sum(Losses))
+ 
+-        torch.cuda.synchronize()
++        if torch.cuda.is_available():
++            torch.cuda.synchronize()
+         logger.info(f"duration: {(time.time() - tick)}")
+         logger.info(f"avg loss: {torch.sum(Losses).item() / self.nsamples}")
+ 
+@@ -200,7 +201,8 @@ class GPTQ:
+         self.H = None
+         self.Losses = None
+         self.Trace = None
+-        torch.cuda.empty_cache()
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
+ 
+ 
+ __all__ = ["GPTQ"]
+diff --git a/examples/quantization/basic_usage_wikitext2.py b/examples/quantization/basic_usage_wikitext2.py
+index 3fc0174..62a633a 100644
+--- a/examples/quantization/basic_usage_wikitext2.py
++++ b/examples/quantization/basic_usage_wikitext2.py
+@@ -5,9 +5,11 @@ import torch.nn as nn
+ from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
+ 
+ 
+-pretrained_model_dir = "facebook/opt-125m"
+-quantized_model_dir = "opt-125m-4bit-128g"
++#pretrained_model_dir = "facebook/opt-125m"
++#quantized_model_dir = "opt-125m-4bit-128g"
+ 
++pretrained_model_dir = "<path/to/Llama-2-7b-hf-awq-export>"
++quantized_model_dir = "<path/to/Llama-2-7b-hf-awq-gptq-4bit-128g"
+ 
+ # os.makedirs(quantized_model_dir, exist_ok=True)
+ def get_wikitext2(nsamples, seed, seqlen, model):
+@@ -157,9 +159,9 @@ def main():
+     model.save_quantized(quantized_model_dir, use_safetensors=True)
+ 
+     # load quantized model, currently only support cpu or single gpu
+-    model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir, device="cuda:0", use_triton=False)
++    model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir, device="cpu", use_triton=False)
+ 
+-    opt_eval(model.model, testenc, "cuda:0")
++    opt_eval(model.model, testenc, "cpu")
+ 
+ 
+ if __name__ == "__main__":
