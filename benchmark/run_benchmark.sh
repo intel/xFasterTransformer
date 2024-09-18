@@ -62,12 +62,24 @@ while [ -n "$1" ]; do
         ;;
     -s | --sockets)
         case $2 in
-        "1" | "2")
+        "1" | "2" | "3" | "4")
             sockets=$2
             shift 2
             ;;
         *)
-            Error "sockets must in 1 or 2."
+            Error "sockets must in 1, 2, 3 or 4."
+            exit 1
+            ;;
+        esac
+        ;;
+    -sid | --sockets_id)
+        case $2 in
+        "0" | "1" | "2" | "3")
+            sockets_id=$2
+            shift 2
+            ;;
+        *)
+            Error "sockets must in 0, 1, 2 or 3."
             exit 1
             ;;
         esac
@@ -128,6 +140,7 @@ token_path=${token_path:-"${SCRIPT_DIR}"/../examples/model_config/${model_name}/
 dtype=${dtype:-bf16}
 kv_cache_dtype=${kv_cache_dtype:-fp16}
 sockets=${sockets:-1}
+sockets_id=${sockets_id:-0}
 batch_size=${batch_size:-1}
 input_tokens=${input_tokens:-32}
 output_tokens=${output_tokens:-32}
@@ -136,6 +149,10 @@ iter=${iter:-10}
 warmup=${warmup:-2}
 
 Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
+
+if [ "$sockets" == 1 ]; then
+    Info "Using the socket ${sockets_id}."
+fi
 
 Warning "The mapping method for CPU IDs in the cloud server environment is different,
         for example, (0,1), (2,3), (...) where consecutive pairs of CPU IDs belong
@@ -177,6 +194,16 @@ numa_nodes=$(lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}')
 # Multiply by 2 to avoid an float result in HBM flat mode that the NUMA count twice and it will be divided later.
 cores_per_numa=$(($sockets_num * $cores_per_socket * 2 / $numa_nodes))
 
+if [ "${sockets_num}" -lt "${sockets}" ]; then
+    Error "The number of available sockets (${sockets_num}) is less than the requested sockets (${sockets})."
+    exit 1
+fi
+
+if [ "${sockets}" -eq 1 ] && [ "${sockets_id}" -ge "${sockets_num}" ]; then
+    Error "The socket ID (${sockets_id}) is out of available sockets range, max ID is ($((${sockets_num} - 1)))."
+    exit 1
+fi
+
 export BENCHMARK=$benchmark_cmd
 
 if [ "${numa_nodes}" -eq 16 ]; then
@@ -185,13 +212,21 @@ if [ "${numa_nodes}" -eq 16 ]; then
     export OMP_NUM_THREADS=${cores_per_numa}
     Info "OMP_NUM_THREADS: ${cores_per_numa}"
     Info "SPR-HBM SNC4 mode"
-    run_cmd="mpirun \
-    -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
-    -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
-    -n 1 bash run.sh 2 10 ${OMP_NUM_THREADS} 2 : \
-    -n 1 bash run.sh 3 11 ${OMP_NUM_THREADS} 3"
+    run_cmd="mpirun "
+    if { [ "$sockets" == "1" ] && [ "$sockets_id" == "0" ]; } || [ "$sockets" == "2" ]; then
+        run_cmd+=" \
+        -n 1 bash run.sh 0  8 ${OMP_NUM_THREADS} 0 : \
+        -n 1 bash run.sh 1  9 ${OMP_NUM_THREADS} 1 : \
+        -n 1 bash run.sh 2 10 ${OMP_NUM_THREADS} 2 : \
+        -n 1 bash run.sh 3 11 ${OMP_NUM_THREADS} 3"
+    fi
+
     if [ "$sockets" == "2" ]; then
-        run_cmd+=" : \
+        run_cmd+=" : "
+    fi
+
+    if { [ "$sockets" == "1" ] && [ "$sockets_id" == "1" ]; } || [ "$sockets" == "2" ]; then
+        run_cmd+=" \
         -n 1 bash run.sh 4 12 ${OMP_NUM_THREADS} 4 : \
         -n 1 bash run.sh 5 13 ${OMP_NUM_THREADS} 5 : \
         -n 1 bash run.sh 6 14 ${OMP_NUM_THREADS} 6 : \
@@ -202,13 +237,22 @@ elif [ "${numa_nodes}" -eq 8 ]; then
     export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     Info "SPR-HBM SNC4 mode"
-    run_cmd="mpirun \
+    run_cmd="mpirun "
+
+    if { [ "$sockets" == "1" ] && [ "$sockets_id" == "0" ]; } || [ "$sockets" == "2" ]; then
+    run_cmd+=" \
     -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
     -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
     -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
     -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
+    fi
+
     if [ "$sockets" == "2" ]; then
-        run_cmd+=" : \
+        run_cmd+=" : "
+    fi
+
+    if { [ "$sockets" == "1" ] && [ "$sockets_id" == "1" ]; } || [ "$sockets" == "2" ]; then
+        run_cmd+=" \
         -n 1 bash run.sh 4 4 ${OMP_NUM_THREADS} 4 : \
         -n 1 bash run.sh 5 5 ${OMP_NUM_THREADS} 5 : \
         -n 1 bash run.sh 6 6 ${OMP_NUM_THREADS} 6 : \
@@ -224,25 +268,29 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
         Info "OMP_NUM_THREADS: ${cores_per_numa}"
         run_cmd=""
         if [ "$sockets" == "1" ]; then
-            run_cmd="bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
+            run_cmd="bash run.sh ${sockets_id} $((${sockets_id} + 2)) ${OMP_NUM_THREADS} ${sockets_id}"
         else
             run_cmd="mpirun \
-            -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0"
-        fi
-
-        if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
+            -n 1 bash run.sh 0 2 ${OMP_NUM_THREADS} 0 : \
             -n 1 bash run.sh 1 3 ${OMP_NUM_THREADS} 1"
         fi
     else
         Info "EMR SNC-2 mode"
         export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
         Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
-        run_cmd="mpirun \
+        run_cmd="mpirun "
+        if { [ "$sockets" == "1" ] && [ "$sockets_id" == "0" ]; } || [ "$sockets" == "2" ]; then
+        run_cmd=" \
         -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+        fi
+
         if [ "$sockets" == "2" ]; then
-            run_cmd+=" : \
+            run_cmd+=" : "
+        fi
+
+        if { [ "$sockets" == "1" ] && [ "$sockets_id" == "1" ]; } || [ "$sockets" == "2" ]; then
+            run_cmd+=" \
             -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2 : \
             -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
         fi
@@ -254,21 +302,20 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd=""
     if [ "$sockets" == "1" ]; then
-        run_cmd="bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
-    else
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+        run_cmd="bash run.sh ${sockets_id} ${sockets_id} ${OMP_NUM_THREADS} ${sockets_id}"
     fi
 
-    if [ "$sockets" == "2" ]; then
-        run_cmd+=" : \
+    if [ "$sockets" -ge "2" ]; then
+        run_cmd+="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0: \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
     fi
-    if [ "$sockets" == "3" ]; then
+
+    if [ "$sockets" -ge "3" ]; then
         run_cmd+=" : \
         -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
     fi
-    if [ "$sockets" == "4" ]; then
+    if [ "$sockets" -ge "4" ]; then
         run_cmd+=" : \
         -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3"
     fi
@@ -279,15 +326,34 @@ elif [ "${numa_nodes}" -eq 2 ]; then
     Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
     run_cmd=""
     if [ "$sockets" == "1" ]; then
-        run_cmd="bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
-    else
-        run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0"
+        run_cmd="bash run.sh ${sockets_id} ${sockets_id} ${OMP_NUM_THREADS} ${sockets_id}"
     fi
 
     if [ "$sockets" == "2" ]; then
-        run_cmd+=" : \
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0: \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+    fi
+
+elif ["${numa_nodes}" -eq 3]; then
+    # GNR 1 socket SNC-3 model.
+    Info "SNC-3 mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd=""
+    if [ "$sockets" == "1" ]; then
+        run_cmd="bash run.sh ${sockets_id} ${sockets_id} ${OMP_NUM_THREADS} ${sockets_id}"
+    fi
+
+    if [ "$sockets" -ge "2" ]; then
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0: \
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
+    fi
+
+    if [ "$sockets" == "3" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
     fi
 elif [ "${numa_nodes}" -eq 1 ]; then
     # General Test mode

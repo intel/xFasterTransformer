@@ -47,6 +47,8 @@ Please choose `-s` or `--sockets` as follows:
 - 1 (default, benchmarking on single socket)
 - 2 (benchmarking on 2 sockets)
 
+Use `-sid` or `--sockets_id` to specify which socket while be used when `sockets==1`, index start from `0`.
+
 Specify data type of kvcache using `-kdv` or `--kv_cache_dtype` from below list:
 - fp16 (default)
 - int8
