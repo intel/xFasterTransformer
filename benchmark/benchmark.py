@@ -108,6 +108,9 @@ if __name__ == "__main__":
     with open(args.prompt_path, "r") as json_file:
         prompt_pool = json.load(json_file)
 
+    _config = configparser.ConfigParser()
+    _config.read(os.path.join(args.model_path, "config.ini"))
+
     if not args.model_name:
         args.model_name = os.path.basename(os.path.dirname(args.model_path))
     else:
@@ -116,8 +119,6 @@ if __name__ == "__main__":
     # if enabled the XFT_FAKE_MODEL = 1, will try to load real weight from config.ini:model_name
     if os.environ.get("XFT_FAKE_MODEL", "-1") == "1":
         model_path_suffix = "-xft"
-        _config = configparser.ConfigParser()
-        _config.read(os.path.join(args.model_path, "config.ini"))
         _weight_path = _config[_config.sections()[0]]["model_name"].rstrip(os.path.sep) + model_path_suffix
         if os.path.exists(_weight_path):
             print(f"The folder '{_weight_path}' exists. Loading real weight!")
@@ -165,6 +166,10 @@ if __name__ == "__main__":
         args.model_path, dtype=args.dtype, kv_cache_dtype=args.kv_cache_dtype
     )
     input_prompts = []
+
+    model_max_seq_len = _config[_config.sections()[0]]["max_pos_seq_len"]
+    model_max_seq_len = int(model_max_seq_len) if model_max_seq_len.isdigit() else 0
+
     if model.rank == 0:
         # input prompt
         print("======start=======")
@@ -191,6 +196,8 @@ if __name__ == "__main__":
         print("Input token Length is", input_token_nums)
         print("Batch_size:", args.batch_size)
         max_len = input_token_nums + args.token_out
+        if max_len > model_max_seq_len and model_max_seq_len > 0:
+            raise SystemExit("[ERROR] input_token length + output_token length > max_pos_seq_len.")
         print("Max_len:", max_len)
         print("=" * 50)
         # Perform 100 runs and store execution times in a list
