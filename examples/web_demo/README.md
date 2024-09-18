@@ -1,21 +1,28 @@
 # Web Demo
 A web demo based on [Gradio](https://www.gradio.app/) is provided in repo. 
 
+## Local Model Demo
+
 Support models list:
 - ChatGLM
 - ChatGLM2
 - ChatGLM3
-- Llama2-chat
+- ChatGLM4
+- Llama2
+- Llama3
+- Gemma
+- Yi
 - Baichuan2
 - Qwen
+- Qwen2
 
-## Step 1: Prepare xFasterTransformer  
+### Step 1: Prepare xFasterTransformer  
 Please refer to [Installation](../../README.md#installation). This example supports use source code which means you don't need install xFasterTransformer into pip and just build xFasterTransformer library, and it will search library in src directory.
 
-## Step 2: Prepare models  
+### Step 2: Prepare models  
 Please refer to [Prepare model](../README.md#prepare-model)
 
-## Step 3: Install the dependencies.
+### Step 3: Install the dependencies.
 - Please refer to [Prepare Environment](#prepare-environment) to install oneCCL.
 - Python dependencies.
     ```bash
@@ -24,7 +31,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
     ```
     ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 
-## Step 4: Run the script corresponding to the model. 
+### Step 4: Run the script corresponding to the model. 
 After the web server started, open the output URL in the browser to use the demo. Please specify the paths of model and tokenizer directory, and data type. `transformer`'s tokenizer is used to encode and decode text so `${TOKEN_PATH}` means the huggingface model directory.
 ```bash
 # Recommend preloading `libiomp5.so` to get a better performance.
@@ -48,3 +55,19 @@ Parameter options settings:
 - `-t`, `--token_path`      Path to tokenizer directory.
 - `-m`, `--model_path`      Path to model directory.
 - `-d`, `--dtype`           Data type, default using `fp16`, supports `{fp16, bf16, int8, w8a8, int4, nf4, bf16_fp16, bf16_int8, bf16_w8a8,bf16_int4, bf16_nf4, w8a8_int8, w8a8_int4, w8a8_nf4}`.
+
+## OpenAI-compatible API Demo
+
+```
+shell
+
+python web_demo_api.py --url http://local:8000/v1 -m xft 
+```
+Parameter options settings:
+- `-h`, `--help`        show this help message and exit
+-  `-u`, `--url`        base url like `http://local:8000/v1`
+- `-m`, `--model`       model name
+- `-t`, `--token`       API token key
+- `-i`, `--ip`          gradio server ip, default `0.0.0.0`
+- `-p`, `--port`        gradio server port, default `7860`
+- `-s`, `--share`       `ture` or `false`, whether to create a share link

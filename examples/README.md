@@ -13,6 +13,11 @@ Support list:
 - ChatGLM
 - ChatGLM2
 - ChatGLM3
-- Llama2-chat
+- ChatGLM4
+- Llama2
+- Llama3
+- Gemma
+- Yi
 - Baichuan2
 - Qwen
+- Qwen2
