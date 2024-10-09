@@ -48,7 +48,14 @@ public:
     int getAMXThresholdM() { return AMXThresholdMValue; }
 
     // get FLASH_ATTN_THRESHOLD
-    int getFlashAttnThreshold() { return FlashAttnThresholdValue; }
+    template <typename T>
+    bool getFlashAttnEnabled(int inputLen) {
+        if (FlashAttnThresholdValue >= 0 &&
+            (std::is_same_v<T, float> || inputLen > FlashAttnThresholdValue))
+            return true;
+        else
+            return false;
+    }
 
     // get ENABLE_CAT_MLP
     bool getMlpCatEnabled() { return MlpCatEnabled; }
@@ -245,13 +252,12 @@ private:
         // > threshold to enable flash attention, default 8192
         char *flashAttnThresholdValue = getenv("FLASH_ATTN_THRESHOLD");
         if (flashAttnThresholdValue != NULL) {
-            int value = atoi(flashAttnThresholdValue);
-            if (value >= 0)
-                FlashAttnThresholdValue = value;
-            else
-                printf("[ERROR] FLASH_ATTN_THRESHOLD value need to be greater than or equal to 0.\n");
+            FlashAttnThresholdValue = atoi(flashAttnThresholdValue);
         }
-        printf("[INFO] SeqLen > FLASH_ATTN_THRESHOLD(%d) will enable FlashAttn.\n", FlashAttnThresholdValue);
+        if (FlashAttnThresholdValue < 0)
+            printf("[INFO] FlashAttn is disabled (FLASH_ATTN_THRESHOLD = %d).\n", FlashAttnThresholdValue);
+        else
+            printf("[INFO] SeqLen > FLASH_ATTN_THRESHOLD(%d) will enable FlashAttn.\n", FlashAttnThresholdValue);
     }
 
     // ENABLE_CAT_MLP
