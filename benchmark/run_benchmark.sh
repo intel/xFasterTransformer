@@ -194,13 +194,13 @@ numa_nodes=$(lscpu | grep "NUMA node(s)" | awk -F ':' '{print $2}')
 # Multiply by 2 to avoid an float result in HBM flat mode that the NUMA count twice and it will be divided later.
 cores_per_numa=$(($sockets_num * $cores_per_socket * 2 / $numa_nodes))
 
-if [ "${sockets_num}" -lt "${sockets}" ]; then
-    Error "The number of available sockets (${sockets_num}) is less than the requested sockets (${sockets})."
+if [ "${sockets_num}" -lt "${sockets}" ] && [ "${numa_nodes}" -lt "${sockets}" ]; then
+    Error "The number of available sockets (${sockets_num}) and numa nodes (${numa_nodes}) are less than the requested sockets (${sockets})."
     exit 1
 fi
 
-if [ "${sockets}" -eq 1 ] && [ "${sockets_id}" -ge "${sockets_num}" ]; then
-    Error "The socket ID (${sockets_id}) is out of available sockets range, max ID is ($((${sockets_num} - 1)))."
+if [ "${sockets}" -eq 1 ] && { [ "${sockets_id}" -ge "${sockets_num}" ] && [ "${sockets_id}" -ge "${numa_nodes}" ]; }; then
+    Error "The socket ID (${sockets_id}) is out of available sockets or NUMA nodes range, max ID is $((${sockets_num} < ${numa_nodes} ? ${sockets_num} - 1 : ${numa_nodes} - 1))."
     exit 1
 fi
 
