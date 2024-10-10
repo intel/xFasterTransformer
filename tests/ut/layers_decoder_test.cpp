@@ -21,8 +21,8 @@
 #include "layers_decoder.h"
 #include "gtest/gtest.h"
 
-template <typename T>
-static void compareLayerLLaMA(int step, int batchSize, int inputSeqLen, int pastSeqLen, int currentSeqLen,
+static void compareLayerLLaMA(xft::DataType dt, xft::DataType kvcdt, int step, 
+        int batchSize, int inputSeqLen, int pastSeqLen, int currentSeqLen,
         int attHeadDim, int attHeadNum, int kvHeadNum, int maxPositions, int maxPosEmbed, int hiddenSize,
         int intermediateSize, const float *ln1Gamma, const float *ln1Beta, const void *queryWeight,
         const void *keyWeight, const void *valueWeight, const void *attnOutWeight, const float *ln2Gamma,
@@ -36,19 +36,8 @@ static void compareLayerLLaMA(int step, int batchSize, int inputSeqLen, int past
         input[i] = static_cast<float>(1.0f * rand() / RAND_MAX);
     }
 
-    xft::DataType dt = xft::DataType::unknown;
-    if constexpr (std::is_same<T, bfloat16_t>::value) {
-        dt = xft::DataType::bf16;
-    } else if constexpr (std::is_same<T, float16_t>::value) {
-        dt = xft::DataType::fp16;
-    } else {
-        printf("Unsupported data type\n");
-        GTEST_FAIL();
-        return;
-    }
-
     auto start = std::chrono::high_resolution_clock::now();
-    invokeLayerLLaMA(dt, xft::ActivationType::SILU, xft::NormType::RMS, batchSize, inputSeqLen, attHeadDim, attHeadNum,
+    invokeLayerLLaMA(dt, kvcdt, xft::RopeType::LLAMA_ROPE, xft::ActivationType::SILU, xft::NormType::RMS, batchSize, inputSeqLen, attHeadDim, attHeadNum,
             kvHeadNum, maxPositions, maxPosEmbed, pastSeqLen, currentSeqLen, step, hiddenSize, intermediateSize,
             (void *)ourOutput, hiddenSize, input, hiddenSize, ln1Gamma, ln1Beta, queryWeight, keyWeight, valueWeight,
             attnOutWeight, ln2Gamma, ln2Beta, gateW, upW, downW);
@@ -60,8 +49,7 @@ static void compareLayerLLaMA(int step, int batchSize, int inputSeqLen, int past
     free(ourOutput);
 }
 
-template <typename T>
-void test_LayerLLaMA(void) {
+void test_LayerLLaMA(xft::DataType dt, xft::DataType kvcdt) {
     int maxPosEmbed = 4096;
     int maxPositions = maxPosEmbed;
     int hiddenSize = 4096;
@@ -111,16 +99,16 @@ void test_LayerLLaMA(void) {
     int currentSeqLen = inputSeqLen;
     int nextTokenNum = 1;
 
-    compareLayerLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
+    compareLayerLLaMA(dt, kvcdt, step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
             maxPositions, maxPosEmbed, hiddenSize, intermediateSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj, ln2Gamma, ln2Beta, gateW, upW, downW);
     pastSeqLen += inputSeqLen;
     currentSeqLen = nextTokenNum;
-    compareLayerLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
+    compareLayerLLaMA(dt, kvcdt, step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
             maxPositions, maxPosEmbed, hiddenSize, intermediateSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj, ln2Gamma, ln2Beta, gateW, upW, downW);
     pastSeqLen += nextTokenNum;
-    compareLayerLLaMA<T>(step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
+    compareLayerLLaMA(dt, kvcdt, step++, batchSize, inputSeqLen, pastSeqLen, currentSeqLen, attHeadDim, attHeadNum, kvHeadNum,
             maxPositions, maxPosEmbed, hiddenSize, intermediateSize, ln1Gamma, ln1Beta, qkvProj, qkvProj + qSize,
             qkvProj + kvSize, oProj, ln2Gamma, ln2Beta, gateW, upW, downW);
 
@@ -135,12 +123,28 @@ void test_LayerLLaMA(void) {
     free(downW);
 }
 
-TEST(LayerLLaMA, bfloat16_t) {
-    test_LayerLLaMA<bfloat16_t>();
+TEST(LayerLLaMA, w_bf16_kv_fp16) {
+    test_LayerLLaMA(xft::DataType::bf16, xft::DataType::fp16);
 }
 
-TEST(LayerLLaMA, float16_t) {
-    test_LayerLLaMA<float16_t>();
+TEST(LayerLLaMA, w_bf16_kv_int8) {
+    test_LayerLLaMA(xft::DataType::bf16, xft::DataType::int8);
+}
+
+TEST(LayerLLaMA, w_fp16_kv_fp16) {
+    test_LayerLLaMA(xft::DataType::fp16, xft::DataType::fp16);
+}
+
+TEST(LayerLLaMA, w_fp16_kv_int8) {
+    test_LayerLLaMA(xft::DataType::fp16, xft::DataType::int8);
+}
+
+TEST(LayerLLaMA, w_bf16_int8_kv_fp16) {
+    test_LayerLLaMA(xft::DataType::bf16_int8, xft::DataType::fp16);
+}
+
+TEST(LayerLLaMA, w_bf16_int8_kv_int8) {
+    test_LayerLLaMA(xft::DataType::bf16_int8, xft::DataType::int8);
 }
 
 int main(int argc, char **argv) {
