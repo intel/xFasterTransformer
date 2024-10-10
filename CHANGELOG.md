@@ -1,4 +1,14 @@
 # CHANGELOG
+# [Version v1.8.2](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.2)
+v1.8.2 
+
+## Performance
+- Enable flash attention by default for `W8A8` dtype to accelerate the performance of the 1st token.
+
+## Benchmark
+- When the number of ranks is 1, run in single mode to avoid the dependency on `mpirun`.
+- Support `SNC-3` platform.
+  
 # [Version v1.8.1](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.1)
 v1.8.1 
 
