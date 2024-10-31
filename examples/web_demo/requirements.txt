@@ -1,4 +1,4 @@
-gradio==4.37.2
+gradio==5.0.0
 sentencepiece==0.1.99
 transformers==4.41.2
 transformers_stream_generator==0.0.5
