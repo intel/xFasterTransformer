@@ -51,4 +51,8 @@ enum ActivationType {
     SILU,
 };
 
+enum RopeType {
+    LLAMA_ROPE = 0,
+};
+
 } // namespace xft
