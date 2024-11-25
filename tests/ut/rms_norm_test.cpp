@@ -98,6 +98,13 @@ TEST(RMSNorm, bfloat16_t) {
     compareRMSNorm<bfloat16_t>(rand() % 100 + 100, rand() % 100 + 100);
 }
 
+TEST(RMSNorm, float16_t) {
+    compareRMSNorm<float16_t>(128, 128);
+    compareRMSNorm<float16_t>(5120, 5120);
+    compareRMSNorm<float16_t>(5120, 5120 * 3);
+    compareRMSNorm<float16_t>(rand() % 100 + 100, rand() % 100 + 100);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
