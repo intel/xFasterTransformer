@@ -111,6 +111,13 @@ TEST(LayerNorm, bfloat16_t) {
     compareLayerNorm<bfloat16_t>(rand() % 100 + 100, rand() % 100 + 100);
 }
 
+TEST(LayerNorm, float16_t) {
+    compareLayerNorm<float16_t>(128, 128);
+    compareLayerNorm<float16_t>(5120, 5120);
+    compareLayerNorm<float16_t>(5120, 5120 * 3);
+    compareLayerNorm<float16_t>(rand() % 100 + 100, rand() % 100 + 100);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
