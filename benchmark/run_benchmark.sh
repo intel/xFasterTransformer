@@ -280,7 +280,7 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 2 ]]; then
         Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
         run_cmd="mpirun "
         if { [ "$sockets" == "1" ] && [ "$sockets_id" == "0" ]; } || [ "$sockets" == "2" ]; then
-        run_cmd=" \
+        run_cmd+=" \
         -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
         fi
