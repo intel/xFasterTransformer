@@ -93,8 +93,9 @@ void AttentionLLaMAImpl(DataType dt, int batchSize, int inputSeqLen, int attHead
 
     // create hash key and value: if hidden and intermediateSize is changed , then memory pointer is also changed.
     std::stringstream weights_addr;
-    weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight << "_" << attnOutWeight << "_" << dt << "_"
-                 << attHeadDim << "_" << attHeadNum << "_" << kvHeadNum;
+    weights_addr << queryWeight << "_" << keyWeight << "_" << valueWeight << "_" << attnOutWeight << "_" << queryBias
+                 << "_" << keyBias << "_" << valueBias << "_" << dt << "_" << attHeadDim << "_" << attHeadNum << "_"
+                 << kvHeadNum;
     std::string llama_attention_key = weights_addr.str();
     ATTENTION *llama_attention;
 
