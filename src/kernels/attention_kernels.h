@@ -926,7 +926,7 @@ void selfScaledDpAttention(T *output, const T *query, const AttnT *key, const At
     }
 
     // closest value of power of 2
-    int minBlk = (int)std::pow(2, int(std::log2(maxSrcLen / 2)));
+    int minBlk = (int)std::pow(2, int(std::log2((maxSrcLen + 1) / 2)));
     // Split sequence to make sure a moderate sync frequency and the intermediate
     // result [srcSeq * tgtSeq] in cache. The current block size is derived from practical experience.
     int srcBlk = std::min(256, minBlk);

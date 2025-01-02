@@ -1327,10 +1327,9 @@ public:
                                 (const XDNN_FP16 *)packedB, beta, C, ldc, bias, res, ldres));
             } else if constexpr (std::is_same_v<InT, float16_t>) {
                 if constexpr (std::is_same_v<OutT, float16_t>) {
-                    GEMMVERBOSE("xdnn_hgemm_compute_residential",
-                            xdnn_hgemm_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
-                                    (const XDNN_FP16 *)packedB, beta, (XDNN_FP16 *)C, ldc, bias, (const XDNN_FP16 *)res,
-                                    ldres));
+                    GEMMVERBOSE("onednn_amx_gemm_compute_residential",
+                            onednn_amx_gemm_compute_residential(transA, M, N, K, alpha, A, lda, (const float16_t *)packedB,
+		                    beta, C, ldc, bias, res, ldres));
                 } else if constexpr (std::is_same_v<OutT, float>) {
                     GEMMVERBOSE("xdnn_hgemm_f16f16f32_compute_residential",
                             xdnn_hgemm_f16f16f32_compute_residential(transA, M, N, K, alpha, (const XDNN_FP16 *)A, lda,
