@@ -17,6 +17,7 @@
 #include <fstream>
 #include <omp.h>
 #include <string>
+#include <typeinfo>
 
 #include "INIReader.h"
 #include "allocator.h"
@@ -121,26 +122,8 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
                 || (std::is_same_v<T, float> && std::is_same_v<WT, float16_t>)
                 || (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float16_t>)) {
             xft::copy_MT(ptr, w_ptr, size);
-        } else if constexpr (std::is_same_v<T, int8_t> && std::is_same_v<WT, float>) {
-            printf("Not support float to int8_t\n");
-            exit(-1);
-        } else if constexpr (std::is_same_v<T, uint4x2_t> && std::is_same_v<WT, float>) {
-            printf("Not support float to uint4x2_t\n");
-            exit(-1);
-        } else if constexpr (std::is_same_v<T, nf4x2_t> && std::is_same_v<WT, float>) {
-            printf("Not support float to nf4x2_t\n");
-            exit(-1);
-        } else if constexpr (std::is_same_v<T, int8_t> && std::is_same_v<WT, float16_t>) {
-            printf("Not support float16_t to int8_t\n");
-            exit(-1);
-        } else if constexpr (std::is_same_v<T, uint4x2_t> && std::is_same_v<WT, float16_t>) {
-            printf("Not support float16_t to uint4x2_t\n");
-            exit(-1);
-        } else if constexpr (std::is_same_v<T, nf4x2_t> && std::is_same_v<WT, float16_t>) {
-            printf("Not support float16_t to nf4x2_t\n");
-            exit(-1);
         } else {
-            printf("Not support data loading with unknown type!\n");
+            printf("Not support %s to %s\n", typeid(WT).name(), typeid(T).name());
             exit(-1);
         }
 
