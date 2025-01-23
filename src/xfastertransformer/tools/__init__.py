@@ -27,3 +27,4 @@ from .baichuan2_convert import Baichuan2Convert
 from .qwen_convert import QwenConvert
 from .qwen2_convert import Qwen2Convert
 from .yarn_llama_convert import YaRNLlamaConvert
+from .telechat_convert import TelechatConvert

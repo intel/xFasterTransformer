@@ -38,6 +38,7 @@
 #include "sequence.h"
 #include "timeline.h"
 #include "yarn_llama.h"
+#include "telechat.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };

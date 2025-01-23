@@ -127,7 +127,7 @@ void LayerLLaMAImpl(DataType dt, ActivationType at, NormType nt, int batchSize, 
                 nullptr, nullptr, keyBias, (const float *)valueWeight, nullptr, nullptr, valueBias,
                 (const float *)attnOutWeight, nullptr, nullptr, attnOutBias, ln1Gamma, ln1Beta,
                 (const float *)gateWeight, nullptr, nullptr, nullptr, (const float *)upWeight, nullptr, nullptr,
-                nullptr, ln2Gamma, ln2Beta, (const float *)downWeight, nullptr, nullptr, false);
+                nullptr, ln2Gamma, ln2Beta, (const float *)downWeight, nullptr, nullptr, nullptr, false);
         llama_layer_hub[llama_layer_key] = llama_layer;
         printf(">> create llama_layer_key: %s\n", llama_layer_key.c_str());
     } else {

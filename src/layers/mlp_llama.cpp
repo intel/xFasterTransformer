@@ -61,7 +61,7 @@ void MLPLLaMAImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize,
         // MLP &llama_mlp = MLP::getInstance();
         llama_mlp = new MLP(ctx);
         llama_mlp->setWeights(ctx, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr, nullptr,
-                nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, false);
+                nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, nullptr, false);
         llama_mlp_hub[llama_mlp_key] = llama_mlp;
         printf(">> create llama_mlp_key: %s\n", llama_mlp_key.c_str());
     } else {

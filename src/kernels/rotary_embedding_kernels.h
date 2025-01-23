@@ -87,6 +87,26 @@ void qwenApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *embCos, fl
         int dim, const float *logn, int maxSupportedSeqLength, int totSeqLen, int qHeads, int kHeads,
         const int *positionIds);
 
+// For TeleChat
+void teleChatApplyRotaryPosEmbeding(float *query, float *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+void teleChatApplyRotaryPosEmbeding(bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+void teleChatApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds);
+
+// For TeleChat continous batching
+void teleChatApplyRotaryPosEmbed(float *query, float *key, float *embCos, float *embSin, int qStride, int kStride,
+        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void teleChatApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *embCos, float *embSin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void teleChatApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *embCos, float *embSin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
 #ifdef XFT_GPU
 // For LLaMA
 void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,

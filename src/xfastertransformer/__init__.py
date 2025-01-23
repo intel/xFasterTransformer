@@ -47,6 +47,7 @@ _import_structure = {
         "Qwen2Convert",
         "YaRNLlamaConvert",
         "DeepseekConvert",
+        "TelechatConvert"
     ],
     "env": ["get_env"],
 }

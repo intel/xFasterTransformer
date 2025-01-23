@@ -45,7 +45,7 @@ public:
     void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
             const float * /*unused*/, const OriWeiT *upW, const float *upS, const float *upZ, const float * /*unused*/,
             const float *normW, const float * /*unused*/, const OriWeiT *downW, const float *downS, const float *downZ,
-            bool trans = true) {
+            const float *downB, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
 
@@ -107,6 +107,12 @@ public:
         downWeight.Resize(it.second - it.first, hiddenSize);
         ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
 #endif
+        // Down bias
+        // For other splits, not init bias to avoid duplicated calculation
+        if (downB != nullptr && ctx->splitIdx == 0) {
+            downBias.Resize(hiddenSize);
+            memcpy(downBias.Data(), downB, sizeof(float) * hiddenSize);
+        }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("quantizedGateWeight:\n");
@@ -285,8 +291,10 @@ private:
         const InT *R = residential.Data();
 
         if (isMaster) {
+            float *pbias = downBias.Data();
+            if (downBias.Size() == 0) { pbias = nullptr; }
             ctx->mmHelper->compute_residential(
-                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, NULL, R, ldr);
+                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, pbias, R, ldr);
         } else {
             ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
         }
@@ -375,6 +383,7 @@ protected:
     xft::Vector<float> catWeightsZero; // For int8_t weight
     xft::Vector<float> catWeightsSum; // For int8_t weight
     xft::Matrix<WeiT> downWeight;
+    xft::Vector<float> downBias;
     xft::Vector<float> downWeightScale; // For int8_t weight
     xft::Vector<float> downWeightZero; // For int8_t weight
     xft::Vector<float> downWeightSum; // For int8_t weight

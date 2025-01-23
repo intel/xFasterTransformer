@@ -162,24 +162,13 @@ public:
         text.reserve(ids.size());
 
         for (int id : ids) {
-            if (id < vocabSize) {
-                if (vocab_list == nullptr)
-                    text += "[" + std::to_string(id) + "] ";
-                else
-                    text += vocab_list[id];
-            } else {
-                text += "(null) ";
-            }
+            text += "[" + std::to_string(id) + "] ";
         }
 
         return text;
     }
     std::string decode(int id) override {
-        if (id < vocabSize) {
-            return vocab_list[id];
-        } else {
-            return "(null)";
-        }
+        return "[" + std::to_string(id) + "] ";
     }
 
 private:
@@ -284,6 +273,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new QwenTokenizer(tokenPath);
     } else if (modeltype == "gemma") {
         return new GemmaTokenizer(tokenPath);
+    } else if (modeltype == "telechat") {
+        return new TokenizerBase(tokenPath);
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);

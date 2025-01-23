@@ -526,6 +526,153 @@ void qwenApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, f
             totSeqLen, qHeads, kHeads, positionIds);
 }
 
+// For TeleChat
+template <typename T>
+static inline void teleChatApplyRotaryPosEmbeding(T *query, T *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    int dim = inv_freq_size * 2;
+    REQUIRES(dim == qkShape[3], "Incorrect shape, this dimention is not the head size.");
+
+    const int batchSize = qkShape[0];
+    const int seqLen = qkShape[1];
+    const int qHeads = qkShape[2];
+    const int kHeads = qkShape[4];
+    const int pastKeyLength = qkShape[6];
+    const int heads = std::max(qHeads, kHeads);
+    const int half = inv_freq_size;
+
+#pragma omp parallel for collapse(3)
+    for (int head = 0; head < heads; ++head) {
+        for (int bs = 0; bs < batchSize; ++bs) {
+            for (int seq = 0; seq < seqLen; ++seq) {
+                int pos = positionIds[seq];
+                float *pcos = cur_emb_cos + pos * dim;
+                float *psin = cur_emb_sin + pos * dim;
+
+                T *q = query + bs * seqLen * qStride + seq * qStride + head * dim;
+                T *k = key + bs * seqLen * kStride + seq * kStride + head * dim;
+
+                // Process chunks of 16 elements at a time
+                for (int i = 0; i < half; i += 16) {
+                    int remain = half - i;
+                    __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+                    __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
+                    __m512 pCosHalfVec = _mm512_maskz_loadu_ps(mask, &pcos[i + half]);
+                    __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
+                    __m512 pSinHalfVec = _mm512_maskz_loadu_ps(mask, &psin[i + half]);
+
+                    // Compute something like:
+                    // q[i] = q[i] * pcos[i] - q[i + half] * psin[i];
+                    // q[i + half] = q[i + half] * pcos[i + half] + q[i] * psin[i + half];
+                    if (head < qHeads) {
+                        __m512 qVec = xft::load_avx512(mask, &q[i]);
+                        __m512 qHalfVec = xft::load_avx512(mask, &q[i + half]);
+                        __m512 qNew = _mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec));
+                        __m512 qHalfNew = _mm512_fmadd_ps(qHalfVec, pCosHalfVec, _mm512_mul_ps(qVec, pSinHalfVec));
+                        xft::store_avx512(&q[i], mask, qNew);
+                        xft::store_avx512(&q[i + half], mask, qHalfNew);
+                    }
+
+                    if (head < kHeads) {
+                        __m512 kVec = xft::load_avx512(mask, &k[i]);
+                        __m512 kHalfVec = xft::load_avx512(mask, &k[i + half]);
+                        __m512 kNew = _mm512_fmsub_ps(kVec, pCosVec, _mm512_mul_ps(kHalfVec, pSinVec));
+                        __m512 kHalfNew = _mm512_fmadd_ps(kHalfVec, pCosHalfVec, _mm512_mul_ps(kVec, pSinHalfVec));
+                        xft::store_avx512(&k[i], mask, kNew);
+                        xft::store_avx512(&k[i + half], mask, kHalfNew);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void teleChatApplyRotaryPosEmbeding(float *query, float *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    teleChatApplyRotaryPosEmbeding<float>(
+            query, key, qStride, kStride, cur_emb_cos, cur_emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void teleChatApplyRotaryPosEmbeding(bfloat16_t *query, bfloat16_t *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    teleChatApplyRotaryPosEmbeding<bfloat16_t>(
+            query, key, qStride, kStride, cur_emb_cos, cur_emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+void teleChatApplyRotaryPosEmbeding(float16_t *query, float16_t *key, int qStride, int kStride, float *cur_emb_cos,
+        float *cur_emb_sin, int inv_freq_size, const int *qkShape, const int *positionIds) {
+    teleChatApplyRotaryPosEmbeding<float16_t>(
+            query, key, qStride, kStride, cur_emb_cos, cur_emb_sin, inv_freq_size, qkShape, positionIds);
+}
+
+template <typename T>
+static inline void teleChatApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    const int half = (dim + 1) / 2;
+    const int heads = std::max(qHeads, kHeads);
+
+#pragma omp parallel for collapse(2)
+    for (int head = 0; head < heads; ++head) {
+        for (int seq = 0; seq < totSeqLen; ++seq) {
+            int pos = positionIds[seq];
+
+            float *pcos = emb_cos + pos * dim;
+            float *psin = emb_sin + pos * dim;
+
+            T *q = query + seq * qStride + head * dim;
+            T *k = key + seq * kStride + head * dim;
+
+            // Process chunks of 16 elements at a time
+            for (int i = 0; i < half; i += 16) {
+                int remain = half - i;
+                __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
+
+                __m512 pCosVec = _mm512_maskz_loadu_ps(mask, &pcos[i]);
+                __m512 pCosHalfVec = _mm512_maskz_loadu_ps(mask, &pcos[i + half]);
+                __m512 pSinVec = _mm512_maskz_loadu_ps(mask, &psin[i]);
+                __m512 pSinHalfVec = _mm512_maskz_loadu_ps(mask, &psin[i + half]);
+
+                if (head < qHeads) {
+                    __m512 qVec = xft::load_avx512(mask, &q[i]);
+                    __m512 qHalfVec = xft::load_avx512(mask, &q[i + half]);
+                    __m512 qNew = _mm512_fmsub_ps(qVec, pCosVec, _mm512_mul_ps(qHalfVec, pSinVec));
+                    __m512 qHalfNew = _mm512_fmadd_ps(qHalfVec, pCosHalfVec, _mm512_mul_ps(qVec, pSinHalfVec));
+                    xft::store_avx512(&q[i], mask, qNew);
+                    xft::store_avx512(&q[i + half], mask, qHalfNew);
+                }
+
+                if (head < kHeads) {
+                    __m512 kVec = xft::load_avx512(mask, &k[i]);
+                    __m512 kHalfVec = xft::load_avx512(mask, &k[i + half]);
+                    __m512 kNew = _mm512_fmsub_ps(kVec, pCosVec, _mm512_mul_ps(kHalfVec, pSinVec));
+                    __m512 kHalfNew = _mm512_fmadd_ps(kHalfVec, pCosHalfVec, _mm512_mul_ps(kVec, pSinHalfVec));
+                    xft::store_avx512(&k[i], mask, kNew);
+                    xft::store_avx512(&k[i + half], mask, kHalfNew);
+                }
+            }
+        }
+    }
+}
+
+void teleChatApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    teleChatApplyRotaryPosEmbed<float>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void teleChatApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    teleChatApplyRotaryPosEmbed<bfloat16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void teleChatApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    teleChatApplyRotaryPosEmbed<float16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
 #ifdef XFT_GPU
 // For LLaMA
 template <typename T>

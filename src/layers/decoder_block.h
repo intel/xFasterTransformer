@@ -177,6 +177,7 @@ private:
         OriWeiT *fc3Weight = nullptr;
         float *fc3Scales = nullptr;
         float *fc3Zeros = nullptr;
+        float *fc3Bias = nullptr;
 
         // INT8/INT4 quant, wbits = 8/4, qweight dtype: int8_t/uint4x2_t
         if constexpr (std::is_same_v<OriWeiT, int8_t> || std::is_same_v<OriWeiT, uint4x2_t>) {
@@ -277,6 +278,11 @@ private:
                         fc2Weight, hiddenSize * imSize);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.weight.0.bin",
                         fc3Weight, hiddenSize * imSize);
+                if(fileExists(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin")){
+                        fc3Bias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
+                        loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin",
+                                fc3Bias, hiddenSize);
+                }
             }
         }
 
@@ -320,7 +326,7 @@ private:
                 qkvWeight + qSize / sizeFactor + kvSize / sizeFactor, qkvScales + qSize + kvSize,
                 qkvZeros + qSize + kvSize, qkvBias + qSize + kvSize, attnOutWeight, attnOutScales, attnOutZeros,
                 attnOutBias, ln1Gamma, ln1Beta, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros,
-                fc2Bias, ln2Gamma, ln2Beta, fc3Weight, fc3Scales, fc3Zeros, false);
+                fc2Bias, ln2Gamma, ln2Beta, fc3Weight, fc3Scales, fc3Zeros, fc3Bias, false);
 
         free(qkvWeight);
         free(attnOutWeight);
@@ -341,6 +347,7 @@ private:
         free(attnOutBias);
         free(fc1Bias);
         free(fc2Bias);
+        free(fc3Bias);
         free(ln1Gamma);
         free(ln1Beta);
         free(ln2Gamma);
