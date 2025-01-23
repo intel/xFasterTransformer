@@ -307,7 +307,7 @@ elif [[ "${numa_nodes}" -eq 4 ]] && [[ "${sockets_num}" -eq 4 ]]; then
 
     if [ "$sockets" -ge "2" ]; then
         run_cmd+="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0: \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
     fi
 
@@ -331,7 +331,7 @@ elif [ "${numa_nodes}" -eq 2 ]; then
 
     if [ "$sockets" == "2" ]; then
         run_cmd="mpirun \
-        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0: \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
     fi
 
