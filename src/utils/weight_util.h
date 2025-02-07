@@ -161,6 +161,37 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
     return file_size;
 }
 
+template <typename T>
+int loadWeight2(std::string filename, T *ptr, int size, DataType w_type = DataType::unknown, bool required = true) {
+    if (!ptr) { 
+        printf("Internal error: cannot load weight with empty pointer\n");
+        return -1;
+    }
+
+    // By default, read the config.ini configuration file
+    // in the same directory as the model file to determine the data type of the file.
+    if (w_type == DataType::unknown) {
+        std::size_t pos = filename.find_last_of("/\\");
+        std::string dirPath = filename.substr(0, pos);
+        std::string configFilePath = dirPath + "/config.ini";
+        w_type = getWeightType(configFilePath);
+    }
+    
+    //1 uint4x2 stores 2 uint4 value, so load size is halfed.
+    if constexpr (std::is_same_v<T, uint4x2_t>) { size = size / 2; }
+    
+    int file_size = 0;
+    switch (w_type) {
+        case DataType::fp32: file_size = loadWeightWithConvert<T, float>(ptr, size, filename, required); break;
+        case DataType::fp16: file_size = loadWeightWithConvert<T, float16_t>(ptr, size, filename, required); break;
+        case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
+        case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
+        case DataType::int4: file_size = loadWeightWithConvert<T, uint4x2_t>(ptr, size, filename, required); break;
+        default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
+    }
+    return file_size;
+}
+
 template int loadWeightWithConvert<float, float>(float *, int, const std::string &, bool);
 template int loadWeightWithConvert<float16_t, float>(float16_t *, int, const std::string &, bool);
 template int loadWeightWithConvert<bfloat16_t, float>(bfloat16_t *, int, const std::string &, bool);

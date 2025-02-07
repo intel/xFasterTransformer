@@ -59,11 +59,12 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |      ChatGLM       | &#10004; | &#10004; |  &#10004;  |
 |      ChatGLM2      | &#10004; | &#10004; |  &#10004;  |
 |      ChatGLM3      | &#10004; | &#10004; |  &#10004;  |
+|        GLM4        | &#10004; | &#10004; |  &#10004;  |
 |       Llama        | &#10004; | &#10004; |  &#10004;  |
 |       Llama2       | &#10004; | &#10004; |  &#10004;  |
 |       Llama3       | &#10004; | &#10004; |  &#10004;  |
-|     Baichuan1      | &#10004; | &#10004; |   &#10004; |
-|     Baichuan2      | &#10004; | &#10004; |   &#10004; |
+|     Baichuan1      | &#10004; | &#10004; |  &#10004;  |
+|     Baichuan2      | &#10004; | &#10004; |  &#10004;  |
 |        QWen        | &#10004; | &#10004; |  &#10004;  |
 |        QWen2       | &#10004; | &#10004; |  &#10004;  |
 | SecLLM(YaRN-Llama) | &#10004; | &#10004; |  &#10004;  |
@@ -72,6 +73,8 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |       gemma        | &#10004; | &#10004; |  &#10004;  |
 |     gemma-1.1      | &#10004; | &#10004; |  &#10004;  |
 |     codegemma      | &#10004; | &#10004; |  &#10004;  |
+|      TeleChat      | &#10004; | &#10004; |  &#10004;  |
+|     Mixtral(MoE)   | &#10004; | &#10004; |  &#10004;  |
 
 ### 支持的数据类型
 
@@ -174,11 +177,14 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     - ChatGLMConvert
     - ChatGLM2Convert
     - ChatGLM3Convert
+    - ChatGLM4Convert
     - OPTConvert
     - BaichuanConvert
     - QwenConvert
     - Qwen2Convert
     - DeepseekConvert
+    - TelechatConvert
+    - MixtralConvert
 
 ## API 用法
 更多详情，请参阅 API 文档和 [示例](examples/README.md).

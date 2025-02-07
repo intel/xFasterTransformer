@@ -38,6 +38,7 @@
 #include "sequence.h"
 #include "timeline.h"
 #include "yarn_llama.h"
+#include "mixtral.h"
 #include "telechat.h"
 
 namespace xft {

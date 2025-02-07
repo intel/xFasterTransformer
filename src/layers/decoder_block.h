@@ -18,6 +18,8 @@
 #include "decoder_layer.h"
 #include "dtype.h"
 #include "kvcache_mgr.h"
+#include "llm_params.h"
+#include "logger.h"
 #include "messenger.h"
 #include "weight_util.h"
 
@@ -35,6 +37,11 @@ public:
 
         int layersOnDuty = layers / ctx->ppSize;
         int startLayer = ctx->ppRank * layersOnDuty;
+
+        xft::AttnParams *attnParams
+                = new xft::AttnParams(ctx->hiddenSize, ctx->attHeadNum, ctx->kvHeadNum, ctx->attHeadSize, xftDT2PT(dt));
+        xft::FFNParams *ffnParams = createFFNParams(ctx, modelPath, dt);
+
         for (int i = startLayer; i < startLayer + layersOnDuty; ++i) {
             auto pdec = new DECODER(ctx, i);
             if (dt == xft::DataType::int8) {
@@ -42,13 +49,20 @@ public:
             } else if (dt == xft::DataType::int4) {
                 this->setDecoderWeights<uint4x2_t>(ctx, pdec, modelPath, i);
             } else if (dt == xft::DataType::fp32) {
-                this->setDecoderWeights<float>(ctx, pdec, modelPath, i);
+                this->setDecoderWeights<float>(ctx, pdec, modelPath, i, attnParams, ffnParams);
+            } else if (dt == xft::DataType::bf16) {
+                this->setDecoderWeights<bfloat16_t>(ctx, pdec, modelPath, i, attnParams, ffnParams);
+            } else if (dt == xft::DataType::fp16) {
+                this->setDecoderWeights<float16_t>(ctx, pdec, modelPath, i, attnParams, ffnParams);
             } else {
                 std::cerr << "Error: The data type is NOT supported." << std::endl;
                 std::exit(-1);
             }
             this->decoders.push_back(pdec);
         }
+
+        delete ffnParams;
+        delete attnParams;
     }
 
     virtual ~DecoderBlock() {
@@ -278,10 +292,10 @@ private:
                         fc2Weight, hiddenSize * imSize);
                 loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.weight.0.bin",
                         fc3Weight, hiddenSize * imSize);
-                if(fileExists(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin")){
-                        fc3Bias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
-                        loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin",
-                                fc3Bias, hiddenSize);
+                if (fileExists(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin")) {
+                    fc3Bias = (float *)ALLOC(hiddenSize * sizeof(float), 64);
+                    loadWeight(modelPath + "/model.layers." + std::to_string(layerIdx) + ".mlp.down_proj.bias.0.bin",
+                            fc3Bias, hiddenSize);
                 }
             }
         }
@@ -352,6 +366,233 @@ private:
         free(ln1Beta);
         free(ln2Gamma);
         free(ln2Beta);
+    }
+
+    xft::ParamType xftDT2PT(xft::DataType dt) {
+        switch (dt) {
+            case xft::DataType::int8: return xft::ParamType::Int8;
+            case xft::DataType::int4: return xft::ParamType::INT4;
+            case xft::DataType::fp32: return xft::ParamType::FP32;
+            case xft::DataType::bf16: return xft::ParamType::BF16;
+            case xft::DataType::fp16: return xft::ParamType::FP16;
+            default: return xft::ParamType::None;
+        }
+    }
+
+    xft::FFNParams *createFFNParams(DecoderContext *ctx, const std::string &modelPath, xft::DataType dt) {
+        xft::FFNParams *ffnParams = nullptr;
+
+        if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
+            ffnParams = new xft::GptFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
+        } else if (fileExists(modelPath + "/model.layers.0.mlp.gate_proj.weight.0.bin")) {
+            ffnParams = new xft::LlamaFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
+        } else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
+            ffnParams = new xft::MixtralFFNParams(
+                    ctx->sparseExperts, ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
+        } else {
+            xft::Logger::error("Unable to detect FFN parameters.");
+            std::exit(-1);
+        }
+
+        return ffnParams;
+    }
+
+    // WType: required weight type to save in AttnParams and FFNParams
+    template <typename WType>
+    void setDecoderWeights(DecoderContext *ctx, DECODER *pdecoder, const std::string &modelPath, int layerIdx,
+            xft::AttnParams *attnParams, xft::FFNParams *ffnParams) {
+        // INT8/INT4 quant, wbits = 8/4, qweight dtype: int8_t/uint4x2_t
+        if constexpr (std::is_same_v<WType, int8_t> || std::is_same_v<WType, uint4x2_t>) {
+            xft::Logger::error("Unable to load INT8/INT4 weights yet.");
+            exit(-1);
+        }
+        // FP32/BF16/FP16
+        else if constexpr (std::is_same_v<WType, float> || std::is_same_v<WType, bfloat16_t>
+                || std::is_same_v<WType, float16_t>) {
+            loadAttnWeights<WType>(ctx, modelPath, layerIdx, attnParams);
+
+            // Stardard 2 layer MLP
+            if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
+                loadGptFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::GptFFNParams *>(ffnParams));
+            }
+            // Llama like models
+            else if (fileExists(modelPath + "/model.layers.0.mlp.gate_proj.weight.0.bin")) {
+                loadLlamaFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::LlamaFFNParams *>(ffnParams));
+            }
+            // For models like Mixtral
+            else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
+                loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::MixtralFFNParams *>(ffnParams));
+            } else {
+                xft::Logger::error("Unable to load FFN weights.");
+                std::exit(-1);
+            }
+        }
+
+        pdecoder->template setWeights<WType>(ctx, attnParams, ffnParams);
+    }
+
+    template <typename T>
+    void loadAttnWeights(DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::AttnParams *attn) {
+        int hiddenSize = ctx->hiddenSize;
+        int qSize = ctx->attHeadSize * ctx->attHeadNum;
+        int kvSize = ctx->attHeadSize * ctx->kvHeadNum;
+        int qkvSize = qSize + 2 * kvSize;
+
+        std::string strIdx = std::to_string(layerIdx);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.query_key_value.weight.0.bin",
+                (T *)attn->qkv.weight, hiddenSize * qkvSize);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight.0.bin", (T *)attn->out.weight,
+                qSize * hiddenSize);
+        xft::loadWeight2(
+                modelPath + "/model.layers." + strIdx + ".input_layernorm.weight.bin", attn->norm.gamma, hiddenSize);
+
+        // The bias is optional
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".attention.query_key_value.bias.0.bin", attn->qkv,
+                "read QKV bias error");
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".attention.dense.bias.bin", attn->out,
+                "read attn dense bias error");
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".input_layernorm.bias.bin", attn->norm,
+                "read LN1(attention) beta error");
+    }
+
+    template <typename T>
+    void loadGptFFNWeights(DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::GptFFNParams *ffn) {
+        std::string strIdx = std::to_string(layerIdx);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.dense_h_to_4h.weight.0.bin",
+                (T *)ffn->fc1.weight, ffn->fc1.input_dim * ffn->fc1.output_dim);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.dense_4h_to_h.weight.0.bin",
+                (T *)ffn->fc2.weight, ffn->fc2.input_dim * ffn->fc2.output_dim);
+
+        // The bias is optional
+        // As of some history reason, the convert script tried to split the first layer's weight and bias, thus contains '0'?
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.dense_h_to_4h.bias.0.bin", ffn->fc1,
+                "read FC1 bias error");
+        loadOptionalBias(
+                modelPath + "/model.layers." + strIdx + ".mlp.dense_4h_to_h.bias.bin", ffn->fc2, "read FC2 bias error");
+
+        // Norm params
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
+                ffn->norm.gamma, ffn->norm.hidden_size);
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.bias.bin", ffn->norm,
+                "read LN2(FFN) beta error");
+    }
+
+    template <typename T>
+    void loadLlamaFFNWeights(
+            DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::LlamaFFNParams *ffn) {
+        std::string strIdx = std::to_string(layerIdx);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.weight.0.bin", (T *)ffn->gate.weight,
+                ffn->gate.input_dim * ffn->gate.output_dim);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.up_proj.weight.0.bin", (T *)ffn->up.weight,
+                ffn->up.input_dim * ffn->up.output_dim);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.down_proj.weight.0.bin", (T *)ffn->down.weight,
+                ffn->down.input_dim * ffn->down.output_dim);
+
+        // The bias is optional
+        loadOptionalBias(
+                modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.bias.0.bin", ffn->gate, "read gate bias error");
+        loadOptionalBias(
+                modelPath + "/model.layers." + strIdx + ".mlp.up_proj.bias.0.bin", ffn->up, "read up bias error");
+        loadOptionalBias(
+                modelPath + "/model.layers." + strIdx + ".mlp.down_proj.bias.0.bin", ffn->down, "read down bias error");
+
+        // Norm params
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
+                ffn->norm.gamma, ffn->norm.hidden_size);
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.bias.bin", ffn->norm,
+                "read LN2(FFN) beta error");
+    }
+
+    template <typename T>
+    void loadMixtralFFNWeights(
+            DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::MixtralFFNParams *ffn) {
+        std::string strIdx = std::to_string(layerIdx);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.gate.weight.bin", (T *)ffn->gating.weight,
+                ffn->gating.input_dim * ffn->gating.output_dim);
+
+        // Load expert weights
+        if (ffn->experts.empty()) {
+            for (int i = 0; i < ctx->sparseExperts; ++i) {
+                xft::ExpertParams expert(ctx->hiddenSize, ctx->intermediateSize, xft::ParamType::FP32);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w1.0.bin",
+                        (T *)expert.gate.weight, ctx->hiddenSize * ctx->intermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w2.0.bin",
+                        (T *)expert.up.weight, ctx->hiddenSize * ctx->intermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w3.0.bin",
+                        (T *)expert.down.weight, ctx->hiddenSize * ctx->intermediateSize);
+                ffn->experts.push_back(std::move(expert));
+            }
+        } else {
+            for (int i = 0; i < ctx->sparseExperts; ++i) {
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w1.0.bin",
+                        (T *)ffn->experts[i].gate.weight, ctx->hiddenSize * ctx->intermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w2.0.bin",
+                        (T *)ffn->experts[i].up.weight, ctx->hiddenSize * ctx->intermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".moe.sparse_experts." + std::to_string(i)
+                                + ".w3.0.bin",
+                        (T *)ffn->experts[i].down.weight, ctx->hiddenSize * ctx->intermediateSize);
+            }
+        }
+
+        // Norm params
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
+                ffn->norm.gamma, ffn->norm.hidden_size);
+        loadOptionalBias(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.bias.bin", ffn->norm,
+                "read LN2(FFN) beta error");
+    }
+
+    void loadOptionalBias(const std::string &filename, xft::DenseLayerParams &dense, const char *errmsg) {
+        if (!fileExists(filename)) {
+            dense.removeBias();
+            return;
+        }
+
+        // Load the bias as float
+        float *addr = (float *)xft::alloc(dense.output_dim * sizeof(float));
+        int size = dense.output_dim;
+        int ret = xft::loadWeight2<float>(filename, addr, size);
+
+        // No bias?
+        if (ret == 0) {
+            dense.removeBias();
+        }
+        // Success
+        else if (ret == size) {
+            dense.setBiasValue(addr);
+        } else {
+            printf("Error loading the bias: %s\n", errmsg);
+            exit(-1);
+        }
+
+        xft::dealloc(addr);
+    }
+
+    void loadOptionalBias(const std::string &filename, xft::NormParams &norm, const char *errmsg) {
+        if (!fileExists(filename)) {
+            norm.emptyBeta();
+            return;
+        }
+
+        // Load the beta value as float
+        int ret = xft::loadWeight2<float>(filename, norm.beta, norm.hidden_size);
+
+        // No bias?
+        if (ret == 0) {
+            norm.emptyBeta();
+        }
+        // Failed
+        else if (ret != norm.hidden_size) {
+            xft::Logger::error(errmsg);
+            exit(-1);
+        }
     }
 
 private:

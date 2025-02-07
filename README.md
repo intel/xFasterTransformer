@@ -73,6 +73,8 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |      gemma         | &#10004;  | &#10004; |   &#10004;   |
 |     gemma-1.1      | &#10004;  | &#10004; |   &#10004;   |
 |     codegemma      | &#10004;  | &#10004; |   &#10004;   |
+|      TeleChat      | &#10004;  | &#10004; |   &#10004;   |
+|    Mixtral(MoE)    | &#10004;  | &#10004; |   &#10004;   |
 
 ### DataType support list
 
@@ -173,6 +175,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     - GemmaConvert
     - ChatGLMConvert
     - ChatGLM2Convert
+    - ChatGLM3Convert
     - ChatGLM4Convert
     - OPTConvert
     - BaichuanConvert
@@ -180,6 +183,8 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     - QwenConvert
     - Qwen2Convert
     - DeepseekConvert
+    - TelechatConvert
+    - MixtralConvert
 
 ## API usage
 For more details, please see API document and [examples](examples/README.md).

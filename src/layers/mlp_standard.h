@@ -16,6 +16,7 @@
 #include "bert_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "llm_params.h"
 #include "matmul_helper.h"
 #include "split_util.h"
 
@@ -69,6 +70,19 @@ public:
             memcpy(gamma2.Data(), _gamma2, sizeof(float) * hiddenSize);
             memcpy(beta2.Data(), _beta2, sizeof(float) * hiddenSize);
         }
+    }
+
+    template <typename WType>
+    void setWeights(DecoderContext *ctx, xft::FFNParams *ffnParams) {
+        auto *gptFFN = dynamic_cast<xft::GptFFNParams *>(ffnParams);
+        if (gptFFN == nullptr) {
+            xft::Logger::error("Cannot cast FFNParams to LlamaFFNParams.");
+            exit(-1);
+        }
+
+        setWeights(ctx, (WType *)gptFFN->fc1.weight, gptFFN->fc1.weight_scale, gptFFN->fc1.weight_zp, gptFFN->fc1.bias,
+                (WType *)gptFFN->fc2.weight, gptFFN->fc2.weight_scale, gptFFN->fc2.weight_zp, gptFFN->fc2.bias,
+                gptFFN->norm.gamma, gptFFN->norm.beta, (WType *)NULL, NULL, NULL, NULL, false);
     }
 
 #ifdef XFT_DEBUG

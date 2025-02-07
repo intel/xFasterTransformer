@@ -80,3 +80,19 @@ struct AttnTypeSelector<float16_t> {
     using type = float;
 #endif
 };
+
+// Gate weight data type selector
+template <typename T>
+struct GateTypeSelector {
+    using type = float;
+};
+
+template <>
+struct GateTypeSelector<bfloat16_t> {
+    using type = bfloat16_t;
+};
+
+template <>
+struct GateTypeSelector<float16_t> {
+    using type = float16_t;
+};

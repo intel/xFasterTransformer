@@ -231,6 +231,7 @@ public:
                 ropeParamsPtr);
 
         ctx->ResetConfigReader(configPath);
+        ctx->sparseExperts = reader.GetInteger(modelType, "sparse_experts", 8);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {

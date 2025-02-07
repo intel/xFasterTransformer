@@ -86,6 +86,9 @@ struct DecoderContext {
     float attFactor;
     float epsilon;
 
+    int sparseExperts; // selectively activated
+    int denseExperts;  // always active
+
     // rope scaling parameters
     RopeParams *ropeParamsPtr;
 

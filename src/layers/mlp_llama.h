@@ -18,6 +18,8 @@
 #include "copy_util.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "llm_params.h"
+#include "logger.h"
 #include "matmul_helper.h"
 #include "rms_norm.h"
 #include "simple_mem_pool.h"
@@ -129,13 +131,35 @@ public:
         if (normW) { norm.setWeight(normW, nullptr, hiddenSize); }
     }
 
+    template <typename WType>
+    void setWeights(DecoderContext *ctx, xft::FFNParams *ffnParams) {
+        auto *llamaFFN = dynamic_cast<xft::LlamaFFNParams *>(ffnParams);
+        if (llamaFFN == nullptr) {
+            xft::Logger::error("Cannot cast FFNParams to LlamaFFNParams.");
+            exit(-1);
+        }
+
+        setWeights(ctx, (WType *)llamaFFN->gate.weight, llamaFFN->gate.weight_scale, llamaFFN->gate.weight_zp,
+                llamaFFN->gate.bias, (WType *)llamaFFN->up.weight, llamaFFN->up.weight_scale, llamaFFN->up.weight_zp,
+                llamaFFN->up.bias, llamaFFN->norm.gamma, llamaFFN->norm.beta, (WType *)llamaFFN->down.weight,
+                llamaFFN->down.weight_scale, llamaFFN->down.weight_zp, llamaFFN->down.bias, false);
+    }
+
+    template <typename WType>
+    void setWeights(DecoderContext *ctx, xft::ExpertParams &ffn) {
+        setWeights(ctx, (WType *)ffn.gate.weight, ffn.gate.weight_scale, ffn.gate.weight_zp, ffn.gate.bias,
+                (WType *)ffn.up.weight, ffn.up.weight_scale, ffn.up.weight_zp, ffn.up.bias, nullptr, nullptr,
+                (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, false);
+    }
+
 #ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
 
     // Forward for FFN (Feed Forward Network)
+    // forceNoResidual: true when it is called by MOE MLP like MixtralMLP
     void forward(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride,
-            bool doLnBefore = true /*not used*/, int totInSeqLen = 0) {
+            bool doLnBefore = true, int totInSeqLen = 0, bool forceNoResidual = false) {
         TimeLine t("LlamaMLP");
 
         const int M = totInSeqLen == 0 ? ctx->batchSize * ctx->inputSeqLen : totInSeqLen;
@@ -180,10 +204,11 @@ public:
             dbg.debugPrint(">>> up output: [%d, %d] (%d)\n", imBuffer.Rows(), imBuffer.Cols(), imBuffer.Stride());
             dbg.dumpMatrix(imBuffer, false, ctx->device);
 #endif
-            downProj(ctx, imBuffer, outBuffer, inBuffer, ctx->splitIdx == 0);
+            bool residential = !forceNoResidual && ctx->splitIdx == 0;
+            downProj(ctx, imBuffer, outBuffer, inBuffer, residential);
 
         } else {
-            auto M = normBuffer.Rows();
+            auto M = inBuffer.Rows();
             auto N = catWeights.Cols();
             xft::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
 
@@ -208,7 +233,8 @@ public:
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
             dbg.dumpMatrix(inBuffer, false, ctx->device);
 #endif
-            downProj(ctx, siluBuf, outBuffer, inBuffer, ctx->splitIdx == 0);
+            bool residential = !forceNoResidual && ctx->splitIdx == 0;
+            downProj(ctx, siluBuf, outBuffer, inBuffer, residential);
         }
 
 #ifdef XFT_DEBUG

@@ -47,7 +47,8 @@ _import_structure = {
         "Qwen2Convert",
         "YaRNLlamaConvert",
         "DeepseekConvert",
-        "TelechatConvert"
+        "TelechatConvert",
+        "MixtralConvert"
     ],
     "env": ["get_env"],
 }
@@ -67,6 +68,9 @@ if TYPE_CHECKING:
     from .tools import QwenConvert
     from .tools import Qwen2Convert
     from .tools import YaRNLlamaConvert
+    from .tools import DeepseekConvert
+    from .tools import TelechatConvert
+    from .tools import MixtralConvert
     from .env import get_env
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule

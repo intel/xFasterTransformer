@@ -33,6 +33,7 @@
 #include "attention.h"
 #include "debugger.h"
 #include "kvcache_tensor.h"
+#include "llm_params.h"
 #include "timeline.h"
 #include "type_selector.h"
 
@@ -90,6 +91,40 @@ public:
 
         mlp.setWeights(ctx, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma,
                 ln2Beta, fc3Weight, fc3Scales, fc3Zeros, fc3Bias, trans);
+    }
+
+    template <typename WType>
+    void setWeights(DecoderContext *ctx, xft::AttnParams *attnParams, xft::FFNParams *ffnParams) {
+        int qSize = ctx->attHeadSize * ctx->attHeadNum;
+        int kvSize = ctx->attHeadSize * ctx->kvHeadNum;
+
+        // Prepare attention weights
+        const WType *queryWeight = (WType *)attnParams->qkv.weight;
+        const float *queryScale = attnParams->qkv.weight_scale;
+        const float *queryZero = attnParams->qkv.weight_zp;
+        const float *queryBias = attnParams->qkv.bias;
+        const WType *keyWeight = queryWeight + qSize;
+        const float *keyScale = (queryScale == nullptr) ? nullptr : (queryScale + qSize);
+        const float *keyZero = (queryZero == nullptr) ? nullptr : (queryZero + qSize);
+        const float *keyBias = (queryBias == nullptr) ? nullptr : (queryBias + qSize);
+        const WType *valueWeight = keyWeight + kvSize;
+        const float *valueScale = (keyScale == nullptr) ? nullptr : (keyScale + kvSize);
+        const float *valueZero = (keyZero == nullptr) ? nullptr : (keyZero + kvSize);
+        const float *valueBias = (keyBias == nullptr) ? nullptr : (keyBias + kvSize);
+
+        const WType *attnOutWeight = (WType *)attnParams->out.weight;
+        const float *attnOutScale = attnParams->out.weight_scale;
+        const float *attnOutZero = attnParams->out.weight_zp;
+        const float *attnOutBias = attnParams->out.bias;
+
+        const float *lnGamma = attnParams->norm.gamma;
+        const float *lnBeta = attnParams->norm.beta;
+
+        attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
+                valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
+                true, lnGamma, lnBeta, false);
+        
+        mlp.template setWeights<WType>(ctx, ffnParams);
     }
 
     template <typename InT, typename ImT, typename OutT, typename KVCacheT>

@@ -256,6 +256,15 @@ public:
     }
 };
 
+class MixtralTokenizer : public TokenizerBase {
+public:
+    MixtralTokenizer(std::string &tokenPath) : TokenizerBase(tokenPath) {
+        vocabSize = 32000;
+        prefixTokenIds = {1};
+        suffixTokenIds = {};
+    }
+};
+
 TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
     if (modeltype == "gpt") {
         return new OptTokenizer(tokenPath);
@@ -275,6 +284,8 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new GemmaTokenizer(tokenPath);
     } else if (modeltype == "telechat") {
         return new TokenizerBase(tokenPath);
+    } else if (modeltype == "mixtral") {
+        return new MixtralTokenizer(tokenPath);
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
