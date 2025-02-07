@@ -131,15 +131,50 @@ struct NormParams {
 };
 
 struct AttnParams {
+    virtual ~AttnParams() = default;
+};
+
+// GQA/MHA/MQA
+struct GQAttnParams : public AttnParams {
     DenseLayerParams qkv;
     DenseLayerParams out;
     NormParams norm;
 
-    AttnParams() : qkv {}, out {}, norm {} {}
-    AttnParams(int hiddenSize, int qHeads, int kvHeads, int headSize, ParamType weiType, bool wTrans = false)
+    GQAttnParams() : qkv {}, out {}, norm {} {}
+    GQAttnParams(int hiddenSize, int qHeads, int kvHeads, int headSize, ParamType weiType, bool wTrans = false)
         : qkv(hiddenSize, headSize * (qHeads + kvHeads * 2), weiType, wTrans)
         , out(headSize * qHeads, hiddenSize, weiType, wTrans)
         , norm(hiddenSize) {}
+};
+
+// MLA/DeepSeek
+struct MLAttnParams : public AttnParams {
+    DenseLayerParams q_a_proj;
+    DenseLayerParams q_b_proj;
+    DenseLayerParams kv_a_proj;
+    DenseLayerParams kv_b_proj;
+    DenseLayerParams o_proj;
+    NormParams q_a_norm;
+    NormParams kv_a_norm;
+    NormParams input_norm;
+
+    MLAttnParams() {}
+
+    // qLoraRank: The rank of the query projection, typical value is 1536
+    // kvLoraRank: The rank of the key and value projection, typical value is 512
+    // headNum: The number of heads, typical value is 128
+    // nopeDim: The dimension of the nope vector, typical value is 128
+    // ropeDim: The dimension of the rope vector, typical value is 64
+    MLAttnParams(int hiddenSize, int qLoraRank, int kvLoraRank, int headNum, int nopeDim, int ropeDim,
+            int vHeadDim, ParamType weiType, bool wTrans = false)
+        : q_a_proj(hiddenSize, qLoraRank, weiType, wTrans)
+        , q_b_proj(qLoraRank, headNum * (nopeDim + ropeDim), weiType, wTrans)
+        , kv_a_proj(hiddenSize, kvLoraRank + ropeDim, weiType, wTrans)
+        , kv_b_proj(kvLoraRank, headNum * (nopeDim + vHeadDim), weiType, wTrans)
+        , o_proj(headNum * vHeadDim, hiddenSize, weiType, wTrans)
+        , q_a_norm(qLoraRank)
+        , kv_a_norm(kvLoraRank)
+        , input_norm(hiddenSize) {}
 };
 
 struct FFNParams {

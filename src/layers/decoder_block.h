@@ -38,8 +38,7 @@ public:
         int layersOnDuty = layers / ctx->ppSize;
         int startLayer = ctx->ppRank * layersOnDuty;
 
-        xft::AttnParams *attnParams
-                = new xft::AttnParams(ctx->hiddenSize, ctx->attHeadNum, ctx->kvHeadNum, ctx->attHeadSize, xftDT2PT(dt));
+        xft::AttnParams *attnParams = createAttnParams(ctx, modelPath, dt);
         xft::FFNParams *ffnParams = createFFNParams(ctx, modelPath, dt);
 
         for (int i = startLayer; i < startLayer + layersOnDuty; ++i) {
@@ -379,6 +378,21 @@ private:
         }
     }
 
+    xft::AttnParams *createAttnParams(DecoderContext *ctx, const std::string &modelPath, xft::DataType dt) {
+        xft::AttnParams *attnParams = nullptr;
+
+        // Deepseek model
+        if (fileExists(modelPath + "/model.layers.0.self_attn.q_a_proj.weight.bin")) {
+            attnParams = new xft::MLAttnParams(ctx->hiddenSize, ctx->qLoraRank, ctx->kvLoraRank, ctx->attHeadNum,
+                    ctx->nopeDim, ctx->ropeDim, ctx->headDim, xftDT2PT(dt));
+        } else {
+            attnParams = new xft::GQAttnParams(
+                    ctx->hiddenSize, ctx->attHeadNum, ctx->kvHeadNum, ctx->attHeadSize, xftDT2PT(dt));
+        }
+
+        return attnParams;
+    }
+
     xft::FFNParams *createFFNParams(DecoderContext *ctx, const std::string &modelPath, xft::DataType dt) {
         xft::FFNParams *ffnParams = nullptr;
 
@@ -409,7 +423,16 @@ private:
         // FP32/BF16/FP16
         else if constexpr (std::is_same_v<WType, float> || std::is_same_v<WType, bfloat16_t>
                 || std::is_same_v<WType, float16_t>) {
-            loadAttnWeights<WType>(ctx, modelPath, layerIdx, attnParams);
+            xft::GQAttnParams *gqap = dynamic_cast<xft::GQAttnParams *>(attnParams);
+            xft::MLAttnParams *mlap = dynamic_cast<xft::MLAttnParams *>(attnParams);
+            if (gqap != NULL) {
+                loadGQAttnWeights<WType>(ctx, modelPath, layerIdx, gqap);
+            } else if (mlap != NULL) {
+                // TODO: loadMLAttnWeights<WType>(ctx, modelPath, layerIdx, mlap);
+            } else {
+                xft::Logger::error("Unable to cast AttnParams to GQAttnParams.");
+                std::exit(-1);
+            }            
 
             // Stardard 2 layer MLP
             if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
@@ -432,7 +455,7 @@ private:
     }
 
     template <typename T>
-    void loadAttnWeights(DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::AttnParams *attn) {
+    void loadGQAttnWeights(DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::GQAttnParams *attn) {
         int hiddenSize = ctx->hiddenSize;
         int qSize = ctx->attHeadSize * ctx->attHeadNum;
         int kvSize = ctx->attHeadSize * ctx->kvHeadNum;
