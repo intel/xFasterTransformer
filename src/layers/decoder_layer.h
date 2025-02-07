@@ -31,6 +31,7 @@
 #include <type_traits>
 
 #include "attention.h"
+#include "attn_deepseek.h"
 #include "debugger.h"
 #include "kvcache_tensor.h"
 #include "llm_params.h"
@@ -48,6 +49,12 @@ struct AttnTypeExtractor<ATTN_CLS<WeiT, QKPO_CLS, NORM_CLS>> {
 };
 template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT, typename ImT, typename OutT>
 struct AttnTypeExtractor<Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, true>> {
+    using Tin = InT;
+    using Tim = ImT;
+    using Tout = OutT;
+};
+template <typename WeiT, typename InT, typename ImT, typename OutT>
+struct AttnTypeExtractor<DeepSeekAttention<WeiT, InT, ImT, OutT>> {
     using Tin = InT;
     using Tim = ImT;
     using Tout = OutT;

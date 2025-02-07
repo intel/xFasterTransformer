@@ -21,11 +21,16 @@
 #include "my_types.h"
 #include "rms_norm.h"
 
-template <typename WeiT>
+template <typename WeiT, typename InT, typename ImT, typename OutT>
 class DeepSeekAttention {
 public:
     DeepSeekAttention(int layerId, DecoderContext *ctx) {}
 
+#ifdef XFT_DEBUG
+    void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
+#endif
+
+    template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *queryWeight, const float *queryScale, const float *queryZero,
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
             const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
@@ -75,11 +80,11 @@ public:
         free(buffer);
 
         // Pack the weights for q_b and kv_b
-        packDenseWeights(mlap->q_b_proj, qBWeights);
-        packDenseWeights(mlap->kv_b_proj, kvBWeights);
+        packDenseWeights(ctx, mlap->q_b_proj, qBWeights);
+        packDenseWeights(ctx, mlap->kv_b_proj, kvBWeights);
 
         // Pack the weights for output
-        packDenseWeights(mlap->o_proj, outWeights);
+        packDenseWeights(ctx, mlap->o_proj, outWeights);
 
         // Norm params
         this->inputNorm.setWeight(mlap->input_norm.gamma, nullptr, ctx->hiddenSize);
@@ -87,8 +92,96 @@ public:
         this->kvANorm.setWeight(mlap->kv_a_norm.gamma, nullptr, ctx->kvLoraRank);
     }
 
+    template <typename KVCacheT>
+    void forward(DecoderContext *ctx, InT *input, ImT *imBuf, OutT *output, const float *attnMask,
+            KVCacheTensor<KVCacheT> &presentKey, KVCacheTensor<KVCacheT> &presentValue, int inputSeqLen, int pastSeqLen,
+            bool useSelfAttn, bool doLnBefore, bool doLnAfter, int *positionIds = nullptr) {
+        xft::Logger::error("Cannot use the old API to forward in DeepSeekAttention.");
+        exit(-1);
+    }
+
+    template <typename KVCacheT>
+    void forward(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, InT *input, OutT *output,
+            size_t totInSeqLen, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
+            std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, bool doLnBefore = true) {
+        auto hiddenSize = ctx->hiddenSize;
+        xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
+
+        // Norm buffer
+        xft::Matrix<ImT> normBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, hiddenSize, hiddenSize);
+
+        // Lora buffer (Down projection)
+        auto qkvACols = qkvAWeights.Cols();
+        ImT *loraBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * qkvACols, ctx->device);
+        xft::Matrix<ImT> loraBuffer(loraBuf, totInSeqLen, qkvACols, qkvACols);
+
+        // Up projection buffer
+        // TODO: make sure buffer is big enough
+        auto &qkvMatMul = ctx->qkvMatMul;
+        auto qCols = ctx->attHeadNum * (ctx->nopeDim + ctx->ropeDim);
+        xft::Matrix<ImT> qBuffer((ImT *)qkvMatMul.Data(), totInSeqLen, qCols, qCols);
+
+        auto kvCols = ctx->attHeadNum * (ctx->nopeDim + ctx->vHeadDim);
+        uint64_t kvOffset = (uint64_t)qCols * totInSeqLen;
+        xft::Matrix<ImT> kvBuffer(qBuffer.Data() + kvOffset, totInSeqLen, kvCols, kvCols);
+
+        // Output buffer
+        xft::Matrix<OutT> outBuffer(output, totInSeqLen, hiddenSize, hiddenSize);
+
+        float epsilon = ctx->epsilon;
+        int headSize = ctx->attHeadSize;
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("---- DecoderLayer.forward ----\n");
+        dbg.debugPrint("input:\n");
+        dbg.dumpMatrix(inputBuffer, false, ctx->device);
+#endif
+
+        if (doLnBefore) {
+            TimeLine t("input.layer_norm");
+            inputNorm.forward(inputBuffer.Data(), normBuffer.Data(), inputBuffer.Rows(), inputBuffer.Stride(),
+                    normBuffer.Stride(), epsilon);
+        }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("layer norm:\n");
+        dbg.dumpMatrix(normBuffer, false, ctx->device);
+#endif
+
+        // Apply qkv_down/lora
+        {
+            TimeLine t("qkv_down_projection");
+            ctx->mmHelper->compute(false, normBuffer.Rows(), qkvAWeights.Cols(), normBuffer.Cols(), 1.0f,
+                    normBuffer.Data(), normBuffer.Stride(), qkvAWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                    loraBuffer.Data(), loraBuffer.Stride());
+        }
+
+        // Q_A_Norm
+        {
+            TimeLine t("q_a_norm");
+            qANorm.forward(loraBuffer.Data(), loraBuffer.Data(), loraBuffer.Rows(), loraBuffer.Stride(),
+                    normBuffer.Stride(), epsilon);
+        }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("q_a_norm:\n");
+        dbg.dumpMatrix(loraBuffer, false, ctx->device);
+#endif
+
+        // Q up projection
+        {
+            TimeLine t("q_up_projection");
+            ctx->mmHelper->compute(false, loraBuffer.Rows(), qBWeights.Cols(), qBWeights.Rows(), 1.0f, loraBuffer.Data(),
+                    loraBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, qBuffer.Data(),
+                    qBuffer.Stride());
+        }
+
+        // Apply rotary embedding
+        // ...
+    }
+
 private:
-    void packDenseWeights(xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
+    void packDenseWeights(DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
         xft::Matrix<WeiT> w(dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);
         packedW.Resize(dense.input_dim, dense.output_dim);
         ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
@@ -96,13 +189,13 @@ private:
 
     bool isSameWeiType(xft::ParamType type) {
         if constexpr (std::is_same_v<WeiT, int8_t>) {
-            return type == ParamType::Int8;
+            return type == xft::ParamType::Int8;
         } else if constexpr (std::is_same_v<WeiT, float16_t>) {
-            return type == ParamType::FP16;
+            return type == xft::ParamType::FP16;
         } else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
-            return type == ParamType::BF16;
+            return type == xft::ParamType::BF16;
         } else if constexpr (std::is_same_v<WeiT, float>) {
-            return type == ParamType::FP32;
+            return type == xft::ParamType::FP32;
         }
         return false;
     }
@@ -114,7 +207,11 @@ private:
 
     xft::Matrix<WeiT> outWeights;
 
-    RmsNorm inputNorm;
-    RmsNorm qANorm;
-    RmsNorm kvANorm;
+    xft::RmsNorm inputNorm;
+    xft::RmsNorm qANorm;
+    xft::RmsNorm kvANorm;
+
+#ifdef XFT_DEBUG
+    Debugger dbg;
+#endif
 };
