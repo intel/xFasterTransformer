@@ -98,32 +98,40 @@ public:
         int qSize = ctx->attHeadSize * ctx->attHeadNum;
         int kvSize = ctx->attHeadSize * ctx->kvHeadNum;
 
-        // Prepare attention weights
-        const WType *queryWeight = (WType *)attnParams->qkv.weight;
-        const float *queryScale = attnParams->qkv.weight_scale;
-        const float *queryZero = attnParams->qkv.weight_zp;
-        const float *queryBias = attnParams->qkv.bias;
-        const WType *keyWeight = queryWeight + qSize;
-        const float *keyScale = (queryScale == nullptr) ? nullptr : (queryScale + qSize);
-        const float *keyZero = (queryZero == nullptr) ? nullptr : (queryZero + qSize);
-        const float *keyBias = (queryBias == nullptr) ? nullptr : (queryBias + qSize);
-        const WType *valueWeight = keyWeight + kvSize;
-        const float *valueScale = (keyScale == nullptr) ? nullptr : (keyScale + kvSize);
-        const float *valueZero = (keyZero == nullptr) ? nullptr : (keyZero + kvSize);
-        const float *valueBias = (keyBias == nullptr) ? nullptr : (keyBias + kvSize);
+        // Check if attnParams is GQA (GQAttnParams) or DeepSeek (MLAttnParams)
+        xft::GQAttnParams *gqap = dynamic_cast<xft::GQAttnParams *>(attnParams);
+        xft::MLAttnParams *mlap = dynamic_cast<xft::MLAttnParams *>(attnParams);
 
-        const WType *attnOutWeight = (WType *)attnParams->out.weight;
-        const float *attnOutScale = attnParams->out.weight_scale;
-        const float *attnOutZero = attnParams->out.weight_zp;
-        const float *attnOutBias = attnParams->out.bias;
+        if (gqap != NULL) {
+            // Prepare attention weights
+            const WType *queryWeight = (WType *)gqap->qkv.weight;
+            const float *queryScale = gqap->qkv.weight_scale;
+            const float *queryZero = gqap->qkv.weight_zp;
+            const float *queryBias = gqap->qkv.bias;
+            const WType *keyWeight = queryWeight + qSize;
+            const float *keyScale = (queryScale == nullptr) ? nullptr : (queryScale + qSize);
+            const float *keyZero = (queryZero == nullptr) ? nullptr : (queryZero + qSize);
+            const float *keyBias = (queryBias == nullptr) ? nullptr : (queryBias + qSize);
+            const WType *valueWeight = keyWeight + kvSize;
+            const float *valueScale = (keyScale == nullptr) ? nullptr : (keyScale + kvSize);
+            const float *valueZero = (keyZero == nullptr) ? nullptr : (keyZero + kvSize);
+            const float *valueBias = (keyBias == nullptr) ? nullptr : (keyBias + kvSize);
 
-        const float *lnGamma = attnParams->norm.gamma;
-        const float *lnBeta = attnParams->norm.beta;
+            const WType *attnOutWeight = (WType *)gqap->out.weight;
+            const float *attnOutScale = gqap->out.weight_scale;
+            const float *attnOutZero = gqap->out.weight_zp;
+            const float *attnOutBias = gqap->out.bias;
 
-        attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
-                valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
-                true, lnGamma, lnBeta, false);
-        
+            const float *lnGamma = gqap->norm.gamma;
+            const float *lnBeta = gqap->norm.beta;
+
+            attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
+                    valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero,
+                    attnOutBias, true, lnGamma, lnBeta, false);
+        } else if (mlap != NULL) {
+            // TODO
+        }
+
         mlp.template setWeights<WType>(ctx, ffnParams);
     }
 
