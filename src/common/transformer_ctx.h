@@ -85,6 +85,7 @@ struct DecoderContext {
     union {
         int attHeadSize;
         int headDim;
+        int vHeadDim;
     };
     // Below 4 parameters are for DeepSeek model
     int qLoraRank;
