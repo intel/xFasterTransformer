@@ -24,7 +24,7 @@
 template <typename WeiT, typename InT, typename ImT, typename OutT>
 class DeepSeekAttention {
 public:
-    DeepSeekAttention(int layerId, DecoderContext *ctx) {}
+    DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx->ropeDim) {}
 
 #ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
@@ -107,8 +107,11 @@ public:
         auto hiddenSize = ctx->hiddenSize;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
 
-        // Norm buffer
+        // Norm buffer & MHA output
+        // TODO: check if the buffer is big enough
         xft::Matrix<ImT> normBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, hiddenSize, hiddenSize);
+        int mhaOutSize = ctx->attHeadNum * ctx->vHeadDim;
+        xft::Matrix<ImT> mhaOutBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, mhaOutSize, mhaOutSize);
 
         // Lora buffer (Down projection)
         auto qkvACols = qkvAWeights.Cols();
@@ -171,16 +174,79 @@ public:
         // Q up projection
         {
             TimeLine t("q_up_projection");
-            ctx->mmHelper->compute(false, loraBuffer.Rows(), qBWeights.Cols(), qBWeights.Rows(), 1.0f, loraBuffer.Data(),
-                    loraBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, qBuffer.Data(),
-                    qBuffer.Stride());
+            ctx->mmHelper->compute(false, loraBuffer.Rows(), qBWeights.Cols(), qBWeights.Rows(), 1.0f,
+                    loraBuffer.Data(), loraBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                    qBuffer.Data(), qBuffer.Stride());
         }
 
         // Apply rotary embedding
-        // ...
+        {
+            TimeLine t("rope");
+            std::vector<int> posIds(totInSeqLen);
+            int loc = 0;
+            for (auto seq : seqs) {
+                std::iota(posIds.begin() + loc, posIds.begin() + loc + seq->getInputSeqLen(), seq->getPastSeqLen());
+                loc += seq->getInputSeqLen();
+            }
+            ImT *query = qBuffer.Data() + ctx->nopeDim * ctx->attHeadNum;
+            ImT *key = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
+            rope.forward(
+                    query, key, totInSeqLen, qBuffer.Stride(), loraBuffer.Stride(), ctx->attHeadNum, 1, posIds.data());
+        }
+
+        // KV_A_Norm
+        {
+            TimeLine t("kv_a_norm");
+            ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
+            kvANorm.forward(
+                    compressedKV, compressedKV, loraBuffer.Rows(), loraBuffer.Stride(), normBuffer.Stride(), epsilon);
+        }
+
+        // KV up projection
+        {
+            TimeLine t("kv_up_projection");
+            ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
+            ctx->mmHelper->compute(false, loraBuffer.Rows(), kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, compressedKV,
+                    loraBuffer.Stride(), kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
+                    kvBuffer.Stride());
+        }
+
+        // Attention
+        {
+            TimeLine t("MHA");
+            ImT *keyRope = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
+            ImT *value = kvBuffer.Data() + ctx->attHeadSize * ctx->nopeDim;
+            doAttention(ctx, seqs, qBuffer.Data(), qBuffer.Stride(), keyRope, loraBuffer.Stride(), kvBuffer.Data(),
+                    value, kvBuffer.Stride(), mhaOutBuffer.Data());
+        }
+
+        // Output
+        {
+            TimeLine t("output");
+            ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), qBuffer.Cols(), 1.0f,
+                    mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                    outBuffer.Data(), outBuffer.Stride(), nullptr, inputBuffer.Data(), inputBuffer.Stride());
+        }
     }
 
 private:
+    void doAttention(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, ImT *query, int qStride, ImT *keyRope,
+            int krStride, ImT *keyNope, ImT *value, int kvStride, OutT *out) {
+        if (seqs[0]->getStep() == 0) { // First token generation
+            if constexpr (std::is_same_v<ImT, bfloat16_t>) {
+                selfAttention16bits(ctx, seqs, query, qStride, keyRope, krStride, keyNope, value, kvStride, out);
+            } else {
+                xft::Logger::error("The data type is not supported for DS attention.");
+                exit(-1);
+            }
+        } else {
+            //fusedAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
+        }
+    }
+
+    void selfAttention16bits(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, ImT *query, int qStride,
+            ImT *keyRope, int krStride, ImT *keyNope, ImT *value, int kvStride, OutT *out) {}
+
     void packDenseWeights(DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
         xft::Matrix<WeiT> w(dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);
         packedW.Resize(dense.input_dim, dense.output_dim);
@@ -210,6 +276,9 @@ private:
     xft::RmsNorm inputNorm;
     xft::RmsNorm qANorm;
     xft::RmsNorm kvANorm;
+
+    // TODO: write DS rotary embedding
+    LlamaRotaryEmbedding rope;
 
 #ifdef XFT_DEBUG
     Debugger dbg;
