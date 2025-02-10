@@ -103,15 +103,15 @@ void gemmSV(
 // T is bfloat16_t or float16_t
 // ldb is the K value during packing
 template <typename T>
-void small_amx_gemm_16bits_compute(int m, int n, int k, T *A, int lda, T *packedB, int ldb, T *C, int ldc) {
+void small_amx_gemm_16bits_compute(int m, int n, int k, T *A, int lda, T *packedB, int ldb, T *C, int ldc, float beta = 0) {
     static_assert(std::is_same_v<T, bfloat16_t> || std::is_same_v<T, float16_t>, "AMX gemm only supports BF16/FP16.");
 
-    if (std::is_same_v<T, bfloat16_t>) {
+    if constexpr (std::is_same_v<T, bfloat16_t>) {
         xdnn_small_amx_sgemm_bf16bf16bf16_compute(
-                m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, ldb, (XDNN_BF16 *)C, ldc);
+                m, n, k, (XDNN_BF16 *)A, lda, (XDNN_BF16 *)packedB, ldb, (XDNN_BF16 *)C, ldc, beta);
     } else {
         xdnn_small_amx_sgemm_f16f16f16_compute(
-                m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc);
+                m, n, k, (XDNN_FP16 *)A, lda, (XDNN_FP16 *)packedB, ldb, (XDNN_FP16 *)C, ldc, beta);
     }
 }
 
@@ -182,7 +182,7 @@ static void splitHeads(const int *tokenSizes, int *threadEndHead, const int batc
 }
 
 // Self attention while KV cache copy is separated
-template <bool fusedPack, typename T, typename Lambda1, typename Lambda2>
+template <bool FusedPack, typename T, typename Lambda1, typename Lambda2>
 void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHeadNum, int kvHeadNum, int headSize,
         int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes, const float scale,
         const float *alibiSlopes, int threadNum, const Lambda1 &getKCache, const Lambda2 &getVCache,
@@ -206,14 +206,14 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
 
     // When packing is fused, allocate packing buffer per thread
     auto totalPackSize
-            = fusedPack ? threadNum * (kPackSize + vPackSize) : (batchSize * kvHeadNum) * (kPackSize + vPackSize);
+            = FusedPack ? threadNum * (kPackSize + vPackSize) : (batchSize * kvHeadNum) * (kPackSize + vPackSize);
 
     T *packBuf
             = (T *)SimpleMemPool::instance().getBuffer("kv_packing", totalPackSize * sizeof(T));
 
     // Copy key/value to cache and pack them
     // If packing is not fused into computing, then pack it here
-    if constexpr (!fusedPack) {
+    if constexpr (!FusedPack) {
 #pragma omp parallel for collapse(2)
         for (int b = 0; b < batchSize; ++b) {
             for (int i = 0; i < kvHeadNum; ++i) {
@@ -289,7 +289,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
 
         int tid = omp_get_thread_num();
         int kvHeadIdx = (headMap == nullptr) ? i / groupNum : headMap(i);
-        int locationIdx = (fusedPack ? tid : b * kvHeadNum + kvHeadIdx);
+        int locationIdx = (FusedPack ? tid : b * kvHeadNum + kvHeadIdx);
         T *packedB = packBuf + locationIdx * (kPackSize + vPackSize);
         T *packedV = packedB + kPackSize;
 
@@ -307,7 +307,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
         auto A = query + (offsets[b] + startSeq) * qStride + i * headSize;
         auto C = scores + omp_get_thread_num() * mBlockSize * maxScoreStride;
 
-        if constexpr (fusedPack) {
+        if constexpr (FusedPack) {
             if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
                 auto B = key + offsets[b] * kvStride + kvHeadIdx * headSize;
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -357,7 +357,7 @@ void selfAttention_SeparateCopy(T *output, T *query, T *key, T *value, int qHead
         A = C;
         C = (T *)output + (offsets[b] + startSeq) * ldc + i * headSize;
 
-        if constexpr (fusedPack) {
+        if constexpr (FusedPack) {
             if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
                 auto V = value + offsets[b] * kvStride + kvHeadIdx * headSize;
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
@@ -542,6 +542,218 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
             }
         });
     }
+}
+
+/**
+ * For DeepSeek like MLA
+ * @param output output tensor
+ * @param query query tensor, include nope and rope part
+ * @param keyRope key tensor for rope part
+ * @param keyNope key tensor for nope part
+ * @param value value tensor
+ * @param headNum head number
+ * @param nopeDim nope dimension
+ * @param ropeDim rope dimension
+ * @param vHeadDim value head dimension
+ * @param oStride output stride
+ * @param qStride query stride
+ * @param krStride key rope stride
+ * @param kvStride key (nope part) and value stride
+ */
+template <bool FusedPack, typename T>
+void selfAttention_NoCopy(T *output, T *query, T *keyRope, T *keyNope, T *value, int headNum, int nopeDim, int ropeDim,
+        int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize, const int *tokenSizes,
+        const float scale, int threadNum) {
+    constexpr int mBlockSize = 32;
+
+    int totalTokenSize = 0; // total token size
+    int maxTokenSize = 0; // max token size of all inputs
+    int offsets[batchSize]; // offset for each input
+    int blkEndIndex[batchSize]; // end block index for each input
+    for (int i = 0; i < batchSize; ++i) {
+        offsets[i] = (i == 0 ? 0 : offsets[i - 1] + tokenSizes[i - 1]);
+        auto curBlks = (tokenSizes[i] + mBlockSize - 1) / mBlockSize;
+        blkEndIndex[i] = (i == 0 ? curBlks : blkEndIndex[i - 1] + curBlks);
+        if (tokenSizes[i] > maxTokenSize) { maxTokenSize = tokenSizes[i]; }
+        totalTokenSize += tokenSizes[i];
+    }
+
+    const int kNopePackSize = xdnn_small_amx_sgemm_bf16bf16bf16_packb_size(maxTokenSize, nopeDim, 32, 32);
+    const int kRopePackSize = xdnn_small_amx_sgemm_bf16bf16bf16_packb_size(maxTokenSize, ropeDim, 32, 32);
+    const int vPackSize = xdnn_small_amx_sgemm_bf16bf16bf16_packb_size(vHeadDim, maxTokenSize, 32, 32);
+
+    // When packing is fused, allocate packing buffer per thread
+    auto totalPackSize
+            = FusedPack ? threadNum * (kNopePackSize + vPackSize) : (batchSize * headNum) * (kNopePackSize + vPackSize);
+    totalPackSize += batchSize * kRopePackSize;
+
+    // The packing buffer is organized as:
+    // BS0_[kNope_h0, value_h0, kNope_h1, value_h1, ...]
+    // BS1_[kNope_h0, value_h0, kNope_h1, value_h1, ...]
+    // ...
+    // BS0_kRope, BS1_kRope, ...
+    T *packBuf = (T *)SimpleMemPool::instance().getBuffer("kv_packing", totalPackSize * sizeof(T));
+
+    // Pack keyRope, keyNope and value
+    // If packing is not fused into computing, then pack it here
+    if constexpr (!FusedPack) {
+#pragma omp parallel for collapse(2)
+        for (int b = 0; b < batchSize; ++b) {
+            // keyRope is taken as the last head
+            for (int i = 0; i < headNum + 1; ++i) {
+                const int tokens = tokenSizes[b];
+
+                if (i == headNum) { // pack keyRope for batch b
+                    T *packedRope = packBuf + totalPackSize - batchSize * kRopePackSize + b * kRopePackSize;
+                    auto B = keyRope + offsets[b] * krStride;
+                    xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                            true, tokens, ropeDim, (XDNN_BF16 *)B, krStride, (XDNN_BF16 *)packedRope, kRopePackSize);
+                    continue;
+                }
+
+                T *packedB = packBuf + (b * headNum + i) * (kNopePackSize + vPackSize);
+                T *packedV = packedB + kNopePackSize;
+
+                auto B = keyNope + offsets[b] * kvStride + i * nopeDim;
+
+                xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                        true, tokens, nopeDim, (XDNN_BF16 *)B, kvStride, (XDNN_BF16 *)packedB, kNopePackSize);
+
+                auto V = value + offsets[b] * kvStride + i * vHeadDim;
+
+                xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                        false, vHeadDim, tokens, (XDNN_BF16 *)V, kvStride, (XDNN_BF16 *)packedV, vPackSize);
+            }
+        }
+    } else { // Only pack keyRope
+        for (int b = 0; b < batchSize; ++b) {
+            const int tokens = tokenSizes[b];
+            T *packedRope = packBuf + totalPackSize - batchSize * kRopePackSize + b * kRopePackSize;
+            auto B = keyRope + offsets[b] * krStride;
+            xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                    true, tokens, ropeDim, (XDNN_BF16 *)B, krStride, (XDNN_BF16 *)packedRope, kRopePackSize);
+            continue;
+        }
+    }
+
+    // Prepare score buffer
+    auto maxScoreStride = (maxTokenSize + 31) / 32 * 32;
+    T *scores = (T *)SimpleMemPool::instance().getBuffer(
+            "qkscore", threadNum * mBlockSize * maxScoreStride * sizeof(T));
+
+    auto totalBlocks = blkEndIndex[batchSize - 1];
+    std::pair<int, int> packInfo[threadNum];
+    for (int idx = 0; idx < threadNum; ++idx) {
+        packInfo[idx].first = -1;
+    }
+
+    // Equivalent impl. of below parallel for loop
+    // for (int b = 0; b < batchSize; ++b) {
+    //     for (int i = 0; i < headNum; ++i) {
+    //         for (int mb = 0; mb < blocks[b]; ++mb) {
+    parallel_for(headNum * totalBlocks, [&](int taskIdx) {
+        // Calculate batch index, head index and block index
+        auto it = std::upper_bound(blkEndIndex, blkEndIndex + batchSize, taskIdx / headNum);
+        int b = std::distance(blkEndIndex, it); // batch index
+        int batchStartIdx = b > 0 ? headNum * blkEndIndex[b - 1] : 0;
+        int offset = taskIdx - batchStartIdx;
+        int blkSize = b > 0 ? blkEndIndex[b] - blkEndIndex[b - 1] : blkEndIndex[b];
+        int i = offset / blkSize; // head index
+        int mb = offset % blkSize; // block index along M dimension inside the sample
+
+        int tid = omp_get_thread_num();
+        int kvHeadIdx = i;
+        int locationIdx = (FusedPack ? tid : b * headNum + kvHeadIdx);
+        T *packedB = packBuf + locationIdx * (kNopePackSize + vPackSize);
+        T *packedV = packedB + kNopePackSize;
+
+        const int tokens = tokenSizes[b];
+        const int startSeq = mb * mBlockSize;
+        const int endSeq = startSeq + mBlockSize < tokens ? startSeq + mBlockSize : tokens;
+
+        // Q * Kᵀ (Nope)
+        int m = endSeq - startSeq;
+        int k = nopeDim;
+        int n = tokens;
+        int lda = qStride;
+        int ldb = kvStride;
+        int ldc = (tokens + 31) / 32 * 32;
+        auto A = query + (offsets[b] + startSeq) * qStride + i * (nopeDim + ropeDim);
+        auto C = scores + omp_get_thread_num() * mBlockSize * maxScoreStride;
+
+        if constexpr (FusedPack) {
+            if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
+                auto B = keyNope + offsets[b] * kvStride + kvHeadIdx * nopeDim;
+                xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                        true, tokens, nopeDim, (XDNN_BF16 *)B, kvStride, (XDNN_BF16 *)packedB, kNopePackSize);
+            }
+        }
+
+        // Causal mask, use endSeq as N
+        small_amx_gemm_16bits_compute(m, endSeq, k, A, lda, packedB, nopeDim, C, ldc);
+
+        // Q * Kᵀ (rope), accumulate to C
+        k = ropeDim;
+        lda = qStride;
+        A = A + nopeDim;
+        auto packedRope = packBuf + totalPackSize - batchSize * kRopePackSize + b * kRopePackSize;
+        small_amx_gemm_16bits_compute(m, endSeq, k, A, lda, packedRope, ropeDim, C, ldc, 1.0f);
+
+#ifdef XFT_DEBUG
+        if (b == 0 && i == 0) {
+            printf("Q * Kᵀ, first head:\n");
+            auto p = C;
+            printf("%f, %f, %f ... %f %f %f\n", p[0] * scale, p[1] * scale, p[2] * scale, p[tokens - 3] * scale,
+                    p[tokens - 2] * scale, p[tokens - 1] * scale);
+        }
+#endif
+
+        // Softmax(Q * Kᵀ)
+        for (int seq = 0; seq < endSeq - startSeq; ++seq) {
+            int elements = startSeq + seq + 1;
+            small_softmax(C + seq * ldc, scale, elements);
+            memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(T));
+        }
+
+#ifdef XFT_DEBUG
+        if (b == 0 && i == 0) {
+            printf("Softmax(Q * Kᵀ), first head:\n");
+            auto p = C;
+            printf("%f, %f, %f ... %f %f %f\n", (float)p[0], (float)p[1], (float)p[2], (float)p[tokens - 3],
+                    (float)p[tokens - 2], (float)p[tokens - 1]);
+        }
+#endif
+
+        // Softmax(Q * Kᵀ) * V
+        k = tokens;
+        n = vHeadDim;
+        lda = ldc;
+        ldc = oStride;
+        A = C;
+        C = (T *)output + (offsets[b] + startSeq) * ldc + i * vHeadDim;
+
+        if constexpr (FusedPack) {
+            if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
+                auto V = value + offsets[b] * kvStride + kvHeadIdx * vHeadDim;
+                xdnn_small_amx_sgemm_bf16bf16bf16_packb(
+                        false, vHeadDim, tokens, (XDNN_BF16 *)V, kvStride, (XDNN_BF16 *)packedV, vPackSize);
+                // Update pack info
+                packInfo[tid].first = b;
+                packInfo[tid].second = kvHeadIdx;
+            }
+        }
+
+        small_amx_gemm_16bits_compute(m, n, endSeq, A, lda, packedV, tokens, C, ldc);
+
+#ifdef XFT_DEBUG
+        if (b == 0 && i == 0) {
+            printf("Softmax(Q * Kᵀ) * V, first head:\n");
+            auto p = C;
+            printf("%f, %f, %f ... %f %f %f\n", (float)p[0], (float)p[1], (float)p[2], (float)p[vHeadDim - 3],
+                    (float)p[vHeadDim - 2], (float)p[vHeadDim - 1]);
+        }
+#endif
+    });
 }
 
 template <typename T, typename Lambda1, typename Lambda2>
