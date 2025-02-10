@@ -30,20 +30,21 @@ static void mmRef(
 }
 
 static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
-        int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int tokenSize, const float scale) {
+        int kvHeadNum, int qkHeadDim, int vHeadDim, int oStride, int qStride, int kStride, int vStride, int tokenSize,
+        const float scale) {
     const int groupSize = qHeadNum / kvHeadNum;
 
 #pragma omp parallel for
     for (int h = 0; h < qHeadNum; h++) {
-        bfloat16_t *q = query + h * headSize;
-        bfloat16_t *k = key + (h / groupSize) * headSize;
-        bfloat16_t *v = value + (h / groupSize) * headSize;
+        bfloat16_t *q = query + h * qkHeadDim;
+        bfloat16_t *k = key + (h / groupSize) * qkHeadDim;
+        bfloat16_t *v = value + (h / groupSize) * vHeadDim;
 
         bfloat16_t *score = (bfloat16_t *)malloc(tokenSize * tokenSize * sizeof(bfloat16_t));
         float *fscore = (float *)malloc(tokenSize * tokenSize * sizeof(float));
 
         // Compute matmul between 'query' and 'key'
-        mmRef(q, k, score, tokenSize, tokenSize, headSize, qStride, kvStride, tokenSize, true);
+        mmRef(q, k, score, tokenSize, tokenSize, qkHeadDim, qStride, kStride, tokenSize, true);
 
         // Scale
         for (int i = 0; i < tokenSize; i++) {
@@ -73,8 +74,8 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
         }
 
         // Compute matmul between result and 'value'
-        auto out = output + h * headSize;
-        mmRef(score, v, out, tokenSize, headSize, tokenSize, tokenSize, kvStride, oStride, false);
+        auto out = output + h * vHeadDim;
+        mmRef(score, v, out, tokenSize, vHeadDim, tokenSize, tokenSize, vStride, oStride, false);
 
         free(score);
         free(fscore);
@@ -96,8 +97,8 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
         auto q = query + rowOffsets[b] * qStride;
         auto k = key + rowOffsets[b] * kvStride;
         auto v = value + rowOffsets[b] * kvStride;
-        selfAttentionRef(output + rowOffsets[b] * oStride, q, k, v, qHeadNum, kvHeadNum, headSize, oStride, qStride,
-                kvStride, tokenSizes[b], scale);
+        selfAttentionRef(output + rowOffsets[b] * oStride, q, k, v, qHeadNum, kvHeadNum, headSize, headSize, oStride,
+                qStride, kvStride, kvStride, tokenSizes[b], scale);
     }
 }
 
@@ -177,6 +178,117 @@ void testSelfAttention(
     free(refOutput);
     free(kvCache);
     free(qkv);
+}
+
+template <bool bFusePack = true>
+void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDim, int *tokenSizes, int batchSize) {
+    // Only support batchSize = 1
+    assert(batchSize == 1);
+
+    const int outSize = headNum * vHeadDim;
+    const int fakePad = 128; // fake padding of keyRope
+    const float scale = 1.0f / std::sqrt(nopeDim + ropeDim);
+    int threadNum = -1;
+
+#pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        if (tid == 0) { threadNum = omp_get_num_threads(); }
+    }
+
+    int totalTokens = 0;
+    int maxTokens = 0;
+    for (int i = 0; i < batchSize; i++) {
+        totalTokens += tokenSizes[i];
+        maxTokens = std::max(maxTokens, tokenSizes[i]);
+    }
+
+    // Buffers
+    bfloat16_t *ourOutput = (bfloat16_t *)xft::alloc(totalTokens * outSize * sizeof(bfloat16_t));
+    bfloat16_t *refOutput = (bfloat16_t *)xft::alloc(totalTokens * outSize * sizeof(bfloat16_t));
+
+    int qStride = headNum * (nopeDim + ropeDim);
+    int kvStride = headNum * (nopeDim + vHeadDim);
+    int keyRopeStride = ropeDim + fakePad;
+    bfloat16_t *query = (bfloat16_t *)xft::alloc(totalTokens * qStride * sizeof(bfloat16_t));
+    bfloat16_t *keyValue = (bfloat16_t *)xft::alloc(totalTokens * kvStride * sizeof(bfloat16_t));
+    bfloat16_t *keyRope = (bfloat16_t *)xft::alloc(totalTokens * keyRopeStride * sizeof(bfloat16_t));
+    bfloat16_t *keyNope = keyValue;
+    bfloat16_t *value = keyValue + headNum * nopeDim;
+
+    float factor = 1.0f / RAND_MAX;
+    for (int i = 0; i < totalTokens * headNum * (nopeDim + ropeDim); i++) {
+        query[i] = bfloat16_t(rand() * factor);
+    }
+    for (int i = 0; i < totalTokens * headNum * (nopeDim + vHeadDim); i++) {
+        keyValue[i] = bfloat16_t(rand() * factor);
+    }
+    for (int i = 0; i < totalTokens * (ropeDim + fakePad); i++) {
+        keyRope[i] = bfloat16_t(rand() * factor);
+    }
+
+    // Call the function
+    xft::selfAttention_NoCopy<bFusePack>(ourOutput, query, keyRope, keyNope, value, headNum, nopeDim, ropeDim, vHeadDim,
+            outSize, headNum * (nopeDim + ropeDim), ropeDim + fakePad, headNum * (nopeDim + vHeadDim), batchSize,
+            tokenSizes, scale, threadNum);
+
+    // Concat keyNope and keyRope using memcpy and call selfAttentionRef
+    int kStride = headNum * (nopeDim + ropeDim);
+    bfloat16_t *key = (bfloat16_t *)xft::alloc(totalTokens * kStride * sizeof(bfloat16_t));
+    for (int i = 0; i < totalTokens; i++) {
+        for (int h = 0; h < headNum; ++h) {
+            memcpy(key + i * headNum * (nopeDim + ropeDim) + h * (nopeDim + ropeDim),
+                    keyNope + i * headNum * (nopeDim + vHeadDim) + h * nopeDim, nopeDim * sizeof(bfloat16_t));
+            memcpy(key + i * headNum * (nopeDim + ropeDim) + h * (nopeDim + ropeDim) + nopeDim,
+                    keyRope + i * (ropeDim + fakePad), ropeDim * sizeof(bfloat16_t));
+        }
+    }
+
+    // selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
+    //         int kvHeadNum, int qkHeadDim, int vHeadDim, int oStride, int qStride, int kStride, int vStride, int tokenSize,
+    //         const float scale)
+    int rowOff = 0;
+    for (int b = 0; b < batchSize; ++b) {
+        selfAttentionRef(refOutput + rowOff * outSize, query + rowOff * qStride, key + rowOff * kStride,
+                value + rowOff * kvStride, headNum, headNum, nopeDim + ropeDim, vHeadDim, outSize, qStride, kStride,
+                kvStride, tokenSizes[b], scale);
+        rowOff += tokenSizes[b];
+    }
+
+    // Verify the correctness of the function
+    for (int i = 0; i < totalTokens * outSize; i++) {
+        ASSERT_NEAR((float)refOutput[i], (float)ourOutput[i], 0.02);
+    }
+
+    // Clean up
+    free(key);
+    free(ourOutput);
+    free(refOutput);
+    free(query);
+    free(keyValue);
+    free(keyRope);
+}
+
+TEST(AttentionKernelsTest, NoCopyTest1) {
+    const int batchSize = 1;
+    int tokenSizes[batchSize] = {16};
+    // headNum, int nopeDim, int ropeDim, int vHeadDim
+    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
+}
+
+TEST(AttentionKernelsTest, NoCopyTest2) {
+    const int batchSize = 1;
+    int tokenSizes[batchSize] = {130};
+    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
+}
+
+TEST(AttentionKernelsTest, NoCopyTest3) {
+    const int batchSize = 2;
+    int tokenSizes[batchSize] = {100, 201};
+    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest1) {
