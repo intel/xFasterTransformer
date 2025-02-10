@@ -232,6 +232,7 @@ public:
 
         ctx->ResetConfigReader(configPath);
         ctx->sparseExperts = reader.GetInteger(modelType, "sparse_experts", 8);
+        ctx->denseExperts = reader.GetInteger(modelType, "dense_experts", 0);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {

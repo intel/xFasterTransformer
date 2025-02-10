@@ -14,7 +14,7 @@
 # ============================================================================
 
 from .llama_convert import LlamaConvert
-from .llama_convert import LlamaConvert as DeepseekConvert
+from .llama_convert import LlamaConvert as DeepSeekConvert
 from .llama_convert import LlamaConvert as YiConvert
 from .llama_convert import LlamaConvert as GemmaConvert
 from .chatglm_convert import ChatGLMConvert
@@ -29,3 +29,6 @@ from .qwen2_convert import Qwen2Convert
 from .yarn_llama_convert import YaRNLlamaConvert
 from .telechat_convert import TelechatConvert
 from .mixtral_convert import MixtralConvert
+from .deepseek_v2_convert import DeepSeekV2Convert
+from .deepseek_v2_convert import DeepSeekV2Convert as DeepSeekV3Convert
+from .deepseek_v2_convert import DeepSeekV2Convert as DeepSeekR1Convert

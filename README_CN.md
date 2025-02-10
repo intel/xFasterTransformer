@@ -56,6 +56,9 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |        模型         |   框架   |          | 分布式支持   |
 | :----------------: | :------: | :------: | :--------: |
 |                    | PyTorch  |   C++    |            |
+|     DeepSeekR1     | &#10004; | &#10004; |  &#10004;  |
+|     DeepSeekV3     | &#10004; | &#10004; |  &#10004;  |
+|     DeepSeekV2     | &#10004; | &#10004; |  &#10004;  |
 |      ChatGLM       | &#10004; | &#10004; |  &#10004;  |
 |      ChatGLM2      | &#10004; | &#10004; |  &#10004;  |
 |      ChatGLM3      | &#10004; | &#10004; |  &#10004;  |
@@ -171,6 +174,9 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     ***PS: 由于模型文件和 `transformers` 版本之间可能存在兼容性问题，请选择相应的 `transformers` 版本。***
     
     支持的模型转换列表：
+    - DeepSeekR1Convert
+    - DeepSeekV3Convert
+    - DeepSeekV2Convert
     - LlamaConvert
     - YiConvert
     - GemmaConvert

@@ -56,6 +56,9 @@ xFasterTransformer provides a series of APIs, both of C++ and Python, for end us
 |       Models       | Framework |          | Distribution |
 | :----------------: | :-------: | :------: | :----------: |
 |                    |  PyTorch  |   C++    |              |
+|     DeepSeekR1     | &#10004;  | &#10004; |   &#10004;   |
+|     DeepSeekV3     | &#10004;  | &#10004; |   &#10004;   |
+|     DeepSeekV2     | &#10004;  | &#10004; |   &#10004;   |
 |      ChatGLM       | &#10004;  | &#10004; |   &#10004;   |
 |      ChatGLM2      | &#10004;  | &#10004; |   &#10004;   |
 |      ChatGLM3      | &#10004;  | &#10004; |   &#10004;   |
@@ -170,6 +173,9 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
     
     Supported model convert list:
+    - DeepSeekR1Convert
+    - DeepSeekV3Convert
+    - DeepSeekV2Convert
     - LlamaConvert
     - YiConvert
     - GemmaConvert
@@ -182,7 +188,7 @@ xFasterTransformer supports a different model format from Huggingface, but it's 
     - Baichuan2Convert
     - QwenConvert
     - Qwen2Convert
-    - DeepseekConvert
+    - DeepSeekConvert
     - TelechatConvert
     - MixtralConvert
 
