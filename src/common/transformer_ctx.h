@@ -95,8 +95,8 @@ struct DecoderContext {
     float attFactor;
     float epsilon;
 
-    int sparseExperts; // selectively activated
-    int denseExperts;  // always active
+    int sparseExperts; // selectively activated, means routed in DeepSeek
+    int denseExperts;  // always active, means shared in DeepSeek
 
     // rope scaling parameters
     RopeParams *ropeParamsPtr;

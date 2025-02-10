@@ -46,16 +46,19 @@ _import_structure = {
         "QwenConvert",
         "Qwen2Convert",
         "YaRNLlamaConvert",
-        "DeepseekConvert",
+        "DeepSeekConvert",
         "TelechatConvert",
-        "MixtralConvert"
+        "MixtralConvert",
+        "DeepSeekV2Convert",
+        "DeepSeekV3Convert",
+        "DeepSeekR1Convert",
     ],
     "env": ["get_env"],
 }
 
 if TYPE_CHECKING:
     from .tools import LlamaConvert
-    from .tools import DeepseekConvert
+    from .tools import DeepSeekConvert
     from .tools import LlamaConvert as YiConvert
     from .tools import LlamaConvert as GemmaConvert
     from .tools import ChatGLMConvert
@@ -68,9 +71,12 @@ if TYPE_CHECKING:
     from .tools import QwenConvert
     from .tools import Qwen2Convert
     from .tools import YaRNLlamaConvert
-    from .tools import DeepseekConvert
+    from .tools import DeepSeekConvert
     from .tools import TelechatConvert
     from .tools import MixtralConvert
+    from .tools import DeepSeekV2Convert
+    from .tools import DeepSeekV3Convert
+    from .tools import DeepSeekR1Convert
     from .env import get_env
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule

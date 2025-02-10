@@ -236,4 +236,23 @@ struct MixtralFFNParams : public FFNParams {
     }
 };
 
+// DeepSeek MOE
+struct DeepSeekFFNParams : public FFNParams {
+    NormParams norm;
+    DenseLayerParams gating; // Gating for MOE
+    std::vector<ExpertParams> routed_experts; // List of routed experts
+    ExpertParams shared_expert; // shared expert, assume it has been merged into 1 weight
+
+    DeepSeekFFNParams() : norm {}, gating {}, routed_experts {}, shared_expert {} {}
+    DeepSeekFFNParams(
+            int routedExpertNum, int hiddenSize, int intermediateSize, ParamType denseWType, bool wTrans = false)
+        : norm(hiddenSize)
+        , gating(hiddenSize, routedExpertNum, denseWType, wTrans)
+        , shared_expert(hiddenSize, intermediateSize, denseWType, wTrans) {
+        for (int i = 0; i < routedExpertNum; ++i) {
+            routed_experts.emplace_back(hiddenSize, intermediateSize, denseWType, wTrans);
+        }
+    }
+};
+
 } // namespace xft
