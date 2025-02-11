@@ -17,7 +17,7 @@
 #include "attn_deepseek.h"
 #include "common_decoder.h"
 #include "decoder_layer.h"
-#include "mlp_mixtral.h"
+#include "moe_deepseek.h"
 #include "rms_norm.h"
 #include "rotary_embedding.h"
 #include "token_embedding.h"
@@ -27,7 +27,7 @@ template <typename WeiT, typename KVCacheT>
 class DeepSeekLLM
     : public CommonDecoder<DeepSeekAttention<WeiT, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType>,
-              MixtralMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+              DeepSeekMoE<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
               KVCacheT> {
 public:
