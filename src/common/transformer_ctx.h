@@ -96,7 +96,17 @@ struct DecoderContext {
     float epsilon;
 
     int sparseExperts; // selectively activated, means routed in DeepSeek
-    int denseExperts;  // always active, means shared in DeepSeek
+    int denseExperts; // always active, means shared in DeepSeek
+
+    // For DeepSeek MoE
+    std::string topkMethod;
+    std::string scoringFunc;
+    bool normTopKProb;
+    int firstKDenseReplace;
+    int numExpertsPerTok;
+    int topkGroup;
+    int nGroup;
+    int moeIntermediateSize;
 
     // rope scaling parameters
     RopeParams *ropeParamsPtr;

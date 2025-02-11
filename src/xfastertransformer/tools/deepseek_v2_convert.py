@@ -101,7 +101,7 @@ class DeepSeekV2Convert(BaseModelConvert):
 
             hidden_size = hf_config["hidden_size"]
             config[sec_name]["hidden_size"] = str(hidden_size)
-            # config[sec_name]["size_per_head"] = str(hidden_size // hf_config["num_attention_heads"])
+            config[sec_name]["size_per_head"] = str(hf_config["v_head_dim"])
             config[sec_name]["inter_size"] = str(hf_config["intermediate_size"])
             config[sec_name]["max_pos_seq_len"] = str(hf_config["max_position_embeddings"])
             config[sec_name]["num_layer"] = str(hf_config["num_hidden_layers"])
@@ -126,6 +126,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             config[sec_name]["qk_nope_head_dim"] = str(hf_config["qk_nope_head_dim"])
             # for MOE
             config[sec_name]["moe_intermediate_size"] = str(hf_config["moe_intermediate_size"])
+            config[sec_name]["first_k_dense_replace"] = str(hf_config["first_k_dense_replace"])
             ## n_shared_experts
             config[sec_name]["dense_experts"] = str(hf_config["n_shared_experts"])
             ## n_routed_experts

@@ -122,10 +122,12 @@ public:
                 std::exit(-1);
             } else {
                 if (messenger.getSize() > 1) {
-                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
+                    this->decoders[i]->forwardFFN(
+                            ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
                     messenger.reduceAdd(output, output, totInSeqLen * ctx->hiddenSize);
                 } else {
-                    this->decoders[i]->forwardFFN(ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
+                    this->decoders[i]->forwardFFN(
+                            ctx, attnOut, output, ctx->hiddenSize, ctx->hiddenSize, true, totInSeqLen);
                 }
             }
 
@@ -403,6 +405,9 @@ private:
         } else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
             ffnParams = new xft::MixtralFFNParams(
                     ctx->sparseExperts, ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
+        } else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_layernorm.weight.bin")) {
+            ffnParams = new xft::DeepSeekFFNParams(ctx->sparseExperts, ctx->denseExperts, ctx->hiddenSize,
+                    ctx->intermediateSize, ctx->moeIntermediateSize, xftDT2PT(dt));
         } else {
             xft::Logger::error("Unable to detect FFN parameters.");
             std::exit(-1);
@@ -428,11 +433,11 @@ private:
             if (gqap != NULL) {
                 loadGQAttnWeights<WType>(ctx, modelPath, layerIdx, gqap);
             } else if (mlap != NULL) {
-                // TODO: loadMLAttnWeights<WType>(ctx, modelPath, layerIdx, mlap);
+                loadMLAttnWeights<WType>(ctx, modelPath, layerIdx, mlap);
             } else {
-                xft::Logger::error("Unable to cast AttnParams to GQAttnParams.");
+                xft::Logger::error("Unable to cast AttnParams to GQAttnParams or MLATtnParams.");
                 std::exit(-1);
-            }            
+            }
 
             // Stardard 2 layer MLP
             if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
@@ -445,6 +450,11 @@ private:
             // For models like Mixtral
             else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
                 loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::MixtralFFNParams *>(ffnParams));
+            }
+            // For DeepSeekV2+ models
+            else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_proj_with_mqa.weight.bin")) {
+                loadDeepSeekFFNWeights<WType>(
+                        ctx, modelPath, layerIdx, static_cast<xft::DeepSeekFFNParams *>(ffnParams));
             } else {
                 xft::Logger::error("Unable to load FFN weights.");
                 std::exit(-1);
@@ -476,6 +486,48 @@ private:
                 "read attn dense bias error");
         loadOptionalBias(modelPath + "/model.layers." + strIdx + ".input_layernorm.bias.bin", attn->norm,
                 "read LN1(attention) beta error");
+    }
+
+    template <typename T>
+    void loadMLAttnWeights(DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::MLAttnParams *attn) {
+        int hiddenSize = ctx->hiddenSize;
+
+        int qLoraRank = ctx->qLoraRank;
+        int kvLoraRank = ctx->kvLoraRank;
+        int nopeDim = ctx->nopeDim;
+        int ropeDim = ctx->ropeDim;
+        int vHeadDim = ctx->attHeadSize;
+
+        int qSize = ctx->attHeadNum * (nopeDim + ropeDim);
+        int kvSize = ctx->attHeadNum * 2 * (nopeDim + vHeadDim);
+
+        std::string strIdx = std::to_string(layerIdx);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".input_layernorm.weight.bin", attn->input_norm.gamma,
+                hiddenSize);
+
+        if (qLoraRank > 0) {
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
+                    (T *)attn->q_a_proj.weight, hiddenSize * qLoraRank);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_layernorm.weight",
+                    attn->q_a_norm.gamma, qLoraRank);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight",
+                    (T *)attn->q_b_proj.weight, qLoraRank * qSize);
+        } else {
+            // DeepSeek V2 Lite
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
+                    (T *)attn->q_a_proj.weight, hiddenSize * qSize);
+        }
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight",
+                (T *)attn->kv_a_proj.weight, hiddenSize * (kvLoraRank + ropeDim));
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_layernorm.weight",
+                attn->kv_a_norm.gamma, kvLoraRank);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight",
+                (T *)attn->kv_b_proj.weight, kvLoraRank * kvSize);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.o_proj.weight", (T *)attn->o_proj.weight,
+                ctx->attHeadNum * vHeadDim * hiddenSize);
     }
 
     template <typename T>
@@ -570,6 +622,55 @@ private:
                 ffn->norm.gamma, ffn->norm.hidden_size);
         loadOptionalBias(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.bias.bin", ffn->norm,
                 "read LN2(FFN) beta error");
+    }
+
+    template <typename T>
+    void loadDeepSeekFFNWeights(
+            DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::DeepSeekFFNParams *ffn) {
+        std::string strIdx = std::to_string(layerIdx);
+
+        // Norm params
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
+                ffn->norm.gamma, ffn->norm.hidden_size);
+
+        if (layerIdx < ctx->firstKDenseReplace) {
+            // Load MLP
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.down_proj.weight.bin",
+                    (T *)ffn->mlp.down.weight, ctx->hiddenSize * ctx->intermediateSize);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.up_proj.weight.bin", (T *)ffn->mlp.up.weight,
+                    ctx->hiddenSize * ctx->intermediateSize);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.weight.bin",
+                    (T *)ffn->mlp.gate.weight, ctx->hiddenSize * ctx->intermediateSize);
+        } else {
+            // Load experts weights
+            // Load shared expert weights
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight.bin",
+                    (T *)ffn->sharedExpert.down.weight, ctx->hiddenSize * ctx->moeIntermediateSize * ctx->denseExperts);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.up_proj.weight.bin",
+                    (T *)ffn->sharedExpert.up.weight, ctx->hiddenSize * ctx->moeIntermediateSize * ctx->denseExperts);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.gate_proj.weight.bin",
+                    (T *)ffn->sharedExpert.gate.weight, ctx->hiddenSize * ctx->moeIntermediateSize * ctx->denseExperts);
+
+            // Load routed expert weights
+            if (ffn->routedExperts.empty()) {
+                for (int i = 0; i < ctx->routedExpertNum; ++i) {
+                    routedExperts.emplace_back(
+                            ctx->hiddenSize, ctx->moeIntermediateSize, ffn->mlp.gate.denseWType, ffn->mlp.gate.wTrans);
+                }
+            }
+
+            for (int i = 0; i < ctx->sparseExperts; ++i) {
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                + ".down_proj.weight.bin",
+                        (T *)ffn->routedExperts[i].down.weight, ctx->hiddenSize * ctx->moeIntermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                + ".up_proj.weight.bin",
+                        (T *)ffn->routedExperts[i].up.weight, ctx->hiddenSize * ctx->moeIntermediateSize);
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                + ".gate_proj.weight.bin",
+                        (T *)ffn->routedExperts[i].gate.weight, ctx->hiddenSize * ctx->moeIntermediateSize);
+            }
+        }
     }
 
     void loadOptionalBias(const std::string &filename, xft::DenseLayerParams &dense, const char *errmsg) {
