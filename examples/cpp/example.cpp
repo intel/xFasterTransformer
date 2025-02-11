@@ -99,6 +99,34 @@ protected:
     int vocabSize;
 };
 
+class FakeTokenizer : public TokenizerBase {
+public:
+    FakeTokenizer(std::string &tokenPath) {}
+    FakeTokenizer(std::vector<int> fakeInput_) : fakeInput(fakeInput_) {}
+
+    std::vector<int> encode(std::string &input) override {
+        // only for Test
+        return fakeInput;
+    }
+
+    std::string decode(std::vector<int> &ids) override {
+        if (ids.size() == 1) { return decode(ids[0]); }
+
+        std::string text("");
+        text.reserve(ids.size());
+
+        for (int id : ids) {
+            text += "[" + std::to_string(id) + "] ";
+        }
+
+        return text;
+    }
+    std::string decode(int id) override { return "[" + std::to_string(id) + "] "; }
+
+private:
+    std::vector<int> fakeInput;
+};
+
 class ChatGLMTokenizer : public TokenizerBase {
 public:
     ChatGLMTokenizer(std::string &tokenPath) : TokenizerBase(tokenPath) {
@@ -167,9 +195,7 @@ public:
 
         return text;
     }
-    std::string decode(int id) override {
-        return "[" + std::to_string(id) + "] ";
-    }
+    std::string decode(int id) override { return "[" + std::to_string(id) + "] "; }
 
 private:
     const char **vocab_list = nullptr;
@@ -286,6 +312,11 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new TokenizerBase(tokenPath);
     } else if (modeltype == "mixtral") {
         return new MixtralTokenizer(tokenPath);
+    } else if (modeltype == "deepseek_v2") {
+        // For V3/R1 should be
+        // {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16};
+        return new FakeTokenizer(std::vector<int>(
+                {100000, 10492, 2065, 245, 766, 11, 745, 22704, 245, 1585, 5075, 779, 12239, 276, 463, 25720, 13}));
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
@@ -300,7 +331,7 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
 
 std::map<std::string, xft::DataType> KVCacheDataTypeMap
-        = {{"fp16", xft::DataType::fp16}, {"int8", xft::DataType::int8}};
+        = {{"fp16", xft::DataType::fp16}, {"bf16", xft::DataType::bf16}, {"int8", xft::DataType::int8}};
 
 std::string getModelType(std::string &modelPath) {
     std::string configPath = modelPath + "/config.ini";

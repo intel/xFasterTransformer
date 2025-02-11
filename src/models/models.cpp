@@ -40,6 +40,7 @@
 #include "yarn_llama.h"
 #include "mixtral.h"
 #include "telechat.h"
+#include "deepseek.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };

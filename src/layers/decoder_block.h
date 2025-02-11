@@ -449,10 +449,12 @@ private:
             }
             // For models like Mixtral
             else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
+                printf("Loading MixtralFFNWeights\n");
                 loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::MixtralFFNParams *>(ffnParams));
             }
             // For DeepSeekV2+ models
             else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_proj_with_mqa.weight.bin")) {
+                printf("Loading DeepSeekFFNWeights\n");
                 loadDeepSeekFFNWeights<WType>(
                         ctx, modelPath, layerIdx, static_cast<xft::DeepSeekFFNParams *>(ffnParams));
             } else {
@@ -509,9 +511,9 @@ private:
         if (qLoraRank > 0) {
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
                     (T *)attn->q_a_proj.weight, hiddenSize * qLoraRank);
-            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_layernorm.weight",
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_layernorm.weight.bin",
                     attn->q_a_norm.gamma, qLoraRank);
-            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight",
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight.bin",
                     (T *)attn->q_b_proj.weight, qLoraRank * qSize);
         } else {
             // DeepSeek V2 Lite
@@ -519,14 +521,14 @@ private:
                     (T *)attn->q_a_proj.weight, hiddenSize * qSize);
         }
 
-        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight",
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight.bin",
                 (T *)attn->kv_a_proj.weight, hiddenSize * (kvLoraRank + ropeDim));
-        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_layernorm.weight",
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_layernorm.weight.bin",
                 attn->kv_a_norm.gamma, kvLoraRank);
-        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight",
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight.bin",
                 (T *)attn->kv_b_proj.weight, kvLoraRank * kvSize);
 
-        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.o_proj.weight", (T *)attn->o_proj.weight,
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight.bin", (T *)attn->o_proj.weight,
                 ctx->attHeadNum * vHeadDim * hiddenSize);
     }
 
@@ -653,9 +655,9 @@ private:
 
             // Load routed expert weights
             if (ffn->routedExperts.empty()) {
-                for (int i = 0; i < ctx->routedExpertNum; ++i) {
-                    routedExperts.emplace_back(
-                            ctx->hiddenSize, ctx->moeIntermediateSize, ffn->mlp.gate.denseWType, ffn->mlp.gate.wTrans);
+                for (int i = 0; i < ctx->denseExperts; ++i) {
+                        ffn->routedExperts.emplace_back(
+                            ctx->hiddenSize, ctx->moeIntermediateSize, ffn->mlp.gate.wtype, ffn->mlp.gate.wtrans);
                 }
             }
 
