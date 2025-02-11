@@ -2,7 +2,7 @@
 cmake==3.26.1
 sentencepiece==0.1.99
 torch==2.3.0+cpu.cxx11.abi
-transformers==4.40.0
+transformers==4.48.0
 accelerate==0.23.0
 protobuf
 tiktoken
