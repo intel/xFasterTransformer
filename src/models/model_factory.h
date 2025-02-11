@@ -102,3 +102,14 @@ public:
 
 #define REGISTER_MODEL(CLASS, NAME) \
     MODEL(REGISTER, CLASS, NAME)
+
+// Weight and KV cache are in the same data type
+#define DECODER_DS_TYPE(KIND, CLASS, NAME)              \
+    KIND##_DECODER(CLASS, NAME, bfloat16_t, bfloat16_t) \
+    KIND##_DECODER(CLASS, NAME, float16_t, float16_t)
+
+#define IMPLEMENT_DS_MODEL(CLASS, NAME) \
+    DECODER_DS_TYPE(IMPLEMENT, CLASS, NAME)
+
+#define REGISTER_DS_MODEL(CLASS, NAME) \
+    DECODER_DS_TYPE(REGISTER, CLASS, NAME)

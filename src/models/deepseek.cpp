@@ -111,4 +111,4 @@ void DeepSeekLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16
     finalLN.forward(input, output, rows);
 }
 
-IMPLEMENT_MODEL(DeepSeekLLM, deepseek)
+IMPLEMENT_DS_MODEL(DeepSeekLLM, deepseek)
