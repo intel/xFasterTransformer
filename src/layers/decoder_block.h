@@ -449,12 +449,10 @@ private:
             }
             // For models like Mixtral
             else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
-                printf("Loading MixtralFFNWeights\n");
                 loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::MixtralFFNParams *>(ffnParams));
             }
             // For DeepSeekV2+ models
             else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_proj_with_mqa.weight.bin")) {
-                printf("Loading DeepSeekFFNWeights\n");
                 loadDeepSeekFFNWeights<WType>(
                         ctx, modelPath, layerIdx, static_cast<xft::DeepSeekFFNParams *>(ffnParams));
             } else {
@@ -501,7 +499,7 @@ private:
         int vHeadDim = ctx->attHeadSize;
 
         int qSize = ctx->attHeadNum * (nopeDim + ropeDim);
-        int kvSize = ctx->attHeadNum * 2 * (nopeDim + vHeadDim);
+        int kvSize = ctx->attHeadNum * (nopeDim + vHeadDim);
 
         std::string strIdx = std::to_string(layerIdx);
 
