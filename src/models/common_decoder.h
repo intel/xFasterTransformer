@@ -231,8 +231,25 @@ public:
                 ropeParamsPtr);
 
         ctx->ResetConfigReader(configPath);
+        // For MoE
         ctx->sparseExperts = reader.GetInteger(modelType, "sparse_experts", 8);
         ctx->denseExperts = reader.GetInteger(modelType, "dense_experts", 0);
+
+        // For MLA
+        ctx->qLoraRank = reader.GetInteger(modelType, "q_lora_rank", 0);
+        ctx->kvLoraRank = reader.GetInteger(modelType, "kv_lora_rank", 0);
+        ctx->nopeDim = reader.GetInteger(modelType, "qk_nope_head_dim", 0);
+        ctx->ropeDim = reader.GetInteger(modelType, "qk_rope_head_dim", 0);
+
+        // For DeepSeek MoE
+        ctx->normTopKProb = reader.GetBoolean(modelType, "norm_topk_prob", false);
+        ctx->firstKDenseReplace = reader.GetInteger(modelType, "first_k_dense_replace", 0);
+        ctx->numExpertsPerTok = reader.GetInteger(modelType, "num_experts_per_tok", 0);
+        ctx->topkGroup = reader.GetInteger(modelType, "topk_group", 0);
+        ctx->nGroup = reader.GetInteger(modelType, "n_group", 0);
+        ctx->moeIntermediateSize = reader.GetInteger(modelType, "moe_intermediate_size", 0);
+        ctx->topkMethod = reader.Get(modelType, "topk_method", "");
+        ctx->scoringFunc = reader.Get(modelType, "scoring_func", "");
 
         // Decoder
         if (layers % ctx->ppSize != 0) {

@@ -165,14 +165,14 @@ struct MLAttnParams : public AttnParams {
     // headNum: The number of heads, typical value is 128
     // nopeDim: The dimension of the nope vector, typical value is 128
     // ropeDim: The dimension of the rope vector, typical value is 64
-    MLAttnParams(int hiddenSize, int qLoraRank, int kvLoraRank, int headNum, int nopeDim, int ropeDim,
-            int vHeadDim, ParamType weiType, bool wTrans = false)
-        : q_a_proj(hiddenSize, qLoraRank, weiType, wTrans)
-        , q_b_proj(qLoraRank, headNum * (nopeDim + ropeDim), weiType, wTrans)
+    MLAttnParams(int hiddenSize, int qLoraRank, int kvLoraRank, int headNum, int nopeDim, int ropeDim, int vHeadDim,
+            ParamType weiType, bool wTrans = false)
+        : q_a_proj(hiddenSize, qLoraRank > 0 ? qLoraRank : headNum * (nopeDim + ropeDim), weiType, wTrans)
+        , q_b_proj(qLoraRank, qLoraRank > 0 ? headNum * (nopeDim + ropeDim) : 0, weiType, wTrans)
         , kv_a_proj(hiddenSize, kvLoraRank + ropeDim, weiType, wTrans)
         , kv_b_proj(kvLoraRank, headNum * (nopeDim + vHeadDim), weiType, wTrans)
         , o_proj(headNum * vHeadDim, hiddenSize, weiType, wTrans)
-        , q_a_norm(qLoraRank)
+        , q_a_norm(qLoraRank > 0 ? qLoraRank : 0)
         , kv_a_norm(kvLoraRank)
         , input_norm(hiddenSize) {}
 };
@@ -239,18 +239,18 @@ struct MixtralFFNParams : public FFNParams {
 // DeepSeek MOE
 struct DeepSeekFFNParams : public FFNParams {
     NormParams norm;
-    DenseLayerParams gating; // Gating for MOE
-    std::vector<ExpertParams> routed_experts; // List of routed experts
-    ExpertParams shared_expert; // shared expert, assume it has been merged into 1 weight
+    ExpertParams mlp; // normal mlp layer
+    std::vector<ExpertParams> routedExperts; // List of routed experts
+    ExpertParams sharedExpert; // shared expert, assume it has been merged into 1 weight
 
-    DeepSeekFFNParams() : norm {}, gating {}, routed_experts {}, shared_expert {} {}
-    DeepSeekFFNParams(
-            int routedExpertNum, int hiddenSize, int intermediateSize, ParamType denseWType, bool wTrans = false)
+    DeepSeekFFNParams() : norm {}, mlp {}, routedExperts {}, sharedExpert {} {}
+    DeepSeekFFNParams(int routedExpertNum, int sharedExpertsNum, int hiddenSize, int intermediateSize,
+            int moeIntermediateSize, ParamType denseWType, bool wTrans = false)
         : norm(hiddenSize)
-        , gating(hiddenSize, routedExpertNum, denseWType, wTrans)
-        , shared_expert(hiddenSize, intermediateSize, denseWType, wTrans) {
+        , mlp(hiddenSize, intermediateSize, denseWType, wTrans)
+        , sharedExpert(hiddenSize, sharedExpertsNum * moeIntermediateSize, denseWType, wTrans) {
         for (int i = 0; i < routedExpertNum; ++i) {
-            routed_experts.emplace_back(hiddenSize, intermediateSize, denseWType, wTrans);
+            routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
         }
     }
 };
