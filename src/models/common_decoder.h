@@ -250,6 +250,7 @@ public:
         ctx->moeIntermediateSize = reader.GetInteger(modelType, "moe_intermediate_size", 0);
         ctx->topkMethod = reader.Get(modelType, "topk_method", "");
         ctx->scoringFunc = reader.Get(modelType, "scoring_func", "");
+        ctx->routedScalingFac = reader.GetFloat(modelType, "routed_scaling_factor", 1.0);
 
         // Decoder
         if (layers % ctx->ppSize != 0) {

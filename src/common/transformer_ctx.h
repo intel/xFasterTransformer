@@ -101,6 +101,7 @@ struct DecoderContext {
     // For DeepSeek MoE
     std::string topkMethod;
     std::string scoringFunc;
+    float routedScalingFac;
     bool normTopKProb;
     int firstKDenseReplace;
     int numExpertsPerTok;

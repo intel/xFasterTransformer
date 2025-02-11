@@ -18,7 +18,7 @@ template <typename WeiT, typename KVCacheT>
 DeepSeekLLM<WeiT, KVCacheT>::DeepSeekLLM(const std::string &modelPath)
     : CommonDecoder<DeepSeekAttention<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                             typename TypeSelector<WeiT>::OutType>,
-              MixtralMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+              DeepSeekMoE<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
               KVCacheT>(modelPath, "deepseek_v2") {
     // Context
