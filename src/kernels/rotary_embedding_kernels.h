@@ -107,6 +107,16 @@ void teleChatApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *embC
 void teleChatApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *embCos, float *embSin, int qStride,
         int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
 
+// For Deepseek V2 continous batching
+void deepseekv2ApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void deepseekv2ApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
+void deepseekv2ApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds);
+
 #ifdef XFT_GPU
 // For LLaMA
 void llamaApplyRotaryPosEmbeding(void *device, float *query, float *key, int qStride, int kStride, float *emb_cos,

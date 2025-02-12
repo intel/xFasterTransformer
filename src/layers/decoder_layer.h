@@ -53,8 +53,8 @@ struct AttnTypeExtractor<Attention<WeiT, QKPO_CLS, NORM_CLS, InT, ImT, OutT, tru
     using Tim = ImT;
     using Tout = OutT;
 };
-template <typename WeiT, typename InT, typename ImT, typename OutT>
-struct AttnTypeExtractor<DeepSeekAttention<WeiT, InT, ImT, OutT>> {
+template <typename WeiT, typename QKPO_CLS, typename InT, typename ImT, typename OutT>
+struct AttnTypeExtractor<DeepSeekAttention<WeiT, QKPO_CLS, InT, ImT, OutT>> {
     using Tin = InT;
     using Tim = ImT;
     using Tout = OutT;

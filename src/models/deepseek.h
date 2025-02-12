@@ -19,13 +19,13 @@
 #include "decoder_layer.h"
 #include "moe_deepseek.h"
 #include "rms_norm.h"
-#include "rotary_embedding.h"
+#include "rotary_embedding_deepseekv2.h"
 #include "token_embedding.h"
 #include "type_selector.h"
 
 template <typename WeiT, typename KVCacheT>
 class DeepSeekLLM
-    : public CommonDecoder<DeepSeekAttention<WeiT, typename TypeSelector<WeiT>::InType,
+    : public CommonDecoder<DeepSeekAttention<WeiT, DeekSeekV2RotaryEmbedding, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType>,
               DeepSeekMoE<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
