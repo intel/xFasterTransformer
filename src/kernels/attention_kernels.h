@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <omp.h>
+#include "add_util.h"
 #include "aligned_type.h"
 #include "amx_sgemm_bf16bf16bf16.h"
 #include "amx_sgemm_f16f16f16.h"
@@ -1109,6 +1110,81 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
                     }
                 }
             } // end for inner head
+        } // end for b
+    } // end for outer head
+}
+
+// Cross attention for MLA, modified from crossAttnByHead
+// Note: keyRope is an array of pointers, each element is a pointer to the keyRope of a sample
+template <typename T, typename KVCacheT>
+void crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
+        int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
+        const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum) {
+    const int qkHeadDim = nopeDim + ropeDim;
+
+    // Split keyValue into keyNope and value
+    const T *keyNope = keyValue;
+    const T *value = keyValue + nopeDim;
+
+    // To get row offset for each sample/sequence inside the batch, and prepare score buffer
+    int qOffsets[batchSize];
+    int kvOffsets[batchSize];
+    size_t scoreSizePerThr = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        scoreSizePerThr = std::max(scoreSizePerThr, (size_t)inputSeqLens[i] * (inputSeqLens[i] + pastSeqLens[i]));
+        qOffsets[i] = (i > 0 ? qOffsets[i - 1] + inputSeqLens[i - 1] : 0);
+        kvOffsets[i] = (i > 0 ? kvOffsets[i - 1] + (pastSeqLens[i - 1] + inputSeqLens[i - 1]) : 0);
+    }
+
+    scoreSizePerThr *= 2; // 2 times for Q * K (nope and rope), can be 1 after optimization
+    scoreSizePerThr = ALIGNED_SIZE(scoreSizePerThr, 16);
+    size_t scoreSize = scoreSizePerThr * threadNum;
+    float *scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * scoreSize);
+
+#pragma omp parallel for collapse(2)
+    for (int h = 0; h < headNum; ++h) {
+        for (int b = 0; b < batchSize; ++b) {
+            const int queryLen = inputSeqLens[b];
+            const int keyLen = pastSeqLens[b] + inputSeqLens[b];
+
+            // Q * K
+            auto S = scoreBuf + omp_get_thread_num() * scoreSizePerThr;
+            {
+                auto Q = query + qOffsets[b] * qStride + h * qkHeadDim;
+                int m = queryLen;
+                int n = keyLen;
+                int lda = qStride;
+                int ldc = keyLen;
+
+                // nope part
+                const T *K = keyNope + kvOffsets[b] * kvStride + h * (nopeDim + vHeadDim);
+                auto keyMatInfo = std::make_tuple(K, kvStride, 1.0f);
+                gemmQK(Q, keyMatInfo, S, m, n, nopeDim, lda, ldc);
+
+                // rope part
+                Q += nopeDim;
+                K = keyRope[b];
+                keyMatInfo = std::make_tuple(K, krStride, 1.0f);
+                gemmQK(Q, keyMatInfo, S + m * n, m, n, ropeDim, lda, ldc);
+
+                // merge/add nope and rope
+                xft::addto(S, S + m * n, m * n);
+            }
+
+            // Softmax(Q * K)
+            for (int seq = 0; seq < queryLen; ++seq) {
+                int elements = pastSeqLens[b] + seq + 1;
+                small_softmax(S + seq * keyLen, scale, elements);
+                if (keyLen > elements) { memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float)); }
+            }
+
+            // Softmax * V
+            {
+                auto result = output + qOffsets[b] * oStride + h * vHeadDim;
+                auto V = value + kvOffsets[b] * kvStride + h * (nopeDim + vHeadDim);
+                auto valueMat = std::make_tuple(V, kvStride, 1.0f);
+                gemmSV(S, valueMat, result, queryLen, vHeadDim, keyLen, keyLen, oStride);
+            }
         } // end for b
     } // end for outer head
 }

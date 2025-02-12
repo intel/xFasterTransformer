@@ -82,13 +82,69 @@ static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *
     }
 }
 
+static void crossAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
+        int kvHeadNum, int qkHeadDim, int vHeadDim, int oStride, int qStride, int kStride, int vStride, int inTokens,
+        int pastTokens, const float scale) {
+    const int groupSize = qHeadNum / kvHeadNum;
+
+#pragma omp parallel for
+    for (int h = 0; h < qHeadNum; h++) {
+        bfloat16_t *q = query + h * qkHeadDim;
+        bfloat16_t *k = key + (h / groupSize) * qkHeadDim;
+        bfloat16_t *v = value + (h / groupSize) * vHeadDim;
+
+        int M = inTokens;
+        int N = inTokens + pastTokens;
+        bfloat16_t *score = (bfloat16_t *)malloc(inTokens * N * sizeof(bfloat16_t));
+        float *fscore = (float *)malloc(inTokens * N * sizeof(float));
+
+        // Compute matmul between 'query' and 'key'
+        mmRef(q, k, score, M, N, qkHeadDim, qStride, kStride, N, true);
+
+        // Scale
+        for (int i = 0; i < M; i++) {
+            for (int j = 0; j < N; j++) {
+                fscore[i * N + j] = (float)score[i * N + j] * scale;
+            }
+        }
+
+        // Compute softmax of the result
+        for (int i = 0; i < inTokens; i++) {
+            float sum = 0.0f;
+            float maxVal = std::numeric_limits<float>::lowest();
+            int size = i + pastTokens + 1; // causual attention
+            for (int j = 0; j < size; j++) {
+                maxVal = std::max(maxVal, fscore[i * N + j]);
+            }
+            for (int j = 0; j < size; j++) {
+                sum += std::exp(fscore[i * N + j] - maxVal);
+            }
+            float rsum = 1.0f / sum;
+            for (int j = 0; j < size; j++) {
+                score[i * N + j] = (bfloat16_t)(std::exp(fscore[i * N + j] - maxVal) * rsum);
+            }
+            for (int j = size; j < N; ++j) {
+                score[i * N + j] = 0.0f;
+            }
+        }
+
+        // Compute matmul between result and 'value'
+        auto out = output + h * vHeadDim;
+        auto K = inTokens + pastTokens;
+        mmRef(score, v, out, M, vHeadDim, K, K, vStride, oStride, false);
+
+        free(score);
+        free(fscore);
+    }
+}
+
 // Reference implementation of self-attention
 static void selfAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
         int kvHeadNum, int headSize, int oStride, int qStride, int kvStride, int batchSize, const int *tokenSizes,
         const float scale) {
 
     int rowOffsets[batchSize];
-    memset(rowOffsets, 0 , batchSize * sizeof(int));
+    memset(rowOffsets, 0, batchSize * sizeof(int));
     for (int i = 1; i < batchSize; i++) {
         rowOffsets[i] = rowOffsets[i - 1] + tokenSizes[i - 1];
     }
@@ -267,6 +323,134 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     free(query);
     free(keyValue);
     free(keyRope);
+}
+
+void testCrossAttentionByHead_DS(
+        int headNum, int nopeDim, int ropeDim, int vHeadDim, int *inputTokens, int *pastTokens, int batchSize) {
+    const int outSize = headNum * vHeadDim;
+    const float scale = 1.0f / std::sqrt(nopeDim + ropeDim);
+    int threadNum = -1;
+
+#pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        if (tid == 0) { threadNum = omp_get_num_threads(); }
+    }
+
+    int totalInTokens = 0;
+    int totalAccTokens = 0;
+    int maxTokens = 0;
+    for (int i = 0; i < batchSize; i++) {
+        totalInTokens += inputTokens[i];
+        totalAccTokens += inputTokens[i] + pastTokens[i];
+        maxTokens = std::max(maxTokens, inputTokens[i]);
+    }
+
+    // Buffers
+    bfloat16_t *ourOutput = (bfloat16_t *)xft::alloc(totalInTokens * outSize * sizeof(bfloat16_t));
+    bfloat16_t *refOutput = (bfloat16_t *)xft::alloc(totalInTokens * outSize * sizeof(bfloat16_t));
+
+    int qStride = headNum * (nopeDim + ropeDim);
+    int kvStride = headNum * (nopeDim + vHeadDim);
+    bfloat16_t *query = (bfloat16_t *)xft::alloc(totalInTokens * qStride * sizeof(bfloat16_t));
+    bfloat16_t *keyValue = (bfloat16_t *)xft::alloc(totalAccTokens * kvStride * sizeof(bfloat16_t));
+    bfloat16_t *keyNope = keyValue;
+
+    float factor = 1.0f / RAND_MAX;
+    bfloat16_t *keyRopes[batchSize];
+    for (int i = 0; i < batchSize; i++) {
+        keyRopes[i] = (bfloat16_t *)xft::alloc((pastTokens[i] + inputTokens[i]) * ropeDim * sizeof(bfloat16_t));
+        for (int j = 0; j < (pastTokens[i] + inputTokens[i]) * ropeDim; j++) {
+            keyRopes[i][j] = bfloat16_t(rand() * factor);
+        }
+    }
+    for (int i = 0; i < totalInTokens * qStride; i++) {
+        query[i] = bfloat16_t(rand() * factor);
+    }
+    for (int i = 0; i < totalAccTokens * kvStride; i++) {
+        keyValue[i] = bfloat16_t(rand() * factor);
+    }
+
+    // Call the function
+    // crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
+    //      int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
+    //      const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum)
+    xft::crossAttnByHead_DS<bfloat16_t, bfloat16_t>(ourOutput, query, (const bfloat16_t **)keyRopes, keyValue, headNum,
+            nopeDim, ropeDim, vHeadDim, outSize, qStride, ropeDim, kvStride, batchSize, inputTokens, pastTokens, scale,
+            threadNum);
+
+    // Concat keyNope and keyRope
+    int kStride = headNum * (nopeDim + ropeDim);
+    bfloat16_t *key = (bfloat16_t *)xft::alloc(totalAccTokens * kStride * sizeof(bfloat16_t));
+    for (int i = 0; i < totalAccTokens; i++) {
+        // Get batch index and offset
+        int b = 0;
+        int offset = i;
+        while (offset >= inputTokens[b] + pastTokens[b]) {
+            offset -= inputTokens[b] + pastTokens[b];
+            b++;
+        }
+        for (int h = 0; h < headNum; ++h) {
+            memcpy(key + i * kStride + h * (nopeDim + ropeDim),
+                    keyNope + i * kvStride + h * (nopeDim + vHeadDim), nopeDim * sizeof(bfloat16_t));
+            memcpy(key + i * kStride + h * (nopeDim + ropeDim) + nopeDim,
+                    keyRopes[b] + offset * ropeDim, ropeDim * sizeof(bfloat16_t));
+        }
+    }
+
+    // Copy value from keyValue
+    int vStride = headNum * vHeadDim;
+    bfloat16_t *value = (bfloat16_t *)xft::alloc(totalAccTokens * vStride * sizeof(bfloat16_t));
+    for (int i = 0; i < totalAccTokens; i++) {
+        for (int h = 0; h < headNum; ++h) {
+            memcpy(value + i * vStride + h * vHeadDim, keyValue + i * kvStride + h * (nopeDim + vHeadDim) + nopeDim,
+                    vHeadDim * sizeof(bfloat16_t));
+        }
+    }
+
+    // crossAttentionRef(bfloat16_t *output, bfloat16_t *query, bfloat16_t *key, bfloat16_t *value, int qHeadNum,
+    //     int kvHeadNum, int qkHeadDim, int vHeadDim, int oStride, int qStride, int kStride, int vStride, int inTokens,
+    //     int pastTokens, const float scale)
+    int rowOff = 0;
+    int kvOff = 0;
+    for (int b = 0; b < batchSize; ++b) {
+        crossAttentionRef(refOutput + rowOff * outSize, query + rowOff * qStride, key + kvOff * kStride,
+                value + kvOff * vStride, headNum, headNum, nopeDim + ropeDim, vHeadDim, outSize, qStride, kStride,
+                vStride, inputTokens[b], pastTokens[b], scale);
+        rowOff += inputTokens[b];
+        kvOff += inputTokens[b] + pastTokens[b];
+    }
+
+    // Verify the correctness of the function
+    for (int i = 0; i < totalInTokens * outSize; i++) {
+        ASSERT_NEAR((float)refOutput[i], (float)ourOutput[i], 0.02);
+    }
+
+    // Clean up
+    for (int i = 0; i < batchSize; i++) {
+        free(keyRopes[i]);
+    }
+    free(key);
+    free(ourOutput);
+    free(refOutput);
+    free(query);
+    free(keyValue);
+}
+
+TEST(AttentionKernelsTest, CrossAttnByHead_DSTest1) {
+    const int batchSize = 1;
+    int inputTokens[batchSize] = {1};
+    int pastTokens[batchSize] = {100};
+    // int headNum, int nopeDim, int ropeDim, int vHeadDim, int *inputTokens, int *pastTokens, int batchSize
+    testCrossAttentionByHead_DS(128, 128, 64, 128, inputTokens, pastTokens, batchSize);
+}
+
+TEST(AttentionKernelsTest, CrossAttnByHead_DSTest2) {
+    const int batchSize = 2;
+    int inputTokens[batchSize] = {1, 1};
+    int pastTokens[batchSize] = {70, 71};
+    // int headNum, int nopeDim, int ropeDim, int vHeadDim, int *inputTokens, int *pastTokens, int batchSize
+    testCrossAttentionByHead_DS(128, 128, 64, 128, inputTokens, pastTokens, batchSize);
 }
 
 TEST(AttentionKernelsTest, NoCopyTest1) {
