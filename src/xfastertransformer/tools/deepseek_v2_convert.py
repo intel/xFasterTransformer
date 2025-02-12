@@ -110,8 +110,13 @@ class DeepSeekV2Convert(BaseModelConvert):
             config[sec_name]["activation_type"] = str(hf_config["hidden_act"])
             config[sec_name]["rope_theta"] = str(hf_config.get("rope_theta", 10000))
             rope_scaling = hf_config.get("rope_scaling", None)
-            config[sec_name]["scaling_factor"] = str(rope_scaling.get("factor", 1.0))
-            config[sec_name]["rope_type"] = str(rope_scaling.get("type", "null"))
+            config[sec_name]["rope_scaling_factor"] = str(rope_scaling.get("factor", 1.0))
+            config[sec_name]["rope_scaling_type"] = str(rope_scaling.get("type", "null"))
+            config[sec_name]["rope_scaling_original_max_position_embeddings"] = str(rope_scaling.get("original_max_position_embeddings", 4096)) 
+            config[sec_name]["rope_scaling_beta_fast"] = str(rope_scaling.get("beta_fast", 32))
+            config[sec_name]["rope_scaling_beta_slow"] = str(rope_scaling.get("beta_slow", 1))
+            config[sec_name]["rope_scaling_mscale"] = str(rope_scaling.get("mscale", 1.0))
+            config[sec_name]["rope_scaling_mscale_all_dim"] = str(rope_scaling.get("mscale_all_dim", 1.0))
             config[sec_name]["has_post_decoder_layernorm"] = "1" if has_post_decoder_layernorm else "0"
             config[sec_name]["vocab_size"] = str(hf_config["vocab_size"])
             config[sec_name]["start_id"] = str(hf_config["bos_token_id"])
@@ -138,7 +143,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             config[sec_name]["num_experts_per_tok"] = str(hf_config["num_experts_per_tok"])
             config[sec_name]["norm_topk_prob"] = str(hf_config["norm_topk_prob"])
             config[sec_name]["scoring_func"] = str(hf_config["scoring_func"])
-
+            
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:

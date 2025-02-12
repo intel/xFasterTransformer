@@ -21,10 +21,10 @@
 #include "my_types.h"
 #include "rms_norm.h"
 
-template <typename WeiT, typename InT, typename ImT, typename OutT>
+template <typename WeiT, typename QKPO_CLS, typename InT, typename ImT, typename OutT>
 class DeepSeekAttention {
 public:
-    DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx->ropeDim) {}
+    DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx) {}
 
 #ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
@@ -278,7 +278,7 @@ private:
     xft::RmsNorm kvANorm;
 
     // TODO: write DS rotary embedding
-    LlamaRotaryEmbedding rope;
+    QKPO_CLS rope;
 
 #ifdef XFT_DEBUG
     Debugger dbg;

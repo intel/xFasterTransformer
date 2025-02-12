@@ -39,10 +39,13 @@ struct RopeParams {
     float attnFactor;
     float betaFast;
     float betaSlow;
+    float mscale;
+    float mscaleAllDim;
 
 public:
     RopeParams(float theta = 10000.0, std::string vtype = "", float vscale = 1.0, int vorgMaxPosEmbed = 2048,
-            float vextraPolFactor = 1, float vattnFactor = 1, float vbetaFast = 32, float vbetaSlow = 1)
+            float vextraPolFactor = 1, float vattnFactor = 1, float vbetaFast = 32, float vbetaSlow = 1,
+            float vmscale = 1.0, float vmscaleAllDim = 1.0)
         : base(theta)
         , type(vtype)
         , scale(vscale)
@@ -50,7 +53,9 @@ public:
         , extraPolFactor(vextraPolFactor)
         , attnFactor(vattnFactor)
         , betaFast(vbetaFast)
-        , betaSlow(vbetaSlow) {}
+        , betaSlow(vbetaSlow)
+        , mscale(vmscale)
+        , mscaleAllDim(vmscaleAllDim) {}
 };
 
 class MMHelper;

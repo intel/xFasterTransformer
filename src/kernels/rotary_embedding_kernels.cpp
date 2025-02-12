@@ -673,6 +673,127 @@ void teleChatApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_co
             query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
 }
 
+static inline void deepseekv2InterleaveQK(__m512 a, __m512 b, __m512 *result0, __m512 *result1) {
+    const __m512i mask0 = _mm512_set_epi32(
+            0x1e, 0x1c, 0x1a, 0x18, 0x16, 0x14, 0x12, 0x10, 0x0e, 0x0c, 0x0a, 0x08, 0x06, 0x04, 0x02, 0x00);
+
+    const __m512i mask1 = _mm512_set_epi32(
+            0x1f, 0x1d, 0x1b, 0x19, 0x17, 0x15, 0x13, 0x11, 0x0f, 0x0d, 0x0b, 0x09, 0x07, 0x05, 0x03, 0x01);
+
+    *result0 = _mm512_permutex2var_ps(a, mask0, b);
+    *result1 = _mm512_permutex2var_ps(a, mask1, b);
+}
+
+template <typename T>
+static inline void deepseekv2DeinterleaveQK(T *pQ, int dim) {
+    __mmask16 mask = 0xffff;
+    __m512 tmp0, tmp1;
+    int start = 16;
+    int end = dim - 16;
+    while (start < end) {
+        for (int i = start; i < end; i += 32) {
+            tmp0 = xft::load_avx512(mask, &pQ[i]);
+            tmp1 = xft::load_avx512(mask, &pQ[i+16]);
+            xft::store_avx512(&pQ[i], mask, tmp1);
+            xft::store_avx512(&pQ[i+16], mask, tmp0);
+        }
+        start += 16;
+        end -= 16;
+    }
+}
+
+// For DeepseekV2 continous batching
+template <typename T>
+static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int inv_freq_size, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    int dim = inv_freq_size * 2;
+    const int head_num = qHeads + kHeads;
+    const int half = inv_freq_size;
+// k = k.view(b, h, s, d // 2, 2).transpose(4, 3).reshape(b, h, s, d)
+// k_embed = (k * cos) + (rotate_half(k) * sin)
+    __mmask16 mask = 0xffff;
+#pragma omp parallel for collapse(1)
+    for (int seq = 0; seq < totSeqLen; ++seq) {
+        T *pK = key + seq * kStride;
+        T *pQ = query + seq * qStride;
+
+        int pos = positionIds[seq];
+        float *pcos = emb_cos + pos * half;
+        float *psin = emb_sin + pos * half;
+
+        for (int i = 0; i < half; i += 16) {
+            __m512 tmp0, tmp1, pCosVec, pSinVec, qVec0, qVec1;
+
+            pCosVec = xft::load_avx512(mask, &pcos[i]);
+            pSinVec = xft::load_avx512(mask, &psin[i]);
+
+            tmp0 = xft::load_avx512(mask, &pQ[i * 2]);
+            tmp1 = xft::load_avx512(mask, &pQ[i * 2 + 16]);
+            deepseekv2InterleaveQK(tmp0, tmp1, &qVec0, &qVec1);
+            tmp0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
+            tmp1 = _mm512_fmadd_ps(qVec1, pCosVec, _mm512_mul_ps(qVec0, pSinVec));
+            xft::store_avx512(&pQ[i * 2], mask, tmp0);
+            xft::store_avx512(&pQ[i * 2 + 16], mask, tmp1);
+
+            tmp0 = xft::load_avx512(mask, &pK[i * 2]);
+            tmp1 = xft::load_avx512(mask, &pK[i * 2 + 16]);
+            deepseekv2InterleaveQK(tmp0, tmp1, &qVec0, &qVec1);
+            tmp0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
+            tmp1 = _mm512_fmadd_ps(qVec1, pCosVec, _mm512_mul_ps(qVec0, pSinVec));
+            xft::store_avx512(&pK[i * 2], mask, tmp0);
+            xft::store_avx512(&pK[i * 2 + 16], mask, tmp1);
+        }
+        deepseekv2DeinterleaveQK(pQ, dim);
+        deepseekv2DeinterleaveQK(pK, dim);
+    }
+#pragma omp parallel for collapse(2)
+    for (int head = 1; head < qHeads; ++head) {
+        for (int seq = 0; seq < totSeqLen; ++seq) {
+            T *pQ = query + seq * qStride + head * dim;
+
+            int pos = positionIds[seq];
+            float *pcos = emb_cos + pos * dim;
+            float *psin = emb_sin + pos * dim;
+
+            __mmask16 mask = 0xffff;
+            __m512 tmp0, tmp1;
+            for (int i = 0; i < half; i += 16) {
+                __m512 pCosVec, pSinVec, qVec0, qVec1;
+    
+                pCosVec = xft::load_avx512(mask, &pcos[i]);
+                pSinVec = xft::load_avx512(mask, &psin[i]);
+    
+                tmp0 = xft::load_avx512(mask, &pQ[i * 2]);
+                tmp1 = xft::load_avx512(mask, &pQ[i * 2 + 16]);
+                deepseekv2InterleaveQK(tmp0, tmp1, &qVec0, &qVec1);
+                tmp0 = _mm512_fmsub_ps(qVec0, pCosVec, _mm512_mul_ps(qVec1, pSinVec));
+                tmp1 = _mm512_fmadd_ps(qVec1, pCosVec, _mm512_mul_ps(qVec0, pSinVec));
+                xft::store_avx512(&pQ[i * 2], mask, tmp0);
+                xft::store_avx512(&pQ[i * 2 + 16], mask, tmp1);
+            }
+            deepseekv2DeinterleaveQK(pQ, dim);
+        }
+    }
+}
+
+void deepseekv2ApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
+        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    deepseekv2ApplyRotaryPosEmbed<float>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void deepseekv2ApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    deepseekv2ApplyRotaryPosEmbed<bfloat16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
+void deepseekv2ApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride,
+        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+    deepseekv2ApplyRotaryPosEmbed<float16_t>(
+            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+}
+
 #ifdef XFT_GPU
 // For LLaMA
 template <typename T>

@@ -16,7 +16,7 @@
 
 template <typename WeiT, typename KVCacheT>
 DeepSeekLLM<WeiT, KVCacheT>::DeepSeekLLM(const std::string &modelPath)
-    : CommonDecoder<DeepSeekAttention<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+    : CommonDecoder<DeepSeekAttention<WeiT, DeekSeekV2RotaryEmbedding, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                             typename TypeSelector<WeiT>::OutType>,
               DeepSeekMoE<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
