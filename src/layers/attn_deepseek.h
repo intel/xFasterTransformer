@@ -104,8 +104,19 @@ public:
     void forward(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, InT *input, OutT *output,
             size_t totInSeqLen, std::vector<KVCacheTensor<KVCacheT> *> &keyCaches,
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, bool doLnBefore = true) {
+        bool bPrefill = (seqs[0]->getStep() == 0);
         auto hiddenSize = ctx->hiddenSize;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
+
+        int batchSize = seqs.size();
+        int totAccSeqLen = 0; // total input sequence length + past sequence length
+        int tokenSizes[batchSize];
+        int pastSeqLens[batchSize];
+        for (int i = 0; i < batchSize; ++i) {
+            tokenSizes[i] = seqs[i]->getInputSeqLen();
+            pastSeqLens[i] = seqs[i]->getPastSeqLen();
+            totAccSeqLen += tokenSizes[i] + pastSeqLens[i];
+        }
 
         // Norm buffer & MHA output
         // TODO: check if the buffer is big enough
@@ -126,7 +137,7 @@ public:
 
         auto kvCols = ctx->attHeadNum * (ctx->nopeDim + ctx->vHeadDim);
         uint64_t kvOffset = (uint64_t)qCols * totInSeqLen;
-        xft::Matrix<ImT> kvBuffer(qBuffer.Data() + kvOffset, totInSeqLen, kvCols, kvCols);
+        xft::Matrix<ImT> kvBuffer(qBuffer.Data() + kvOffset, totAccSeqLen, kvCols, kvCols);
 
         // Output buffer
         xft::Matrix<OutT> outBuffer(output, totInSeqLen, hiddenSize, hiddenSize);
@@ -202,22 +213,60 @@ public:
                     compressedKV, compressedKV, loraBuffer.Rows(), loraBuffer.Stride(), normBuffer.Stride(), epsilon);
         }
 
-        // KV up projection
+        // Copy to KV cache (store the compressed KV)
         {
+            TimeLine t("kv_cache");
+            auto getK = [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); };
+            auto getV = [&](int b, int headIdx, int seqIdx) { return valueCaches[b]->getSequence(seqIdx, 0, headIdx); };
+#pragma omp parallel for
+            for (int i = 0; i < totInSeqLen; ++i) {
+                int b = 0, s = i;
+                while (s >= tokenSizes[b]) {
+                    s -= tokenSizes[b];
+                    b++;
+                }
+                int seqIdx = s + pastSeqLens[b];
+                xft::copy(getK(b, 0, seqIdx).first, loraBuffer.Row(i) + ctx->qLoraRank + ctx->kvLoraRank, ctx->ropeDim);
+                xft::copy(getV(b, 0, seqIdx).first, loraBuffer.Row(i) + ctx->qLoraRank, ctx->kvLoraRank);
+            }
+        }
+
+        // KV up projection
+        if (bPrefill) {
             TimeLine t("kv_up_projection");
             ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
             ctx->mmHelper->compute(false, loraBuffer.Rows(), kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, compressedKV,
                     loraBuffer.Stride(), kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
                     kvBuffer.Stride());
+        } else {
+            // Compute KV up projection using cache for all sequences in the batch
+            // TODO: Consider optimization by combining into a single MatMul
+            TimeLine t("kv_up_projection");
+            for (int i = 0; i < batchSize; ++i) {
+                auto M = tokenSizes[i] + pastSeqLens[i]; // past data also needs to be re-computed
+                auto value = valueCaches[i]->getSequence(0, 0, 0);
+                ctx->mmHelper->compute(false, M, kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, value.first,
+                        ctx->kvLoraRank, kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
+                        kvBuffer.Stride());
+            }
         }
 
         // Attention
         {
             TimeLine t("MHA");
             ImT *keyRope = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
-            ImT *value = kvBuffer.Data() + ctx->attHeadSize * ctx->nopeDim;
-            doAttention(ctx, seqs, qBuffer.Data(), qBuffer.Stride(), keyRope, loraBuffer.Stride(), kvBuffer.Data(),
-                    value, kvBuffer.Stride(), mhaOutBuffer.Data());
+            if (seqs[0]->getStep() == 0) { // prefill
+                selfAttention16bits(ctx, qBuffer.Data(), qBuffer.Stride(), keyRope, loraBuffer.Stride(),
+                        kvBuffer.Data(), kvBuffer.Stride(), mhaOutBuffer.Data(), mhaOutSize, tokenSizes,
+                        batchSize);
+            } else { // decoding
+                const KVCacheT *keyRopes[batchSize];
+                for (int i = 0; i < batchSize; ++i) {
+                    keyRopes[i] = keyCaches[i]->getSequence(0, 0, 0).first;
+                }
+                fusedAttention(ctx, qBuffer.Data(), qBuffer.Stride(), keyRopes, loraBuffer.Stride(), kvBuffer.Data(),
+                        kvBuffer.Stride(), mhaOutBuffer.Data(), mhaOutSize, tokenSizes, pastSeqLens, batchSize);
+            }
         }
 
         // Output
@@ -230,22 +279,29 @@ public:
     }
 
 private:
-    void doAttention(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, ImT *query, int qStride, ImT *keyRope,
-            int krStride, ImT *keyNope, ImT *value, int kvStride, OutT *out) {
-        if (seqs[0]->getStep() == 0) { // First token generation
-            if constexpr (std::is_same_v<ImT, bfloat16_t>) {
-                selfAttention16bits(ctx, seqs, query, qStride, keyRope, krStride, keyNope, value, kvStride, out);
-            } else {
-                xft::Logger::error("The data type is not supported for DS attention.");
-                exit(-1);
-            }
-        } else {
-            //fusedAttention(ctx, query, key, value, attnSplit, keyCaches, valueCaches, seqs);
-        }
+    void selfAttention16bits(DecoderContext *ctx, ImT *query, int qStride, ImT *keyRope, int krStride, ImT *keyValue,
+            int kvStride, OutT *out, int oStride, int *tokenSizes, int batchSize) {
+        static_assert(std::is_same_v<ImT, bfloat16_t> || std::is_same_v<ImT, float16_t>,
+                "The data type is not supported for DS attention.");
+
+        xft::selfAttention_MLA<true>(out, query, keyRope, keyValue, ctx->attHeadNum, ctx->nopeDim, ctx->ropeDim,
+                ctx->vHeadDim, oStride, qStride, krStride, kvStride, batchSize, tokenSizes, ctx->attFactor,
+                ctx->numThreads);
     }
 
-    void selfAttention16bits(DecoderContext *ctx, std::vector<xft::SequenceMeta *> &seqs, ImT *query, int qStride,
-            ImT *keyRope, int krStride, ImT *keyNope, ImT *value, int kvStride, OutT *out) {}
+    void fusedAttention(DecoderContext *ctx, const ImT *query, int qStride, const ImT **keyRopes, int krStride,
+            const ImT *keyValue, int kvStride, OutT *out, int oStride, int *tokenSizes, int *pastSeqLens,
+            int batchSize) {
+        static_assert(std::is_same_v<ImT, bfloat16_t> || std::is_same_v<ImT, float16_t>,
+                "The data type is not supported for DS attention.");
+
+        // crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
+        //      int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
+        //      const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum)
+        xft::crossAttnByHead_DS(out, query, keyRopes, keyValue, ctx->attHeadNum, ctx->nopeDim,
+                ctx->ropeDim, ctx->vHeadDim, oStride, qStride, krStride, kvStride, batchSize, tokenSizes, pastSeqLens,
+                ctx->attFactor, ctx->numThreads);
+    }
 
     void packDenseWeights(DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
         xft::Matrix<WeiT> w(dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);

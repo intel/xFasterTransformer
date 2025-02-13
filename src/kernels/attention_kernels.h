@@ -550,8 +550,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
  * @param output output tensor
  * @param query query tensor, include nope and rope part
  * @param keyRope key tensor for rope part
- * @param keyNope key tensor for nope part
- * @param value value tensor
+ * @param keyValue key tensor for nope part & value tensor
  * @param headNum head number
  * @param nopeDim nope dimension
  * @param ropeDim rope dimension
@@ -562,7 +561,7 @@ void selfAttention_FusedCopy(T *output, T *query, T *key, T *value, int qHeadNum
  * @param kvStride key (nope part) and value stride
  */
 template <bool FusedPack, typename T>
-void selfAttention_NoCopy(T *output, T *query, T *keyRope, T *keyNope, T *value, int headNum, int nopeDim, int ropeDim,
+void selfAttention_MLA(T *output, T *query, T *keyRope, T *keyValue, int headNum, int nopeDim, int ropeDim,
         int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize, const int *tokenSizes,
         const float scale, int threadNum) {
     constexpr int mBlockSize = 32;
@@ -615,12 +614,12 @@ void selfAttention_NoCopy(T *output, T *query, T *keyRope, T *keyNope, T *value,
                 T *packedB = packBuf + (b * headNum + i) * (kNopePackSize + vPackSize);
                 T *packedV = packedB + kNopePackSize;
 
-                auto B = keyNope + offsets[b] * kvStride + i * nopeDim;
+                auto B = keyValue + offsets[b] * kvStride + i * (nopeDim + vHeadDim);
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         true, tokens, nopeDim, (XDNN_BF16 *)B, kvStride, (XDNN_BF16 *)packedB, kNopePackSize);
 
-                auto V = value + offsets[b] * kvStride + i * vHeadDim;
+                auto V = B + nopeDim;
 
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         false, vHeadDim, tokens, (XDNN_BF16 *)V, kvStride, (XDNN_BF16 *)packedV, vPackSize);
@@ -684,7 +683,7 @@ void selfAttention_NoCopy(T *output, T *query, T *keyRope, T *keyNope, T *value,
 
         if constexpr (FusedPack) {
             if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
-                auto B = keyNope + offsets[b] * kvStride + kvHeadIdx * nopeDim;
+                auto B = keyValue + offsets[b] * kvStride + kvHeadIdx * (nopeDim + vHeadDim);
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         true, tokens, nopeDim, (XDNN_BF16 *)B, kvStride, (XDNN_BF16 *)packedB, kNopePackSize);
             }
@@ -735,7 +734,7 @@ void selfAttention_NoCopy(T *output, T *query, T *keyRope, T *keyNope, T *value,
 
         if constexpr (FusedPack) {
             if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
-                auto V = value + offsets[b] * kvStride + kvHeadIdx * vHeadDim;
+                auto V = keyValue + offsets[b] * kvStride + kvHeadIdx * (nopeDim + vHeadDim) + nopeDim;
                 xdnn_small_amx_sgemm_bf16bf16bf16_packb(
                         false, vHeadDim, tokens, (XDNN_BF16 *)V, kvStride, (XDNN_BF16 *)packedV, vPackSize);
                 // Update pack info
@@ -1116,7 +1115,7 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
 
 // Cross attention for MLA, modified from crossAttnByHead
 // Note: keyRope is an array of pointers, each element is a pointer to the keyRope of a sample
-template <typename T, typename KVCacheT>
+template <typename T>
 void crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
         int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
         const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum) {
