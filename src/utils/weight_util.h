@@ -192,6 +192,21 @@ int loadWeight2(std::string filename, T *ptr, int size, DataType w_type = DataTy
     return file_size;
 }
 
+template <typename T = float>
+int loadWeight2(std::string filename, void *ptr, int size, ParamType type, DataType w_type = DataType::unknown,
+        bool required = true) {
+    int file_size = 0;
+    switch (type) {
+        case ParamType::FP32: file_size = loadWeight2<float>(filename, (float *)ptr, size, w_type, required); break;
+        case ParamType::BF16: file_size = loadWeight2<bfloat16_t>(filename, (bfloat16_t *)ptr, size, w_type, required); break;
+        case ParamType::FP16: file_size = loadWeight2<float16_t>(filename, (float16_t *)ptr, size, w_type, required); break;
+        case ParamType::INT8: file_size = loadWeight2<int8_t>(filename, (int8_t*)ptr, size, w_type, required); break;
+        case ParamType::INT4: file_size = loadWeight2<uint4x2_t>(filename, (uint4x2_t*)ptr, size, w_type, required); break;
+        default: printf("Not support loading %s with ParamType=%d", filename.c_str(), type);
+    }
+    return file_size;
+}
+
 template int loadWeightWithConvert<float, float>(float *, int, const std::string &, bool);
 template int loadWeightWithConvert<float16_t, float>(float16_t *, int, const std::string &, bool);
 template int loadWeightWithConvert<bfloat16_t, float>(bfloat16_t *, int, const std::string &, bool);

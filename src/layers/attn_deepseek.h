@@ -311,7 +311,7 @@ private:
 
     bool isSameWeiType(xft::ParamType type) {
         if constexpr (std::is_same_v<WeiT, int8_t>) {
-            return type == xft::ParamType::Int8;
+            return type == xft::ParamType::INT8;
         } else if constexpr (std::is_same_v<WeiT, float16_t>) {
             return type == xft::ParamType::FP16;
         } else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {

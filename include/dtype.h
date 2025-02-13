@@ -51,4 +51,5 @@ enum ActivationType {
     SILU,
 };
 
+enum class ParamType { None, INT4, INT8, FP16, BF16, FP32 };
 } // namespace xft

@@ -16,9 +16,9 @@
 
 #include <vector>
 
-namespace xft {
+#include "dtype.h"
 
-enum class ParamType { None, INT4, Int8, FP16, BF16, FP32 };
+namespace xft {
 
 struct DenseLayerParams {
     void *weight; // Flat array of weight (row-major)
@@ -92,7 +92,7 @@ struct DenseLayerParams {
     float getWidth(ParamType type) const {
         switch (type) {
             case ParamType::INT4: return sizeof(int8_t) / 2.0f;
-            case ParamType::Int8: return sizeof(int8_t);
+            case ParamType::INT8: return sizeof(int8_t);
             case ParamType::FP16: return sizeof(uint16_t);
             case ParamType::BF16: return sizeof(uint16_t);
             case ParamType::FP32: return sizeof(float);
