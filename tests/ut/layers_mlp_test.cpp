@@ -121,6 +121,58 @@ static void compareMLPLLaMA(
     free(refOutput);
 }
 
+// compute the output of the MoE-DeepSeek layer
+template <typename T>
+static void compareMoEDeepSeek(
+        int numTokens, int hiddenSize, int intermediateSize, int moeIntermediateSize, int numSharedExperts, int numRoutedExperts,
+        float *gateW, float *upW, float *downW) {
+    float *input = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *ourOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    float *gatingW = (float *)aligned_alloc(64, hiddenSize * numRoutedExperts * sizeof(float));
+    memset(ourOutput, 0, numTokens * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < numTokens * hiddenSize; ++i) {
+        input[i] = static_cast<float>(1.0f * (i % hiddenSize));
+    }
+
+    for (int i = 0; i < hiddenSize * numRoutedExperts; ++i) {
+        gatingW[i] = static_cast<float>(1.0f * (i % numRoutedExperts));
+    }
+
+    xft::DataType dt = xft::DataType::unknown;
+    if constexpr (std::is_same<T, bfloat16_t>::value) {
+        dt = xft::DataType::bf16;
+    } else if constexpr (std::is_same<T, float16_t>::value) {
+        dt = xft::DataType::fp16;
+    } else {
+        printf("Unsupported data type\n");
+        GTEST_FAIL();
+        return;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    invokeMoEDeepSeek(dt, xft::ActivationType::SILU, numTokens, hiddenSize, intermediateSize, moeIntermediateSize, numSharedExperts,
+        numRoutedExperts, (void *)ourOutput, hiddenSize, (const void *)input, hiddenSize, (const void *)gatingW, (const void *)gateW,
+        (const void *)upW, (const void *)downW);
+    auto end = std::chrono::high_resolution_clock::now();
+    float during_time = std::chrono::duration<float>(end - start).count();
+    printf("[ RUNTIME  ] XFT::inovkeMoEDeepSeek %.6f sec\n", during_time);
+/*
+    refMoEDeepSeek<T>(numTokens, hiddenSize, intermediateSize, (float *)refOutput, hiddenSize, (const float *)input,
+            hiddenSize, (const float *)gateW, (const float *)upW, (const float *)downW);
+
+    for (int i = 0; i < numTokens * hiddenSize; ++i) {
+        EXPECT_EQ(std::abs(refOutput[i] - ourOutput[i]) > 0.01
+                        && std::abs((refOutput[i] - ourOutput[i]) / refOutput[i]) > 0.01,
+                false);
+    }
+*/
+
+    free(input);
+    free(ourOutput);
+    free(gatingW);
+}
+
 template <typename T>
 void test_MLPLLaMA(void) {
     int hiddenSize = 4096;
@@ -156,12 +208,59 @@ void test_MLPLLaMA(void) {
     free(downW);
 }
 
+template <typename T>
+void test_MoEDeepSeek(void) {
+    int hiddenSize = 2;
+    int intermediateSize = 4;
+    int moeIntermediateSize = 2;
+
+    float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
+    float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
+        gateW[i] = static_cast<float>(1.0f * (i % intermediateSize));
+        upW[i] = static_cast<float>(1.0f * (i % intermediateSize));
+        downW[i] = static_cast<float>(1.0f * (i % intermediateSize));
+    }
+
+    float *gateWMoE = (float *)aligned_alloc(64, hiddenSize * moeIntermediateSize * sizeof(float));
+    float *upWMoE = (float *)aligned_alloc(64, hiddenSize * moeIntermediateSize * sizeof(float));
+    float *downWMoE = (float *)aligned_alloc(64, moeIntermediateSize * hiddenSize * sizeof(float));
+
+    for (int i = 0; i < hiddenSize * moeIntermediateSize; ++i) {
+        gateWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
+        upWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
+        downWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
+    }
+
+    // 32 routed experts
+    compareMoEDeepSeek<T>(1, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateWMoE, upWMoE, downWMoE);
+    //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateW, upW, downW);
+
+    // first k dense replace
+    compareMoEDeepSeek<T>(1, hiddenSize, intermediateSize, intermediateSize, 1, 0, gateW, upW, downW);
+    //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, intermediateSize, 1, 0, gateW, upW, downW);
+
+
+    free(gateW);
+    free(upW);
+    free(downW);
+    free(gateWMoE);
+    free(upWMoE);
+    free(downWMoE);
+}
+
 TEST(MLPLLaMA, bfloat16_t) {
     test_MLPLLaMA<bfloat16_t>();
 }
 
 TEST(MLPLLaMA, float16_t) {
     test_MLPLLaMA<float16_t>();
+}
+
+TEST(MoEDeepSeek, bfloat16_t) {
+    test_MoEDeepSeek<bfloat16_t>();
 }
 
 int main(int argc, char **argv) {

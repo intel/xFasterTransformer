@@ -251,9 +251,10 @@ struct DeepSeekFFNParams : public FFNParams {
         , gating(hiddenSize, routedExpertsNum, denseWType, wTrans)
         , mlp(hiddenSize, intermediateSize, denseWType, wTrans)
         , sharedExpert(hiddenSize, sharedExpertNum * moeIntermediateSize, denseWType, wTrans) {
-        for (int i = 0; i < routedExpertsNum; ++i) {
-            routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
-        }
+        // leave this to load weights?
+        //for (int i = 0; i < routedExpertsNum; ++i) {
+        //    routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
+        //}
     }
 };
 
