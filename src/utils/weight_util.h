@@ -120,7 +120,9 @@ int loadWeightWithConvert(T *ptr, int size, const std::string &filename, bool re
         if constexpr ((std::is_same_v<T, float16_t> && std::is_same_v<WT, float>)
                 || (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float>)
                 || (std::is_same_v<T, float> && std::is_same_v<WT, float16_t>)
-                || (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float16_t>)) {
+                || (std::is_same_v<T, bfloat16_t> && std::is_same_v<WT, float16_t>)
+                || (std::is_same_v<T, float> && std::is_same_v<WT, bfloat16_t>)
+                || (std::is_same_v<T, float16_t> && std::is_same_v<WT, bfloat16_t>)) {
             xft::copy_MT(ptr, w_ptr, size);
         } else {
             printf("Not support %s to %s\n", typeid(WT).name(), typeid(T).name());

@@ -241,8 +241,10 @@ private:
         xft::copy(tmpW.Data(), gateW, M * N);
         ctx->mmHelper->packWeight(false, tmpW, gatingWeight);
 
-        gatingScoreCorrBias.Resize(N);
-        xft::copy(gatingScoreCorrBias.Data(), gateB, N);
+        if (gateB != nullptr) {
+            gatingScoreCorrBias.Resize(N);
+            xft::copy(gatingScoreCorrBias.Data(), gateB, N);
+        }
     }
 
     // Gather input for expert i
