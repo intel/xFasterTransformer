@@ -29,6 +29,6 @@ from .qwen2_convert import Qwen2Convert
 from .yarn_llama_convert import YaRNLlamaConvert
 from .telechat_convert import TelechatConvert
 from .mixtral_convert import MixtralConvert
-from .deepseek_v2_convert import DeepSeekV2Convert
-from .deepseek_v2_convert import DeepSeekV2Convert as DeepSeekV3Convert
-from .deepseek_v2_convert import DeepSeekV2Convert as DeepSeekR1Convert
+from .deepseek_moe_convert import DeepSeekV2Convert
+from .deepseek_moe_convert import DeepSeekV2Convert as DeepSeekV3Convert
+from .deepseek_moe_convert import DeepSeekV2Convert as DeepSeekR1Convert

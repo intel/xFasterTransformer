@@ -20,7 +20,7 @@ DeepSeekLLM<WeiT, KVCacheT>::DeepSeekLLM(const std::string &modelPath)
                             typename TypeSelector<WeiT>::OutType>,
               DeepSeekMoE<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
                       typename TypeSelector<WeiT>::OutType>,
-              KVCacheT>(modelPath, "deepseek_v2") {
+              KVCacheT>(modelPath, "deepseek_moe") {
     // Context
     DecoderContext *ctx = this->getContext();
 
@@ -111,4 +111,4 @@ void DeepSeekLLM<WeiT, KVCacheT>::lastLayerNormForward(float16_t *input, float16
     finalLN.forward(input, output, rows);
 }
 
-IMPLEMENT_DS_MODEL(DeepSeekLLM, deepseek_v2)
+IMPLEMENT_DS_MODEL(DeepSeekLLM, deepseek_moe)
