@@ -23,6 +23,7 @@
 #include "debugger.h"
 #include "llm_params.h"
 #include "mlp_llama.h"
+#include "type_selector.h"
 #include "timeline.h"
 
 template <typename WeiT, typename InT = bfloat16_t, typename ImT = bfloat16_t, typename OutT = bfloat16_t>
@@ -31,10 +32,6 @@ public:
     DeepSeekMoE(DecoderContext *ctx) : norm(ctx) {
         //dense mlp or concatted all shared experts
         shared_expert = new LlamaMLP<WeiT, InT, ImT, OutT>(ctx);
-        // routed experts
-        for (int i = 0; i < ctx->sparseExperts; ++i) {
-            experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(ctx));
-        }
     }
 
     ~DeepSeekMoE() {
@@ -55,26 +52,64 @@ public:
     }
 
     template <typename WType>
-    void setWeights(DecoderContext *ctx, FFNParams *ffnParams) {
-        DeepSeekFFNParams *ffn = dynamic_cast<DeepSeekFFNParams *>(ffnParams);
+    void setWeights(DecoderContext *ctx, xft::FFNParams *ffnParams) {
+        xft::DeepSeekFFNParams *ffn = dynamic_cast<xft::DeepSeekFFNParams *>(ffnParams);
         if (ffn == nullptr) {
             xft::Logger::error("Cannot cast FFNParams to DeepSeekFFNParams.");
             exit(-1);
         }
+        const int hiddenSize = ctx->hiddenSize;
+        const int intermediateSize = ctx->intermediateSize;
+        const int moeIntermediateSize = ctx->moeIntermediateSize;
+        const int expertNum = ffn->routedExperts.size();
 
         this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
-
-        prepareGateWeightBias(ctx, (WType *)ffn->gating.weight, (float *)ffn->gating.bias);
-
-        // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
-        if (ffn->mlp.down.weight != nullptr && ffn->mlp.up.weight != nullptr && ffn->mlp.gate.weight != nullptr) {
-            shared_expert->template setWeights<WType>(ctx, ffn->mlp);
-        } else {
-            shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
+/*
+        for (int i = 0; i < hiddenSize; ++i) {
+            printf("<<< norm gamma: %f\n", ffn->norm.gamma[i]);
         }
-
-        for (int i = 0; i < ffn->routedExperts.size(); ++i) {
-            experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
+*/
+        // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
+        // ffn->routedExperts.size() == 0 means the firstKDenseReplace is used
+        if (expertNum == 0) {
+            shared_expert->template setWeights<WType>(ctx, ffn->mlp);
+            //ffn->routedExperts.clear();
+/*
+	    for (int i = 0; i < hiddenSize; ++i) {
+                for (int j = 0; j < intermediateSize; ++j)
+                    printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->mlp.gate.weight)[i * intermediateSize + j]));
+            }
+*/
+        } else {
+            prepareGateWeightBias(ctx, (WType *)ffn->gating.weight, (float *)ffn->gating.bias);
+/*
+	    for (int i = 0; i < hiddenSize; ++i) {
+                for (int j = 0; j < expertNum; ++j)
+                printf("<<< gating weight: %f\n", (float)(((float *)ffn->gating.weight)[i * expertNum + j]));
+            }
+            for (int i = 0; i < hiddenSize; ++i) {
+                printf("<<< gating bias: %f\n", (float)(ffn->gating.bias[i]));
+            }
+            printf("<<< setWeights for shared expert\n");
+*/
+            shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
+/*
+            for (int i = 0; i < hiddenSize; ++i) {
+                for (int j = 0; j < moeIntermediateSize; ++j)
+                    printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->sharedExpert.gate.weight)[i * moeIntermediateSize + j]));
+            }
+*/
+            for (int i = 0; i < expertNum; ++i) {
+                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(ctx));
+                experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
+/*
+                if (i == 0)
+                    for (int i = 0; i < hiddenSize; ++i) {
+                        for (int j = 0; j < moeIntermediateSize; ++j)
+                            printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->routedExperts[i].gate.weight)[i * moeIntermediateSize + j]));
+                    }
+*/
+            }
         }
 
         // Check the size of dense expert, im size is intermediateSize or moeIntermediateSize * n_shared_experts
@@ -236,7 +271,7 @@ private:
         int N = ctx->sparseExperts;
 
         using GateType = typename GateTypeSelector<WeiT>::type;
-        Matrix<GateType> tmpW;
+        xft::Matrix<GateType> tmpW;
         tmpW.Resize(M, N, N);
         xft::copy(tmpW.Data(), gateW, M * N);
         ctx->mmHelper->packWeight(false, tmpW, gatingWeight);
