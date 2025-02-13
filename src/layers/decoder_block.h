@@ -371,7 +371,7 @@ private:
 
     xft::ParamType xftDT2PT(xft::DataType dt) {
         switch (dt) {
-            case xft::DataType::int8: return xft::ParamType::Int8;
+            case xft::DataType::int8: return xft::ParamType::INT8;
             case xft::DataType::int4: return xft::ParamType::INT4;
             case xft::DataType::fp32: return xft::ParamType::FP32;
             case xft::DataType::bf16: return xft::ParamType::BF16;
@@ -508,26 +508,26 @@ private:
 
         if (qLoraRank > 0) {
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
-                    (T *)attn->q_a_proj.weight, hiddenSize * qLoraRank);
+                    attn->q_a_proj.weight, hiddenSize * qLoraRank, attn->q_a_proj.wtype);
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_layernorm.weight.bin",
                     attn->q_a_norm.gamma, qLoraRank);
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight.bin",
-                    (T *)attn->q_b_proj.weight, qLoraRank * qSize);
+                    attn->q_b_proj.weight, qLoraRank * qSize, attn->q_b_proj.wtype);
         } else {
             // DeepSeek V2 Lite
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
-                    (T *)attn->q_a_proj.weight, hiddenSize * qSize);
+                    attn->q_a_proj.weight, hiddenSize * qSize, attn->q_a_proj.wtype);
         }
 
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight.bin",
-                (T *)attn->kv_a_proj.weight, hiddenSize * (kvLoraRank + ropeDim));
+                attn->kv_a_proj.weight, hiddenSize * (kvLoraRank + ropeDim), attn->kv_a_proj.wtype);
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_layernorm.weight.bin",
                 attn->kv_a_norm.gamma, kvLoraRank);
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight.bin",
-                (T *)attn->kv_b_proj.weight, kvLoraRank * kvSize);
+                attn->kv_b_proj.weight, kvLoraRank * kvSize, attn->kv_b_proj.wtype);
 
-        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight.bin", (T *)attn->o_proj.weight,
-                ctx->attHeadNum * vHeadDim * hiddenSize);
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight.bin", attn->o_proj.weight,
+                ctx->attHeadNum * vHeadDim * hiddenSize, attn->o_proj.wtype);
     }
 
     template <typename T>
