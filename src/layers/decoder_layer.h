@@ -136,7 +136,7 @@ public:
                     valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero,
                     attnOutBias, true, lnGamma, lnBeta, false);
         } else if (mlap != NULL) {
-            // TODO
+            attn.setWeights(ctx, attnParams);
         }
 
         mlp.template setWeights<WType>(ctx, ffnParams);
