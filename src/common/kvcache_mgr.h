@@ -36,10 +36,12 @@ public:
 template <typename T>
 class KVCacheMgrImpl : public KVCacheMgrImplBase {
 public:
-    KVCacheMgrImpl(int maxSeqLen, int headNum, int headSize, int layers) {
+    KVCacheMgrImpl(int maxSeqLen, int kHeadNum, int kHeadSize, int vHeadNum, int vHeadSize, int layers) {
         this->maxSeqLen_ = maxSeqLen;
-        this->headNum_ = headNum;
-        this->headSize_ = headSize;
+        this->kHeadNum_ = kHeadNum;
+        this->kHeadSize_ = kHeadSize;
+        this->vHeadNum_ = vHeadNum;
+        this->vHeadSize_ = vHeadSize;
         this->layers_ = layers;
     }
 
@@ -88,8 +90,9 @@ public:
 
         // User specified maxSeqLen needs to be <= model's configured maxSeqLen
         auto maxLen = maxSeqLen > 0 ? std::min(maxSeqLen, maxSeqLen_) : maxSeqLen_;
-        for (int i = 0; i < 2 * layers_; ++i) {
-            cache[i].resize(maxLen, 1, headNum_, headSize_);
+        for (int i = 0; i < layers_; ++i) {
+            cache[2 * i].resize(maxLen, 1, kHeadNum_, kHeadSize_);
+            cache[2 * i + 1].resize(maxLen, 1, vHeadNum_, vHeadSize_);
         }
 
         sequenceCaches.insert({seqID, cache});
@@ -183,8 +186,10 @@ private:
     std::vector<KVCacheTensor<T> *> freeCaches;
 
     int maxSeqLen_;
-    int headNum_;
-    int headSize_;
+    int kHeadNum_;
+    int kHeadSize_;
+    int vHeadNum_;
+    int vHeadSize_;
     int layers_;
 };
 
@@ -195,13 +200,20 @@ public:
         return inst;
     }
 
-    void configure(int maxSeqLen, int headNum, int headSize, int layers, DataType dataType) {
+    void configure(
+            int maxSeqLen, int kHeadNum, int kHeadSize, int vHeadNum, int vHeadSize, int layers, DataType dataType) {
         switch (dataType) {
-            case DataType::int8: cacheMgrImpl = new KVCacheMgrImpl<int8_t>(maxSeqLen, headNum, headSize, layers); break;
-            case DataType::fp16:
-                cacheMgrImpl = new KVCacheMgrImpl<float16_t>(maxSeqLen, headNum, headSize, layers);
+            case DataType::int8:
+                cacheMgrImpl = new KVCacheMgrImpl<int8_t>(maxSeqLen, kHeadNum, kHeadSize, vHeadNum, vHeadSize, layers);
                 break;
-            default: cacheMgrImpl = new KVCacheMgrImpl<float16_t>(maxSeqLen, headNum, headSize, layers); break;
+            case DataType::fp16:
+                cacheMgrImpl
+                        = new KVCacheMgrImpl<float16_t>(maxSeqLen, kHeadNum, kHeadSize, vHeadNum, vHeadSize, layers);
+                break;
+            default:
+                cacheMgrImpl
+                        = new KVCacheMgrImpl<float16_t>(maxSeqLen, kHeadNum, kHeadSize, vHeadNum, vHeadSize, layers);
+                break;
         }
     }
 

@@ -278,24 +278,124 @@ public:
     void freeBuffer(const std::string &name) { SimpleMemPool::instance().freeBuffer(name); }
 
     void dump() {
-        printf("batch_size=%d\n", batchSize);
-        printf("inputSeqLen=%d\n", inputSeqLen);
+        printf("DecoderContext:\n");
+        printf("\tbatchSize: %d\n", batchSize);
+        printf("\tinputSeqLen: %d\n", inputSeqLen);
+        printf("\treserved1: %d\n", reserved1);
+    #ifdef PIPELINE_PARALLEL
+        printf("\tsequenceID: %d\n", sequenceID);
+    #endif
+        printf("\tvocabSize: %d\n", vocabSize);
+        printf("\tembeddingSize: %d\n", embeddingSize);
+        printf("\tmaxPositions: %d\n", maxPositions);
+        printf("\tmaxPosEmbed: %d\n", maxPosEmbed);
+        printf("\tmaxSeqLength: %d\n", maxSeqLength);
+        printf("\tuseLogN: %d\n", useLogN);
+        printf("\tuseNTK: %d\n", useNTK);
+        printf("\tlayers: %d\n", layers);
+        printf("\thiddenSize: %d\n", hiddenSize);
+        printf("\tintermediateSize: %d\n", intermediateSize);
+        printf("\tattHeadNum: %d\n", attHeadNum);
+        printf("\tkvHeadNum: %d\n", kvHeadNum);
+        printf("\tattHeadSize: %d\n", attHeadSize);
+        printf("\tqLoraRank: %d\n", qLoraRank);
+        printf("\tkvLoraRank: %d\n", kvLoraRank);
+        printf("\tnopeDim: %d\n", nopeDim);
+        printf("\tropeDim: %d\n", ropeDim);
+        printf("\tattFactor: %f\n", attFactor);
+        printf("\tepsilon: %f\n", epsilon);
+        printf("\tsparseExperts: %d\n", sparseExperts);
+        printf("\tdenseExperts: %d\n", denseExperts);
+        printf("\ttopkMethod: %s\n", topkMethod.c_str());
+        printf("\tscoringFunc: %s\n", scoringFunc.c_str());
+        printf("\troutedScalingFac: %f\n", routedScalingFac);
+        printf("\tnormTopKProb: %d\n", normTopKProb);
+        printf("\tfirstKDenseReplace: %d\n", firstKDenseReplace);
+        printf("\tnumExpertsPerTok: %d\n", numExpertsPerTok);
+        printf("\ttopkGroup: %d\n", topkGroup);
+        printf("\tnGroup: %d\n", nGroup);
+        printf("\tmoeIntermediateSize: %d\n", moeIntermediateSize);
+        if (ropeParamsPtr) {
+            printf("\tRopeParams:\n");
+            printf("\t  base: %f\n", ropeParamsPtr->base);
+            printf("\t  type: %s\n", ropeParamsPtr->type.c_str());
+            printf("\t  scale: %f\n", ropeParamsPtr->scale);
+            printf("\t  orgMaxPosEmbed: %d\n", ropeParamsPtr->orgMaxPosEmbed);
+            printf("\t  extraPolFactor: %f\n", ropeParamsPtr->extraPolFactor);
+            printf("\t  attnFactor: %f\n", ropeParamsPtr->attnFactor);
+            printf("\t  betaFast: %f\n", ropeParamsPtr->betaFast);
+            printf("\t  betaSlow: %f\n", ropeParamsPtr->betaSlow);
+            printf("\t  mscale: %f\n", ropeParamsPtr->mscale);
+            printf("\t  mscaleAllDim: %f\n", ropeParamsPtr->mscaleAllDim);
+        }
+        printf("\tsplitIdx: %d\n", splitIdx);
+        printf("\tnumSplit: %d\n", numSplit);
+        printf("\tppSize: %d\n", ppSize);
+        printf("\tppRank: %d\n", ppRank);
+        printf("\ttpSize: %d\n", tpSize);
+        printf("\ttpRank: %d\n", tpRank);
+        printf("\tactType: %d\n", actType);
+        printf("\tnumThreads: %d\n", numThreads);
+        printf("\tconfigPath: %s\n", configPath.c_str());
+        printf("\tsectionName: %s\n", sectionName.c_str());
+        printf("\trawBufSize: %lu\n", rawBufSize);
+        printf("\tsize1: %lu\n", size1);
+        printf("\tsize2: %lu\n", size2);
+        printf("\tsize3: %lu\n", size3);
+    }
 
-        printf("hiddenSize=%d\n", hiddenSize);
-        printf("intermediateSize=%d\n", intermediateSize);
-        printf("attHeadNum=%d\n", attHeadNum);
-        printf("kvHeadNum=%d\n", kvHeadNum);
-        printf("attHeadSize=%d\n", attHeadSize);
-        printf("attFactor=%f\n", attFactor);
+    // Resize for DeepSeek model
+    void dsResize(int totalInSeqLen, int totalAccSeqLen) {
+        // Check total required size
+        auto ranges = SplitUtil::getHeadRange(attHeadNum, kvHeadNum, numSplit, splitIdx);
+        auto qRange = ranges.first;
+        auto kvRange = ranges.second;
+        int responsibleQHead = qRange.second - qRange.first;
+        int responsibleKVHead = kvRange.second - kvRange.first;
+        int qkHeadSize = this->nopeDim + this->ropeDim;
+        int qCols = responsibleQHead * qkHeadSize;
+        int kCols = responsibleKVHead * nopeDim; // rope part is in other places
+        int vCols = responsibleKVHead * vHeadDim;
+        int qkvCols = qCols + kCols + vCols;
+        int mlpFactor = (this->actType == GELU || this->actType == SILU || this->actType == SWIGLU) ? 2 : 1;
+        auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
+        int imCols = range.second - range.first;
 
-        printf("numThreads=%d\n", numThreads);
+        uint64_t normSize = (uint64_t)totalInSeqLen * hiddenSize;
+        uint64_t qkvSize = (uint64_t)totalInSeqLen * qCols + (uint64_t)totalAccSeqLen * (kCols + vCols);
+        uint64_t imOutSize = (uint64_t)totalInSeqLen * imCols * mlpFactor;
+        uint64_t tmpBufSize = (uint64_t)totalInSeqLen * hiddenSize;
+
+        size1 = normSize;
+        size2 = qkvSize < imOutSize ? imOutSize : qkvSize;
+        size3 = tmpBufSize;
+
+        uint64_t total = size1 + size2 + size3;
+        if (total > this->rawBufSize) {
+            this->rawBufSize = total;
+            if (this->rawBuffer) xft::dealloc(this->rawBuffer, this->device);
+
+            this->rawBuffer = (float *)xft::alloc(sizeof(float) * rawBufSize, this->device);
+            xft::memsetv(this->rawBuffer, 0, sizeof(float) * rawBufSize, this->device);
+        }
+
+        // Assign the buffer
+        normBuf.Assign(this->rawBuffer, totalInSeqLen, hiddenSize, hiddenSize);
+        tmpBuf.Assign(this->rawBuffer + size1 + size2, totalInSeqLen, hiddenSize, hiddenSize);
+        imOut.Assign(this->rawBuffer + size1, totalInSeqLen, imCols, imCols);
+        qkvMatMul.Assign(this->rawBuffer + size1, totalInSeqLen, qkvCols, qkvCols);
     }
 
     // Resize to make sure the buffer is big enough
     // |---------|---------|--------|
     // | normBuf |qkvMatMul|        |
     // |         |  imOut  | tmpBuf |
-    void resize(int totalInSeqLen) {
+    void resize(int totalInSeqLen, int totalAccSeqLen) {
+        if (this->nopeDim != 0 && this->ropeDim != 0) {
+            dsResize(totalInSeqLen, totalAccSeqLen);
+            return;
+        }
+        
         // Check total required size
         auto ranges = SplitUtil::getHeadRange(attHeadNum, kvHeadNum, numSplit, splitIdx);
         auto qRange = ranges.first;
@@ -340,7 +440,7 @@ public:
         this->batchSize = batchSize;
         this->inputSeqLen = inputSeqLen;
 
-        this->resize(inputSeqLen * batchSize);
+        this->resize(inputSeqLen * batchSize, inputSeqLen * batchSize);
     }
 
     uint64_t getScoreCapacity() {

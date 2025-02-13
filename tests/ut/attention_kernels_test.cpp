@@ -237,10 +237,7 @@ void testSelfAttention(
 }
 
 template <bool bFusePack = true>
-void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDim, int *tokenSizes, int batchSize) {
-    // Only support batchSize = 1
-    assert(batchSize == 1);
-
+void testSelfAttention_MLA(int headNum, int nopeDim, int ropeDim, int vHeadDim, int *tokenSizes, int batchSize) {
     const int outSize = headNum * vHeadDim;
     const int fakePad = 128; // fake padding of keyRope
     const float scale = 1.0f / std::sqrt(nopeDim + ropeDim);
@@ -269,8 +266,6 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     bfloat16_t *query = (bfloat16_t *)xft::alloc(totalTokens * qStride * sizeof(bfloat16_t));
     bfloat16_t *keyValue = (bfloat16_t *)xft::alloc(totalTokens * kvStride * sizeof(bfloat16_t));
     bfloat16_t *keyRope = (bfloat16_t *)xft::alloc(totalTokens * keyRopeStride * sizeof(bfloat16_t));
-    bfloat16_t *keyNope = keyValue;
-    bfloat16_t *value = keyValue + headNum * nopeDim;
 
     float factor = 1.0f / RAND_MAX;
     for (int i = 0; i < totalTokens * headNum * (nopeDim + ropeDim); i++) {
@@ -284,7 +279,7 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     }
 
     // Call the function
-    xft::selfAttention_NoCopy<bFusePack>(ourOutput, query, keyRope, keyNope, value, headNum, nopeDim, ropeDim, vHeadDim,
+    xft::selfAttention_MLA<bFusePack>(ourOutput, query, keyRope, keyValue, headNum, nopeDim, ropeDim, vHeadDim,
             outSize, headNum * (nopeDim + ropeDim), ropeDim + fakePad, headNum * (nopeDim + vHeadDim), batchSize,
             tokenSizes, scale, threadNum);
 
@@ -294,9 +289,19 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     for (int i = 0; i < totalTokens; i++) {
         for (int h = 0; h < headNum; ++h) {
             memcpy(key + i * headNum * (nopeDim + ropeDim) + h * (nopeDim + ropeDim),
-                    keyNope + i * headNum * (nopeDim + vHeadDim) + h * nopeDim, nopeDim * sizeof(bfloat16_t));
+                    keyValue + i * kvStride + h * (nopeDim + vHeadDim), nopeDim * sizeof(bfloat16_t));
             memcpy(key + i * headNum * (nopeDim + ropeDim) + h * (nopeDim + ropeDim) + nopeDim,
                     keyRope + i * (ropeDim + fakePad), ropeDim * sizeof(bfloat16_t));
+        }
+    }
+
+    // Concat all the heads of 'value'
+    int vStride = headNum * vHeadDim;
+    bfloat16_t *value = (bfloat16_t *)xft::alloc(totalTokens * vStride * sizeof(bfloat16_t));
+    for (int i = 0; i < totalTokens; i++) {
+        for (int h = 0; h < headNum; ++h) {
+            memcpy(value + i * vStride + h * vHeadDim, keyValue + i * kvStride + h * (nopeDim + vHeadDim) + nopeDim,
+                    vHeadDim * sizeof(bfloat16_t));
         }
     }
 
@@ -306,8 +311,8 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     int rowOff = 0;
     for (int b = 0; b < batchSize; ++b) {
         selfAttentionRef(refOutput + rowOff * outSize, query + rowOff * qStride, key + rowOff * kStride,
-                value + rowOff * kvStride, headNum, headNum, nopeDim + ropeDim, vHeadDim, outSize, qStride, kStride,
-                kvStride, tokenSizes[b], scale);
+                value + rowOff * vStride, headNum, headNum, nopeDim + ropeDim, vHeadDim, outSize, qStride, kStride,
+                vStride, tokenSizes[b], scale);
         rowOff += tokenSizes[b];
     }
 
@@ -317,6 +322,7 @@ void testSelfAttention_NoCopy(int headNum, int nopeDim, int ropeDim, int vHeadDi
     }
 
     // Clean up
+    free(value);
     free(key);
     free(ourOutput);
     free(refOutput);
@@ -375,7 +381,7 @@ void testCrossAttentionByHead_DS(
     // crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
     //      int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
     //      const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum)
-    xft::crossAttnByHead_DS<bfloat16_t, bfloat16_t>(ourOutput, query, (const bfloat16_t **)keyRopes, keyValue, headNum,
+    xft::crossAttnByHead_DS<bfloat16_t>(ourOutput, query, (const bfloat16_t **)keyRopes, keyValue, headNum,
             nopeDim, ropeDim, vHeadDim, outSize, qStride, ropeDim, kvStride, batchSize, inputTokens, pastTokens, scale,
             threadNum);
 
@@ -453,26 +459,26 @@ TEST(AttentionKernelsTest, CrossAttnByHead_DSTest2) {
     testCrossAttentionByHead_DS(128, 128, 64, 128, inputTokens, pastTokens, batchSize);
 }
 
-TEST(AttentionKernelsTest, NoCopyTest1) {
+TEST(AttentionKernelsTest, MLA1) {
     const int batchSize = 1;
     int tokenSizes[batchSize] = {16};
     // headNum, int nopeDim, int ropeDim, int vHeadDim
-    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
-    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<false>(128, 128, 64, 128, tokenSizes, batchSize);
 }
 
-TEST(AttentionKernelsTest, NoCopyTest2) {
+TEST(AttentionKernelsTest, MLA2) {
     const int batchSize = 1;
     int tokenSizes[batchSize] = {130};
-    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
-    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<false>(128, 128, 64, 128, tokenSizes, batchSize);
 }
 
-TEST(AttentionKernelsTest, NoCopyTest3) {
+TEST(AttentionKernelsTest, MLA3) {
     const int batchSize = 2;
     int tokenSizes[batchSize] = {100, 201};
-    testSelfAttention_NoCopy<true>(128, 128, 64, 128, tokenSizes, batchSize);
-    testSelfAttention_NoCopy<false>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<true>(128, 128, 64, 128, tokenSizes, batchSize);
+    testSelfAttention_MLA<false>(128, 128, 64, 128, tokenSizes, batchSize);
 }
 
 TEST(AttentionKernelsTest, SeparateCopyTest1) {

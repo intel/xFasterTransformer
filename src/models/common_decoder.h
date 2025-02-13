@@ -259,6 +259,13 @@ public:
         ctx->scoringFunc = reader.Get(modelType, "scoring_func", "");
         ctx->routedScalingFac = reader.GetFloat(modelType, "routed_scaling_factor", 1.0);
 
+        if (ctx->nopeDim && ctx->ropeDim) { // scale in MLA is different
+            float mscale = 0.1 * std::log(40) + 1.0;
+            ctx->attFactor = 1 / sqrtf(ctx->nopeDim + ctx->ropeDim) * mscale * mscale;
+        } else if (attHeadNum != 0) {
+            ctx->attFactor = 1 / sqrtf(ctx->attHeadSize);
+        }
+
         // Decoder
         if (layers % ctx->ppSize != 0) {
             std::cerr << "Warning: layers cannot be evenly divided by pipeline parallel stage size(ppSize)."
@@ -268,7 +275,14 @@ public:
 
         decoderBlock = new DecoderBlock<ATTN_CLS, MLP_CLS, KVCacheT, ATTN_MLP_PARALLEL>(ctx, modelPath, layers, dt);
         auto maxSeqLen = maxSeqLength > 0 ? maxSeqLength : maxPositions;
-        KVCacheMgr::instance().configure(maxSeqLen, kvHeadNum, headSize, layers, getDataType<KVCacheT>());
+        if (ctx->kvLoraRank != 0) {
+            // For MLA, cached key dimension is ropeDim, cached value dimension is kvLoraRank
+            KVCacheMgr::instance().configure(
+                    maxSeqLen, 1, ctx->ropeDim, 1, ctx->kvLoraRank, layers, getDataType<KVCacheT>());
+        } else {
+            KVCacheMgr::instance().configure(
+                    maxSeqLen, kvHeadNum, headSize, kvHeadNum, headSize, layers, getDataType<KVCacheT>());
+        }
 
         // Predictor
         int workers = messenger.getSize();
@@ -578,15 +592,17 @@ public:
 
         // Prepare input
         int totInputSeqLen = 0;
+        int totPastSeqLen = 0;
         std::vector<int> allInputIds;
         for (auto seq : seqs) {
             totInputSeqLen += seq->getInputSeqLen();
+            totPastSeqLen += seq->getPastSeqLen();
             auto ids = seq->getInputTokens();
             allInputIds.insert(allInputIds.end(), ids.begin(), ids.end());
         }
 
         // Prepare context
-        ctx->resize(totInputSeqLen);
+        ctx->resize(totInputSeqLen, totInputSeqLen + totPastSeqLen);
 
         // Prepare buffers
         int logitRows = (!logitsAll && seqs[0]->getStep() == 0) ? seqs.size() : totInputSeqLen;
