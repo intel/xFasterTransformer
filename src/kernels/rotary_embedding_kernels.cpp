@@ -704,11 +704,13 @@ static inline void deepseekv2DeinterleaveQK(T *pQ, int dim) {
 
 // For DeepseekV2 continous batching
 template <typename T>
-static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *emb_cos, float *emb_sin, int qStride,
-        int kStride, int inv_freq_size, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
-    int dim = inv_freq_size * 2;
+static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *embCos, float *embSin, int qStride,
+        int kStride, int invFreqSize, int totSeqLen, int qHeads, int kHeads, const int *positionIds,
+        const int nopeDim) {
+    int dim = invFreqSize * 2;
+    int query_dim = nopeDim + dim;
     const int head_num = qHeads + kHeads;
-    const int half = inv_freq_size;
+    const int half = invFreqSize;
 // k = k.view(b, h, s, d // 2, 2).transpose(4, 3).reshape(b, h, s, d)
 // k_embed = (k * cos) + (rotate_half(k) * sin)
     __mmask16 mask = 0xffff;
@@ -718,8 +720,8 @@ static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *emb_co
         T *pQ = query + seq * qStride;
 
         int pos = positionIds[seq];
-        float *pcos = emb_cos + pos * half;
-        float *psin = emb_sin + pos * half;
+        float *pcos = embCos + pos * half;
+        float *psin = embSin + pos * half;
 
         for (int i = 0; i < half; i += 16) {
             __m512 tmp0, tmp1, pCosVec, pSinVec, qVec0, qVec1;
@@ -749,11 +751,11 @@ static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *emb_co
 #pragma omp parallel for collapse(2)
     for (int head = 1; head < qHeads; ++head) {
         for (int seq = 0; seq < totSeqLen; ++seq) {
-            T *pQ = query + seq * qStride + head * dim;
+            T *pQ = query + seq * qStride + head * query_dim;
 
             int pos = positionIds[seq];
-            float *pcos = emb_cos + pos * dim;
-            float *psin = emb_sin + pos * dim;
+            float *pcos = embCos + pos * dim;
+            float *psin = embSin + pos * dim;
 
             __mmask16 mask = 0xffff;
             __m512 tmp0, tmp1;
@@ -776,22 +778,22 @@ static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *emb_co
     }
 }
 
-void deepseekv2ApplyRotaryPosEmbed(float *query, float *key, float *emb_cos, float *emb_sin, int qStride, int kStride,
-        int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+void deepseekv2ApplyRotaryPosEmbed(float *query, float *key, float *embCos, float *embSin, int qStride, int kStride,
+        int invFreqSize, int totSeqLen, int qHeads, int kHeads, const int *positionIds, const int nopeDim) {
     deepseekv2ApplyRotaryPosEmbed<float>(
-            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+            query, key, embCos, embSin, qStride, kStride, invFreqSize, totSeqLen, qHeads, kHeads, positionIds, nopeDim);
 }
 
-void deepseekv2ApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *emb_cos, float *emb_sin, int qStride,
-        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+void deepseekv2ApplyRotaryPosEmbed(bfloat16_t *query, bfloat16_t *key, float *embCos, float *embSin, int qStride,
+        int kStride, int invFreqSize, int totSeqLen, int qHeads, int kHeads, const int *positionIds, const int nopeDim) {
     deepseekv2ApplyRotaryPosEmbed<bfloat16_t>(
-            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+            query, key, embCos, embSin, qStride, kStride, invFreqSize, totSeqLen, qHeads, kHeads, positionIds, nopeDim);
 }
 
-void deepseekv2ApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *emb_cos, float *emb_sin, int qStride,
-        int kStride, int dim, int totSeqLen, int qHeads, int kHeads, const int *positionIds) {
+void deepseekv2ApplyRotaryPosEmbed(float16_t *query, float16_t *key, float *embCos, float *embSin, int qStride,
+        int kStride, int invFreqSize, int totSeqLen, int qHeads, int kHeads, const int *positionIds, const int nopeDim) {
     deepseekv2ApplyRotaryPosEmbed<float16_t>(
-            query, key, emb_cos, emb_sin, qStride, kStride, dim, totSeqLen, qHeads, kHeads, positionIds);
+            query, key, embCos, embSin, qStride, kStride, invFreqSize, totSeqLen, qHeads, kHeads, positionIds, nopeDim);
 }
 
 #ifdef XFT_GPU
