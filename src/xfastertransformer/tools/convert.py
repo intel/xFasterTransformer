@@ -65,23 +65,27 @@ def get_name_and_param(model_dir: Path):
 
 
 class BaseModelConvert:
+    SUPPORTED_DTYPES = {"fp32": np.float32, "fp16": np.float16}
+
     def __init__(self):
         self.dtype = np.float32
+        self.default_dtype = "fp16"
 
-    def __call__(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, from_quantized_model=None):
+    def __call__(self, input_dir, output_dir=None, dtype: str = None, processes=8, from_quantized_model=None):
         self.convert(input_dir, output_dir, dtype, processes, from_quantized_model)
 
     def get_weight_data_type(self, dtype: str):
-        if dtype == "fp32":
-            return np.float32
-        elif dtype == "fp16":
-            return np.float16
+        if dtype in self.SUPPORTED_DTYPES:
+            return self.SUPPORTED_DTYPES[dtype]
         else:
             raise Exception(f"{self.__class__.__name__} don't support convert weight to {dtype}.")
 
     # from_quantized_model: Convert from HuggingFace quantized int8/int4 model to xFT int8/int4 model.
     #     - "gptq" : Convert from AutoGPTQ quantized model.
-    def convert(self, input_dir, output_dir=None, dtype: str = "fp16", processes=8, from_quantized_model=None):
+    def convert(self, input_dir, output_dir=None, dtype: str = None, processes=8, from_quantized_model=None):
+        if dtype is None:
+            dtype = self.default_dtype
+
         self.dtype = self.get_weight_data_type(dtype)
         if output_dir is None:
             input_dir = input_dir.rstrip(os.path.sep)

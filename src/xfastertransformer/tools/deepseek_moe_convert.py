@@ -29,9 +29,12 @@ class DeepSeekV2Convert(BaseModelConvert):
     """
     Convert DeepSeek V2/V3 model.
     """
+    # Only support bf16 now
+    SUPPORTED_DTYPES = {"bf16": np.uint16}
 
     def __init__(self):
         super().__init__()
+        self.default_dtype = "bf16"
 
     def split_and_convert_process(self, i, output_dir, factor, key, val, num_attention_heads, num_key_value_heads):
         def save_val(val, key, tp_num=None):
@@ -211,22 +214,20 @@ class DeepSeekV2Convert(BaseModelConvert):
         with tqdm(total=len(model_named_parameters)) as pbar:
             for name, param in model_named_parameters.items():
                 if name == "model.embed_tokens.weight":
-                    param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(os.path.join(output_dir, "model.wte.bin"))
+                    param.detach().cpu().view(torch.uint16).numpy().tofile(os.path.join(output_dir, "model.wte.bin"))
                     pbar.update()
                 elif name == "model.norm.weight":
-                    param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(
+                    param.detach().cpu().view(torch.uint16).numpy().tofile(
                         os.path.join(output_dir, "model.final_layernorm.weight.bin")
                     )
                     pbar.update()
                 elif name == "lm_head.weight":
-                    param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(
+                    param.detach().cpu().view(torch.uint16).numpy().tofile(
                         os.path.join(output_dir, "model.lm_head.weight.bin")
                     )
                     pbar.update()
                 elif "mlp.gate.e_score_correction_bias" in name:
-                    param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(
-                        os.path.join(output_dir, name + ".bin")
-                    )
+                    param.detach().cpu().view(torch.uint16).numpy().tofile(os.path.join(output_dir, name + ".bin"))
                     pbar.update()
                 else:
                     starmap_args = []
@@ -235,7 +236,7 @@ class DeepSeekV2Convert(BaseModelConvert):
                             factor = 1
                             new_name = name.replace(hf_model_name_pattern[i], ft_model_name_pattern[i])
                             try:
-                                val = param.detach().cpu().to(torch.float32).numpy().astype(self.dtype)
+                                val = param.detach().cpu().view(torch.uint16).numpy()
                             except Exception as e:
                                 print(f"Fail to convert params {name}.", str(e))
                             starmap_args.append(
