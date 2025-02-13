@@ -66,10 +66,11 @@ public:
 
 #pragma omp parallel for
         for (int i = 0; i < ctx->hiddenSize; ++i) {
-            memcpy(buffer + i * mergedDim, mlap->q_a_proj.weight + i * mlap->q_a_proj.output_dim,
+            memcpy(buffer + i * mergedDim, (WeiT *)mlap->q_a_proj.weight + i * mlap->q_a_proj.output_dim,
                     mlap->q_a_proj.output_dim * sizeof(WeiT));
             memcpy(buffer + i * mergedDim + mlap->q_a_proj.output_dim,
-                    mlap->kv_a_proj.weight + i * mlap->kv_a_proj.output_dim, mlap->kv_a_proj.output_dim * sizeof(WeiT));
+                    (WeiT *)mlap->kv_a_proj.weight + i * mlap->kv_a_proj.output_dim,
+                    mlap->kv_a_proj.output_dim * sizeof(WeiT));
         }
 
         // Pack the merged weights
@@ -119,8 +120,8 @@ public:
         }
 
         // Norm buffer & MHA output
-        // TODO: check if the buffer is big enough
         xft::Matrix<ImT> normBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, hiddenSize, hiddenSize);
+        xft::Matrix<ImT> qaNormBuffer((ImT *)ctx->tmpBuf.Data(), totInSeqLen, ctx->qLoraRank, ctx->qLoraRank);
         int mhaOutSize = ctx->attHeadNum * ctx->vHeadDim;
         xft::Matrix<ImT> mhaOutBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, mhaOutSize, mhaOutSize);
 
@@ -130,7 +131,6 @@ public:
         xft::Matrix<ImT> loraBuffer(loraBuf, totInSeqLen, qkvACols, qkvACols);
 
         // Up projection buffer
-        // TODO: make sure buffer is big enough
         auto &qkvMatMul = ctx->qkvMatMul;
         auto qCols = ctx->attHeadNum * (ctx->nopeDim + ctx->ropeDim);
         xft::Matrix<ImT> qBuffer((ImT *)qkvMatMul.Data(), totInSeqLen, qCols, qCols);
@@ -170,25 +170,41 @@ public:
                     loraBuffer.Data(), loraBuffer.Stride());
         }
 
+#ifdef XFT_DEBUG
+        dbg.debugPrint("q_down_projection:\n");
+        xft::Matrix<ImT> qDown(loraBuffer.Data(), loraBuffer.Rows(), ctx->qLoraRank, loraBuffer.Stride());
+        dbg.dumpMatrix(qDown, false, ctx->device);
+#endif
+
         // Q_A_Norm
         {
             TimeLine t("q_a_norm");
-            qANorm.forward(loraBuffer.Data(), loraBuffer.Data(), loraBuffer.Rows(), loraBuffer.Stride(),
-                    normBuffer.Stride(), epsilon);
+            qANorm.forward(loraBuffer.Data(), qaNormBuffer.Data(), loraBuffer.Rows(), loraBuffer.Stride(),
+                    qaNormBuffer.Stride(), epsilon);
         }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("q_a_norm:\n");
-        dbg.dumpMatrix(loraBuffer, false, ctx->device);
+        dbg.dumpMatrix(qaNormBuffer, false, ctx->device);
 #endif
 
         // Q up projection
         {
             TimeLine t("q_up_projection");
             ctx->mmHelper->compute(false, loraBuffer.Rows(), qBWeights.Cols(), qBWeights.Rows(), 1.0f,
-                    loraBuffer.Data(), loraBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                    qaNormBuffer.Data(), qaNormBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
                     qBuffer.Data(), qBuffer.Stride());
         }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("q_up_projection (first head):\n");
+        xft::Matrix<ImT> qFirstHead(qBuffer.Data(), qBuffer.Rows(), ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
+        dbg.dumpMatrix(qFirstHead, false, ctx->device);
+        dbg.debugPrint("q_up_projection (second head):\n");
+        xft::Matrix<ImT> qSecondHead(qBuffer.Data() + ctx->nopeDim + ctx->ropeDim, qBuffer.Rows(),
+                ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
+        dbg.dumpMatrix(qSecondHead, false, ctx->device);
+#endif
 
         // Apply rotary embedding
         {
@@ -199,10 +215,24 @@ public:
                 std::iota(posIds.begin() + loc, posIds.begin() + loc + seq->getInputSeqLen(), seq->getPastSeqLen());
                 loc += seq->getInputSeqLen();
             }
-            ImT *query = qBuffer.Data() + ctx->nopeDim * ctx->attHeadNum;
+            ImT *query = qBuffer.Data() + ctx->nopeDim;
             ImT *key = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
             rope.forward(
                     query, key, totInSeqLen, qBuffer.Stride(), loraBuffer.Stride(), ctx->attHeadNum, 1, posIds.data());
+
+#ifdef XFT_DEBUG
+            dbg.debugPrint("query rope (first head):\n");
+            xft::Matrix<ImT> _qRopeFirst(query, qBuffer.Rows(), ctx->ropeDim, qBuffer.Stride());
+            dbg.dumpMatrix(_qRopeFirst, false, ctx->device);
+            dbg.debugPrint("query rope (second head):\n");
+            xft::Matrix<ImT> _qRopeSecond(
+                    query + ctx->nopeDim + ctx->ropeDim, qBuffer.Rows(), ctx->ropeDim, qBuffer.Stride());
+            dbg.dumpMatrix(_qRopeSecond, false, ctx->device);
+
+            dbg.debugPrint("key rope:\n");
+            xft::Matrix<ImT> _keyRope(key, totInSeqLen, ctx->ropeDim, qBuffer.Stride());
+            dbg.dumpMatrix(_keyRope, false, ctx->device);
+#endif
         }
 
         // KV_A_Norm
@@ -304,7 +334,7 @@ private:
     }
 
     void packDenseWeights(DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
-        xft::Matrix<WeiT> w(dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);
+        xft::Matrix<WeiT> w((WeiT *)dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);
         packedW.Resize(dense.input_dim, dense.output_dim);
         ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
     }

@@ -24,6 +24,8 @@
 #include "float16.h"
 #include "gemm_kernel_ext.h"
 #include "kvcache_tensor.h"
+#include "llm_params.h"
+#include "logger.h"
 #include "matmul_helper.h"
 #include "rms_norm.h"
 #include "rotary_embedding.h"
@@ -75,6 +77,11 @@ public:
         }
 
         alibiSlopes = nullptr;
+    }
+
+    void setWeights(DecoderContext *ctx, xft::AttnParams *attnParams) {
+        xft::Logger::error("Attention::setWeights() is not implemented.");
+        exit(-1);
     }
 
     // The inerface is for PyTorch, thus the weights are already transposed
