@@ -312,7 +312,7 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new TokenizerBase(tokenPath);
     } else if (modeltype == "mixtral") {
         return new MixtralTokenizer(tokenPath);
-    } else if (modeltype == "deepseek_v2") {
+    } else if (modeltype == "deepseek_moe") {
         // For V3/R1 should be
         // {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16};
         return new FakeTokenizer(std::vector<int>(

@@ -60,6 +60,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             or "mlp.gate_proj.weight" in key
             or "mlp.up_proj.weight" in key
             or "mlp.down_proj.weight" in key
+            or "mlp.gate.weight" in key
             or "mlp.experts" in key
             or "mlp.shared_experts" in key
         ):
@@ -88,12 +89,11 @@ class DeepSeekV2Convert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        sec_name = hf_config["model_type"]
+        sec_name = "deepseek_moe" # hf_config["model_type"]
         config[sec_name] = {}
         has_post_decoder_layernorm = True
         try:
-            # hf_config["_name_or_path"]
-            config[sec_name]["model_name"] = hf_config["_name_or_path"] if hf_config["_name_or_path"] else "deepseek_v2"
+            config[sec_name]["model_name"] = hf_config["_name_or_path"] if hf_config["_name_or_path"] else "deepseek_moe"
             config[sec_name]["head_num"] = str(hf_config["num_attention_heads"])
             num_attention_heads = config[sec_name]["head_num"]
             config[sec_name]["kv_head_num"] = str(hf_config.get("num_key_value_heads", num_attention_heads))
@@ -112,7 +112,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             rope_scaling = hf_config.get("rope_scaling", None)
             config[sec_name]["rope_scaling_factor"] = str(rope_scaling.get("factor", 1.0))
             config[sec_name]["rope_scaling_type"] = str(rope_scaling.get("type", "null"))
-            config[sec_name]["rope_scaling_original_max_position_embeddings"] = str(rope_scaling.get("original_max_position_embeddings", 4096)) 
+            config[sec_name]["rope_scaling_original_max_position_embeddings"] = str(rope_scaling.get("original_max_position_embeddings", 4096))
             config[sec_name]["rope_scaling_beta_fast"] = str(rope_scaling.get("beta_fast", 32))
             config[sec_name]["rope_scaling_beta_slow"] = str(rope_scaling.get("beta_slow", 1))
             config[sec_name]["rope_scaling_mscale"] = str(rope_scaling.get("mscale", 1.0))
@@ -143,7 +143,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             config[sec_name]["num_experts_per_tok"] = str(hf_config["num_experts_per_tok"])
             config[sec_name]["norm_topk_prob"] = str(hf_config["norm_topk_prob"])
             config[sec_name]["scoring_func"] = str(hf_config["scoring_func"])
-            
+
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
@@ -165,6 +165,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             "mlp.gate_proj.weight",
             "mlp.up_proj.weight",
             "mlp.down_proj.weight",
+            "mlp.gate.weight",
             "mlp.experts",
             "mlp.shared_experts",
         ]
@@ -185,6 +186,7 @@ class DeepSeekV2Convert(BaseModelConvert):
             "mlp.gate_proj.weight",
             "mlp.up_proj.weight",
             "mlp.down_proj.weight",
+            "mlp.gate.weight",
             "mlp.experts",
             "mlp.shared_experts",
         ]
@@ -200,11 +202,12 @@ class DeepSeekV2Convert(BaseModelConvert):
                 model_named_parameters[name] = param
             elif "lm_head" in name:
                 model_named_parameters[name] = param
+            elif "bias" in name:
+                model_named_parameters[name] = param
             else:
                 model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
 
         pool = multiprocessing.Pool(processes)
-        # for name, param in tqdm(model_named_parameters.items()):
         with tqdm(total=len(model_named_parameters)) as pbar:
             for name, param in model_named_parameters.items():
                 if name == "model.embed_tokens.weight":
@@ -218,6 +221,11 @@ class DeepSeekV2Convert(BaseModelConvert):
                 elif name == "lm_head.weight":
                     param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(
                         os.path.join(output_dir, "model.lm_head.weight.bin")
+                    )
+                    pbar.update()
+                elif "mlp.gate.e_score_correction_bias" in name:
+                    param.detach().cpu().to(torch.float32).numpy().astype(self.dtype).tofile(
+                        os.path.join(output_dir, name + ".bin")
                     )
                     pbar.update()
                 else:

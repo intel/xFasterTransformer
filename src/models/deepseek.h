@@ -53,4 +53,4 @@ private:
     RmsNorm finalLN;
 };
 
-REGISTER_DS_MODEL(DeepSeekLLM, deepseek_v2)
+REGISTER_DS_MODEL(DeepSeekLLM, deepseek_moe)
