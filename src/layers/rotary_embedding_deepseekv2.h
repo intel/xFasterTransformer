@@ -41,13 +41,12 @@ private:
     void yarnFindRange(int &low, int &high, int betaFast, int betaSlow, int dim, float base, int orgMaxPosEmbed);
     void yarnLinearRampMask(float *invFreqMask, int low, int high, int dim, float extraFactor);
     void yarnLlamaCalEmb(float scale, float attnFactor);
-#ifdef _DS_ROTARY_DEBUG_
-    void test();
-#endif
+
 private:
-    int dim = -1;
-    int inv_freq_size = -1;
-    int max_position_embeddings = -1;
-    float *emb_cos = nullptr;
-    float *emb_sin = nullptr;
+    int nopeDim = -1;
+    int ropeDim = -1;
+    int invFreqSize = -1;
+    int maxPositionEmbeddings = -1;
+    float *embCos = nullptr;
+    float *embSin = nullptr;
 };
