@@ -754,8 +754,8 @@ static inline void deepseekv2ApplyRotaryPosEmbed(T *query, T *key, float *embCos
             T *pQ = query + seq * qStride + head * query_dim;
 
             int pos = positionIds[seq];
-            float *pcos = embCos + pos * dim;
-            float *psin = embSin + pos * dim;
+            float *pcos = embCos + pos * half;
+            float *psin = embSin + pos * half;
 
             __mmask16 mask = 0xffff;
             __m512 tmp0, tmp1;
