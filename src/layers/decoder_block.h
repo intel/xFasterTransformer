@@ -659,7 +659,7 @@ private:
 
             // Load routed expert weights
             if (ffn->routedExperts.empty()) {
-                for (int i = 0; i < ctx->denseExperts; ++i) {
+                for (int i = 0; i < ctx->sparseExperts; ++i) {
                         ffn->routedExperts.emplace_back(
                             ctx->hiddenSize, ctx->moeIntermediateSize, ffn->mlp.gate.wtype, ffn->mlp.gate.wtrans);
                 }
