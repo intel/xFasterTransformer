@@ -22,7 +22,7 @@ namespace xft {
 template <typename DataT>
 void MoEDeepSeekImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, int moeIntermediateSize,
         int numSharedExperts, int numRoutedExperts, void *output, int outputStride, const void *input, int inputStride, const void *gatingWeight,
-        const void *gateWeight, const void *upWeight, const void *downWeight) {
+        const void *gatingBias, const void *gateWeight, const void *upWeight, const void *downWeight) {
 
     using MLP = DeepSeekMoE<DataT>;
     static std::unordered_map<std::string, MLP *> deepseek_moe_hub;
@@ -72,7 +72,7 @@ void MoEDeepSeekImpl(DataType dt, ActivationType at, int numTokens, int hiddenSi
         if (numRoutedExperts > 0) {
             printf(">> loadWeights for moe (%d)\n", numRoutedExperts);
             ffnParams->gating.weight = (float *)const_cast<void *>(gatingWeight);
-            ffnParams->gating.bias = (float *)aligned_alloc(64, (size_t)numRoutedExperts * sizeof(float));
+            ffnParams->gating.bias = (float *)const_cast<void *>(gatingBias);
 
             for (int i = 0; i < numRoutedExperts; i++) {
                 ffnParams->routedExperts.emplace_back(ctx->hiddenSize, ctx->moeIntermediateSize, xft::ParamType::BF16, false);
@@ -102,16 +102,16 @@ void MoEDeepSeekImpl(DataType dt, ActivationType at, int numTokens, int hiddenSi
 
 void invokeMoEDeepSeek(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, int moeIntermediateSize,
         int numSharedExperts, int numRoutedExperts, void *output, int outputStride, const void *input, int inputStride, const void *gatingWeight,
-        const void *gateWeight, const void *upWeight, const void *downWeight) {
+        const void *gatingBias, const void *gateWeight, const void *upWeight, const void *downWeight) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
     if (dt == DataType::bf16) {
         MoEDeepSeekImpl<bfloat16_t>(dt, at, numTokens, hiddenSize, intermediateSize, moeIntermediateSize, numSharedExperts, numRoutedExperts,
-		output, outputStride, input, inputStride, gatingWeight, gateWeight, upWeight, downWeight);
+		output, outputStride, input, inputStride, gatingWeight, gatingBias, gateWeight, upWeight, downWeight);
     } else if (dt == DataType::fp16) {
         MoEDeepSeekImpl<float16_t>(dt, at, numTokens, hiddenSize, intermediateSize, moeIntermediateSize, numSharedExperts, numRoutedExperts,
-	        output, outputStride, input, inputStride, gatingWeight, gateWeight, upWeight, downWeight);
+	        output, outputStride, input, inputStride, gatingWeight, gatingBias, gateWeight, upWeight, downWeight);
     }
 }
 

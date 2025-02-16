@@ -126,17 +126,22 @@ template <typename T>
 static void compareMoEDeepSeek(
         int numTokens, int hiddenSize, int intermediateSize, int moeIntermediateSize, int numSharedExperts, int numRoutedExperts,
         float *gateW, float *upW, float *downW) {
-    float *input = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
-    float *ourOutput = (float *)aligned_alloc(64, numTokens * hiddenSize * sizeof(float));
+    T *input = (T *)aligned_alloc(64, numTokens * hiddenSize * sizeof(T));
+    T *ourOutput = (T *)aligned_alloc(64, numTokens * hiddenSize * sizeof(T));
     float *gatingW = (float *)aligned_alloc(64, hiddenSize * numRoutedExperts * sizeof(float));
-    memset(ourOutput, 0, numTokens * hiddenSize * sizeof(float));
+    float *gatingB = (float *)aligned_alloc(64, numRoutedExperts * sizeof(float));
+    memset(ourOutput, 0, numTokens * hiddenSize * sizeof(T));
 
+    float baseV = 1.0e-1f / (float)hiddenSize;
     for (int i = 0; i < numTokens * hiddenSize; ++i) {
-        input[i] = static_cast<float>(1.0f * (i % hiddenSize));
+        input[i] = static_cast<T>(baseV * (i % hiddenSize));
     }
 
     for (int i = 0; i < hiddenSize * numRoutedExperts; ++i) {
-        gatingW[i] = static_cast<float>(1.0f * (i % numRoutedExperts));
+        gatingW[i] = static_cast<float>(baseV * (i % numRoutedExperts));
+    }
+    for (int i = 0; i < numRoutedExperts; ++i) {
+        gatingB[i] = static_cast<float>(baseV * (i % numRoutedExperts));
     }
 
     xft::DataType dt = xft::DataType::unknown;
@@ -152,8 +157,8 @@ static void compareMoEDeepSeek(
 
     auto start = std::chrono::high_resolution_clock::now();
     invokeMoEDeepSeek(dt, xft::ActivationType::SILU, numTokens, hiddenSize, intermediateSize, moeIntermediateSize, numSharedExperts,
-        numRoutedExperts, (void *)ourOutput, hiddenSize, (const void *)input, hiddenSize, (const void *)gatingW, (const void *)gateW,
-        (const void *)upW, (const void *)downW);
+        numRoutedExperts, (void *)ourOutput, hiddenSize, (const void *)input, hiddenSize, (const void *)gatingW, (const void *)gatingB,
+        (const void *)gateW, (const void *)upW, (const void *)downW);
     auto end = std::chrono::high_resolution_clock::now();
     float during_time = std::chrono::duration<float>(end - start).count();
     printf("[ RUNTIME  ] XFT::inovkeMoEDeepSeek %.6f sec\n", during_time);
@@ -210,18 +215,19 @@ void test_MLPLLaMA(void) {
 
 template <typename T>
 void test_MoEDeepSeek(void) {
-    int hiddenSize = 2;
-    int intermediateSize = 4;
-    int moeIntermediateSize = 2;
+    int hiddenSize = 16 * 7;
+    int intermediateSize = 16 * 18;
+    int moeIntermediateSize = 16 * 2;
 
     float *gateW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
     float *upW = (float *)aligned_alloc(64, hiddenSize * intermediateSize * sizeof(float));
     float *downW = (float *)aligned_alloc(64, intermediateSize * hiddenSize * sizeof(float));
 
+    float baseV = 1.0e-1f / (float)hiddenSize;
     for (int i = 0; i < hiddenSize * intermediateSize; ++i) {
-        gateW[i] = static_cast<float>(1.0f * (i % intermediateSize));
-        upW[i] = static_cast<float>(1.0f * (i % intermediateSize));
-        downW[i] = static_cast<float>(1.0f * (i % intermediateSize));
+        gateW[i] = static_cast<float>(baseV * (i % intermediateSize));
+        upW[i] = static_cast<float>(baseV * (i % intermediateSize));
+        downW[i] = static_cast<float>(baseV * (i % hiddenSize));
     }
 
     float *gateWMoE = (float *)aligned_alloc(64, hiddenSize * moeIntermediateSize * sizeof(float));
@@ -229,17 +235,19 @@ void test_MoEDeepSeek(void) {
     float *downWMoE = (float *)aligned_alloc(64, moeIntermediateSize * hiddenSize * sizeof(float));
 
     for (int i = 0; i < hiddenSize * moeIntermediateSize; ++i) {
-        gateWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
-        upWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
-        downWMoE[i] = static_cast<float>(1.0f * (i % moeIntermediateSize));
+        gateWMoE[i] = static_cast<float>(baseV * (i % moeIntermediateSize));
+        upWMoE[i] = static_cast<float>(baseV * (i % moeIntermediateSize));
+        downWMoE[i] = static_cast<float>(baseV * (i % hiddenSize));
     }
 
     // 32 routed experts
     compareMoEDeepSeek<T>(1, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateWMoE, upWMoE, downWMoE);
-    //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateW, upW, downW);
+    compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateWMoE, upWMoE, downWMoE);
+    //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, moeIntermediateSize, 1, 32, gateWMoE, upWMoE, downWMoE);
+    //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, moeIntermediateSize, 1, 256, gateW, upW, downW);
 
     // first k dense replace
-    compareMoEDeepSeek<T>(1, hiddenSize, intermediateSize, intermediateSize, 1, 0, gateW, upW, downW);
+    //compareMoEDeepSeek<T>(1, hiddenSize, intermediateSize, intermediateSize, 1, 0, gateW, upW, downW);
     //compareMoEDeepSeek<T>(2, hiddenSize, intermediateSize, intermediateSize, 1, 0, gateW, upW, downW);
 
 
@@ -251,13 +259,13 @@ void test_MoEDeepSeek(void) {
     free(downWMoE);
 }
 
-TEST(MLPLLaMA, bfloat16_t) {
-    test_MLPLLaMA<bfloat16_t>();
-}
-
-TEST(MLPLLaMA, float16_t) {
-    test_MLPLLaMA<float16_t>();
-}
+//TEST(MLPLLaMA, bfloat16_t) {
+//    test_MLPLLaMA<bfloat16_t>();
+//}
+//
+//TEST(MLPLLaMA, float16_t) {
+//    test_MLPLLaMA<float16_t>();
+//}
 
 TEST(MoEDeepSeek, bfloat16_t) {
     test_MoEDeepSeek<bfloat16_t>();

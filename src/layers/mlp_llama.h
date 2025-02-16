@@ -50,6 +50,10 @@ public:
             const float *downB, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
+        if (normW == nullptr && ctx->moeIntermediateSize > 0) {
+            // for each expert MLP in MoE
+            imSize = ctx->moeIntermediateSize;
+        }
 
         REQUIRES(ctx->actType == DecoderContext::SILU || ctx->actType == DecoderContext::GELU,
                 "unsupported activation.");

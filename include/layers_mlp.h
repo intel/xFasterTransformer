@@ -24,6 +24,6 @@ void invokeMLPLLaMA(DataType dt, ActivationType at, int numTokens, int hiddenSiz
 
 void invokeMoEDeepSeek(DataType dt, ActivationType at, int numTokens, int hiddenSize, int intermediateSize, int moeIntermediateSize,
         int numSharedExperts, int numRoutedExperts, void *output, int outputStride, const void *input, int inputStride, const void *gatingWeight,
-        const void *gateWeight, const void *upWeight, const void *downWeight);
+        const void *gatingBias, const void *gateWeight, const void *upWeight, const void *downWeight);
 
 } // namespace xft

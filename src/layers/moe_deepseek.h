@@ -64,51 +64,18 @@ public:
         const int expertNum = ffn->routedExperts.size();
 
         this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
-/*
-        for (int i = 0; i < hiddenSize; ++i) {
-            printf("<<< norm gamma: %f\n", ffn->norm.gamma[i]);
-        }
-*/
         // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
         // ffn->routedExperts.size() == 0 means the firstKDenseReplace is used
         if (expertNum == 0) {
             shared_expert->template setWeights<WType>(ctx, ffn->mlp);
-            //ffn->routedExperts.clear();
-/*
-	    for (int i = 0; i < hiddenSize; ++i) {
-                for (int j = 0; j < intermediateSize; ++j)
-                    printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->mlp.gate.weight)[i * intermediateSize + j]));
-            }
-*/
         } else {
-            prepareGateWeightBias(ctx, (WType *)ffn->gating.weight, (float *)ffn->gating.bias);
-/*
-	    for (int i = 0; i < hiddenSize; ++i) {
-                for (int j = 0; j < expertNum; ++j)
-                printf("<<< gating weight: %f\n", (float)(((float *)ffn->gating.weight)[i * expertNum + j]));
-            }
-            for (int i = 0; i < hiddenSize; ++i) {
-                printf("<<< gating bias: %f\n", (float)(ffn->gating.bias[i]));
-            }
-            printf("<<< setWeights for shared expert\n");
-*/
+            prepareGateWeightBias(ctx, &(ffn->gating));
+
             shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
-/*
-            for (int i = 0; i < hiddenSize; ++i) {
-                for (int j = 0; j < moeIntermediateSize; ++j)
-                    printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->sharedExpert.gate.weight)[i * moeIntermediateSize + j]));
-            }
-*/
+
             for (int i = 0; i < expertNum; ++i) {
                 experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(ctx));
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
-/*
-                if (i == 0)
-                    for (int i = 0; i < hiddenSize; ++i) {
-                        for (int j = 0; j < moeIntermediateSize; ++j)
-                            printf("<<< shared expert weight: %f\n", (float)(((float *)ffn->routedExperts[i].gate.weight)[i * moeIntermediateSize + j]));
-                    }
-*/
             }
         }
 
@@ -181,14 +148,19 @@ public:
 #endif
         }
 
-        shared_expert->forward(ctx, normBuffer.Data(), output, hiddenSize, hiddenSize, false, M, true);
+        ImT *normBuf = (doLnBefore ? normBuffer.Data() : inBuffer.Data());
+        int normStride = (doLnBefore ? normBuffer.Stride() : inBuffer.Stride());
+
+        shared_expert->forward(ctx, normBuf, output, normStride, oStride, false, M, false);
+
         // first k dense replace
         if (expertNum == 0) { return; }
 
         // Gating
         OutT *gateLogits = ctx->getBuffer<OutT>("gateLogits", M * expertNum, ctx->device);
-        ctx->mmHelper->compute(false, M, expertNum, hiddenSize, 1.0f, normBuffer.Data(), normBuffer.Stride(),
-                gatingWeight.Data(), nullptr, nullptr, nullptr, 0.0f, gateLogits, expertNum);
+        ctx->mmHelper->compute(false, M, expertNum, hiddenSize, 1.0f, normBuf, normStride, gatingWeight.Data(),
+            nullptr, nullptr, nullptr, 0.0f, gateLogits, expertNum);
+
 #ifdef XFT_DEBUG
         dbg.debugPrint("Gate: \n");
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
@@ -199,7 +171,8 @@ public:
 
         // computing gating scores
         assert((ctx->scoringFunc) == "sigmoid");
-        computingSigmoidWithBias(gateLogits, M, expertNum, gatingScoreCorrBias.Data());
+        // TODO: fused with last compute MatMul
+        computingSigmoid(gateLogits, M, expertNum);
 
         // topK method: noaux_tc
         assert((ctx->topkMethod) == "noaux_tc");
@@ -209,7 +182,7 @@ public:
 
         // 1. Select top 2 experts and sum-up for each group of tokens [M, n_group]
         float *groupWeight = reinterpret_cast<float *>(ctx->imOut.Data());
-        scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight);
+        scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight, gatingScoreCorrBias.Data());
 
         // 2. Select top 4 groups for each token [M, topk_group]
         int *selGroups = reinterpret_cast<int *>(groupWeight + M * nGroups);
@@ -231,12 +204,11 @@ public:
         std::vector<int> idx[expertNum]; // index for each expert
         std::vector<float> weights[expertNum]; // weight for each expert
         for (int i = 0; i < M; ++i) {
-            auto topExpert1 = selExperts[2 * i];
-            auto topExpert2 = selExperts[2 * i + 1];
-            idx[topExpert1].push_back(i);
-            idx[topExpert2].push_back(i);
-            weights[topExpert1].push_back(expertWeight[i * 2]);
-            weights[topExpert2].push_back(expertWeight[i * 2 + 1]);
+            // fill idx and weights for each expert
+            for (int j = 0; j < topkExpert; ++j) {
+                idx[selExperts[i * topkExpert + j]].push_back(i);
+                weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
+            }
         }
 
         // Call forward function of selected experts
@@ -246,7 +218,7 @@ public:
 
             // Gather input for expert i
             ImT *expertData = ctx->getBuffer<ImT>("expertData", rowNum * hiddenSize, ctx->device);
-            gatherInput(expertData, hiddenSize, normBuffer.Data(), normBuffer.Stride(), idx[i]);
+            gatherInput(expertData, hiddenSize, normBuf, normStride, idx[i]);
 
 #ifdef XFT_DEBUG
             dbg.debugPrint("Expert %d, input:\n", i);
@@ -262,23 +234,29 @@ public:
             // Scatter output of expert i
             scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
         }
+#ifdef XFT_DEBUG
+            dbg.debugPrint("Output:\n");
+            dbg.dumpMatrix(output, rowNum, hiddenSize, hiddenSize);
+#endif
     }
 
 private:
-    template <typename SrcType>
-    void prepareGateWeightBias(DecoderContext *ctx, const SrcType *gateW, const float *gateB) {
+    void prepareGateWeightBias(DecoderContext *ctx, xft::DenseLayerParams *denseParams) {
         int M = ctx->hiddenSize;
         int N = ctx->sparseExperts;
 
         using GateType = typename GateTypeSelector<WeiT>::type;
-        xft::Matrix<GateType> tmpW;
-        tmpW.Resize(M, N, N);
-        xft::copy(tmpW.Data(), gateW, M * N);
-        ctx->mmHelper->packWeight(false, tmpW, gatingWeight);
 
-        if (gateB != nullptr) {
+        xft::Matrix<GateType> quantizedGatingW;
+
+        ctx->mmHelper->convertWeight(ctx, false, M, N, (const float *)denseParams->weight, denseParams->weight_scale,
+            denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
+        gatingWeight.Resize(M, N);
+	    ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
+
+        if (denseParams->bias != nullptr) {
             gatingScoreCorrBias.Resize(N);
-            xft::copy(gatingScoreCorrBias.Data(), gateB, N);
+            xft::copy(gatingScoreCorrBias.Data(), (const float *)(denseParams->bias), N);
         }
     }
 
@@ -302,35 +280,34 @@ private:
 
     // logits: [M, N]
     template <typename T>
-    void computingSigmoidWithBias(T *logits, int M, int N, float *scoreCorrBias) {
+    void computingSigmoid(T *logits, int M, int N) {
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
             // compute sigmoid, 1.0 / (1.0 + exp(-x)) + scoreCorrBias
-            int vecSize = 512 / sizeof(T);
             __m512 v1 = _mm512_set1_ps(1.0f);
             __m512 vzero = _mm512_set1_ps(0.0f);
-            for (int j = 0; j < N; j += vecSize) {
-                auto v = xft::load_avx512(logits + i * N + j);
+            for (int j = 0; j < N; j += 16) {
+                int remain = N - j;
+                __mmask16 mask = remain >= 16 ? 0xffff : (1 << remain) - 1;
+                auto v = xft::load_avx512(mask, logits + i * N + j);
                 __m512 neg = _mm512_sub_ps(vzero, v);
                 __m512 exp = BertUtil::vexp(neg);
                 __m512 sgmd = _mm512_div_ps(v1, _mm512_add_ps(v1, exp));
-                if (scoreCorrBias != nullptr) {
-                    sgmd = _mm512_add_ps(sgmd, _mm512_set1_ps(scoreCorrBias[j]));
-                }
-                xft::store_avx512(logits + i * N + j, 0xffff, sgmd);
-	    }
+                xft::store_avx512(logits + i * N + j, mask, sgmd);
+            }
         }
     }
 
     // logits: [M, N]
     // output: [M, n_group]
     template <typename T>
-    void scoresGroupExperts(T *logits, int M, int N, int nGroups, float *groupWeight) {
+    void scoresGroupExperts(T *logits, int M, int N, int nGroups, float *groupWeight, float *scoreCorrBias) {
         int groupSize = N / nGroups;
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
         for (int i = 0; i < M; ++i) {
             for (int j = 0; j < nGroups; ++j) {
-                sumTop2ExpertsInGroup(logits + i * N + j * groupSize, groupSize, groupWeight + i * nGroups + j);
+                sumTop2ExpertsInGroupWithBias(logits + i * N + j * groupSize, groupSize, groupWeight + i * nGroups + j,
+                    scoreCorrBias + j * groupSize);
             }
         }
     }
@@ -355,38 +332,48 @@ private:
 
     void scaleNormTopKExpertsWeight(float *expertWeight, int M, int topkExpert, bool normProb, float routedScalingFac) {
         // topkExpert is 8 (commonly less than 16), so use avx512 to speed up the normalization to make them sum 1
-        int vecSize = 512 / sizeof(float);
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
             __m512 vscale = _mm512_set1_ps(routedScalingFac);
             if (normProb) {
-                __m512 sum = _mm512_set1_ps(0.0f);
-                for (int j = 0; j < topkExpert; j += vecSize) {
-                    auto v = xft::load_avx512(expertWeight + i * topkExpert + j);
-                    sum = _mm512_add_ps(sum, v);
+                float sum = 0.0f;
+                for (int j = 0; j < topkExpert; j += 16) {
+                    int remain = topkExpert - j;
+                    __mmask16 mask = remain >= 16 ? 0xffff : (1 << remain) - 1;
+                    auto v = xft::load_avx512(mask, expertWeight + i * topkExpert + j);
+                    sum = sum + _mm512_reduce_add_ps(v);
                 }
                 // add a small value to avoid div 0
-                vscale = _mm512_div_ps(vscale, sum + _mm512_set1_ps(1e-20f));
+                vscale = _mm512_div_ps(vscale, _mm512_set1_ps(sum + 1e-20f));
             }
-            for (int j = 0; j < topkExpert; j += vecSize) {
-                auto v = xft::load_avx512(expertWeight + i * topkExpert + j);
-                xft::store_avx512(expertWeight + i * topkExpert + j, 0xffff, _mm512_mul_ps(v, vscale));
+            for (int j = 0; j < topkExpert; j += 16) {
+                int remain = topkExpert - j;
+                __mmask16 mask = remain >= 16 ? 0xffff : (1 << remain) - 1;
+                auto v = xft::load_avx512(mask, expertWeight + i * topkExpert + j);
+                xft::store_avx512(expertWeight + i * topkExpert + j, mask, _mm512_mul_ps(v, vscale));
             }
         }
     }
 
     // Select top 2 experts in one group for one token
     template <typename T>
-    void sumTop2ExpertsInGroup(T *logits, int N, float *groupWeight) {
+    void sumTop2ExpertsInGroupWithBias(T *logits, int N, float *groupWeight, float *corrBias) {
         float max1 = -std::numeric_limits<float>::infinity();
         float max2 = -std::numeric_limits<float>::infinity();
+        int idx1 = -1;
+        int idx2 = -1;
         for (int j = 0; j < N; ++j) {
             float val = logits[j];
+	    if (corrBias != nullptr)
+                val += corrBias[j];
             if (val > max1) {
                 max2 = max1;
+                idx2 = idx1;
                 max1 = val;
+                idx1 = j;
             } else if (val > max2) {
                 max2 = val;
+                idx2 = j;
             }
         }
         *groupWeight = max1 + max2;
@@ -413,9 +400,10 @@ private:
         // groupId for each element is i / groupSize
         std::vector<std::pair<T, int>> vec;
         int groupSize = N / nGroups;
-        for (int i = 0; i < N; ++i) {
-            if (std::find(selGroups, selGroups + nGroups, i / groupSize) != selGroups + nGroups) {
-                vec.emplace_back(array[i], i);
+        for (int i = 0; i < nGroups; ++i) {
+            if (std::find(selGroups, selGroups + nGroups, i) != selGroups + nGroups) {
+                for (int j = 0; j < groupSize; ++j)
+                    vec.emplace_back(array[i * groupSize + j], i * groupSize + j);
             }
         }
         std::partial_sort(vec.begin(), vec.begin() + topk, vec.end(), std::greater<std::pair<T, int>>());
@@ -429,6 +417,9 @@ private:
 private:
     xft::RmsNorm norm;
     xft::Matrix<typename GateTypeSelector<WeiT>::type> gatingWeight;
+    xft::Vector<float> gatingWScale;
+    xft::Vector<float> gatingWZero;
+    xft::Vector<float> gatingWSum;
     xft::Vector<float> gatingScoreCorrBias;
     LlamaMLP<WeiT, InT, ImT, OutT> *shared_expert;
     std::vector<LlamaMLP<WeiT, InT, ImT, OutT> *> experts;
