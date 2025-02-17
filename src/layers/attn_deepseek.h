@@ -120,8 +120,10 @@ public:
         }
 
         // Norm buffer & MHA output
+        // Note: many buffers are reused, need to make sure the buffer is large enough, refactor needed
         xft::Matrix<ImT> normBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, hiddenSize, hiddenSize);
         xft::Matrix<ImT> qaNormBuffer((ImT *)ctx->tmpBuf.Data(), totInSeqLen, ctx->qLoraRank, ctx->qLoraRank);
+        xft::Matrix<ImT> kvNormBuffer((ImT *)ctx->tmpBuf.Data(), totInSeqLen, ctx->kvLoraRank, ctx->kvLoraRank); // reuse
         int mhaOutSize = ctx->attHeadNum * ctx->vHeadDim;
         xft::Matrix<ImT> mhaOutBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, mhaOutSize, mhaOutSize);
 
@@ -171,9 +173,12 @@ public:
         }
 
 #ifdef XFT_DEBUG
-        dbg.debugPrint("q_down_projection:\n");
-        xft::Matrix<ImT> qDown(loraBuffer.Data(), loraBuffer.Rows(), ctx->qLoraRank, loraBuffer.Stride());
-        dbg.dumpMatrix(qDown, false, ctx->device);
+        dbg.debugPrint("q_a_projection:\n");
+        xft::Matrix<ImT> _qDown(loraBuffer.Data(), loraBuffer.Rows(), ctx->qLoraRank, loraBuffer.Stride());
+        dbg.dumpMatrix(_qDown, false, ctx->device);
+        dbg.debugPrint("compressed_kv:\n");
+        xft::Matrix<ImT> _kvDown(loraBuffer.Data() + ctx->qLoraRank, loraBuffer.Rows(), ctx->kvLoraRank, loraBuffer.Stride());
+        dbg.dumpMatrix(_kvDown, false, ctx->device);
 #endif
 
         // Q_A_Norm
@@ -197,13 +202,17 @@ public:
         }
 
 #ifdef XFT_DEBUG
-        dbg.debugPrint("q_up_projection (first head):\n");
+        dbg.debugPrint("Query rope (before pe, first head):\n");
         xft::Matrix<ImT> qFirstHead(qBuffer.Data(), qBuffer.Rows(), ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
         dbg.dumpMatrix(qFirstHead, false, ctx->device);
-        dbg.debugPrint("q_up_projection (second head):\n");
-        xft::Matrix<ImT> qSecondHead(qBuffer.Data() + ctx->nopeDim + ctx->ropeDim, qBuffer.Rows(),
-                ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
+        dbg.debugPrint("Query rope (before pe, second head):\n");
+        xft::Matrix<ImT> qSecondHead(qBuffer.Data() + ctx->nopeDim + ctx->ropeDim + ctx->nopeDim, qBuffer.Rows(),
+                ctx->ropeDim, qBuffer.Stride());
         dbg.dumpMatrix(qSecondHead, false, ctx->device);
+        dbg.debugPrint("keyRope (before pe):\n");
+        xft::Matrix<ImT> _keyRope(loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank, totInSeqLen, ctx->ropeDim,
+                loraBuffer.Stride());
+        dbg.dumpMatrix(_keyRope, false, ctx->device);
 #endif
 
         // Apply rotary embedding
@@ -221,16 +230,17 @@ public:
                     query, key, totInSeqLen, qBuffer.Stride(), loraBuffer.Stride(), ctx->attHeadNum, 1, posIds.data());
 
 #ifdef XFT_DEBUG
-            dbg.debugPrint("query rope (first head):\n");
+            dbg.debugPrint("query rope (after pe, first head):\n");
             xft::Matrix<ImT> _qRopeFirst(query, qBuffer.Rows(), ctx->ropeDim, qBuffer.Stride());
             dbg.dumpMatrix(_qRopeFirst, false, ctx->device);
-            dbg.debugPrint("query rope (second head):\n");
+            
+            dbg.debugPrint("query rope (after pe, second head):\n");
             xft::Matrix<ImT> _qRopeSecond(
                     query + ctx->nopeDim + ctx->ropeDim, qBuffer.Rows(), ctx->ropeDim, qBuffer.Stride());
             dbg.dumpMatrix(_qRopeSecond, false, ctx->device);
 
             dbg.debugPrint("key rope:\n");
-            xft::Matrix<ImT> _keyRope(key, totInSeqLen, ctx->ropeDim, qBuffer.Stride());
+            xft::Matrix<ImT> _keyRope(key, totInSeqLen, ctx->ropeDim, loraBuffer.Stride());
             dbg.dumpMatrix(_keyRope, false, ctx->device);
 #endif
         }
@@ -239,11 +249,17 @@ public:
         {
             TimeLine t("kv_a_norm");
             ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
-            kvANorm.forward(
-                    compressedKV, compressedKV, loraBuffer.Rows(), loraBuffer.Stride(), normBuffer.Stride(), epsilon);
+            kvANorm.forward(compressedKV, kvNormBuffer.Data(), loraBuffer.Rows(), loraBuffer.Stride(),
+                    kvNormBuffer.Stride(), epsilon);
+
+#ifdef XFT_DEBUG
+            dbg.debugPrint("kv_a_norm:\n");
+            dbg.dumpMatrix(kvNormBuffer, false, ctx->device);
+#endif
         }
 
         // Copy to KV cache (store the compressed KV)
+        // TODO: fuse it with the above computation
         {
             TimeLine t("kv_cache");
             auto getK = [&](int b, int headIdx, int seqIdx) { return keyCaches[b]->getSequence(seqIdx, 0, headIdx); };
@@ -256,8 +272,10 @@ public:
                     b++;
                 }
                 int seqIdx = s + pastSeqLens[b];
+                // KeyRope
                 xft::copy(getK(b, 0, seqIdx).first, loraBuffer.Row(i) + ctx->qLoraRank + ctx->kvLoraRank, ctx->ropeDim);
-                xft::copy(getV(b, 0, seqIdx).first, loraBuffer.Row(i) + ctx->qLoraRank, ctx->kvLoraRank);
+                // Compressed KV
+                xft::copy(getV(b, 0, seqIdx).first, kvNormBuffer.Row(i), ctx->kvLoraRank);
             }
         }
 
@@ -265,21 +283,35 @@ public:
         if (bPrefill) {
             TimeLine t("kv_up_projection");
             ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
-            ctx->mmHelper->compute(false, loraBuffer.Rows(), kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, compressedKV,
-                    loraBuffer.Stride(), kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
-                    kvBuffer.Stride());
+            ctx->mmHelper->compute(false, loraBuffer.Rows(), kvBWeights.Cols(), kvBWeights.Rows(), 1.0f,
+                    kvNormBuffer.Data(), kvNormBuffer.Stride(), kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                    kvBuffer.Data(), kvBuffer.Stride());
         } else {
             // Compute KV up projection using cache for all sequences in the batch
-            // TODO: Consider optimization by combining into a single MatMul
+            // TODO: optimization by combining into a single MatMul
             TimeLine t("kv_up_projection");
             for (int i = 0; i < batchSize; ++i) {
                 auto M = tokenSizes[i] + pastSeqLens[i]; // past data also needs to be re-computed
                 auto value = valueCaches[i]->getSequence(0, 0, 0);
+#ifdef XFT_DEBUG
+                dbg.debugPrint("cached kv_down: M=%d\n", M);
+                xft::Matrix<ImT> _cachedKvDown(value.first, M, ctx->kvLoraRank, ctx->kvLoraRank);
+                dbg.dumpMatrix(_cachedKvDown, false, ctx->device);
+#endif
                 ctx->mmHelper->compute(false, M, kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, value.first,
                         ctx->kvLoraRank, kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
                         kvBuffer.Stride());
             }
         }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("qBuffer:\n");
+        dbg.dumpMatrix(qBuffer, true, ctx->device);
+        dbg.debugPrint("kvBuffer:\n");
+        dbg.dumpMatrix(kvBuffer, true, ctx->device);
+        dbg.debugPrint("key rope:\n");
+        dbg.dumpMatrix(_keyRope, true, ctx->device);
+#endif
 
         // Attention
         {
@@ -294,18 +326,32 @@ public:
                 for (int i = 0; i < batchSize; ++i) {
                     keyRopes[i] = keyCaches[i]->getSequence(0, 0, 0).first;
                 }
-                fusedAttention(ctx, qBuffer.Data(), qBuffer.Stride(), keyRopes, loraBuffer.Stride(), kvBuffer.Data(),
+                fusedAttention(ctx, qBuffer.Data(), qBuffer.Stride(), keyRopes, ctx->ropeDim, kvBuffer.Data(),
                         kvBuffer.Stride(), mhaOutBuffer.Data(), mhaOutSize, tokenSizes, pastSeqLens, batchSize);
             }
         }
 
+#ifdef XFT_DEBUG
+        dbg.debugPrint("MHA output:\n");
+        dbg.dumpMatrix(mhaOutBuffer, true, ctx->device);   
+#endif
+
         // Output
         {
             TimeLine t("output");
-            ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), qBuffer.Cols(), 1.0f,
+#ifdef XFT_DEBUG
+            dbg.debugPrint("inputBuffer:\n", outBuffer.Data(), inputBuffer.Data());
+            dbg.dumpMatrix(inputBuffer, false, ctx->device);
+#endif
+            ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
                     mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
                     outBuffer.Data(), outBuffer.Stride(), nullptr, inputBuffer.Data(), inputBuffer.Stride());
         }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("attention final output:\n");
+        dbg.dumpMatrix(outBuffer, false, ctx->device);
+#endif
     }
 
 private:
