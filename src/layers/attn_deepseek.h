@@ -26,6 +26,8 @@ class DeepSeekAttention {
 public:
     DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx) {}
 
+    static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
+
 #ifdef XFT_DEBUG
     void setDebugger(const Debugger &debugger) { this->dbg = debugger; }
 #endif
@@ -41,6 +43,9 @@ public:
     }
 
     void setWeights(DecoderContext *ctx, xft::AttnParams *attnParams) {
+        // assume the weight is BF16 or FP16
+        // TODO: data type convert to support other data types
+
         xft::MLAttnParams *mlap = dynamic_cast<xft::MLAttnParams *>(attnParams);
         if (mlap == nullptr) {
             xft::Logger::error("Cannot cast AttnParams to MLAttnParams.");

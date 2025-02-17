@@ -19,7 +19,7 @@
 template <typename WeiT, typename InT, typename ImT, typename OutT, typename NORM_CLS, bool INPUT_AS_RESID>
 class ChatGLM2MLP : public LlamaMLP<WeiT, InT, ImT, OutT> {
 public:
-    ChatGLM2MLP(DecoderContext *ctx) : LlamaMLP<WeiT, InT, ImT, OutT>(ctx) {}
+    ChatGLM2MLP(int layerId, DecoderContext *ctx) : LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx) {}
 
     // OriWeiT: float
     template <typename OriWeiT>

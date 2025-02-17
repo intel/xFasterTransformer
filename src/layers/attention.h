@@ -19,8 +19,10 @@
 #include "attention_kernels.h"
 #include "bfloat16.h"
 #include "copy_util.h"
+#include "datatypes.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "dtype.h"
 #include "float16.h"
 #include "gemm_kernel_ext.h"
 #include "kvcache_tensor.h"
@@ -78,6 +80,8 @@ public:
 
         alibiSlopes = nullptr;
     }
+
+    static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
 
     void setWeights(DecoderContext *ctx, xft::AttnParams *attnParams) {
         xft::Logger::error("Attention::setWeights() is not implemented.");

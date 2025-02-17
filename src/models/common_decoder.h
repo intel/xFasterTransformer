@@ -217,8 +217,14 @@ public:
         const std::string quantZerosDataType = reader.Get(modelType, "quant_zeros_data_type", "");
         const int quantGroupsize = reader.GetInteger(modelType, "quant_groupsize", -1);
 
-        // DataType dt = getWeightType(configPath, modelType);
+        DataType srcWeightType = getWeightType(configPath, modelType);
+        DataType attnWeightType = ATTN_CLS::getWeightDataType();
+
         DataType dt = DataType::fp32;
+        if ((attnWeightType == DataType::bf16 || attnWeightType == DataType::fp16) && srcWeightType == attnWeightType) {
+            dt = srcWeightType;
+        }
+
         if (quantQweightDataType == "int8" || quantQweightDataType == "uint4") {
             dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
             REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");

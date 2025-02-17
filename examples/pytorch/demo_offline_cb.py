@@ -59,7 +59,7 @@ DTYPE_LIST = [
     "w8a8_nf4",
 ]
 
-KVCACHE_DTYPE_LIST = ["fp16", "int8"]
+KVCACHE_DTYPE_LIST = ["fp16", "bf16", "int8"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--token_path", type=str, default="/data/llama-2-7b-chat-hf", help="Path to token file")

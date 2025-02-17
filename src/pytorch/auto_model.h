@@ -60,6 +60,8 @@ public:
         xft::DataType KVCacheDataType;
         if (KVCacheDtype == "fp16") {
             KVCacheDataType = xft::DataType::fp16;
+        } else if (KVCacheDtype == "bf16") {
+            KVCacheDataType = xft::DataType::bf16;
         } else if (KVCacheDtype == "int8") {
             KVCacheDataType = xft::DataType::int8;
         } else {

@@ -59,7 +59,7 @@ void MLPLLaMAImpl(DataType dt, ActivationType at, int numTokens, int hiddenSize,
     auto it_created = llama_mlp_hub.find(llama_mlp_key);
     if (it_created == llama_mlp_hub.end()) {
         // MLP &llama_mlp = MLP::getInstance();
-        llama_mlp = new MLP(ctx);
+        llama_mlp = new MLP(0, ctx);
         llama_mlp->setWeights(ctx, (float *)gateWeight, nullptr, nullptr, nullptr, (float *)upWeight, nullptr, nullptr,
                 nullptr, nullptr, nullptr, (float *)downWeight, nullptr, nullptr, nullptr, false);
         llama_mlp_hub[llama_mlp_key] = llama_mlp;

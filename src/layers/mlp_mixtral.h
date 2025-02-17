@@ -28,11 +28,11 @@
 template <typename WeiT, typename InT = bfloat16_t, typename ImT = bfloat16_t, typename OutT = bfloat16_t>
 class MixtralMLP {
 public:
-    MixtralMLP(DecoderContext *ctx) : norm(ctx) {
+    MixtralMLP(int layerId, DecoderContext *ctx) : norm(ctx) {
         // TODO:
         ctx->sparseExperts = 8;
         for (int i = 0; i < ctx->sparseExperts; ++i) {
-            experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(ctx));
+            experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
         }
     }
 
