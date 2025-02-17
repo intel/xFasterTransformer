@@ -20,7 +20,9 @@
 template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float>
 class ChatGlmMLP : public MLP<WeiT, InT, ImT, OutT, false> {
 public:
-    ChatGlmMLP(DecoderContext *ctx) : MLP<WeiT, InT, ImT, OutT, false>(ctx) { residScale = std::sqrt(2 * ctx->layers); }
+    ChatGlmMLP(int layerId, DecoderContext *ctx) : MLP<WeiT, InT, ImT, OutT, false>(layerId, ctx) {
+        residScale = std::sqrt(2 * ctx->layers);
+    }
 
 protected:
     float getResidentialScale() override { return residScale; }

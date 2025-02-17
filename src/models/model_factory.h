@@ -31,8 +31,7 @@ public:
         if (it != GetRegistry().end()) {
             return it->second(modelPath);
         } else {
-            printf("Unsupported model type, data type or KV cache data type.\n");
-            exit(-1);
+            return nullptr;
         }
     }
 

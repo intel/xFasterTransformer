@@ -25,10 +25,12 @@
 #include "chatglm3.h"
 #include "chatglm4.h"
 #include "datatypes.h"
+#include "deepseek.h"
 #include "gemma.h"
 #include "hybrid_model.h"
 #include "kvcache_mgr.h"
 #include "llama.h"
+#include "mixtral.h"
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "qwen2.h"
@@ -36,11 +38,9 @@
 #include "search_utils.h"
 #include "searcher.h"
 #include "sequence.h"
+#include "telechat.h"
 #include "timeline.h"
 #include "yarn_llama.h"
-#include "mixtral.h"
-#include "telechat.h"
-#include "deepseek.h"
 
 namespace xft {
 enum class GenerationMode { GREEDY_SEARCH, BEAM_SEARCH, SAMPLE };
@@ -1011,13 +1011,14 @@ AutoModel::AutoModel(std::string modelPath, xft::DataType dataType, xft::DataTyp
     std::string modeltype = *reader.Sections().begin();
     setVocabSize(reader.GetInteger(modeltype, "vocab_size"));
 
-    if (dataType != xft::DataType::unknown) {
-        setDecoder(DecoderFactory::Create(
-                modeltype + "-" + xft::getTypeIdName(dataType) + "-" + xft::getTypeIdName(KVCacheDataType), modelPath));
-    } else {
-        printf("Unsupported data type or KV cache data type.\n");
+    std::string modelKey = modeltype + "-" + xft::getTypeIdName(dataType) + "-" + xft::getTypeIdName(KVCacheDataType);
+
+    AbstractDecoder *dec = DecoderFactory::Create(modelKey, modelPath);
+    if (dec == nullptr) {
+        printf("Unsupported data type or KV cache data type: %s\n", modelKey.c_str());
         exit(-1);
     }
+    setDecoder(dec);
 
     initMaxSeqLen();
 }

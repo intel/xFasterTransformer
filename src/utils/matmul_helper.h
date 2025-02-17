@@ -260,6 +260,26 @@ public:
 #endif
         }
 
+        // BF16 -> BF16
+        else if constexpr (std::is_same_v<OriWeiT, bfloat16_t> && std::is_same_v<WeiT, bfloat16_t>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
+                const OriWeiT *src = weight + (rowOffset + i) * cols + colOffset;
+                memcpy(dst, src, colSize * sizeof(WeiT));
+            }
+        }
+
+        // FP16 -> FP16
+        else if constexpr (std::is_same_v<OriWeiT, float16_t> && std::is_same_v<WeiT, float16_t>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
+                const OriWeiT *src = weight + (rowOffset + i) * cols + colOffset;
+                memcpy(dst, src, colSize * sizeof(WeiT));
+            }
+        }
+
         // INT8 -> INT8/W8A8
         else if constexpr (std::is_same_v<OriWeiT, int8_t>
                 && (std::is_same_v<WeiT, int8_t> || std::is_same_v<WeiT, w8a8_t>)) {
@@ -2298,7 +2318,7 @@ private:
             auto input_md = memory::desc(input_dims, dt_x16, tag::ab);
             auto weight_md = memory::desc(weight_dims, dt_x16, get_onednn_weight_layout(dt_x16));
             auto scale_md = memory::desc(scale_dims,
-                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 :
                         (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
                         tag::ab);
             memory::desc output_md;
@@ -2330,7 +2350,7 @@ private:
         // Repack and convert input data.
         memory::dims scale_dims = {M, N};
         auto scale_md = memory::desc(scale_dims,
-                std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 :
                         (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
                         tag::ab);
         dnnl::memory scale_mem;
@@ -2425,7 +2445,7 @@ private:
             auto weight_md = memory::desc(weight_dims, dt_x16, get_onednn_weight_layout(dt_x16));
             auto bias_md = memory::desc(bias_dims, dt::f32, tag::ab);
             auto shift_md = memory::desc(shift_dims,
-                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                    std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 :
                         (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
                         tag::ab);
             memory::desc output_md;
@@ -2462,7 +2482,7 @@ private:
         // Repack and convert input data.
         memory::dims shift_dims = {M, N};
         auto shift_md = memory::desc(shift_dims,
-                std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 : 
+                std::is_same_v<Tin, float> ? dt::f32 : (std::is_same_v<Tout, float16_t> ? dt::f16 :
                         (std::is_same_v<Tout, bfloat16_t> ? dt::bf16 : dt::undef)),
                         tag::ab);
 

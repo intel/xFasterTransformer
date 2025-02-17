@@ -14,8 +14,10 @@
 // ============================================================================
 #pragma once
 #include "bert_util.h"
+#include "datatypes.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "dtype.h"
 #include "llm_params.h"
 #include "matmul_helper.h"
 #include "split_util.h"
@@ -26,7 +28,9 @@
 template <typename WeiT, typename InT = float, typename ImT = float, typename OutT = float, bool INPUT_AS_RESID = true>
 class MLP {
 public:
-    MLP(DecoderContext *ctx) {}
+    MLP(int layerId, DecoderContext *ctx) {}
+
+    static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
 
     // OriWeiT: float
     template <typename OriWeiT>

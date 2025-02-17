@@ -46,7 +46,8 @@ void MoEDeepSeekImpl(DataType dt, ActivationType at, int numTokens, int hiddenSi
 	    ctx->sparseExperts = numRoutedExperts;
         ctx->moeIntermediateSize = moeIntermediateSize;
         ctx->normTopKProb = true;
-        ctx->firstKDenseReplace = 3;
+        // ctx->firstKDenseReplace = 3;
+        ctx->firstKDenseReplace = 0;
         ctx->numExpertsPerTok = 8;
         ctx->topkGroup = 4;
         ctx->nGroup = 8;
@@ -65,7 +66,7 @@ void MoEDeepSeekImpl(DataType dt, ActivationType at, int numTokens, int hiddenSi
     auto it_created = deepseek_moe_hub.find(deepseek_moe_key);
     if (it_created == deepseek_moe_hub.end()) {
         // MLP &deepseek_moe = MLP::getInstance();
-        deepseek_moe = new MLP(ctx);
+        deepseek_moe = new MLP(0, ctx);
         xft::DeepSeekFFNParams *ffnParams = new xft::DeepSeekFFNParams(ctx->sparseExperts, ctx->denseExperts, ctx->hiddenSize,
             ctx->intermediateSize, ctx->moeIntermediateSize, xft::ParamType::BF16);
         // load weights to deepseek_moe

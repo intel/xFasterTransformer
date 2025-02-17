@@ -29,9 +29,9 @@
 template <typename WeiT, typename InT = bfloat16_t, typename ImT = bfloat16_t, typename OutT = bfloat16_t>
 class DeepSeekMoE {
 public:
-    DeepSeekMoE(DecoderContext *ctx) : norm(ctx) {
+    DeepSeekMoE(int layerId, DecoderContext *ctx) : layerId(layerId), norm(ctx) {
         //dense mlp or concatted all shared experts
-        shared_expert = new LlamaMLP<WeiT, InT, ImT, OutT>(ctx);
+        shared_expert = new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx);
     }
 
     ~DeepSeekMoE() {
@@ -41,6 +41,8 @@ public:
             delete expert;
         }
     }
+
+    static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
 
     template <typename OriWeiT>
     void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
@@ -66,7 +68,7 @@ public:
         this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
         // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
         // ffn->routedExperts.size() == 0 means the firstKDenseReplace is used
-        if (expertNum == 0) {
+        if (layerId < ctx->firstKDenseReplace || ffn->routedExperts.size() == 0) {
             shared_expert->template setWeights<WType>(ctx, ffn->mlp);
         } else {
             prepareGateWeightBias(ctx, &(ffn->gating));
@@ -74,7 +76,7 @@ public:
             shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
 
             for (int i = 0; i < expertNum; ++i) {
-                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(ctx));
+                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
             }
         }
@@ -423,6 +425,8 @@ private:
     xft::Vector<float> gatingScoreCorrBias;
     LlamaMLP<WeiT, InT, ImT, OutT> *shared_expert;
     std::vector<LlamaMLP<WeiT, InT, ImT, OutT> *> experts;
+    
+    int layerId;
 
 #ifdef XFT_DEBUG
     Debugger dbg;

@@ -66,7 +66,7 @@ public:
     Decoder(DecoderContext *_ctx, int _layerIdx)
         : layerIdx(_layerIdx)
         , attn(_layerIdx, _ctx)
-        , mlp(_ctx)
+        , mlp(_layerIdx, _ctx)
 #ifdef XFT_DEBUG
         , dbg(Debugger::formatStr("%d_%d.csv", _layerIdx, _ctx->splitIdx))
 #endif

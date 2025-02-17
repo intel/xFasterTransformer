@@ -165,8 +165,8 @@ int loadWeight(std::string filename, T *&ptr, int size, DataType w_type = DataTy
 
 template <typename T>
 int loadWeight2(std::string filename, T *ptr, int size, DataType w_type = DataType::unknown, bool required = true) {
-    if (!ptr) { 
-        printf("Internal error: cannot load weight with empty pointer\n");
+    if (!ptr) {
+        printf("Internal error: cannot load weight with empty pointer when loading %s.\n", filename.c_str());
         return -1;
     }
 

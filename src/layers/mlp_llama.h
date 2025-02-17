@@ -16,8 +16,10 @@
 
 #include "bert_util.h"
 #include "copy_util.h"
+#include "datatypes.h"
 #include "debugger.h"
 #include "decoder_util.h"
+#include "dtype.h"
 #include "llm_params.h"
 #include "logger.h"
 #include "matmul_helper.h"
@@ -40,7 +42,9 @@ template <typename WeiT, typename InT = float, typename ImT = float, typename Ou
         typename NORM_CLS = xft::RmsNorm>
 class LlamaMLP {
 public:
-    LlamaMLP(DecoderContext *ctx) : norm(ctx) {}
+    LlamaMLP(int layerId, DecoderContext *ctx) : layerId(layerId), norm(ctx) {}
+
+    static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
 
     // OriWeiT: float, int8_t or uint4x2_t
     template <typename OriWeiT>
@@ -162,8 +166,8 @@ public:
 
     // Forward for FFN (Feed Forward Network)
     // forceNoResidual: true when it is called by MOE MLP like MixtralMLP
-    void forward(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride,
-            bool doLnBefore = true, int totInSeqLen = 0, bool forceNoResidual = false) {
+    void forward(DecoderContext *ctx, InT *input, OutT *output, int iStride, int oStride, bool doLnBefore = true,
+            int totInSeqLen = 0, bool forceNoResidual = false) {
         TimeLine t("LlamaMLP");
 
         const int M = totInSeqLen == 0 ? ctx->batchSize * ctx->inputSeqLen : totInSeqLen;
@@ -420,6 +424,8 @@ protected:
 
     // LlamaRMSNorm param
     NORM_CLS norm;
+    
+    int layerId;
 
 #ifdef XFT_DEBUG
     Debugger dbg;

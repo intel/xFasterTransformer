@@ -47,7 +47,7 @@ inline std::string getTypeIdName(xft::DataType dtype) {
 // Get DataType according to c++ types
 template <typename T>
 inline DataType getDataType() {
-    static_assert(sizeof(T) == 0, "Unsupported type");
+    // static_assert(sizeof(T) == 0, "Unsupported type");
     return DataType::unknown;
 }
 
@@ -68,6 +68,6 @@ inline DataType getDataType<float16_t>() {
 
 template <>
 inline DataType getDataType<int8_t>() {
-    return int8;
+    return DataType::int8;
 }
 } // namespace xft
