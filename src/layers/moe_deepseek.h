@@ -89,7 +89,7 @@ public:
         }
 
         // Check the size of sparse experts (loading params vs init params)
-        if (ffn->routedExperts.size() != this->experts.size()) {
+        if (layerId >= ctx->firstKDenseReplace && ffn->routedExperts.size() != this->experts.size()) {
             xft::Logger::error("The number of experts is not consistent. %d %d (config %d)", ffn->routedExperts.size(),
                     this->experts.size(), ctx->sparseExperts);
             exit(-1);
