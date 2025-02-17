@@ -679,7 +679,7 @@ void selfAttention_MLA(T *output, T *query, T *keyRope, T *keyValue, int headNum
         int ldb = kvStride;
         int ldc = (tokens + 31) / 32 * 32;
         auto A = query + (offsets[b] + startSeq) * qStride + i * (nopeDim + ropeDim);
-        auto C = scores + omp_get_thread_num() * mBlockSize * maxScoreStride;
+        auto C = scores + tid * mBlockSize * maxScoreStride;
 
         if constexpr (FusedPack) {
             if (packInfo[tid].first != b || packInfo[tid].second != kvHeadIdx) {
@@ -709,10 +709,13 @@ void selfAttention_MLA(T *output, T *query, T *keyRope, T *keyValue, int headNum
 #endif
 
         // Softmax(Q * Kᵀ)
+        // Note: need to access even elements which is required by AMX instructions
+        // for example, for 5 tokens, need to make sure the 6th is not NaN
+        int reqElems = (tokens + 1) / 2 * 2;
         for (int seq = 0; seq < endSeq - startSeq; ++seq) {
             int elements = startSeq + seq + 1;
             small_softmax(C + seq * ldc, scale, elements);
-            memset(C + seq * ldc + elements, 0, (tokens - elements) * sizeof(T));
+            memset(C + seq * ldc + elements, 0, (reqElems - elements) * sizeof(T));
         }
 
 #ifdef XFT_DEBUG

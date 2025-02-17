@@ -361,7 +361,8 @@ public:
         auto range = SplitUtil::getTaskRange(intermediateSize, numSplit, splitIdx);
         int imCols = range.second - range.first;
 
-        uint64_t normSize = (uint64_t)totalInSeqLen * hiddenSize;
+        uint64_t normSize = std::max((uint64_t)totalInSeqLen * hiddenSize,
+                (uint64_t)totalInSeqLen * attHeadNum * vHeadDim); // as it is also used as MHA output
         uint64_t qkvSize = (uint64_t)totalInSeqLen * qCols + (uint64_t)totalAccSeqLen * (kCols + vCols);
         uint64_t imOutSize = (uint64_t)totalInSeqLen * imCols * mlpFactor;
         uint64_t tmpBufSize = (uint64_t)totalInSeqLen * hiddenSize;
