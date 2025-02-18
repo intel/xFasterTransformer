@@ -74,7 +74,9 @@ public:
             prepareGateWeightBias(ctx, &(ffn->gating));
 
             shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
-            experts.resize(expertNum, new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
+            for (int i = 0; i < expertNum; ++i) {
+                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
+            }
 #pragma omp parallel for
             for (int i = 0; i < expertNum; ++i) {
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
