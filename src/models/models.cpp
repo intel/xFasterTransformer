@@ -741,6 +741,8 @@ std::vector<int32_t> Model::finalize() {
             seqPool.remove(x->getGroupID());
         }
         workingGroup.clear();
+        TimeLine t("dumpFile");
+        t.dumpFile("timeline.json");
 
         return result;
     }
