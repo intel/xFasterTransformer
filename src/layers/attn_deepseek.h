@@ -20,11 +20,26 @@
 #include "logger.h"
 #include "my_types.h"
 #include "rms_norm.h"
+#include "split_util.h"
 
 template <typename WeiT, typename QKPO_CLS, typename InT, typename ImT, typename OutT>
 class DeepSeekAttention {
 public:
-    DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx) {}
+    DeepSeekAttention(int layerId, DecoderContext *ctx) : rope(ctx) {
+        if (ctx->attHeadNum == ctx->kvHeadNum) {
+            // We are responsible for the range [startHead, endHead)
+            auto range = SplitUtil::getHeadRange(ctx->attHeadNum, ctx->kvHeadNum, ctx->numSplit, ctx->splitIdx);
+            auto headRange = range.first;
+            this->startHead = headRange.first;
+            this->endHead = headRange.second;
+        }
+
+        // Unexpected case
+        else {
+            xft::Logger::error("Un expected config: QHeads=%d, KVHeads=%d\n", ctx->attHeadNum, ctx->kvHeadNum);
+            exit(-1);
+        }
+    }
 
     static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
 
@@ -86,11 +101,11 @@ public:
         free(buffer);
 
         // Pack the weights for q_b and kv_b
-        packDenseWeights(ctx, mlap->q_b_proj, qBWeights);
-        packDenseWeights(ctx, mlap->kv_b_proj, kvBWeights);
+        packDenseWeights(ctx, mlap->q_b_proj, qBWeights, true);
+        packDenseWeights(ctx, mlap->kv_b_proj, kvBWeights, true);
 
         // Pack the weights for output
-        packDenseWeights(ctx, mlap->o_proj, outWeights);
+        packDenseWeights(ctx, mlap->o_proj, outWeights, false);
 
         // Norm params
         this->inputNorm.setWeight(mlap->input_norm.gamma, nullptr, ctx->hiddenSize);
@@ -112,6 +127,7 @@ public:
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, bool doLnBefore = true) {
         bool bPrefill = (seqs[0]->getStep() == 0);
         auto hiddenSize = ctx->hiddenSize;
+        auto headsOnDuty = this->endHead - this->startHead;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
 
         int batchSize = seqs.size();
@@ -129,7 +145,7 @@ public:
         xft::Matrix<ImT> normBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, hiddenSize, hiddenSize);
         xft::Matrix<ImT> qaNormBuffer((ImT *)ctx->tmpBuf.Data(), totInSeqLen, ctx->qLoraRank, ctx->qLoraRank);
         xft::Matrix<ImT> kvNormBuffer((ImT *)ctx->tmpBuf.Data(), totInSeqLen, ctx->kvLoraRank, ctx->kvLoraRank); // reuse
-        int mhaOutSize = ctx->attHeadNum * ctx->vHeadDim;
+        int mhaOutSize = headsOnDuty * ctx->vHeadDim;
         xft::Matrix<ImT> mhaOutBuffer((ImT *)ctx->normBuf.Data(), totInSeqLen, mhaOutSize, mhaOutSize);
 
         // Lora buffer (Down projection)
@@ -139,10 +155,10 @@ public:
 
         // Up projection buffer
         auto &qkvMatMul = ctx->qkvMatMul;
-        auto qCols = ctx->attHeadNum * (ctx->nopeDim + ctx->ropeDim);
+        auto qCols = headsOnDuty * (ctx->nopeDim + ctx->ropeDim);
         xft::Matrix<ImT> qBuffer((ImT *)qkvMatMul.Data(), totInSeqLen, qCols, qCols);
 
-        auto kvCols = ctx->attHeadNum * (ctx->nopeDim + ctx->vHeadDim);
+        auto kvCols = headsOnDuty * (ctx->nopeDim + ctx->vHeadDim);
         uint64_t kvOffset = (uint64_t)qCols * totInSeqLen;
         xft::Matrix<ImT> kvBuffer(qBuffer.Data() + kvOffset, totAccSeqLen, kvCols, kvCols);
 
@@ -234,7 +250,7 @@ public:
             ImT *query = qBuffer.Data() + ctx->nopeDim;
             ImT *key = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
             rope.forward(
-                    query, key, totInSeqLen, qBuffer.Stride(), loraBuffer.Stride(), ctx->attHeadNum, 1, posIds.data());
+                    query, key, totInSeqLen, qBuffer.Stride(), loraBuffer.Stride(), headsOnDuty, 1, posIds.data());
 
 #ifdef XFT_DEBUG
             dbg.debugPrint("query rope (after pe, first head):\n");
@@ -350,9 +366,15 @@ public:
             dbg.debugPrint("inputBuffer:\n", outBuffer.Data(), inputBuffer.Data());
             dbg.dumpMatrix(inputBuffer, false, ctx->device);
 #endif
-            ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
-                    mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
-                    outBuffer.Data(), outBuffer.Stride(), nullptr, inputBuffer.Data(), inputBuffer.Stride());
+            if (ctx->splitIdx == 0) {
+                ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
+                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                        outBuffer.Data(), outBuffer.Stride(), nullptr, inputBuffer.Data(), inputBuffer.Stride());
+            } else {
+                ctx->mmHelper->compute(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
+                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                        outBuffer.Data(), outBuffer.Stride());
+            }
         }
 
 #ifdef XFT_DEBUG
@@ -367,7 +389,8 @@ private:
         static_assert(std::is_same_v<ImT, bfloat16_t> || std::is_same_v<ImT, float16_t>,
                 "The data type is not supported for DS attention.");
 
-        xft::selfAttention_MLA<true>(out, query, keyRope, keyValue, ctx->attHeadNum, ctx->nopeDim, ctx->ropeDim,
+        auto headsOnDuty = endHead - startHead;
+        xft::selfAttention_MLA<true>(out, query, keyRope, keyValue, headsOnDuty, ctx->nopeDim, ctx->ropeDim,
                 ctx->vHeadDim, oStride, qStride, krStride, kvStride, batchSize, tokenSizes, ctx->attFactor,
                 ctx->numThreads);
     }
@@ -378,18 +401,37 @@ private:
         static_assert(std::is_same_v<ImT, bfloat16_t> || std::is_same_v<ImT, float16_t>,
                 "The data type is not supported for DS attention.");
 
-        // crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T *keyValue, int headNum, int nopeDim,
-        //      int ropeDim, int vHeadDim, int oStride, int qStride, int krStride, int kvStride, int batchSize,
-        //      const int *inputSeqLens, const int *pastSeqLens, const float scale, int threadNum)
-        xft::crossAttnByHead_DS(out, query, keyRopes, keyValue, ctx->attHeadNum, ctx->nopeDim,
-                ctx->ropeDim, ctx->vHeadDim, oStride, qStride, krStride, kvStride, batchSize, tokenSizes, pastSeqLens,
-                ctx->attFactor, ctx->numThreads);
+        auto headsOnDuty = endHead - startHead;
+        xft::crossAttnByHead_DS(out, query, keyRopes, keyValue, headsOnDuty, ctx->nopeDim, ctx->ropeDim, ctx->vHeadDim,
+                oStride, qStride, krStride, kvStride, batchSize, tokenSizes, pastSeqLens, ctx->attFactor,
+                ctx->numThreads);
     }
 
-    void packDenseWeights(DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW) {
-        xft::Matrix<WeiT> w((WeiT *)dense.weight, dense.input_dim, dense.output_dim, dense.output_dim);
-        packedW.Resize(dense.input_dim, dense.output_dim);
-        ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+    void packDenseWeights(
+            DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW, bool bVerticalSplit) {
+        int splitTarget = bVerticalSplit ? dense.output_dim : dense.input_dim;
+        if (splitTarget % ctx->attHeadNum != 0) {
+            xft::Logger::error("The split dim %d is not divisible by %d.", splitTarget, ctx->attHeadNum);
+            exit(-1);
+        }
+
+        int dimPerHead = splitTarget / ctx->attHeadNum;
+        int splitOffset = startHead * dimPerHead;
+        int splitSize = (endHead - startHead) * dimPerHead;
+
+        if (bVerticalSplit) {
+            xft::Matrix<WeiT> w(
+                    (WeiT *)dense.weight + splitOffset, dense.input_dim, splitSize, dense.output_dim);
+
+            packedW.Resize(dense.input_dim, splitSize);
+            ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+        } else {
+            xft::Matrix<WeiT> w((WeiT *)dense.weight + splitOffset * dense.output_dim, splitSize, dense.output_dim,
+                    dense.output_dim);
+
+            packedW.Resize(splitSize, dense.output_dim);
+            ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+        }
     }
 
     bool isSameWeiType(xft::ParamType type) {
@@ -418,6 +460,9 @@ private:
 
     // TODO: write DS rotary embedding
     QKPO_CLS rope;
+
+    int startHead;
+    int endHead;
 
 #ifdef XFT_DEBUG
     Debugger dbg;
