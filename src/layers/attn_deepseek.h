@@ -207,8 +207,10 @@ public:
         }
 
 #ifdef XFT_DEBUG
+        dbg.debugPrint("Query (nope+rope):\n");
+        dbg.dumpMatrix(qBuffer, false, ctx->device);
         dbg.debugPrint("Query rope (before pe, first head):\n");
-        xft::Matrix<ImT> qFirstHead(qBuffer.Data(), qBuffer.Rows(), ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
+        xft::Matrix<ImT> qFirstHead(qBuffer.Data() + ctx->nopeDim, qBuffer.Rows(), ctx->nopeDim + ctx->ropeDim, qBuffer.Stride());
         dbg.dumpMatrix(qFirstHead, false, ctx->device);
         dbg.debugPrint("Query rope (before pe, second head):\n");
         xft::Matrix<ImT> qSecondHead(qBuffer.Data() + ctx->nopeDim + ctx->ropeDim + ctx->nopeDim, qBuffer.Rows(),
@@ -311,11 +313,11 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("qBuffer:\n");
-        dbg.dumpMatrix(qBuffer, true, ctx->device);
+        dbg.dumpMatrix(qBuffer, false, ctx->device);
         dbg.debugPrint("kvBuffer:\n");
-        dbg.dumpMatrix(kvBuffer, true, ctx->device);
+        dbg.dumpMatrix(kvBuffer, false, ctx->device);
         dbg.debugPrint("key rope:\n");
-        dbg.dumpMatrix(_keyRope, true, ctx->device);
+        dbg.dumpMatrix(_keyRope, false, ctx->device);
 #endif
 
         // Attention
@@ -338,7 +340,7 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("MHA output:\n");
-        dbg.dumpMatrix(mhaOutBuffer, true, ctx->device);   
+        dbg.dumpMatrix(mhaOutBuffer, false, ctx->device);   
 #endif
 
         // Output
