@@ -32,6 +32,10 @@ public:
     DeepSeekMoE(int layerId, DecoderContext *ctx) : layerId(layerId), norm(ctx) {
         //dense mlp or concatted all shared experts
         shared_expert = new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx);
+        if (layerId >= ctx->firstKDenseReplace) {
+            for (int i = 0; i < ctx->sparseExperts; ++i)
+                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
+        }
     }
 
     ~DeepSeekMoE() {
@@ -60,24 +64,26 @@ public:
             xft::Logger::error("Cannot cast FFNParams to DeepSeekFFNParams.");
             exit(-1);
         }
-        const int hiddenSize = ctx->hiddenSize;
-        const int intermediateSize = ctx->intermediateSize;
-        const int moeIntermediateSize = ctx->moeIntermediateSize;
+
         const int expertNum = ffn->routedExperts.size();
 
-        this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("RMS norm weight: [%d]\n", ctx->hiddenSize);
+        dbg.dumpMatrix(ffn->norm.gamma, 1, ctx->hiddenSize, ctx->hiddenSize);
+#endif
         // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
         // ffn->routedExperts.size() == 0 means the firstKDenseReplace is used
-        if (layerId < ctx->firstKDenseReplace || ffn->routedExperts.size() == 0) {
-            shared_expert->template setWeights<WType>(ctx, ffn->mlp);
+        if (layerId < ctx->firstKDenseReplace || expertNum == 0) {
+            memcpy(ffn->mlp.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
+            shared_expert->template setWeights<WType>(ctx, &ffn->mlp);
         } else {
+            this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
             prepareGateWeightBias(ctx, &(ffn->gating));
+            memcpy(ffn->sharedExpert.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
 
-            shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
-            for (int i = 0; i < expertNum; ++i) {
-                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
-            }
-#pragma omp parallel for
+            shared_expert->template setWeights<WType>(ctx, &ffn->sharedExpert);
+            int nthreads = std::min(omp_get_max_threads(), 64);
+#pragma omp parallel for num_threads(nthreads)
             for (int i = 0; i < expertNum; ++i) {
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
             }
@@ -142,7 +148,19 @@ public:
                 xft::copy(output + i * oStride, input + i * iStride, hiddenSize);
             }
         }
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Output init: \n");
+        dbg.dumpMatrix(output, M, hiddenSize, hiddenSize);
+#endif
 
+        shared_expert->forward(ctx, input, output, iStride, oStride, doLnBefore, M, false);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Output mlp/shared: \n");
+        dbg.dumpMatrix(output, M, hiddenSize, hiddenSize);
+#endif
+        if (expertNum == 0) {
+            return;
+        }
         // Normalize input
         if (doLnBefore == true) {
             norm.forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
@@ -154,12 +172,6 @@ public:
 
         ImT *normBuf = (doLnBefore ? normBuffer.Data() : inBuffer.Data());
         int normStride = (doLnBefore ? normBuffer.Stride() : inBuffer.Stride());
-
-        shared_expert->forward(ctx, normBuf, output, normStride, oStride, false, M, false);
-
-        // first k dense replace
-        if (expertNum == 0) { return; }
-
         // Gating
         OutT *gateLogits = ctx->getBuffer<OutT>("gateLogits", M * expertNum, ctx->device);
         ctx->mmHelper->compute(false, M, expertNum, hiddenSize, 1.0f, normBuf, normStride, gatingWeight.Data(),
@@ -177,6 +189,10 @@ public:
         assert((ctx->scoringFunc) == "sigmoid");
         // TODO: fused with last compute MatMul
         computingSigmoid(gateLogits, M, expertNum);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("gateLogits sigmoid: \n");
+        dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
+#endif
 
         // topK method: noaux_tc
         assert((ctx->topkMethod) == "noaux_tc");
@@ -187,18 +203,36 @@ public:
         // 1. Select top 2 experts and sum-up for each group of tokens [M, n_group]
         float *groupWeight = reinterpret_cast<float *>(ctx->imOut.Data());
         scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight, gatingScoreCorrBias.Data());
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Group scores: \n");
+        dbg.dumpMatrix(groupWeight, M, nGroups, nGroups);
+#endif
 
         // 2. Select top 4 groups for each token [M, topk_group]
         int *selGroups = reinterpret_cast<int *>(groupWeight + M * nGroups);
         selectTopKGroups(groupWeight, M, nGroups, selGroups, topkGroup);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("seleted Group: \n");
+        dbg.dumpMatrix(selGroups, M, topkGroup, topkGroup);
+#endif
 
         // 3. Select top 8 experts in selected 4 groups for each token idx-> [M, topk_expert] wei-> [M, topk_expert]
         int *selExperts = reinterpret_cast<int *>(selGroups + M * topkGroup);
         float *expertWeight = reinterpret_cast<float *>(selExperts + M * topkExpert);
         maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("seleted Experts & Weight: \n");
+        dbg.dumpMatrix(selExperts, M, topkExpert, topkExpert);
+        dbg.dumpMatrix(expertWeight, M, topkExpert, topkExpert);
+#endif
 
         // if ctx->normTopKProb is true, we need to normalize the expertWeight, so that they sum 1
         scaleNormTopKExpertsWeight(expertWeight, M, topkExpert, ctx->numExpertsPerTok > 1 && ctx->normTopKProb, ctx->routedScalingFac);
+#ifdef XFT_DEBUG
+        dbg.debugPrint("seleted Experts & Weight: \n");
+        dbg.dumpMatrix(selExperts, M, topkExpert, topkExpert);
+        dbg.dumpMatrix(expertWeight, M, topkExpert, topkExpert);
+#endif
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(
@@ -253,7 +287,7 @@ private:
 
         xft::Matrix<GateType> quantizedGatingW;
 
-        ctx->mmHelper->convertWeight(ctx, false, M, N, (const float *)denseParams->weight, denseParams->weight_scale,
+        ctx->mmHelper->convertWeight(ctx, false, M, N, (const GateType *)denseParams->weight, denseParams->weight_scale,
             denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
         gatingWeight.Resize(M, N);
 	    ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
@@ -425,6 +459,7 @@ private:
     xft::Vector<float> gatingWZero;
     xft::Vector<float> gatingWSum;
     xft::Vector<float> gatingScoreCorrBias;
+    //dense mlp or concatted all shared experts, including norm
     LlamaMLP<WeiT, InT, ImT, OutT> *shared_expert;
     std::vector<LlamaMLP<WeiT, InT, ImT, OutT> *> experts;
     

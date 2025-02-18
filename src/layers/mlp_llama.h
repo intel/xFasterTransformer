@@ -54,7 +54,7 @@ public:
             const float *downB, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
-        if (normW == nullptr && ctx->moeIntermediateSize > 0) {
+        if (layerId >= ctx->firstKDenseReplace && ctx->moeIntermediateSize > 0) {
             // for each expert MLP in MoE
             imSize = ctx->moeIntermediateSize;
         }
