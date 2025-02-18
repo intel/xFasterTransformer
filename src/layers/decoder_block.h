@@ -21,6 +21,7 @@
 #include "llm_params.h"
 #include "logger.h"
 #include "messenger.h"
+#include "progress_bar.h"
 #include "weight_util.h"
 
 template <typename ATTN_CLS, typename MLP_CLS, typename KVCacheT, bool ATTN_MLP_PARALLEL>
@@ -41,6 +42,8 @@ public:
         xft::AttnParams *attnParams = createAttnParams(ctx, modelPath, dt);
         xft::FFNParams *ffnParams = createFFNParams(ctx, modelPath, dt);
 
+        ProgressBar pb(startLayer + layersOnDuty, "Loading Weights ", 32);
+
         for (int i = startLayer; i < startLayer + layersOnDuty; ++i) {
             auto pdec = new DECODER(ctx, i);
             if (dt == xft::DataType::int8) {
@@ -58,7 +61,9 @@ public:
                 std::exit(-1);
             }
             this->decoders.push_back(pdec);
+            if (ctx->tpRank == 0) { pb.update(); }
         }
+        if (ctx->tpRank == 0) pb.finish();
 
         delete ffnParams;
         delete attnParams;
@@ -642,12 +647,11 @@ private:
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.weight.bin",
                     (T *)ffn->mlp.gate.weight, ctx->hiddenSize * ctx->intermediateSize);
         } else {
-	    // Load gating weights and bias
+            // Load gating weights and bias
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.bin", (T *)ffn->gating.weight,
-                ffn->gating.input_dim * ffn->gating.output_dim);
-            loadOptionalBias(
-                modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin", ffn->gating,
-		"read gating bias error");
+                    ffn->gating.input_dim * ffn->gating.output_dim);
+            loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin",
+                    ffn->gating, "read gating bias error");
             // Load experts weights
             // Load shared expert weights
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight.bin",
@@ -660,7 +664,7 @@ private:
             // Load routed expert weights
             if (ffn->routedExperts.empty()) {
                 for (int i = 0; i < ctx->sparseExperts; ++i) {
-                        ffn->routedExperts.emplace_back(
+                    ffn->routedExperts.emplace_back(
                             ctx->hiddenSize, ctx->moeIntermediateSize, ffn->mlp.gate.wtype, ffn->mlp.gate.wtrans);
                 }
             }
