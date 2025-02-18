@@ -240,9 +240,9 @@ struct MixtralFFNParams : public FFNParams {
 struct DeepSeekFFNParams : public FFNParams {
     NormParams norm;
     DenseLayerParams gating; // Gating for MOE
-    ExpertParams mlp; // normal mlp layer
+    LlamaFFNParams mlp; // normal mlp layer
+    LlamaFFNParams sharedExpert; // shared expert, assume it has been merged into 1 weight
     std::vector<ExpertParams> routedExperts; // List of routed experts
-    ExpertParams sharedExpert; // shared expert, assume it has been merged into 1 weight
 
     DeepSeekFFNParams() : norm {}, gating {}, mlp {}, routedExperts {}, sharedExpert {} {}
     DeepSeekFFNParams(int routedExpertsNum, int sharedExpertNum, int hiddenSize, int intermediateSize,
@@ -251,9 +251,9 @@ struct DeepSeekFFNParams : public FFNParams {
         , gating(hiddenSize, routedExpertsNum, denseWType, wTrans)
         , mlp(hiddenSize, intermediateSize, denseWType, wTrans)
         , sharedExpert(hiddenSize, sharedExpertNum * moeIntermediateSize, denseWType, wTrans) {
-        for (int i = 0; i < routedExpertsNum; ++i) {
-           routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
-        }
+        //for (int i = 0; i < routedExpertsNum; ++i) {
+        //   routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
+        //}
     }
 };
 
