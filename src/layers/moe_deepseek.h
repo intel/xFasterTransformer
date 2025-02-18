@@ -74,9 +74,9 @@ public:
             prepareGateWeightBias(ctx, &(ffn->gating));
 
             shared_expert->template setWeights<WType>(ctx, ffn->sharedExpert);
-
+            experts.resize(expertNum, new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
+#pragma omp parallel for
             for (int i = 0; i < expertNum; ++i) {
-                experts.emplace_back(new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx));
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
             }
         }
@@ -237,8 +237,8 @@ public:
             scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
         }
 #ifdef XFT_DEBUG
-            dbg.debugPrint("Output:\n");
-            dbg.dumpMatrix(output, rowNum, hiddenSize, hiddenSize);
+        dbg.debugPrint("Output:\n");
+        dbg.dumpMatrix(output, M, hiddenSize, hiddenSize);
 #endif
     }
 
