@@ -313,10 +313,10 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
     } else if (modeltype == "mixtral") {
         return new MixtralTokenizer(tokenPath);
     } else if (modeltype == "deepseek_moe") {
-        // For V3/R1 should be
-        // {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16};
+        // For V2 should be
+        // {100000, 10492, 2065, 245, 766, 11, 745, 22704, 245, 1585, 5075, 779, 12239, 276, 463, 25720, 13}
         return new FakeTokenizer(std::vector<int>(
-                {100000, 10492, 2065, 245, 766, 11, 745, 22704, 245, 1585, 5075, 779, 12239, 276, 463, 25720, 13}));
+            {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16}));
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
@@ -479,18 +479,18 @@ int main(int argc, char **argv) {
         secondIdCount = 0;
 
         // TODO: Deprecated this old path
-        model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
-                /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
-                /*doSample*/ doSample, /*temperature*/ temperature,
-                /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
-        model.input(input, batchSize);
-
-        // New path
-        // model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
-        //         /*lenPenalty*/ 1.0,
+        // model.config(/*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1, /*lenPenalty*/ 1.0,
         //         /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
         //         /*doSample*/ doSample, /*temperature*/ temperature,
         //         /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
+        // model.input(input, batchSize);
+
+        // New path
+        model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
+                /*lenPenalty*/ 1.0,
+                /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
+                /*doSample*/ doSample, /*temperature*/ temperature,
+                /*topK*/ topK, /*topP*/ topP, /*repetitionPenalty*/ repetitionPenalty);
 
         std::vector<int> firstIds;
         std::vector<int> secondIds;
