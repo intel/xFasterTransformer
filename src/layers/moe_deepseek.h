@@ -201,7 +201,7 @@ public:
         int topkExpert = ctx->numExpertsPerTok;
 
         // 1. Select top 2 experts and sum-up for each group of tokens [M, n_group]
-        float *groupWeight = reinterpret_cast<float *>(ctx->imOut.Data());
+        float *groupWeight = ctx->getBuffer<float>("groupWeight", M * nGroups, ctx->device);
         scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight, gatingScoreCorrBias.Data());
 #ifdef XFT_DEBUG
         dbg.debugPrint("Group scores: \n");
@@ -209,7 +209,7 @@ public:
 #endif
 
         // 2. Select top 4 groups for each token [M, topk_group]
-        int *selGroups = reinterpret_cast<int *>(groupWeight + M * nGroups);
+        int *selGroups = ctx->getBuffer<int>("selGroups", M * topkGroup, ctx->device);
         selectTopKGroups(groupWeight, M, nGroups, selGroups, topkGroup);
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Group: \n");
@@ -217,8 +217,8 @@ public:
 #endif
 
         // 3. Select top 8 experts in selected 4 groups for each token idx-> [M, topk_expert] wei-> [M, topk_expert]
-        int *selExperts = reinterpret_cast<int *>(selGroups + M * topkGroup);
-        float *expertWeight = reinterpret_cast<float *>(selExperts + M * topkExpert);
+        int *selExperts = ctx->getBuffer<int>("selExperts", M * topkExpert, ctx->device);
+        float *expertWeight = ctx->getBuffer<float>("expertWeight", M * topkExpert, ctx->device);
         maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Experts & Weight: \n");
@@ -226,7 +226,7 @@ public:
         dbg.dumpMatrix(expertWeight, M, topkExpert, topkExpert);
 #endif
 
-        // if ctx->normTopKProb is true, we need to normalize the expertWeight, so that they sum 1
+        // 4. if ctx->normTopKProb is true, Normalize the expertWeight, so that they sum 1
         scaleNormTopKExpertsWeight(expertWeight, M, topkExpert, ctx->numExpertsPerTok > 1 && ctx->normTopKProb, ctx->routedScalingFac);
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Experts & Weight: \n");
@@ -239,6 +239,7 @@ public:
                 "Selected experts: [%d]=%f [%d]=%f\n", selExperts[0], expertWeight[0], selExperts[1], expertWeight[1]);
 #endif
 
+        // 5. Reorder the input and weight for each expert
         std::vector<int> idx[expertNum]; // index for each expert
         std::vector<float> weights[expertNum]; // weight for each expert
         for (int i = 0; i < M; ++i) {
@@ -287,10 +288,12 @@ private:
 
         xft::Matrix<GateType> quantizedGatingW;
 
-        ctx->mmHelper->convertWeight(ctx, false, M, N, (const GateType *)denseParams->weight, denseParams->weight_scale,
-            denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
+        //ctx->mmHelper->convertWeight(ctx, false, M, N, (const GateType *)denseParams->weight, denseParams->weight_scale,
+        //    denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
+        quantizedGatingW.Resize(M, N);
+        xft::copy(quantizedGatingW.Data(), (const GateType *)denseParams->weight, M * N);
         gatingWeight.Resize(M, N);
-	    ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
+        ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
 
         if (denseParams->bias != nullptr) {
             gatingScoreCorrBias.Resize(N);
@@ -449,6 +452,38 @@ private:
             selIdx[i] = vec[i].second;
             if (selWeight != nullptr)
                 selWeight[i] = vec[i].first;
+        }
+    }
+
+    // gather catWeights from all selected experts based on selExperts
+    // note that gate and up weights are packed and first half and second half are gathered separately
+    void gatherGateUpWeights(WeiT *catWeights, int hiddenSize, int exptStride, int topkExpert, int *selExperts, float *expertWeight) {
+        if (Env::getInstance().getMlpCatEnabled()) {
+            int stride = exptStride * topkExpert;
+            int dim = exptStride / 2;
+# pragma omp parallel for collapse(2)
+            for (int i = 0; i < topkExpert; ++i) {
+                for (int j = 0; j < hiddenSize; ++j) {
+                    WeiT *gateW = this->experts[selExperts[i]]->catWeights.Data() + j * exptStride;
+                    WeiT *upW = gateW + dim;
+                    xft::copy(catWeights + j * stride + i * dim, gateW, dim);
+                    xft::copy(catWeights + j * stride + stride / 2 + i * dim, upW, dim);
+                }
+            }
+        } else {
+            // Not implemented
+            xft::Logger::error("Uncat Mlp gatherWeights, Not implemented yet.");
+            exit(-1);
+        }
+    }
+
+    void gatherDownWeights(WeiT *downWeights, int dim, int hiddenSize, int topkExpert, int *selExperts, float *expertWeight) {
+# pragma omp parallel for collapse(2)
+        for (int i = 0; i < topkExpert; ++i) {
+            for (int j = 0; j < dim; ++j) {
+                WeiT *downW = this->experts[selExperts[i]]->downWeight.Data() + j * hiddenSize;
+                xft::copy(downWeights + i * dim * hiddenSize + j * hiddenSize, downW, hiddenSize);
+            }
         }
     }
 
