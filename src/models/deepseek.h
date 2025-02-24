@@ -49,7 +49,7 @@ private:
     void setFinalLnWeight(const std::string &modelPath);
 
 private:
-    TokenEmbedding<float16_t> *embedding;
+    TokenEmbedding<bfloat16_t> *embedding;
     RmsNorm finalLN;
 };
 

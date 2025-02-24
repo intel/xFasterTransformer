@@ -33,6 +33,7 @@ class AutoModel:
             "w8a8_int8",
             "w8a8_int4",
             "w8a8_nf4",
+            "fp8_e4m3",
         ]:
             raise Exception(f"{self.__class__.__name__} don't support {dtype}.")
 

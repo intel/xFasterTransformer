@@ -17,6 +17,7 @@
 #include "bfloat16.h"
 #include "dtype.h"
 #include "float16.h"
+#include "fp8_e4m3.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "uint4x2.h"
@@ -39,6 +40,7 @@ inline std::string getTypeIdName(xft::DataType dtype) {
         case xft::DataType::w8a8_int8: return "w8a8_t-int8_t";
         case xft::DataType::w8a8_int4: return "w8a8_t-uint4x2_t";
         case xft::DataType::w8a8_nf4: return "w8a8_t-nf4x2_t";
+        case xft::DataType::fp8_e4m3: return "fp8_e4m3_t";
         case xft::DataType::unknown: return "unknown";
     }
     return std::string("unknown");
@@ -69,5 +71,10 @@ inline DataType getDataType<float16_t>() {
 template <>
 inline DataType getDataType<int8_t>() {
     return DataType::int8;
+}
+
+template <>
+inline DataType getDataType<e4m3_t>() {
+    return DataType::fp8_e4m3;
 }
 } // namespace xft

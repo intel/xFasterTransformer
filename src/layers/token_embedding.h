@@ -41,7 +41,9 @@ public:
         }
     }
 
-    void setWeights(const std::string &weightPath) { loadWeight(weightPath, embTable, vocabSize * hiddenSize); }
+    void setWeights(const std::string &weightPath, xft::DataType wType = xft::DataType::unknown) {
+        loadWeight(weightPath, embTable, vocabSize * hiddenSize, wType);
+    }
 
     // tokenIds ia a 2-dimension array with batchSize rows, and seqLen cols
     template <typename OutT>

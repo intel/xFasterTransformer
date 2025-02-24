@@ -316,7 +316,7 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         // For V2 should be
         // {100000, 10492, 2065, 245, 766, 11, 745, 22704, 245, 1585, 5075, 779, 12239, 276, 463, 25720, 13}
         return new FakeTokenizer(std::vector<int>(
-            {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16}));
+                {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16}));
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
@@ -328,7 +328,8 @@ std::map<std::string, xft::DataType> dataTypeMap = {{"fp16", xft::DataType::fp16
         {"nf4", xft::DataType::nf4}, {"bf16_fp16", xft::DataType::bf16_fp16}, {"bf16_int8", xft::DataType::bf16_int8},
         {"bf16_w8a8", xft::DataType::bf16_w8a8}, {"bf16_int4", xft::DataType::bf16_int4},
         {"bf16_nf4", xft::DataType::bf16_nf4}, {"w8a8_int8", xft::DataType::w8a8_int8},
-        {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4}};
+        {"w8a8_int4", xft::DataType::w8a8_int4}, {"w8a8_nf4", xft::DataType::w8a8_nf4},
+        {"fp8_e4m3", xft::DataType::fp8_e4m3}};
 
 std::map<std::string, xft::DataType> KVCacheDataTypeMap
         = {{"fp16", xft::DataType::fp16}, {"bf16", xft::DataType::bf16}, {"int8", xft::DataType::int8}};

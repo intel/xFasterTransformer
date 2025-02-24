@@ -25,7 +25,7 @@ DeepSeekLLM<WeiT, KVCacheT>::DeepSeekLLM(const std::string &modelPath)
     DecoderContext *ctx = this->getContext();
 
     // Embedding
-    embedding = new TokenEmbedding<float16_t>(ctx);
+    embedding = new TokenEmbedding<bfloat16_t>(ctx);
     setEmbeddingWeights(modelPath);
 
     // Final LN
@@ -39,12 +39,13 @@ DeepSeekLLM<WeiT, KVCacheT>::~DeepSeekLLM() {
 
 template <typename WeiT, typename KVCacheT>
 void DeepSeekLLM<WeiT, KVCacheT>::setEmbeddingWeights(const std::string &modelPath) {
-    embedding->setWeights(modelPath + "/model.wte.bin");
+    embedding->setWeights(modelPath + "/model.wte.bin", xft::DataType::bf16);
 }
 
 template <typename WeiT, typename KVCacheT>
 void DeepSeekLLM<WeiT, KVCacheT>::setFinalLnWeight(const std::string &modelPath) {
-    finalLN.setWeight(modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize());
+    finalLN.setWeight(
+            modelPath + "/model.final_layernorm.weight.bin", "", embedding->getHiddenSize(), xft::DataType::bf16);
 }
 
 template <typename WeiT, typename KVCacheT>
