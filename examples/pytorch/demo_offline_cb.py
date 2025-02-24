@@ -57,6 +57,7 @@ DTYPE_LIST = [
     "w8a8_int8",
     "w8a8_int4",
     "w8a8_nf4",
+    "fp8_e4m3",
 ]
 
 KVCACHE_DTYPE_LIST = ["fp16", "bf16", "int8"]
@@ -84,7 +85,7 @@ class FileReader:
         else:
             self.file.close()
             return None
-        
+
 class TextReader:
     def __init__(self):
         self.prompts = [

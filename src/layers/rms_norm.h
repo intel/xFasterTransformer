@@ -29,7 +29,8 @@ public:
     ~RmsNormImp();
 
     void setWeight(const float *w, const float *, int cols);
-    void setWeight(const std::string &modelPath, const std::string &, int cols);
+    void setWeight(
+            const std::string &modelPath, const std::string &, int cols, xft::DataType wType = xft::DataType::unknown);
 
     // Input and output are in shape of (rows, normSize)
     void forward(const float *input, float *output, int rows, int iStride = -1, int oStride = -1, float epsilon = 1e-6);

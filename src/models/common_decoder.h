@@ -225,6 +225,8 @@ public:
             dt = srcWeightType;
         }
 
+        if (attnWeightType == DataType::fp8_e4m3 && srcWeightType == DataType::fp8_e4m3) { dt = srcWeightType; }
+
         if (quantQweightDataType == "int8" || quantQweightDataType == "uint4") {
             dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
             REQUIRES(quantScalesDataType == "fp32", "scales should be fp32 data type.");
@@ -856,7 +858,12 @@ protected:
         float *weight = (float *)malloc(inputSize * outputSize * sizeof(float));
         float *bias = nullptr;
 
-        loadWeight(modelPath + "/model.lm_head.weight.bin", weight, inputSize * outputSize);
+        xft::DataType wType = xft::DataType::unknown;
+        if (getWeightType("/config.ini") == xft::DataType::fp8_e4m3){
+            wType = xft::DataType::bf16;
+        }
+
+        loadWeight(modelPath + "/model.lm_head.weight.bin", weight, inputSize * outputSize, wType);
 
         predictor->setWeight(ctx, weight, bias);
 

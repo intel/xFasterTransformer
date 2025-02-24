@@ -381,6 +381,7 @@ private:
             case xft::DataType::fp32: return xft::ParamType::FP32;
             case xft::DataType::bf16: return xft::ParamType::BF16;
             case xft::DataType::fp16: return xft::ParamType::FP16;
+            case xft::DataType::fp8_e4m3: return xft::ParamType::FP8_E4M3;
             default: return xft::ParamType::None;
         }
     }
@@ -432,7 +433,7 @@ private:
         }
         // FP32/BF16/FP16
         else if constexpr (std::is_same_v<WType, float> || std::is_same_v<WType, bfloat16_t>
-                || std::is_same_v<WType, float16_t>) {
+                || std::is_same_v<WType, float16_t> || std::is_same_v<WType, e4m3_t>) {
             xft::GQAttnParams *gqap = dynamic_cast<xft::GQAttnParams *>(attnParams);
             xft::MLAttnParams *mlap = dynamic_cast<xft::MLAttnParams *>(attnParams);
             if (gqap != NULL) {
@@ -509,13 +510,13 @@ private:
         std::string strIdx = std::to_string(layerIdx);
 
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".input_layernorm.weight.bin", attn->input_norm.gamma,
-                hiddenSize);
+                hiddenSize, xft::DataType::bf16);
 
         if (qLoraRank > 0) {
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight.bin",
                     attn->q_a_proj.weight, hiddenSize * qLoraRank, attn->q_a_proj.wtype);
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_layernorm.weight.bin",
-                    attn->q_a_norm.gamma, qLoraRank);
+                    attn->q_a_norm.gamma, qLoraRank, xft::DataType::bf16);
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight.bin",
                     attn->q_b_proj.weight, qLoraRank * qSize, attn->q_b_proj.wtype);
         } else {
@@ -527,12 +528,33 @@ private:
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight.bin",
                 attn->kv_a_proj.weight, hiddenSize * (kvLoraRank + ropeDim), attn->kv_a_proj.wtype);
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_layernorm.weight.bin",
-                attn->kv_a_norm.gamma, kvLoraRank);
+                attn->kv_a_norm.gamma, kvLoraRank, xft::DataType::bf16);
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight.bin",
                 attn->kv_b_proj.weight, kvLoraRank * kvSize, attn->kv_b_proj.wtype);
 
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight.bin", attn->o_proj.weight,
                 ctx->attHeadNum * vHeadDim * hiddenSize, attn->o_proj.wtype);
+
+        if constexpr (std::is_same_v<T, e4m3_t>) {
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_a_proj.weight_scale_inv.bin",
+                    attn->q_a_proj.weight_scale, ((hiddenSize + 127) / 128) * ((qLoraRank + 127) / 128),
+                    xft::DataType::fp32);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.q_b_proj.weight_scale_inv.bin",
+                    attn->q_b_proj.weight_scale, ((qLoraRank + 127) / 128) * ((qSize + 127) / 128),
+                    xft::DataType::fp32);
+
+            xft::loadWeight2(
+                    modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight_scale_inv.bin",
+                    attn->kv_a_proj.weight_scale, ((hiddenSize + 127) / 128) * ((kvLoraRank + ropeDim + 127) / 128),
+                    attn->kv_a_proj.wtype, xft::DataType::fp32);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight_scale_inv.bin",
+                    attn->kv_b_proj.weight_scale, ((kvLoraRank + 127) / 128) * ((kvSize + 127) / 128),
+                    attn->kv_b_proj.wtype, xft::DataType::fp32);
+
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight_scale_inv.bin",
+                    attn->o_proj.weight_scale, ((ctx->attHeadNum * vHeadDim + 127) / 128) * ((hiddenSize + 127) / 128),
+                    xft::DataType::fp32);
+        }
     }
 
     template <typename T>
@@ -636,7 +658,7 @@ private:
 
         // Norm params
         xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
-                ffn->norm.gamma, ffn->norm.hidden_size);
+                ffn->norm.gamma, ffn->norm.hidden_size, xft::DataType::bf16);
 
         if (layerIdx < ctx->firstKDenseReplace) {
             // Load MLP
@@ -649,9 +671,9 @@ private:
         } else {
             // Load gating weights and bias
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.bin", (T *)ffn->gating.weight,
-                    ffn->gating.input_dim * ffn->gating.output_dim);
+                    ffn->gating.input_dim * ffn->gating.output_dim, xft::DataType::bf16);
             loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin",
-                    ffn->gating, "read gating bias error");
+                    ffn->gating, "read gating bias error", xft::DataType::bf16);
             // Load experts weights
             // Load shared expert weights
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight.bin",
@@ -681,9 +703,55 @@ private:
                         (T *)ffn->routedExperts[i].gate.weight, ctx->hiddenSize * ctx->moeIntermediateSize);
             }
         }
+
+        if constexpr (std::is_same_v<T, e4m3_t>) {
+            if (layerIdx < ctx->firstKDenseReplace) {
+                // Load MLP
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.down_proj.weight_scale_inv.bin",
+                        ffn->mlp.down.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.up_proj.weight_scale_inv.bin",
+                        ffn->mlp.up.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+                xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.weight_scale_inv.bin",
+                        ffn->mlp.gate.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+            } else {
+                // Load experts weights
+                // Load shared expert weights
+                xft::loadWeight2(
+                        modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight_scale_inv.bin",
+                        ffn->sharedExpert.down.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+                xft::loadWeight2(
+                        modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.up_proj.weight_scale_inv.bin",
+                        ffn->sharedExpert.up.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+                xft::loadWeight2(
+                        modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.gate_proj.weight_scale_inv.bin",
+                        ffn->sharedExpert.gate.weight_scale,
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+
+                for (int i = 0; i < ctx->sparseExperts; ++i) {
+                    xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                    + ".down_proj.weight_scale_inv.bin",
+                            ffn->routedExperts[i].down.weight_scale,
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                    xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                    + ".up_proj.weight_scale_inv.bin",
+                            ffn->routedExperts[i].up.weight_scale,
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                    xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                                    + ".gate_proj.weight_scale_inv.bin",
+                            ffn->routedExperts[i].gate.weight_scale,
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                }
+            }
+        }
     }
 
-    void loadOptionalBias(const std::string &filename, xft::DenseLayerParams &dense, const char *errmsg) {
+    void loadOptionalBias(const std::string &filename, xft::DenseLayerParams &dense, const char *errmsg,
+        xft::DataType w_type = xft::DataType::unknown) {
         if (!fileExists(filename)) {
             dense.removeBias();
             return;
@@ -692,7 +760,7 @@ private:
         // Load the bias as float
         float *addr = (float *)xft::alloc(dense.output_dim * sizeof(float));
         int size = dense.output_dim;
-        int ret = xft::loadWeight2<float>(filename, addr, size);
+        int ret = xft::loadWeight2<float>(filename, addr, size, w_type);
 
         // No bias?
         if (ret == 0) {
@@ -709,14 +777,15 @@ private:
         xft::dealloc(addr);
     }
 
-    void loadOptionalBias(const std::string &filename, xft::NormParams &norm, const char *errmsg) {
+    void loadOptionalBias(const std::string &filename, xft::NormParams &norm, const char *errmsg,
+        xft::DataType w_type = xft::DataType::unknown) {
         if (!fileExists(filename)) {
             norm.emptyBeta();
             return;
         }
 
         // Load the beta value as float
-        int ret = xft::loadWeight2<float>(filename, norm.beta, norm.hidden_size);
+        int ret = xft::loadWeight2<float>(filename, norm.beta, norm.hidden_size, w_type);
 
         // No bias?
         if (ret == 0) {

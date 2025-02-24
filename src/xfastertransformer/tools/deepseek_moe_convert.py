@@ -19,8 +19,10 @@ import numpy as np
 import os
 import torch
 from tqdm import tqdm
+from glob import glob
+from safetensors.torch import safe_open, load_file
 
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoConfig
 
 from .convert import BaseModelConvert
 
@@ -29,12 +31,54 @@ class DeepSeekV2Convert(BaseModelConvert):
     """
     Convert DeepSeek V2/V3 model.
     """
-    # Only support bf16 now
-    SUPPORTED_DTYPES = {"bf16": np.uint16}
+
+    SUPPORTED_DTYPES = {"bf16": np.uint16, "fp8_e4m3": np.uint8}
 
     def __init__(self):
         super().__init__()
         self.default_dtype = "bf16"
+        self.hf_model_name_pattern = [
+            "input_layernorm.weight",
+            # MLA
+            ## for DeepSeekV2lite, using q_a_proj.weight instead of q_proj.weight
+            "self_attn.q_proj.weight",
+            "self_attn.q_a_proj.weight",
+            "self_attn.q_a_layernorm.weight",
+            "self_attn.q_b_proj.weight",
+            "self_attn.kv_a_proj_with_mqa.weight",
+            "self_attn.kv_a_layernorm.weight",
+            "self_attn.kv_b_proj.weight",
+            "self_attn.o_proj.weight",
+            "post_attention_layernorm.weight",
+            # MLP
+            "mlp.gate_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.down_proj.weight",
+            "mlp.gate.weight",
+            "mlp.experts",
+            "mlp.shared_experts",
+        ]
+
+        self.ft_model_name_pattern = [
+            "input_layernorm.weight",
+            # MLA
+            "self_attn.q_a_proj.weight",
+            "self_attn.q_a_proj.weight",
+            "self_attn.q_a_layernorm.weight",
+            "self_attn.q_b_proj.weight",
+            "self_attn.kv_a_proj_with_mqa.weight",
+            "self_attn.kv_a_layernorm.weight",
+            "self_attn.kv_b_proj.weight",
+            "attention.dense.weight",
+            "post_attention_layernorm.weight",
+            # MLP
+            "mlp.gate_proj.weight",
+            "mlp.up_proj.weight",
+            "mlp.down_proj.weight",
+            "mlp.gate.weight",
+            "mlp.experts",
+            "mlp.shared_experts",
+        ]
 
     def split_and_convert_process(self, i, output_dir, factor, key, val, num_attention_heads, num_key_value_heads):
         def save_val(val, key, tp_num=None):
@@ -73,30 +117,16 @@ class DeepSeekV2Convert(BaseModelConvert):
         else:
             print("[ERROR] cannot find key '{}'".format(key))
 
-    def split_and_convert(self, input_dir, output_dir, dtype, processes):
-        # create directory if not exist
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # load the model
-        model = AutoModelForCausalLM.from_pretrained(
-            input_dir,
-            load_in_8bit=False,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-
-        hf_config = vars(model.config)
-
+    def save_model_config(self, hf_config, output_dir, dtype):
         # save parameters to config file
         config = configparser.ConfigParser()
-        sec_name = "deepseek_moe" # hf_config["model_type"]
+        sec_name = "deepseek_moe"  # hf_config["model_type"]
         config[sec_name] = {}
         has_post_decoder_layernorm = True
         try:
-            config[sec_name]["model_name"] = hf_config["_name_or_path"] if hf_config["_name_or_path"] else "deepseek_moe"
+            config[sec_name]["model_name"] = (
+                hf_config["_name_or_path"] if hf_config["_name_or_path"] else "deepseek_moe"
+            )
             config[sec_name]["head_num"] = str(hf_config["num_attention_heads"])
             num_attention_heads = config[sec_name]["head_num"]
             config[sec_name]["kv_head_num"] = str(hf_config.get("num_key_value_heads", num_attention_heads))
@@ -115,7 +145,9 @@ class DeepSeekV2Convert(BaseModelConvert):
             rope_scaling = hf_config.get("rope_scaling", None)
             config[sec_name]["rope_scaling_factor"] = str(rope_scaling.get("factor", 1.0))
             config[sec_name]["rope_scaling_type"] = str(rope_scaling.get("type", "null"))
-            config[sec_name]["rope_scaling_original_max_position_embeddings"] = str(rope_scaling.get("original_max_position_embeddings", 4096))
+            config[sec_name]["rope_scaling_original_max_position_embeddings"] = str(
+                rope_scaling.get("original_max_position_embeddings", 4096)
+            )
             config[sec_name]["rope_scaling_beta_fast"] = str(rope_scaling.get("beta_fast", 32))
             config[sec_name]["rope_scaling_beta_slow"] = str(rope_scaling.get("beta_slow", 1))
             config[sec_name]["rope_scaling_mscale"] = str(rope_scaling.get("mscale", 1.0))
@@ -151,48 +183,32 @@ class DeepSeekV2Convert(BaseModelConvert):
                 config.write(configfile)
         except Exception as e:
             print("Fail to save the config in config.ini.", str(e))
-        hf_model_name_pattern = [
-            "input_layernorm.weight",
-            # MLA
-            ## for DeepSeekV2lite, using q_a_proj.weight instead of q_proj.weight
-            "self_attn.q_proj.weight",
-            "self_attn.q_a_proj.weight",
-            "self_attn.q_a_layernorm.weight",
-            "self_attn.q_b_proj.weight",
-            "self_attn.kv_a_proj_with_mqa.weight",
-            "self_attn.kv_a_layernorm.weight",
-            "self_attn.kv_b_proj.weight",
-            "self_attn.o_proj.weight",
-            "post_attention_layernorm.weight",
-            # MLP
-            "mlp.gate_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.down_proj.weight",
-            "mlp.gate.weight",
-            "mlp.experts",
-            "mlp.shared_experts",
-        ]
 
-        ft_model_name_pattern = [
-            "input_layernorm.weight",
-            # MLA
-            "self_attn.q_a_proj.weight",
-            "self_attn.q_a_proj.weight",
-            "self_attn.q_a_layernorm.weight",
-            "self_attn.q_b_proj.weight",
-            "self_attn.kv_a_proj_with_mqa.weight",
-            "self_attn.kv_a_layernorm.weight",
-            "self_attn.kv_b_proj.weight",
-            "attention.dense.weight",
-            "post_attention_layernorm.weight",
-            # MLP
-            "mlp.gate_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.down_proj.weight",
-            "mlp.gate.weight",
-            "mlp.experts",
-            "mlp.shared_experts",
-        ]
+        return config
+
+    def split_and_convert(self, input_dir, output_dir, dtype, processes):
+        # create directory if not exist
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # HF can't load fp8_e4m3 model now
+        if dtype == "fp8_e4m3":
+            return self.split_and_convert_fp8_e4m3(input_dir, output_dir, dtype, processes)
+
+        # load the model
+        model = AutoModelForCausalLM.from_pretrained(
+            input_dir,
+            load_in_8bit=False,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+
+        hf_config = vars(model.config)
+        config_ini = self.save_model_config(hf_config, output_dir, dtype)
+        num_attention_heads = config_ini["deepseek_moe"]["head_num"]
+        num_key_value_heads = config_ini["deepseek_moe"]["kv_head_num"]
 
         state_dict = model.state_dict()
         model_named_parameters = dict()
@@ -231,10 +247,10 @@ class DeepSeekV2Convert(BaseModelConvert):
                     pbar.update()
                 else:
                     starmap_args = []
-                    for i in range(len(hf_model_name_pattern)):
-                        if hf_model_name_pattern[i] in name:
+                    for i in range(len(self.hf_model_name_pattern)):
+                        if self.hf_model_name_pattern[i] in name:
                             factor = 1
-                            new_name = name.replace(hf_model_name_pattern[i], ft_model_name_pattern[i])
+                            new_name = name.replace(self.hf_model_name_pattern[i], self.ft_model_name_pattern[i])
                             try:
                                 val = param.detach().cpu().view(torch.uint16).numpy()
                             except Exception as e:
@@ -252,6 +268,104 @@ class DeepSeekV2Convert(BaseModelConvert):
                             )
                     pool.starmap_async(self.split_and_convert_process, starmap_args, callback=lambda _: pbar.update())
 
+            pool.close()
+            pool.join()
+
+    def split_and_convert_fp8_e4m3(self, input_dir, output_dir, dtype, processes):
+        assert dtype == "fp8_e4m3"
+
+        # e_score_correction_bias: torch.float32    -> torch.bfloat16
+        # scale_inv:torch.float32                   -> torch.float32
+        # mlp.gate.weight: torch.bfloat16           -> torch.bfloat16
+        # norm: torch.bfloat16                      -> torch.bfloat16
+        # embed: torch.bfloat16                     -> torch.bfloat16
+        # lm_head: torch.bfloat16                   -> torch.bfloat16
+        # others: torch.float8_e4m3fn               -> torch.float8_e4m3fn
+
+        # load the model config
+        model_config = AutoConfig.from_pretrained(
+            input_dir,
+            trust_remote_code=True,
+        )
+
+        hf_config = vars(model_config)
+        assert "quantization_config" in hf_config
+        assert hf_config["quantization_config"]["activation_scheme"] == "dynamic"
+        assert hf_config["quantization_config"]["fmt"] == "e4m3"
+        assert hf_config["quantization_config"]["quant_method"] == "fp8"
+        assert hf_config["quantization_config"]["weight_block_size"] == [128, 128]
+
+        config_ini = self.save_model_config(hf_config, output_dir, dtype)
+        num_attention_heads = config_ini["deepseek_moe"]["head_num"]
+        num_key_value_heads = config_ini["deepseek_moe"]["kv_head_num"]
+
+        pool = multiprocessing.Pool(processes)
+        weights_num = 0
+        for file_path in glob(os.path.join(input_dir, "*.safetensors")):
+            with safe_open(file_path, framework="pt", device="cpu") as f:
+                num = len(f.keys())
+                weights_num += num
+
+        with tqdm(total=weights_num) as pbar:
+            for file_path in glob(os.path.join(input_dir, "*.safetensors")):
+                with safe_open(file_path, framework="pt", device="cpu") as f:
+                    for name in f.keys():
+                        weight = f.get_tensor(name)
+                        if name == "model.embed_tokens.weight":
+                            weight.view(torch.uint16).numpy().tofile(os.path.join(output_dir, "model.wte.bin"))
+                            pbar.update()
+                        elif name == "model.norm.weight":
+                            weight.view(torch.uint16).numpy().tofile(
+                                os.path.join(output_dir, "model.final_layernorm.weight.bin")
+                            )
+                            pbar.update()
+                        elif name == "lm_head.weight":
+                            weight.view(torch.uint16).numpy().tofile(
+                                os.path.join(output_dir, "model.lm_head.weight.bin")
+                            )
+                            pbar.update()
+                        elif "mlp.gate.e_score_correction_bias" in name:
+                            weight.to(torch.bfloat16).view(torch.uint16).numpy().tofile(
+                                os.path.join(output_dir, name + ".bin")
+                            )
+                            pbar.update()
+                        else:
+                            if len(weight.shape) == 2:
+                                weight = weight.permute(1, 0)
+                            starmap_args = []
+                            for i in range(len(self.hf_model_name_pattern)):
+                                if self.hf_model_name_pattern[i] in name:
+                                    factor = 1
+                                    new_name = name.replace(
+                                        self.hf_model_name_pattern[i], self.ft_model_name_pattern[i]
+                                    )
+                                    try:
+                                        if name.endswith("_scale_inv"):
+                                            # fp32
+                                            val = weight.cpu().numpy()
+                                        elif "norm" in name or "mlp.gate.weight" in name:
+                                            # bf16
+                                            val = weight.cpu().view(torch.uint16).numpy()
+                                        else:
+                                            # fp8_e4m3
+                                            val = weight.cpu().view(torch.uint8).numpy()
+                                    except Exception as e:
+                                        print(f"Fail to convert params {name}.", str(e))
+                                    starmap_args.append(
+                                        (
+                                            0,
+                                            output_dir,
+                                            factor,
+                                            new_name,
+                                            val,
+                                            num_attention_heads,
+                                            num_key_value_heads,
+                                        )
+                                    )
+                                    break
+                            pool.starmap_async(
+                                self.split_and_convert_process, starmap_args, callback=lambda _: pbar.update()
+                            )
             pool.close()
             pool.join()
 

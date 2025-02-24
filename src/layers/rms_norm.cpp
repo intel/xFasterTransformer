@@ -68,10 +68,10 @@ void RmsNormImp<T>::setWeight(const float *w, const float *, int cols) {
 }
 
 template <typename T>
-void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &, int cols) {
+void RmsNormImp<T>::setWeight(const std::string &modelPath, const std::string &, int cols, xft::DataType wType) {
     float weightBuf[cols];
     float *weiBuf = &weightBuf[0];
-    loadWeight(modelPath, weiBuf, cols);
+    loadWeight(modelPath, weiBuf, cols, wType);
     this->normSize = cols;
     this->setWeight(weightBuf, nullptr, cols);
 }

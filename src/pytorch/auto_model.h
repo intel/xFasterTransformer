@@ -54,6 +54,8 @@ public:
             dataType = xft::DataType::w8a8_int4;
         } else if (dtype == "w8a8_nf4") {
             dataType = xft::DataType::w8a8_nf4;
+        } else if (dtype == "fp8_e4m3") {
+            dataType = xft::DataType::fp8_e4m3;
         } else {
             throw std::invalid_argument("Invalid data type.");
         }

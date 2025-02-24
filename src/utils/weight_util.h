@@ -25,11 +25,12 @@
 #include "compile_util.h"
 #include "copy_util.h"
 #include "dtype.h"
+#include "environment.h"
 #include "float16.h"
+#include "fp8_e4m3.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
 #include "uint4x2.h"
-#include "environment.h"
 
 namespace xft {
 
@@ -55,6 +56,8 @@ inline DataType getWeightType(const std::string &ini_file, std::string section_n
             w_type = DataType::fp16;
         } else if (weight_data_type_str.find("bf16") != std::string::npos) {
             w_type = DataType::bf16;
+        } else if (weight_data_type_str.find("fp8_e4m3") != std::string::npos) {
+            w_type = DataType::fp8_e4m3;
         } else {
             printf("Invalid type %s. Use FP32 as default", weight_data_type_str.c_str());
             w_type = DataType::fp32;
@@ -189,6 +192,7 @@ int loadWeight2(std::string filename, T *ptr, int size, DataType w_type = DataTy
         case DataType::bf16: file_size = loadWeightWithConvert<T, bfloat16_t>(ptr, size, filename, required); break;
         case DataType::int8: file_size = loadWeightWithConvert<T, int8_t>(ptr, size, filename, required); break;
         case DataType::int4: file_size = loadWeightWithConvert<T, uint4x2_t>(ptr, size, filename, required); break;
+        case DataType::fp8_e4m3: file_size = loadWeightWithConvert<T, e4m3_t>(ptr, size, filename, required); break;
         default: printf("Not support loading %s with DataType=%d", filename.c_str(), w_type);
     }
     return file_size;
@@ -204,6 +208,7 @@ int loadWeight2(std::string filename, void *ptr, int size, ParamType type, DataT
         case ParamType::FP16: file_size = loadWeight2<float16_t>(filename, (float16_t *)ptr, size, w_type, required); break;
         case ParamType::INT8: file_size = loadWeight2<int8_t>(filename, (int8_t*)ptr, size, w_type, required); break;
         case ParamType::INT4: file_size = loadWeight2<uint4x2_t>(filename, (uint4x2_t*)ptr, size, w_type, required); break;
+        case ParamType::FP8_E4M3: file_size = loadWeight2<e4m3_t>(filename, (e4m3_t*)ptr, size, w_type, required); break;
         default: printf("Not support loading %s with ParamType=%d", filename.c_str(), type);
     }
     return file_size;
@@ -225,4 +230,6 @@ template int loadWeightWithConvert<nf4x2_t, float16_t>(nf4x2_t *, int, const std
 
 template int loadWeightWithConvert<int8_t, int8_t>(int8_t *, int, const std::string &, bool);
 template int loadWeightWithConvert<uint4x2_t, uint4x2_t>(uint4x2_t *, int, const std::string &, bool);
+
+template int loadWeightWithConvert<e4m3_t, e4m3_t>(e4m3_t *, int, const std::string &, bool);
 } // namespace xft
