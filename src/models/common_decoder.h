@@ -621,7 +621,8 @@ public:
 
         // Embedding
         this->embeddingForward(allInputIds.data(), embBuf, totInputSeqLen);
-
+        t1.release();
+        
 #ifdef XFT_GPU
         TimeLine tmcpyc2g("Decoder.memcopyCPU2GPU");
         size_t embBufSize = totInputSeqLen * hiddenSize * sizeof(AttnInT);
