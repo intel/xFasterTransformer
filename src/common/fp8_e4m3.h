@@ -54,7 +54,7 @@ class e4m3_t {
         return sign ? -result : result;
     }
 
-    static void to_bf16(const e4m3_t *fp8_data, uint16_t *bf16_data, size_t count) {
+    static void to_bf16(const e4m3_t *fp8_data, uint16_t *bf16_data, size_t count, const float scale = 1.0f) {
         alignas(64) static uint16_t e4m3_to_bf16_table[256] = {
                 0x0000,
                 0x3B00,
@@ -314,6 +314,8 @@ class e4m3_t {
                 0xC3F0,
         };
 
+        __m512 vscale = _mm512_set1_ps(scale);
+
         // Process 64 FP8 values at a time.
         for (size_t i = 0; i + 63 < count; i += 64) {
 
@@ -347,10 +349,19 @@ class e4m3_t {
             __m256i bf16_i16_vec3 = convert_32_to_16(bf16_i32_vec3);
 
             // Store the 64 BF16 values (16 values per 256-bit vector).
-            _mm256_storeu_si256((__m256i *)(bf16_data + i + 0), bf16_i16_vec0);
-            _mm256_storeu_si256((__m256i *)(bf16_data + i + 16), bf16_i16_vec1);
-            _mm256_storeu_si256((__m256i *)(bf16_data + i + 32), bf16_i16_vec2);
-            _mm256_storeu_si256((__m256i *)(bf16_data + i + 48), bf16_i16_vec3);
+            auto bf16_to_fp32 = [](const __m256i src) -> __m512 {
+                __m512i y = _mm512_cvtepu16_epi32(src);
+                return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
+            };
+
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 0),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec0), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 16),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec1), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 32),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec2), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 48),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec3), vscale)));
         }
         if (count % 64) {
             // Process the remaining FP8 values.
