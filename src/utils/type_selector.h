@@ -14,6 +14,7 @@
 // ============================================================================
 #pragma once
 #include "bfloat16.h"
+#include "fp8_e4m3.h"
 
 // Selected data types according to weight data type
 template <typename WeiT>
@@ -26,6 +27,13 @@ struct TypeSelector {
 // Specialization for bfloat16_t
 template <>
 struct TypeSelector<bfloat16_t> {
+    using InType = bfloat16_t;
+    using ImType = bfloat16_t;
+    using OutType = bfloat16_t;
+};
+
+template <>
+struct TypeSelector<e4m3_t> {
     using InType = bfloat16_t;
     using ImType = bfloat16_t;
     using OutType = bfloat16_t;

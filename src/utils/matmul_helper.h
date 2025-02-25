@@ -20,6 +20,7 @@
 #include "dtype.h"
 #include "environment.h"
 #include "float16.h"
+#include "fp8_e4m3.h"
 #include "intrinsics_util.h"
 #include "my_types.h"
 #include "normal_float4x2.h"
@@ -663,6 +664,10 @@ public:
             printf("%s:%d: Need to define WEIGHT_ONLY_NF4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
 #endif
+        }
+
+        // E4M3
+        else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
         }
     }
 

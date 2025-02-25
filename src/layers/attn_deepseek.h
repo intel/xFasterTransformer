@@ -16,6 +16,7 @@
 #include <cmath>
 
 #include "attention.h"
+#include "fp8_e4m3.h"
 #include "llm_params.h"
 #include "logger.h"
 #include "my_types.h"
@@ -70,13 +71,6 @@ public:
         // Suppose the weight is not transposed (report error if it is transposed)
         if (mlap->q_a_proj.wtrans || mlap->kv_a_proj.wtrans) {
             xft::Logger::error("The weights should not be transposed.");
-            exit(-1);
-        }
-
-        // Check the data type, so that we can safely merge or copy
-        if (!isSameWeiType(mlap->q_a_proj.wtype) || !isSameWeiType(mlap->kv_a_proj.wtype)
-                || !isSameWeiType(mlap->q_b_proj.wtype) || !isSameWeiType(mlap->kv_b_proj.wtype)) {
-            xft::Logger::error("The weight type is not the same.");
             exit(-1);
         }
 
@@ -407,8 +401,9 @@ private:
                 ctx->numThreads);
     }
 
+    template <typename TTarget>
     void packDenseWeights(
-            DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<WeiT> &packedW, bool bVerticalSplit) {
+            DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<TTarget> &packedW, bool bVerticalSplit) {
         int splitTarget = bVerticalSplit ? dense.output_dim : dense.input_dim;
         if (splitTarget % ctx->attHeadNum != 0) {
             xft::Logger::error("The split dim %d is not divisible by %d.", splitTarget, ctx->attHeadNum);
@@ -419,30 +414,83 @@ private:
         int splitOffset = startHead * dimPerHead;
         int splitSize = (endHead - startHead) * dimPerHead;
 
-        if (bVerticalSplit) {
-            xft::Matrix<WeiT> w(
-                    (WeiT *)dense.weight + splitOffset, dense.input_dim, splitSize, dense.output_dim);
+        // Direct pack for BF16 or E4M3
+        if (isSameWeiType<TTarget>(dense.wtype)) {
+            if (bVerticalSplit) {
+                xft::Matrix<TTarget> w(
+                        (TTarget *)dense.weight + splitOffset, dense.input_dim, splitSize, dense.output_dim);
 
-            packedW.Resize(dense.input_dim, splitSize);
-            ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+                packedW.Resize(dense.input_dim, splitSize);
+                ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+            } else {
+                xft::Matrix<TTarget> w((TTarget *)dense.weight + splitOffset * dense.output_dim, splitSize, dense.output_dim,
+                        dense.output_dim);
+
+                packedW.Resize(splitSize, dense.output_dim);
+                ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+            }
+        }
+
+        // E4M3 -> BF16, and then pack
+        else if (dense.wtype == xft::ParamType::FP8_E4M3) {
+            if constexpr (std::is_same_v<TTarget, bfloat16_t>) {
+                TTarget *w = nullptr;
+                if (bVerticalSplit) {
+                    xft::Matrix<e4m3_t> src(
+                            (e4m3_t *)dense.weight + splitOffset, dense.input_dim, splitSize, dense.output_dim);
+                    w = (TTarget *)aligned_alloc(64, splitSize * dense.input_dim * sizeof(TTarget));
+                    xft::Matrix<TTarget> wMat(w, dense.input_dim, splitSize, splitSize);
+                    this->convertData(src, wMat);
+                    packedW.Resize(dense.input_dim, splitSize);
+                    ctx->mmHelper->packWeight(dense.wtrans, wMat, packedW);
+                } else {
+                    xft::Matrix<e4m3_t> src((e4m3_t *)dense.weight + splitOffset * dense.output_dim, splitSize,
+                            dense.output_dim, dense.output_dim);
+                    w = (TTarget *)aligned_alloc(64, splitSize * dense.output_dim * sizeof(TTarget));
+                    xft::Matrix<TTarget> wMat(w, splitSize, dense.output_dim, dense.output_dim);
+                    this->convertData(src, wMat);
+                    packedW.Resize(splitSize, dense.output_dim);
+                    ctx->mmHelper->packWeight(dense.wtrans, wMat, packedW);
+                }
+                if (w) free(w);
+            } else {
+                xft::Logger::error("Unsupported data type conversion in DS attention.");
+                exit(-1);
+            }
         } else {
-            xft::Matrix<WeiT> w((WeiT *)dense.weight + splitOffset * dense.output_dim, splitSize, dense.output_dim,
-                    dense.output_dim);
-
-            packedW.Resize(splitSize, dense.output_dim);
-            ctx->mmHelper->packWeight(dense.wtrans, w, packedW);
+            xft::Logger::error("Unsupported data type for DS attention");
+            exit(-1);
         }
     }
 
+private:
+    void convertData(const xft::Matrix<e4m3_t> &src, xft::Matrix<bfloat16_t> &dst) {
+        if (src.Rows() != dst.Rows() || src.Cols() != dst.Cols()) {
+            xft::Logger::error("The size of source and destination matrix is not matched.");
+            exit(-1);
+        }
+
+        int rows = src.Rows();
+        int cols = src.Cols();
+
+#pragma omp parallel for
+        for (int i = 0; i < rows; ++i) {
+            e4m3_t::to_bf16(src.Row(i), (uint16_t *)dst.Row(i), cols);
+        }
+    }
+
+    template <typename T>
     bool isSameWeiType(xft::ParamType type) {
-        if constexpr (std::is_same_v<WeiT, int8_t>) {
+        if constexpr (std::is_same_v<T, int8_t>) {
             return type == xft::ParamType::INT8;
-        } else if constexpr (std::is_same_v<WeiT, float16_t>) {
+        } else if constexpr (std::is_same_v<T, float16_t>) {
             return type == xft::ParamType::FP16;
-        } else if constexpr (std::is_same_v<WeiT, bfloat16_t>) {
+        } else if constexpr (std::is_same_v<T, bfloat16_t>) {
             return type == xft::ParamType::BF16;
-        } else if constexpr (std::is_same_v<WeiT, float>) {
+        } else if constexpr (std::is_same_v<T, float>) {
             return type == xft::ParamType::FP32;
+        } else if constexpr (std::is_same_v<T, e4m3_t>) {
+            return type == xft::ParamType::FP8_E4M3;
         }
         return false;
     }
@@ -450,7 +498,8 @@ private:
 private:
     xft::Matrix<WeiT> qkvAWeights; // merged q_a and kv_a
     xft::Matrix<WeiT> qBWeights;
-    xft::Matrix<WeiT> kvBWeights;
+    // Before optimized gemm of FP8_E4M3, we use bfloat16
+    xft::Matrix<bfloat16_t> kvBWeights;
 
     xft::Matrix<WeiT> outWeights;
 
