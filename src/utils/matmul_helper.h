@@ -510,6 +510,16 @@ public:
             exit(-1);
 #endif
         }
+
+        // E4M3
+        else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
+            int amx_rows = (int)((K + 15) / 16) * 16;
+            int amx_cols = (int)((N + 63) / 64) * 64;
+            weight.Resize(amx_rows, amx_cols);
+            memset(weight.Data(), 0, sizeof(e4m3_t) * amx_rows * amx_cols);
+            xdnn_small_amx_sgemm_bf16f8bf16_packb(trans, N, K, (const XDNN_E4M3 *)src.Data(), src.Stride(),
+                    (XDNN_E4M3 *)weight.Data(), 64);
+        }
     }
 
     template <typename WeiT>
@@ -540,9 +550,11 @@ public:
         cpu_stream->wait();
     }
 
+    // lds: leading dimension of scaleB
     template <typename InT, typename WeiT, typename OutT>
     void compute(bool transA, int M, int N, int K, float alpha, const InT *A, int lda, const WeiT *packedB,
-            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc) {
+            const float *scaleB, const float *zeroB, const float *sumB, float beta, OutT *C, int ldc,
+            int lds = -1, int blockSize = 128) {
         // FP32
         if constexpr (std::is_same_v<WeiT, float>) {
             GEMMVERBOSE(
@@ -668,6 +680,37 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
+            if (M <= 16) {
+                GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute",
+                        xdnn_small_amx_sgemm_bf16f8bf16_compute(M, N, K, (const XDNN_BF16 *)A, lda,
+                                (const XDNN_E4M3 *)packedB, (XDNN_BF16 *)C, ldc, (float *)scaleB, lds, blockSize, alpha,
+                                beta, nullptr, 0));
+            } else {
+                // Decode E4M3 to BF16
+                int rows = (K + 15) / 16 * 16;
+                int cols = (N + 63) / 64 * 64;
+                uint64_t packSize = (uint64_t)rows * cols;
+                bfloat16_t *decodedB = (bfloat16_t *)aligned_alloc(64, packSize * sizeof(bfloat16_t));
+
+                // Note: here we assume blockSize = 128
+                if (lds == -1) lds = (cols + 127) / 128;
+
+#pragma omp parallel for collapse(2)
+                for (int j = 0; j < cols; j += 64) {
+                    for (int i = 0; i < rows / 2; ++i) { // 2 rows merged into 1
+                        int offset = j * rows + i * 128;
+                        int scaleOff = (i / 64) * lds + j / 128;
+                        e4m3_t::to_bf16(packedB + offset, (uint16_t *)decodedB + offset, 128, scaleB[scaleOff]);
+                    }
+                }
+
+                // Call into BF16 oneDNN gemm
+                GEMMVERBOSE("onednn_amx_gemm_compute",
+                        onednn_amx_gemm_compute(transA, M, N, K, alpha, A, lda, decodedB, beta, C, ldc));
+
+                // Clean up
+                free(decodedB);
+            }
         }
     }
 
@@ -1449,6 +1492,44 @@ public:
             printf("%s:%d: Need to define WEIGHT_ONLY_NF4 kernel data type.\n", __FILE__, __LINE__);
             exit(-1);
 #endif
+        }
+
+        // E4M3
+        else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
+            // Not work yet
+            // if (M <= 16) {
+            //     GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute",
+            //             xdnn_small_amx_sgemm_bf16f8bf16_compute(M, N, K, (const XDNN_BF16 *)A, lda,
+            //                     (const XDNN_E4M3 *)packedB, (XDNN_BF16 *)C, ldc, (float *)scaleB, lds, blockSize, alpha,
+            //                     beta, nullptr, 0));
+            // } else 
+            {
+                // Decode E4M3 to BF16
+                int rows = (K + 15) / 16 * 16;
+                int cols = (N + 63) / 64 * 64;
+                uint64_t packSize = (uint64_t)rows * cols;
+                bfloat16_t *decodedB = (bfloat16_t *)aligned_alloc(64, packSize * sizeof(bfloat16_t));
+
+                // Note: here we assume blockSize = 128
+                int lds = (cols + 127) / 128;
+
+#pragma omp parallel for collapse(2)
+                for (int j = 0; j < cols; j += 64) {
+                    for (int i = 0; i < rows / 2; ++i) { // 2 rows merged into 1
+                        int offset = j * rows + i * 128;
+                        int scaleOff = (i / 64) * lds + j / 128;
+                        e4m3_t::to_bf16(packedB + offset, (uint16_t *)decodedB + offset, 128, scaleB[scaleOff]);
+                    }
+                }
+
+                // Call into BF16 oneDNN gemm
+                GEMMVERBOSE("onednn_amx_gemm_compute_residential",
+                        onednn_amx_gemm_compute_residential(
+                                transA, M, N, K, alpha, A, lda, decodedB, beta, C, ldc, bias, res, ldres));
+
+                // Clean up
+                free(decodedB);
+            }
         }
     }
 

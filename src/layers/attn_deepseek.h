@@ -105,6 +105,13 @@ public:
         this->inputNorm.setWeight(mlap->input_norm.gamma, nullptr, ctx->hiddenSize);
         this->qANorm.setWeight(mlap->q_a_norm.gamma, nullptr, ctx->qLoraRank);
         this->kvANorm.setWeight(mlap->kv_a_norm.gamma, nullptr, ctx->kvLoraRank);
+
+        // Deal with scales if e4m3 is used
+        if (std::is_same_v<WeiT, e4m3_t>) {
+            prepareFP8Scales(mlap->q_a_proj, mlap->kv_a_proj, qkvAScales);
+            prepareFP8Scales(mlap->q_b_proj, qBScales);
+            prepareFP8Scales(mlap->o_proj, outScales);
+        }
     }
 
     template <typename KVCacheT>
@@ -183,8 +190,8 @@ public:
         {
             TimeLine t("qkv_down_projection");
             ctx->mmHelper->compute(false, normBuffer.Rows(), qkvAWeights.Cols(), normBuffer.Cols(), 1.0f,
-                    normBuffer.Data(), normBuffer.Stride(), qkvAWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
-                    loraBuffer.Data(), loraBuffer.Stride());
+                    normBuffer.Data(), normBuffer.Stride(), qkvAWeights.Data(), qkvAScales.Data(), nullptr, nullptr,
+                    0.0f, loraBuffer.Data(), loraBuffer.Stride(), qkvAScales.Stride());
         }
 
 #ifdef XFT_DEBUG
@@ -212,8 +219,8 @@ public:
         {
             TimeLine t("q_up_projection");
             ctx->mmHelper->compute(false, loraBuffer.Rows(), qBWeights.Cols(), qBWeights.Rows(), 1.0f,
-                    qaNormBuffer.Data(), qaNormBuffer.Stride(), qBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
-                    qBuffer.Data(), qBuffer.Stride());
+                    qaNormBuffer.Data(), qaNormBuffer.Stride(), qBWeights.Data(), qBScales.Data(), nullptr, nullptr,
+                    0.0f, qBuffer.Data(), qBuffer.Stride(), qBScales.Stride());
         }
 
 #ifdef XFT_DEBUG
@@ -362,12 +369,12 @@ public:
 #endif
             if (ctx->splitIdx == 0) {
                 ctx->mmHelper->compute_residential(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
-                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
+                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), outScales.Data(), nullptr, nullptr, 0.0f,
                         outBuffer.Data(), outBuffer.Stride(), nullptr, inputBuffer.Data(), inputBuffer.Stride());
             } else {
                 ctx->mmHelper->compute(false, qBuffer.Rows(), outWeights.Cols(), outWeights.Rows(), 1.0f,
-                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
-                        outBuffer.Data(), outBuffer.Stride());
+                        mhaOutBuffer.Data(), mhaOutBuffer.Stride(), outWeights.Data(), outScales.Data(), nullptr,
+                        nullptr, 0.0f, outBuffer.Data(), outBuffer.Stride(), outScales.Stride());
             }
         }
 
@@ -434,13 +441,19 @@ private:
         // E4M3 -> BF16, and then pack
         else if (dense.wtype == xft::ParamType::FP8_E4M3) {
             if constexpr (std::is_same_v<TTarget, bfloat16_t>) {
+                auto divup = [](int numerator, int denominator) { return (numerator + denominator - 1) / denominator; };
+                // Original scale matrix
+                xft::Matrix<float> srcScale(dense.weight_scale, divup(dense.input_dim, 128),
+                        divup(dense.output_dim, 128), divup(dense.output_dim, 128));
+
                 TTarget *w = nullptr;
                 if (bVerticalSplit) {
                     xft::Matrix<e4m3_t> src(
                             (e4m3_t *)dense.weight + splitOffset, dense.input_dim, splitSize, dense.output_dim);
                     w = (TTarget *)aligned_alloc(64, splitSize * dense.input_dim * sizeof(TTarget));
                     xft::Matrix<TTarget> wMat(w, dense.input_dim, splitSize, splitSize);
-                    this->convertData(src, wMat);
+                    this->convertData(src, srcScale, wMat, [&](int i) { return i / 128; },
+                            [&](int j) { return (j + splitOffset) / 128; });
                     packedW.Resize(dense.input_dim, splitSize);
                     ctx->mmHelper->packWeight(dense.wtrans, wMat, packedW);
                 } else {
@@ -448,7 +461,8 @@ private:
                             dense.output_dim, dense.output_dim);
                     w = (TTarget *)aligned_alloc(64, splitSize * dense.output_dim * sizeof(TTarget));
                     xft::Matrix<TTarget> wMat(w, splitSize, dense.output_dim, dense.output_dim);
-                    this->convertData(src, wMat);
+                    this->convertData(src, srcScale, wMat, [&](int i) { return (i + splitOffset) / 128; },
+                            [&](int j) { return j / 128; });
                     packedW.Resize(splitSize, dense.output_dim);
                     ctx->mmHelper->packWeight(dense.wtrans, wMat, packedW);
                 }
@@ -464,7 +478,49 @@ private:
     }
 
 private:
-    void convertData(const xft::Matrix<e4m3_t> &src, xft::Matrix<bfloat16_t> &dst) {
+    void prepareFP8Scales(xft::DenseLayerParams &param, xft::Matrix<float> &scales) {
+        // Check weight type
+        if (param.wtype != xft::ParamType::FP8_E4M3) {
+            xft::Logger::error("The weight type is not FP8_E4M3, no scales.");
+            exit(-1);
+        }
+
+        int rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
+        int cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+        scales.Resize(rows, cols);
+
+        for (int i = 0; i < rows; ++i) {
+            memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        }
+    }
+
+    // Prepare FP8 scales by merging 2 scales into 1
+    void prepareFP8Scales(xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales) {
+        // Check weight type
+        if (param1.wtype != xft::ParamType::FP8_E4M3 || param2.wtype != xft::ParamType::FP8_E4M3) {
+            xft::Logger::error("Internal Error: The weight type is not FP8_E4M3, no scales.");
+            exit(-1);
+        }
+
+        if (param1.input_dim != param2.input_dim) {
+            xft::Logger::error("Internal Error: The input dim of two params are not matched.");
+            exit(-1);
+        }
+
+        int rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
+        int cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
+        int cols2 = (param2.output_dim + param2.block_size1 - 1) / param2.block_size1;
+        scales.Resize(rows, cols1 + cols2);
+
+        for (int i = 0; i < rows; ++i) {
+            memcpy(scales.Row(i), param1.weight_scale + i * cols1, cols1 * sizeof(float));
+            memcpy(scales.Row(i) + cols1, param2.weight_scale + i * cols2, cols2 * sizeof(float));
+        }
+    }
+
+    template <typename Lambda1, typename Lambda2>
+    void convertData(const xft::Matrix<e4m3_t> &src, const xft::Matrix<float> &scale, xft::Matrix<bfloat16_t> &dst,
+            Lambda1 &&getScaleRow, Lambda2 &&getScaleCol) {
         if (src.Rows() != dst.Rows() || src.Cols() != dst.Cols()) {
             xft::Logger::error("The size of source and destination matrix is not matched.");
             exit(-1);
@@ -475,7 +531,11 @@ private:
 
 #pragma omp parallel for
         for (int i = 0; i < rows; ++i) {
-            e4m3_t::to_bf16(src.Row(i), (uint16_t *)dst.Row(i), cols);
+            for (int j = 0; j < cols; j += 64) {
+                int size = std::min(64, cols - j);
+                float s = scale.Row(getScaleRow(i))[getScaleCol(j)];
+                e4m3_t::to_bf16(src.Row(i) + j, (uint16_t *)dst.Row(i) + j, size, s);
+            }
         }
     }
 
@@ -502,6 +562,11 @@ private:
     xft::Matrix<bfloat16_t> kvBWeights;
 
     xft::Matrix<WeiT> outWeights;
+
+    // Scales
+    xft::Matrix<float> qkvAScales;
+    xft::Matrix<float> qBScales;
+    xft::Matrix<float> outScales;
 
     xft::RmsNorm inputNorm;
     xft::RmsNorm qANorm;
