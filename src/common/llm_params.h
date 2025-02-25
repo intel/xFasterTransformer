@@ -33,6 +33,10 @@ struct DenseLayerParams {
     float *weight_scale; // Scale
     float *weight_zp; // Zero point
 
+    // Block size for scale and zero point
+    int block_size0;
+    int block_size1;
+
     DenseLayerParams()
         : weight(nullptr)
         , bias(nullptr)
@@ -43,7 +47,7 @@ struct DenseLayerParams {
         , input_dim(0)
         , output_dim(0) {}
 
-    DenseLayerParams(int inputDim, int outputDim, ParamType weiType, bool wTrans = false)
+    DenseLayerParams(int inputDim, int outputDim, ParamType weiType, bool wTrans = false, int blockSize0 = 128, int blockSize1 = 128)
         : wtype(weiType), wtrans(wTrans), input_dim(inputDim), output_dim(outputDim) {
         weight = aligned_alloc(64, (size_t)(inputDim * outputDim * getWidth(weiType)));
 
@@ -51,6 +55,15 @@ struct DenseLayerParams {
         bias = nullptr;
         weight_scale = nullptr;
         weight_zp = nullptr;
+
+        this->block_size0 = blockSize0;
+        this->block_size1 = blockSize1;
+
+        if (weiType == ParamType::FP8_E4M3) {
+            int scale_dim0 = (input_dim + block_size0 - 1) / block_size0;
+            int scale_dim1 = (output_dim + block_size1 - 1) / block_size1;
+            weight_scale = (float *)aligned_alloc(64, scale_dim0 * scale_dim1 * sizeof(float));
+        }
     }
 
     DenseLayerParams(DenseLayerParams &&other) noexcept
@@ -96,7 +109,8 @@ struct DenseLayerParams {
             case ParamType::FP16: return sizeof(uint16_t);
             case ParamType::BF16: return sizeof(uint16_t);
             case ParamType::FP32: return sizeof(float);
-            default: return 0;
+            case ParamType::FP8_E4M3: return 1;
+            default: printf("Unsupported data type in DenseLayerParams::getWidth: %d\n", type); return 0;
         }
     }
 };

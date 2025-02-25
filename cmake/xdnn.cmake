@@ -26,8 +26,8 @@ include(ExternalProject)
 
 # cmake-format: off
 ExternalProject_Add(xdnn_lib
-  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/xdnn_v1.5.4.tar.gz
-  URL_HASH          MD5=50894f2c7739680978cc8c40b3af4d00
+  URL               https://github.com/intel/xFasterTransformer/releases/download/IntrinsicGemm/xdnn_v1.5.5.tar.gz
+  URL_HASH          MD5=4aecc6d6dcfa780fbb1294212d9bf279
   TIMEOUT           120
   SOURCE_DIR        ${CMAKE_SOURCE_DIR}/3rdparty/xdnn
   CONFIGURE_COMMAND ""

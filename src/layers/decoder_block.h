@@ -56,6 +56,8 @@ public:
                 this->setDecoderWeights<bfloat16_t>(ctx, pdec, modelPath, i, attnParams, ffnParams);
             } else if (dt == xft::DataType::fp16) {
                 this->setDecoderWeights<float16_t>(ctx, pdec, modelPath, i, attnParams, ffnParams);
+            } else if (dt == xft::DataType::fp8_e4m3) {
+                this->setDecoderWeights<e4m3_t>(ctx, pdec, modelPath, i, attnParams, ffnParams);
             } else {
                 std::cerr << "Error: The data type is NOT supported." << std::endl;
                 std::exit(-1);
@@ -546,10 +548,10 @@ private:
             xft::loadWeight2(
                     modelPath + "/model.layers." + strIdx + ".self_attn.kv_a_proj_with_mqa.weight_scale_inv.bin",
                     attn->kv_a_proj.weight_scale, ((hiddenSize + 127) / 128) * ((kvLoraRank + ropeDim + 127) / 128),
-                    attn->kv_a_proj.wtype, xft::DataType::fp32);
+                    xft::ParamType::FP32, xft::DataType::fp32);
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".self_attn.kv_b_proj.weight_scale_inv.bin",
                     attn->kv_b_proj.weight_scale, ((kvLoraRank + 127) / 128) * ((kvSize + 127) / 128),
-                    attn->kv_b_proj.wtype, xft::DataType::fp32);
+                    xft::ParamType::FP32, xft::DataType::fp32);
 
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.dense.weight_scale_inv.bin",
                     attn->o_proj.weight_scale, ((ctx->attHeadNum * vHeadDim + 127) / 128) * ((hiddenSize + 127) / 128),
@@ -709,42 +711,48 @@ private:
                 // Load MLP
                 xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.down_proj.weight_scale_inv.bin",
                         ffn->mlp.down.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128), xft::DataType::fp32);
                 xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.up_proj.weight_scale_inv.bin",
                         ffn->mlp.up.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128), xft::DataType::fp32);
                 xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate_proj.weight_scale_inv.bin",
                         ffn->mlp.gate.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128));
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->intermediateSize + 127) / 128), xft::DataType::fp32);
             } else {
                 // Load experts weights
                 // Load shared expert weights
                 xft::loadWeight2(
                         modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight_scale_inv.bin",
                         ffn->sharedExpert.down.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts,
+                        xft::DataType::fp32);
                 xft::loadWeight2(
                         modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.up_proj.weight_scale_inv.bin",
                         ffn->sharedExpert.up.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts,
+                        xft::DataType::fp32);
                 xft::loadWeight2(
                         modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.gate_proj.weight_scale_inv.bin",
                         ffn->sharedExpert.gate.weight_scale,
-                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts);
+                        ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128) * ctx->denseExperts,
+                        xft::DataType::fp32);
 
                 for (int i = 0; i < ctx->sparseExperts; ++i) {
                     xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
                                     + ".down_proj.weight_scale_inv.bin",
                             ffn->routedExperts[i].down.weight_scale,
-                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128),
+                            xft::DataType::fp32);
                     xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
                                     + ".up_proj.weight_scale_inv.bin",
                             ffn->routedExperts[i].up.weight_scale,
-                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128),
+                            xft::DataType::fp32);
                     xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
                                     + ".gate_proj.weight_scale_inv.bin",
                             ffn->routedExperts[i].gate.weight_scale,
-                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128));
+                            ((ctx->hiddenSize + 127) / 128) * ((ctx->moeIntermediateSize + 127) / 128),
+                            xft::DataType::fp32);
                 }
             }
         }

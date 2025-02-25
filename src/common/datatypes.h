@@ -40,7 +40,7 @@ inline std::string getTypeIdName(xft::DataType dtype) {
         case xft::DataType::w8a8_int8: return "w8a8_t-int8_t";
         case xft::DataType::w8a8_int4: return "w8a8_t-uint4x2_t";
         case xft::DataType::w8a8_nf4: return "w8a8_t-nf4x2_t";
-        case xft::DataType::fp8_e4m3: return "fp8_e4m3_t";
+        case xft::DataType::fp8_e4m3: return "e4m3_t";
         case xft::DataType::unknown: return "unknown";
     }
     return std::string("unknown");
