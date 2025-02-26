@@ -15,6 +15,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <immintrin.h>
 
 class e4m3_t {
@@ -314,11 +315,87 @@ class e4m3_t {
                 0xC3F0,
         };
 
+        // Check if count is a multiple of 64
+        if (__builtin_expect(count % 64, 0)) {
+            throw std::runtime_error("count must be a multiple of 64");
+        }
+
         __m512 vscale = _mm512_set1_ps(scale);
 
-        // Process 64 FP8 values at a time.
-        for (size_t i = 0; i + 63 < count; i += 64) {
+        // Process 128 FP8 values at a time
+        size_t i = 0;
+        for (; i + 127 < count; i += 128) {
+            // Load 64 FP8 values (1 byte each = 512 bits)
+            __m512i fp8_vec0 = _mm512_loadu_si512((__m512i const *)(fp8_data + i));
+            __m512i fp8_vec1 = _mm512_loadu_si512((__m512i const *)(fp8_data + i + 64));
 
+            // Split the 512-bit vector into 4 groups of 16 bytes.
+            __m128i group0 = _mm512_castsi512_si128(fp8_vec0);
+            __m128i group1 = _mm512_extracti32x4_epi32(fp8_vec0, 1);
+            __m128i group2 = _mm512_extracti32x4_epi32(fp8_vec0, 2);
+            __m128i group3 = _mm512_extracti32x4_epi32(fp8_vec0, 3);
+            __m128i group4 = _mm512_castsi512_si128(fp8_vec1);
+            __m128i group5 = _mm512_extracti32x4_epi32(fp8_vec1, 1);
+            __m128i group6 = _mm512_extracti32x4_epi32(fp8_vec1, 2);
+            __m128i group7 = _mm512_extracti32x4_epi32(fp8_vec1, 3);
+
+            // Convert 16 uint8_t values in each group to 16 32-bit indices.
+            __m512i indices0 = _mm512_cvtepu8_epi32(group0);
+            __m512i indices1 = _mm512_cvtepu8_epi32(group1);
+            __m512i indices2 = _mm512_cvtepu8_epi32(group2);
+            __m512i indices3 = _mm512_cvtepu8_epi32(group3);
+            __m512i indices4 = _mm512_cvtepu8_epi32(group4);
+            __m512i indices5 = _mm512_cvtepu8_epi32(group5);
+            __m512i indices6 = _mm512_cvtepu8_epi32(group6);
+            __m512i indices7 = _mm512_cvtepu8_epi32(group7);
+
+            // Gather BF16 conversion results from the lookup table.
+            __m512i bf16_i32_vec0 = _mm512_i32gather_epi32(indices0, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec1 = _mm512_i32gather_epi32(indices1, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec2 = _mm512_i32gather_epi32(indices2, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec3 = _mm512_i32gather_epi32(indices3, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec4 = _mm512_i32gather_epi32(indices4, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec5 = _mm512_i32gather_epi32(indices5, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec6 = _mm512_i32gather_epi32(indices6, e4m3_to_bf16_table, 2);
+            __m512i bf16_i32_vec7 = _mm512_i32gather_epi32(indices7, e4m3_to_bf16_table, 2);
+
+            // Helper lambda: Convert 16 32-bit ints (in a __m512i) to 16 16-bit ints.
+            auto convert_32_to_16 = [](__m512i vec) -> __m256i { return _mm512_cvtepi32_epi16(vec); };
+
+            __m256i bf16_i16_vec0 = convert_32_to_16(bf16_i32_vec0);
+            __m256i bf16_i16_vec1 = convert_32_to_16(bf16_i32_vec1);
+            __m256i bf16_i16_vec2 = convert_32_to_16(bf16_i32_vec2);
+            __m256i bf16_i16_vec3 = convert_32_to_16(bf16_i32_vec3);
+            __m256i bf16_i16_vec4 = convert_32_to_16(bf16_i32_vec4);
+            __m256i bf16_i16_vec5 = convert_32_to_16(bf16_i32_vec5);
+            __m256i bf16_i16_vec6 = convert_32_to_16(bf16_i32_vec6);
+            __m256i bf16_i16_vec7 = convert_32_to_16(bf16_i32_vec7);
+
+            // Store the 64 BF16 values (16 values per 256-bit vector).
+            auto bf16_to_fp32 = [](const __m256i src) -> __m512 {
+                __m512i y = _mm512_cvtepu16_epi32(src);
+                return _mm512_castsi512_ps(_mm512_bslli_epi128(y, 2));
+            };
+
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 0),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec0), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 16),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec1), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 32),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec2), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 48),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec3), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 64),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec4), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 80),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec5), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 96),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec6), vscale)));
+            _mm256_storeu_si256((__m256i *)(bf16_data + i + 112),
+                    (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec7), vscale)));
+        }
+
+        if (i < count) {
             // Load 64 FP8 values (1 byte each = 512 bits)
             __m512i fp8_vec = _mm512_loadu_si512((__m512i const *)(fp8_data + i));
 
@@ -362,12 +439,6 @@ class e4m3_t {
                     (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec2), vscale)));
             _mm256_storeu_si256((__m256i *)(bf16_data + i + 48),
                     (__m256i)_mm512_cvtneps_pbh(_mm512_mul_ps(bf16_to_fp32(bf16_i16_vec3), vscale)));
-        }
-        if (count % 64) {
-            // Process the remaining FP8 values.
-            for (size_t i = count - count % 64; i < count; i++) {
-                bf16_data[i] = e4m3_to_bf16_table[fp8_data[i].val];
-            }
         }
     }
 
