@@ -344,6 +344,15 @@ public:
                 }
             }
         }
+        // e4m3 -> e4m3
+        else if constexpr (std::is_same_v<OriWeiT, e4m3_t> && std::is_same_v<WeiT, e4m3_t>) {
+#pragma omp parallel for
+            for (uint64_t i = 0; i < rowSize; i++) {
+                WeiT *dst = convertedWeight.Data() + i * convertedWeight.Stride();
+                const OriWeiT *src = weight + (rowOffset + i) * cols + colOffset;
+                memcpy(dst, src, colSize * sizeof(WeiT));
+            }
+        }
 
         else {
             printf("%s:%d: Do not support this kind of weights datatype convertion.\n", __FILE__, __LINE__);

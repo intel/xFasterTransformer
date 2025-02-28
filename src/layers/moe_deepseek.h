@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "add_util.h"
-#include "bfloat16.h"
 #include "copy_util.h"
 #include "debugger.h"
 #include "llm_params.h"
@@ -82,8 +81,8 @@ public:
             memcpy(ffn->sharedExpert.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
 
             shared_expert->template setWeights<WType>(ctx, &ffn->sharedExpert);
-            int nthreads = std::min(omp_get_max_threads(), 64);
-#pragma omp parallel for num_threads(nthreads)
+            // setWeights for each expert
+#pragma omp parallel for num_threads(std::min(omp_get_max_threads(), 64))
             for (int i = 0; i < expertNum; ++i) {
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
             }
@@ -141,11 +140,14 @@ public:
         dbg.dumpMatrix(inBuffer);
 #endif
 
-        // Copy if input and output are different, so that the residual connection can be done
-        if ((void *)input != (void *)output) {
+        {
+            TimeLine t("MoE_Copy_Residual");
+            // Copy if input and output are different, so that the residual connection can be done
+            if ((void *)input != (void *)output) {
 #pragma omp parallel for
-            for (int i = 0; i < M; ++i) {
-                xft::copy(output + i * oStride, input + i * iStride, hiddenSize);
+                for (int i = 0; i < M; ++i) {
+                    xft::copy(output + i * oStride, input + i * iStride, hiddenSize);
+                }
             }
         }
 #ifdef XFT_DEBUG
@@ -153,7 +155,10 @@ public:
         dbg.dumpMatrix(output, M, hiddenSize, hiddenSize);
 #endif
 
-        shared_expert->forward(ctx, input, output, iStride, oStride, doLnBefore, M, false);
+        {
+            TimeLine t("MoE_SharedExpert");
+            shared_expert->forward(ctx, input, output, iStride, oStride, doLnBefore, M, false);
+        }
 #ifdef XFT_DEBUG
         dbg.debugPrint("Output mlp/shared: \n");
         dbg.dumpMatrix(output, M, hiddenSize, hiddenSize);
@@ -161,21 +166,27 @@ public:
         if (expertNum == 0) {
             return;
         }
-        // Normalize input
-        if (doLnBefore == true) {
-            norm.forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
+        {
+            TimeLine t("MoE_Normalize");
+            // Normalize input
+            if (doLnBefore == true) {
+                norm.forward(inBuffer.Data(), normBuffer.Data(), M, inBuffer.Stride(), normBuffer.Stride(), 1e-6);
 #ifdef XFT_DEBUG
-            dbg.debugPrint("Norm: \n");
-            dbg.dumpMatrix(normBuffer);
+                dbg.debugPrint("Norm: \n");
+                dbg.dumpMatrix(normBuffer);
 #endif
+            }
         }
 
         ImT *normBuf = (doLnBefore ? normBuffer.Data() : inBuffer.Data());
         int normStride = (doLnBefore ? normBuffer.Stride() : inBuffer.Stride());
         // Gating
         OutT *gateLogits = ctx->getBuffer<OutT>("gateLogits", M * expertNum, ctx->device);
-        ctx->mmHelper->compute(false, M, expertNum, hiddenSize, 1.0f, normBuf, normStride, gatingWeight.Data(),
-            nullptr, nullptr, nullptr, 0.0f, gateLogits, expertNum);
+        {
+            TimeLine t("MoE_Gating");
+            ctx->mmHelper->compute(false, M, expertNum, hiddenSize, 1.0f, normBuf, normStride, gatingWeight.Data(),
+                nullptr, nullptr, nullptr, 0.0f, gateLogits, expertNum);
+        }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("Gate: \n");
@@ -185,10 +196,13 @@ public:
         // TODO: special case, we could do some optimization here
         if (M == 1) {}
 
-        // computing gating scores
-        assert((ctx->scoringFunc) == "sigmoid");
-        // TODO: fused with last compute MatMul
-        computingSigmoid(gateLogits, M, expertNum);
+        {
+            TimeLine t("MoE_Sigmoid");
+            // computing gating scores
+            assert((ctx->scoringFunc) == "sigmoid");
+            // TODO: fused with last compute MatMul
+            computingSigmoid(gateLogits, M, expertNum);
+        }
 #ifdef XFT_DEBUG
         dbg.debugPrint("gateLogits sigmoid: \n");
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
@@ -202,7 +216,10 @@ public:
 
         // 1. Select top 2 experts and sum-up for each group of tokens [M, n_group]
         float *groupWeight = ctx->getBuffer<float>("groupWeight", M * nGroups, ctx->device);
-        scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight, gatingScoreCorrBias.Data());
+        {
+            TimeLine t("MoE_GroupScore");
+            scoresGroupExperts(gateLogits, M, expertNum, nGroups, groupWeight, gatingScoreCorrBias.Data());
+        }
 #ifdef XFT_DEBUG
         dbg.debugPrint("Group scores: \n");
         dbg.dumpMatrix(groupWeight, M, nGroups, nGroups);
@@ -210,7 +227,10 @@ public:
 
         // 2. Select top 4 groups for each token [M, topk_group]
         int *selGroups = ctx->getBuffer<int>("selGroups", M * topkGroup, ctx->device);
-        selectTopKGroups(groupWeight, M, nGroups, selGroups, topkGroup);
+        {
+            TimeLine t("MoE_SelectGroup");
+            selectTopKGroups(groupWeight, M, nGroups, selGroups, topkGroup);
+        }
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Group: \n");
         dbg.dumpMatrix(selGroups, M, topkGroup, topkGroup);
@@ -219,17 +239,23 @@ public:
         // 3. Select top 8 experts in selected 4 groups for each token idx-> [M, topk_expert] wei-> [M, topk_expert]
         int *selExperts = ctx->getBuffer<int>("selExperts", M * topkExpert, ctx->device);
         float *expertWeight = ctx->getBuffer<float>("expertWeight", M * topkExpert, ctx->device);
-        maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
+        {
+            TimeLine t("MoE_SelectExperts");
+            maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
+        }
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Experts & Weight: \n");
         dbg.dumpMatrix(selExperts, M, topkExpert, topkExpert);
         dbg.dumpMatrix(expertWeight, M, topkExpert, topkExpert);
 #endif
 
-        // 4. if ctx->normTopKProb is true, Normalize the expertWeight, so that they sum 1
-        scaleNormTopKExpertsWeight(expertWeight, M, topkExpert, ctx->numExpertsPerTok > 1 && ctx->normTopKProb, ctx->routedScalingFac);
+        {
+            TimeLine t("MoE_ScaleNorm");
+            // 4. if ctx->normTopKProb is true, Normalize the expertWeight, so that they sum 1
+            scaleNormTopKExpertsWeight(expertWeight, M, topkExpert, ctx->numExpertsPerTok > 1 && ctx->normTopKProb, ctx->routedScalingFac);
+        }
 #ifdef XFT_DEBUG
-        dbg.debugPrint("seleted Experts & Weight: \n");
+        dbg.debugPrint("scaledNorm seleted Experts & Weight: \n");
         dbg.dumpMatrix(selExperts, M, topkExpert, topkExpert);
         dbg.dumpMatrix(expertWeight, M, topkExpert, topkExpert);
 #endif
@@ -242,19 +268,25 @@ public:
         // 5. Reorder the input and weight for each expert
         std::vector<int> idx[expertNum]; // index for each expert
         std::vector<float> weights[expertNum]; // weight for each expert
-        for (int i = 0; i < M; ++i) {
-            // fill idx and weights for each expert
-            for (int j = 0; j < topkExpert; ++j) {
-                idx[selExperts[i * topkExpert + j]].push_back(i);
-                weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
+        {
+            TimeLine t("MoE_Reorder");
+            for (int i = 0; i < M; ++i) {
+                // fill idx and weights for each expert
+                for (int j = 0; j < topkExpert; ++j) {
+                    idx[selExperts[i * topkExpert + j]].push_back(i);
+                    weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
+                }
             }
         }
 
         // Call forward function of selected experts
+//# pragma omp parallel for num_threads(std::min(omp_get_max_threads(), 1))
         for (int i = 0; i < expertNum; ++i) {
+            int thIdx = omp_get_thread_num();
             size_t rowNum = idx[i].size();
             if (idx[i].empty()) { continue; }
 
+            //TimeLine t("MoE_RoutedExpert");
             // Gather input for expert i
             ImT *expertData = ctx->getBuffer<ImT>("expertData", rowNum * hiddenSize, ctx->device);
             gatherInput(expertData, hiddenSize, normBuf, normStride, idx[i]);
@@ -270,7 +302,7 @@ public:
             dbg.dumpMatrix(expertData, rowNum, hiddenSize, hiddenSize);
 #endif
 
-            // Scatter output of expert i
+            // Scatter output of expert i (critical section)
             scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
         }
 #ifdef XFT_DEBUG
@@ -315,7 +347,10 @@ private:
 #pragma omp parallel for
         for (size_t i = 0; i < idx.size(); ++i) {
             float scale = weights[i];
-            xft::addto(output + idx[i] * oStride, expertData + i * hiddenSize, scale, hiddenSize);
+            //#pragma omp critical
+            {
+                xft::addto(output + idx[i] * oStride, expertData + i * hiddenSize, scale, hiddenSize);
+            }
         }
     }
 

@@ -104,3 +104,8 @@ template <>
 struct GateTypeSelector<float16_t> {
     using type = float16_t;
 };
+
+template <>
+struct GateTypeSelector<e4m3_t> {
+    using type = bfloat16_t;
+};

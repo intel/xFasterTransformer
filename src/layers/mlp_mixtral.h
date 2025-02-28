@@ -61,7 +61,7 @@ public:
 
         this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
 
-        prepareGateWeight(ctx, (WType *)ffn->gating.weight);
+        prepareGateWeight(ctx, ffn->gating.weight);
 
         // Check the size of sparse experts
         if (ffn->experts.size() != this->experts.size() || ctx->sparseExperts != this->experts.size()) {
@@ -187,8 +187,7 @@ public:
     }
 
 private:
-    template <typename SrcType>
-    void prepareGateWeight(DecoderContext *ctx, const SrcType *gateW) {
+    void prepareGateWeight(DecoderContext *ctx, const void *gateW) {
         int M = ctx->hiddenSize;
         int N = ctx->sparseExperts;
 
@@ -196,7 +195,7 @@ private:
         Matrix<GateType> tmpW;
         tmpW.Resize(M, N, N);
 
-        xft::copy(tmpW.Data(), gateW, M * N);
+        xft::copy(tmpW.Data(), (const GateType *)gateW, M * N);
 
         ctx->mmHelper->packWeight(false, tmpW, gatingWeight);
     }
