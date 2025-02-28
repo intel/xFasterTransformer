@@ -672,7 +672,7 @@ private:
                     (T *)ffn->mlp.gate.weight, ctx->hiddenSize * ctx->intermediateSize);
         } else {
             // Load gating weights and bias
-            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.bin", (T *)ffn->gating.weight,
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.bin", (bfloat16_t *)ffn->gating.weight,
                     ffn->gating.input_dim * ffn->gating.output_dim, xft::DataType::bf16);
             loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin",
                     ffn->gating, "read gating bias error", xft::DataType::bf16);

@@ -16,6 +16,7 @@
 
 #include "bert_util.h"
 #include "copy_util.h"
+#include "add_util.h"
 #include "datatypes.h"
 #include "debugger.h"
 #include "decoder_util.h"
@@ -73,6 +74,10 @@ public:
                 upWeightScale, upWeightZero, upWeightSum);
 
         if (!Env::getInstance().getMlpCatEnabled()) {
+            if (std::is_same_v<WeiT, e4m3_t>) {
+                xft::Logger::error("Internal Error: Not support split-GateUp MLP for fp8_e4m3.");
+                exit(-1);
+            }
             gateWeight.Resize(hiddenSize, it.second - it.first);
             upWeight.Resize(hiddenSize, it.second - it.first);
             ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
@@ -151,6 +156,11 @@ public:
                 llamaFFN->gate.bias, (WType *)llamaFFN->up.weight, llamaFFN->up.weight_scale, llamaFFN->up.weight_zp,
                 llamaFFN->up.bias, llamaFFN->norm.gamma, llamaFFN->norm.beta, (WType *)llamaFFN->down.weight,
                 llamaFFN->down.weight_scale, llamaFFN->down.weight_zp, llamaFFN->down.bias, false);
+
+        if (std::is_same_v<WeiT, e4m3_t>) {
+            prepareFP8Scales(llamaFFN->gate, llamaFFN->up, catGUScales);
+            prepareFP8Scales(llamaFFN->down, downScales);
+        }
     }
 
     template <typename WType>
@@ -158,6 +168,11 @@ public:
         setWeights(ctx, (WType *)ffn.gate.weight, ffn.gate.weight_scale, ffn.gate.weight_zp, ffn.gate.bias,
                 (WType *)ffn.up.weight, ffn.up.weight_scale, ffn.up.weight_zp, ffn.up.bias, nullptr, nullptr,
                 (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, false);
+
+        if (std::is_same_v<WeiT, e4m3_t>) {
+            prepareFP8Scales(ffn.gate, ffn.up, catGUScales);
+            prepareFP8Scales(ffn.down, downScales);
+        }
     }
 
 #ifdef XFT_DEBUG
@@ -237,6 +252,8 @@ public:
             dbg.debugPrint("catWeights:\n");
             dbg.dumpMatrix(catWeights, false, ctx->device);
             dbg.debugPrint("gateUp output:\n");
+            dbg.dumpMatrix(imBuffer, false, ctx->device);
+            dbg.debugPrint("gateUpSilu output:\n");
             dbg.dumpMatrix(siluBuf, false, ctx->device);
             dbg.debugPrint(">>> residential: [%d, %d] (%d)\n", inBuffer.Rows(), inBuffer.Cols(), inBuffer.Stride());
             dbg.dumpMatrix(inBuffer, false, ctx->device);
@@ -315,10 +332,11 @@ private:
 
         int M = input.Rows(), N = output.Cols(), K = downWeight.Rows();
         int lda = input.Stride(), ldc = output.Stride(), ldr = residential.Stride();
+        int lds = (std::is_same_v<WeiT, e4m3_t> ? downScales.Stride() : 1);
 
         const ImT *A = input.Data();
         const WeiT *B = downWeight.Data();
-        const float *scaleB = downWeightScale.Data();
+        const float *scaleB = (std::is_same_v<WeiT, e4m3_t> ? downScales.Data() : downWeightScale.Data());
         const float *zeroB = downWeightZero.Data();
         const float *sumB = downWeightSum.Data();
         OutT *C = output.Data();
@@ -327,10 +345,17 @@ private:
         if (isMaster) {
             float *pbias = downBias.Data();
             if (downBias.Size() == 0) { pbias = nullptr; }
-            ctx->mmHelper->compute_residential(
-                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, pbias, R, ldr);
+            if (std::is_same_v<WeiT, e4m3_t>) {
+                ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
+#pragma omp parallel for
+                for (size_t i = 0; i < M; ++i)
+                    xft::addto(C + i * ldc, R + i * ldr, 1.0, N);
+            } else {
+                ctx->mmHelper->compute_residential(
+                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, pbias, R, ldr);
+	    }
         } else {
-            ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+            ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
         }
     }
 
@@ -344,15 +369,16 @@ private:
 
         int M = input.Rows(), N = output.Cols(), K = input.Cols();
         int lda = input.Stride(), ldc = output.Stride();
+        int lds = (std::is_same_v<WeiT, e4m3_t> ? catGUScales.Stride() : 1);
 
         const T1 *A = input.Data();
         const WeiT *B = catWeights.Data();
-        const float *scaleB = catWeightsScale.Data();
+        const float *scaleB = (std::is_same_v<WeiT, e4m3_t> ? catGUScales.Data() : catWeightsScale.Data());
         const float *zeroB = catWeightsZero.Data();
         const float *sumB = catWeightsSum.Data();
         T2 *C = output.Data();
 
-        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc);
+        ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
 
         // Compute silu on the left half and then add it with the right half
         if (ctx->actType == DecoderContext::SILU) {
@@ -403,24 +429,71 @@ private:
         memcpy(catWeightsSum.Data() + M, upWeightSum.Data(), N * sizeof(float));
     }
 
+    void prepareFP8Scales(xft::DenseLayerParams &param, xft::Matrix<float> &scales) {
+        // Check weight type
+        if (param.wtype != xft::ParamType::FP8_E4M3) {
+            xft::Logger::error("The weight type is not FP8_E4M3, no scales.");
+            exit(-1);
+        }
+
+        int rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
+        int cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+        scales.Resize(rows, cols);
+
+        for (int i = 0; i < rows; ++i) {
+            memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        }
+    }
+
+    // Prepare FP8 scales by merging 2 scales into 1
+    void prepareFP8Scales(xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales) {
+        // Check weight type
+        if (param1.wtype != xft::ParamType::FP8_E4M3 || param2.wtype != xft::ParamType::FP8_E4M3) {
+            xft::Logger::error("Internal Error: The weight type is not FP8_E4M3, no scales.");
+            exit(-1);
+        }
+
+        if (param1.input_dim != param2.input_dim) {
+            xft::Logger::error("Internal Error: The input dim of two params are not matched.");
+            exit(-1);
+        }
+
+        int rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
+        int cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
+        int cols2 = (param2.output_dim + param2.block_size1 - 1) / param2.block_size1;
+        scales.Resize(rows, cols1 + cols2);
+
+        for (int i = 0; i < rows; ++i) {
+            memcpy(scales.Row(i), param1.weight_scale + i * cols1, cols1 * sizeof(float));
+            memcpy(scales.Row(i) + cols1, param2.weight_scale + i * cols2, cols2 * sizeof(float));
+        }
+    }
+
 protected:
     xft::Matrix<WeiT> gateWeight;
     xft::Vector<float> gateWeightScale; // For int8_t weight
     xft::Vector<float> gateWeightZero; // For int8_t weight
     xft::Vector<float> gateWeightSum; // For int8_t weight
+    xft::Matrix<float> gateScales; // For fp8_e4m3 weight
+
     xft::Matrix<WeiT> upWeight;
     xft::Vector<float> upWeightScale; // For int8_t weight
     xft::Vector<float> upWeightZero; // For int8_t weight
     xft::Vector<float> upWeightSum; // For int8_t weight
+    xft::Matrix<float> upScales; // For fp8_e4m3 weight
+
     xft::Matrix<WeiT> catWeights;
     xft::Vector<float> catWeightsScale; // For int8_t weight
     xft::Vector<float> catWeightsZero; // For int8_t weight
     xft::Vector<float> catWeightsSum; // For int8_t weight
+    xft::Matrix<float> catGUScales; // For fp8_e4m3 weight
+
     xft::Matrix<WeiT> downWeight;
     xft::Vector<float> downBias;
     xft::Vector<float> downWeightScale; // For int8_t weight
     xft::Vector<float> downWeightZero; // For int8_t weight
     xft::Vector<float> downWeightSum; // For int8_t weight
+    xft::Matrix<float> downScales; // For fp8_e4m3 weight
 
     // LlamaRMSNorm param
     NORM_CLS norm;

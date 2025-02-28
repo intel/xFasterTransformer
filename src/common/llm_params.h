@@ -74,7 +74,9 @@ struct DenseLayerParams {
         , wtype(other.wtype)
         , wtrans(other.wtrans)
         , input_dim(other.input_dim)
-        , output_dim(other.output_dim) {
+        , output_dim(other.output_dim)
+	, block_size0(other.block_size0)
+	, block_size1(other.block_size1) {
         other.weight = nullptr;
         other.bias = nullptr;
         other.weight_scale = nullptr;
@@ -262,7 +264,7 @@ struct DeepSeekFFNParams : public FFNParams {
     DeepSeekFFNParams(int routedExpertsNum, int sharedExpertNum, int hiddenSize, int intermediateSize,
             int moeIntermediateSize, ParamType denseWType, bool wTrans = false)
         : norm(hiddenSize)
-        , gating(hiddenSize, routedExpertsNum, denseWType, wTrans)
+        , gating(hiddenSize, routedExpertsNum, ParamType::BF16, wTrans)
         , mlp(hiddenSize, intermediateSize, denseWType, wTrans)
         , sharedExpert(hiddenSize, sharedExpertNum * moeIntermediateSize, denseWType, wTrans) {
         //for (int i = 0; i < routedExpertsNum; ++i) {
