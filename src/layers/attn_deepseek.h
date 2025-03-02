@@ -109,8 +109,8 @@ public:
         // Deal with scales if e4m3 is used
         if (std::is_same_v<WeiT, e4m3_t>) {
             prepareFP8Scales(mlap->q_a_proj, mlap->kv_a_proj, qkvAScales);
-            prepareFP8Scales(mlap->q_b_proj, qBScales);
-            prepareFP8Scales(mlap->o_proj, outScales);
+            prepareFP8Scales(ctx, mlap->q_b_proj, qBScales, true);
+            prepareFP8Scales(ctx, mlap->o_proj, outScales, false);
         }
     }
 
@@ -478,19 +478,41 @@ private:
     }
 
 private:
-    void prepareFP8Scales(xft::DenseLayerParams &param, xft::Matrix<float> &scales) {
+    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param, xft::Matrix<float> &scales, bool bVerticalSplit) {
         // Check weight type
         if (param.wtype != xft::ParamType::FP8_E4M3) {
             xft::Logger::error("The weight type is not FP8_E4M3, no scales.");
             exit(-1);
         }
 
-        int rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
-        int cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
-        scales.Resize(rows, cols);
+        int splitTarget = bVerticalSplit ? param.output_dim : param.input_dim;
+        int dimPerHead =  splitTarget / ctx->attHeadNum;
+        int stride = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+        int splitSize = (endHead - startHead) * dimPerHead;
+        int splitOffset = startHead * dimPerHead;
+        int rows, cols;
+        if (bVerticalSplit) {
+            rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
+            cols = (splitSize + param.block_size1 - 1) / param.block_size1;
+            splitOffset = (splitOffset + param.block_size1 - 1) / param.block_size1;
+        } else {
+            rows = (splitSize + param.block_size0 - 1) / param.block_size0;
+            cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+            splitOffset = (splitOffset + param.block_size0 - 1) / param.block_size0 * cols;
+        }
+        //scales.Resize(rows, cols);
 
-        for (int i = 0; i < rows; ++i) {
-            memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        //for (int i = 0; i < rows; ++i) {
+        //    memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        //}
+        // transpose for xddn fp8 kernel
+        scales.Resize(cols, rows);
+
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i) + j, param.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            }
         }
     }
 
@@ -510,11 +532,26 @@ private:
         int rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
         int cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
         int cols2 = (param2.output_dim + param2.block_size1 - 1) / param2.block_size1;
-        scales.Resize(rows, cols1 + cols2);
+        //scales.Resize(rows, cols1 + cols2);
 
-        for (int i = 0; i < rows; ++i) {
-            memcpy(scales.Row(i), param1.weight_scale + i * cols1, cols1 * sizeof(float));
-            memcpy(scales.Row(i) + cols1, param2.weight_scale + i * cols2, cols2 * sizeof(float));
+        //for (int i = 0; i < rows; ++i) {
+        //    memcpy(scales.Row(i), param1.weight_scale + i * cols1, cols1 * sizeof(float));
+        //    memcpy(scales.Row(i) + cols1, param2.weight_scale + i * cols2, cols2 * sizeof(float));
+        //}
+        // transpose for xddn fp8 kernel
+        scales.Resize(cols1 + cols2, rows);
+
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols1; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i) + j, param1.weight_scale + j * cols1 + i, sizeof(float));
+            }
+        }
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols2; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i + cols1) + j, param2.weight_scale + j * cols2 + i, sizeof(float));
+            }
         }
     }
 
