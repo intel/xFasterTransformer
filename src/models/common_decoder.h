@@ -860,7 +860,7 @@ protected:
         float *bias = nullptr;
 
         xft::DataType wType = xft::DataType::unknown;
-        if (getWeightType("/config.ini") == xft::DataType::fp8_e4m3){
+        if (getWeightType(modelPath + "/config.ini") == xft::DataType::fp8_e4m3){
             wType = xft::DataType::bf16;
         }
 

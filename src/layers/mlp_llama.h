@@ -66,7 +66,9 @@ public:
         // Vertically split the gate weight and up weight
         xft::Matrix<WeiT> quantizedGateWeight, quantizedUpWeight, quantizedDownWeight;
 
-        auto it = SplitUtil::getTaskRange(imSize, ctx->numSplit, ctx->splitIdx);
+        // for e4m3_t, size should be multiple of 128 (64 * 2)
+        int gran = std::is_same_v<WeiT, e4m3_t> ? 2 : 1;
+        auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, ctx->splitIdx);
 
         ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
                 gateWeightScale, gateWeightZero, gateWeightSum);
@@ -158,8 +160,8 @@ public:
                 llamaFFN->down.weight_scale, llamaFFN->down.weight_zp, llamaFFN->down.bias, false);
 
         if (std::is_same_v<WeiT, e4m3_t>) {
-            prepareFP8Scales(llamaFFN->gate, llamaFFN->up, catGUScales);
-            prepareFP8Scales(llamaFFN->down, downScales);
+            prepareFP8Scales(ctx, llamaFFN->gate, llamaFFN->up, catGUScales, true);
+            prepareFP8Scales(ctx, llamaFFN->down, downScales, false);
         }
     }
 
@@ -170,8 +172,8 @@ public:
                 (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, false);
 
         if (std::is_same_v<WeiT, e4m3_t>) {
-            prepareFP8Scales(ffn.gate, ffn.up, catGUScales);
-            prepareFP8Scales(ffn.down, downScales);
+            prepareFP8Scales(ctx, ffn.gate, ffn.up, catGUScales, true);
+            prepareFP8Scales(ctx, ffn.down, downScales, false);
         }
     }
 
@@ -345,15 +347,15 @@ private:
         if (isMaster) {
             float *pbias = downBias.Data();
             if (downBias.Size() == 0) { pbias = nullptr; }
-            if (std::is_same_v<WeiT, e4m3_t>) {
-                ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
-#pragma omp parallel for
-                for (size_t i = 0; i < M; ++i)
-                    xft::addto(C + i * ldc, R + i * ldr, 1.0, N);
-            } else {
-                ctx->mmHelper->compute_residential(
-                        false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, pbias, R, ldr);
-	    }
+            //if (std::is_same_v<WeiT, e4m3_t>) {
+            //    ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
+//#pragma omp parallel for
+            //    for (size_t i = 0; i < M; ++i)
+            //        xft::addto(C + i * ldc, R + i * ldr, 1.0, N);
+            //} else {
+            ctx->mmHelper->compute_residential(
+                    false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, pbias, R, ldr, lds);
+	    //}
         } else {
             ctx->mmHelper->compute(false, M, N, K, 1.0f, A, lda, B, scaleB, zeroB, sumB, 0.0f, C, ldc, lds);
         }
@@ -429,24 +431,47 @@ private:
         memcpy(catWeightsSum.Data() + M, upWeightSum.Data(), N * sizeof(float));
     }
 
-    void prepareFP8Scales(xft::DenseLayerParams &param, xft::Matrix<float> &scales) {
+    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param, xft::Matrix<float> &scales, bool bVerticalSplit) {
         // Check weight type
         if (param.wtype != xft::ParamType::FP8_E4M3) {
             xft::Logger::error("The weight type is not FP8_E4M3, no scales.");
             exit(-1);
         }
 
-        int rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
-        int cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
-        scales.Resize(rows, cols);
+        int stride = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+        int splitTarget = bVerticalSplit ? param.output_dim : param.input_dim;
+        // for e4m3_t, size should be multiple of 128 (64 * 2)
+        auto it = SplitUtil::getTaskRange(splitTarget, 2, ctx->numSplit, ctx->splitIdx);
+        int splitSize = it.second - it.first;
+        int splitOffset = it.first;
+        int rows, cols;
+        if (bVerticalSplit) {
+            rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
+            cols = (splitSize + param.block_size1 - 1) / param.block_size1;
+            splitOffset = (splitOffset + param.block_size1 - 1) / param.block_size1;
+        } else {
+            rows = (splitSize + param.block_size0 - 1) / param.block_size0;
+            cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
+            splitOffset = (splitOffset + param.block_size0 - 1) / param.block_size0 * cols;
+        }
+        //scales.Resize(rows, cols);
 
-        for (int i = 0; i < rows; ++i) {
-            memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        //for (int i = 0; i < rows; ++i) {
+        //    memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
+        //}
+        // transpose for xddn fp8 kernel
+        scales.Resize(cols, rows);
+
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i) + j, param.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            }
         }
     }
 
     // Prepare FP8 scales by merging 2 scales into 1
-    void prepareFP8Scales(xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales) {
+    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales, bool bVerticalSplit) {
         // Check weight type
         if (param1.wtype != xft::ParamType::FP8_E4M3 || param2.wtype != xft::ParamType::FP8_E4M3) {
             xft::Logger::error("Internal Error: The weight type is not FP8_E4M3, no scales.");
@@ -458,14 +483,41 @@ private:
             exit(-1);
         }
 
-        int rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
-        int cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
-        int cols2 = (param2.output_dim + param2.block_size1 - 1) / param2.block_size1;
-        scales.Resize(rows, cols1 + cols2);
+        assert(param1.input_dim == param2.input_dim);
+        assert(param1.output_dim == param2.output_dim);
 
-        for (int i = 0; i < rows; ++i) {
-            memcpy(scales.Row(i), param1.weight_scale + i * cols1, cols1 * sizeof(float));
-            memcpy(scales.Row(i) + cols1, param2.weight_scale + i * cols2, cols2 * sizeof(float));
+        int splitTarget = bVerticalSplit ? param1.output_dim : param1.input_dim;
+        int stride = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
+        // for e4m3_t, size should be multiple of 128 (64 * 2)
+        auto it = SplitUtil::getTaskRange(splitTarget, 2, ctx->numSplit, ctx->splitIdx);
+        int splitSize = it.second - it.first;
+        int splitOffset = it.first;
+        int rows, cols1, cols2;
+        if (bVerticalSplit) {
+            rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
+            cols1 = (splitSize + param1.block_size1 - 1) / param1.block_size1;
+            splitOffset = (splitOffset + param1.block_size1 - 1) / param1.block_size1;
+        } else {
+            rows = (splitSize + param1.block_size0 - 1) / param1.block_size0;
+            cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
+            splitOffset = (splitOffset + param1.block_size0 - 1) / param1.block_size0 * cols1;
+        }
+
+        cols2 = cols1;
+        // transpose for xddn fp8 kernel
+        scales.Resize(cols1 + cols2, rows);
+
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols1; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i) + j, param1.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            }
+        }
+#pragma omp parallel for collapse(2)
+        for (int i = 0; i < cols2; ++i) {
+            for (int j = 0; j < rows; ++j) {
+                memcpy(scales.Row(i + cols1) + j, param2.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            }
         }
     }
 
