@@ -265,45 +265,56 @@ public:
                 "Selected experts: [%d]=%f [%d]=%f\n", selExperts[0], expertWeight[0], selExperts[1], expertWeight[1]);
 #endif
 
-        // 5. Reorder the input and weight for each expert
-        std::vector<int> idx[expertNum]; // index for each expert
-        std::vector<float> weights[expertNum]; // weight for each expert
-        {
-            TimeLine t("MoE_Reorder");
-            for (int i = 0; i < M; ++i) {
-                // fill idx and weights for each expert
-                for (int j = 0; j < topkExpert; ++j) {
-                    idx[selExperts[i * topkExpert + j]].push_back(i);
-                    weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
+        // Call forward function of selected experts
+        if (M > 128 || Env::getInstance().getMoEEngine() == 0) {
+            // 5. Reorder the input and weight for each expert
+            std::vector<int> idx[expertNum]; // index for each expert
+            std::vector<float> weights[expertNum]; // weight for each expert
+            {
+                TimeLine t("MoE_Reorder");
+                for (int i = 0; i < M; ++i) {
+                    // fill idx and weights for each expert
+                    for (int j = 0; j < topkExpert; ++j) {
+                        idx[selExperts[i * topkExpert + j]].push_back(i);
+                        weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
+                    }
                 }
             }
-        }
+            // call forward for each expert
+            for (int i = 0; i < expertNum; ++i) {
+                size_t rowNum = idx[i].size();
+                if (idx[i].empty()) { continue; }
 
-        // Call forward function of selected experts
-//# pragma omp parallel for num_threads(std::min(omp_get_max_threads(), 1))
-        for (int i = 0; i < expertNum; ++i) {
-            int thIdx = omp_get_thread_num();
-            size_t rowNum = idx[i].size();
-            if (idx[i].empty()) { continue; }
-
-            //TimeLine t("MoE_RoutedExpert");
-            // Gather input for expert i
-            ImT *expertData = ctx->getBuffer<ImT>("expertData", rowNum * hiddenSize, ctx->device);
-            gatherInput(expertData, hiddenSize, normBuf, normStride, idx[i]);
+                TimeLine t("MoE_RoutedExpert");
+                // Gather input for expert i
+                ImT *expertData = ctx->getBuffer<ImT>("expertData", rowNum * hiddenSize, ctx->device);
+                gatherInput(expertData, hiddenSize, normBuf, normStride, idx[i]);
 
 #ifdef XFT_DEBUG
-            dbg.debugPrint("Expert %d, input:\n", i);
-            dbg.dumpMatrix(expertData, rowNum, hiddenSize, hiddenSize);
+                dbg.debugPrint("Expert %d, input:\n", i);
+                dbg.dumpMatrix(expertData, rowNum, hiddenSize, hiddenSize);
 #endif
-            // Call forward function of expert i
-            experts[i]->forward(ctx, expertData, expertData, hiddenSize, hiddenSize, false, rowNum, true);
+                // Call forward function of expert i
+                experts[i]->forward(ctx, expertData, expertData, hiddenSize, hiddenSize, false, rowNum, true);
 #ifdef XFT_DEBUG
-            dbg.debugPrint("Expert %d, w=%f..., output:\n", i, weights[i][0]);
-            dbg.dumpMatrix(expertData, rowNum, hiddenSize, hiddenSize);
+                dbg.debugPrint("Expert %d, w=%f..., output:\n", i, weights[i][0]);
+                dbg.dumpMatrix(expertData, rowNum, hiddenSize, hiddenSize);
 #endif
 
-            // Scatter output of expert i (critical section)
-            scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
+                // Scatter output of expert i (critical section)
+                scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
+            }
+        } else if (Env::getInstance().getMoEEngine() == 1) {
+            // call sparse mlp for each token
+            for (int i = 0; i < M; ++i) {
+                TimeLine t("MoE_TokenSparseFW");
+                OutT *tokenData = ctx->getBuffer<OutT>("tokenData", 1 * hiddenSize, ctx->device);
+                sparseForward(ctx, normBuf + i * normStride, selExperts + i * topkExpert, expertWeight + i * topkExpert,
+                    topkExpert, tokenData, hiddenSize, output + i * oStride, oStride);
+            }
+        } else {
+            xft::Logger::error("Unsupported MoE engine: %d", Env::getInstance().getMoEEngine());
+            exit(-1);
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("Output:\n");
@@ -490,36 +501,110 @@ private:
         }
     }
 
-    // gather catWeights from all selected experts based on selExperts
-    // note that gate and up weights are packed and first half and second half are gathered separately
-    void gatherGateUpWeights(WeiT *catWeights, int hiddenSize, int exptStride, int topkExpert, int *selExperts, float *expertWeight) {
-        if (Env::getInstance().getMlpCatEnabled()) {
-            int stride = exptStride * topkExpert;
-            int dim = exptStride / 2;
-# pragma omp parallel for collapse(2)
-            for (int i = 0; i < topkExpert; ++i) {
-                for (int j = 0; j < hiddenSize; ++j) {
-                    WeiT *gateW = this->experts[selExperts[i]]->catWeights.Data() + j * exptStride;
-                    WeiT *upW = gateW + dim;
-                    xft::copy(catWeights + j * stride + i * dim, gateW, dim);
-                    xft::copy(catWeights + j * stride + stride / 2 + i * dim, upW, dim);
-                }
-            }
-        } else {
-            // Not implemented
-            xft::Logger::error("Uncat Mlp gatherWeights, Not implemented yet.");
-            exit(-1);
-        }
-    }
+    void sparseForward(DecoderContext *ctx, ImT *input, int *selExperts, float *expertWeight, int topkExpert, OutT *tokenData,
+            int hiddenSize, OutT *output, int oStride) {
+        const WeiT *weightsGUList[topkExpert];
+        const WeiT *weightsDList[topkExpert];
+        const float *scalesGUList[topkExpert];
+        const float *scalesDList[topkExpert];
+        int ldaGUScales[topkExpert];
+        int ldaDScales[topkExpert];
+        int blockSize = 128;
+        float alpha[topkExpert];
+        OutT *imOuts[topkExpert];
 
-    void gatherDownWeights(WeiT *downWeights, int dim, int hiddenSize, int topkExpert, int *selExperts, float *expertWeight) {
-# pragma omp parallel for collapse(2)
-        for (int i = 0; i < topkExpert; ++i) {
-            for (int j = 0; j < dim; ++j) {
-                WeiT *downW = this->experts[selExperts[i]]->downWeight.Data() + j * hiddenSize;
-                xft::copy(downWeights + i * dim * hiddenSize + j * hiddenSize, downW, hiddenSize);
+         // just for 1 token
+        int M = 1;
+
+        int K1 = hiddenSize;
+        // concat gate and up weights
+        int N1 = this->experts[0]->splitSize * 2;
+
+        int K2 = this->experts[0]->splitSize;
+        int N2 = hiddenSize;
+
+        {
+            TimeLine t("SparseFW_Prepare");
+            for (int i = 0; i < topkExpert; ++i) {
+                weightsGUList[i] = this->experts[selExperts[i]]->catWeights.Data();
+                scalesGUList[i] = this->experts[selExperts[i]]->catGUScales.Data();
+                ldaGUScales[i] = (K1 + blockSize - 1) / blockSize;
+                alpha[i] = 1.0;
+                imOuts[i] = ctx->getBuffer<OutT>("sparseImOut_" + std::to_string(i), M * N1, ctx->device);
+
+                weightsDList[i] = this->experts[selExperts[i]]->downWeight.Data();
+                ldaDScales[i] = (K2 + blockSize - 1) / blockSize;
+                scalesDList[i] = this->experts[selExperts[i]]->downScales.Data();
             }
         }
+
+        int lda1 = hiddenSize;
+        int ldc1[topkExpert];
+        for (int i = 0; i < topkExpert; ++i) {
+            ldc1[i] = N1;
+        }
+
+#ifdef XFT_DEBUG
+        dbg.debugPrint("SparseFW_Input (%d %d):\n", 1, hiddenSize);
+        dbg.dumpMatrix(input, 1, hiddenSize, lda1);
+#endif
+        {
+            TimeLine t("SparseFW_GateUp");
+            ctx->mmHelper->compute_batch_C(M, N1, K1, alpha, input, lda1, weightsGUList, scalesGUList, imOuts, ldc1, ldaGUScales,
+                blockSize, topkExpert);
+        }
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Sparse_GateUp %d x (%d %d):\n", topkExpert, lda1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[0], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[1], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[2], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[3], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[4], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[5], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[6], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[topkExpert - 1], 1, N1, ldc1[0]);
+#endif
+
+        {
+            TimeLine t("SparseFW_Silu");
+            // Compute silu on the left half and then add it with the right half
+            if (ctx->actType == DecoderContext::SILU) {
+                DecoderUtil::siluSumBatch(imOuts, imOuts, topkExpert, M, N1);
+            } else {
+                printf("ERROR: unsupported activation in MLP.\n");
+                exit(-1);
+            }
+        }
+#ifdef XFT_DEBUG
+        dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", topkExpert, 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[0], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[1], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[2], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[3], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[4], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[5], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[6], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[topkExpert - 1], 1, N1 / 2, ldc1[0]);
+#endif
+
+        int lda2[topkExpert];
+        for (int i = 0; i < topkExpert; ++i) {
+            lda2[i] = ldc1[i];
+        }
+
+        int ldc2 = oStride;
+        {
+            TimeLine t("SparseFW_Down");
+            ctx->mmHelper->compute_batch_A(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
+                scalesDList, tokenData, ldc2, ldaDScales, blockSize, topkExpert);
+            xft::addto(output, tokenData, 1.0, hiddenSize);
+        }
+#ifdef XFT_DEBUG
+        dbg.debugPrint("tokenData (%d %d):\n", 1, hiddenSize);
+        dbg.dumpMatrix(tokenData, 1, hiddenSize, lda1);
+        dbg.debugPrint("Sparse_Down (%d %d):\n", lda2[0], ldc2);
+        dbg.dumpMatrix(output, 1, N2, ldc2);
+#endif
     }
 
 private:

@@ -1734,6 +1734,32 @@ public:
         }
     }
 
+    template <typename InT, typename WeiT, typename OutT>
+    void compute_batch_C(int M, int N, int K, float *alphaList, const InT *A, int lda, const WeiT *packedBBatch[],
+            const float *scalesList[], OutT *CList[], int *ldcList, int *ldsList, int blockSize = 128, int batchSize = 1) {
+        if constexpr (std::is_same_v<WeiT, e4m3_t> && std::is_same_v<OutT, bfloat16_t> && std::is_same_v<InT, bfloat16_t>) {
+            GEMMVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_C",
+                xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_C(M, N, K, (const XDNN_BF16 *)A, lda, (const XDNN_E4M3 **)packedBBatch,
+                    (XDNN_BF16 **)CList, ldcList, scalesList, ldsList, blockSize, alphaList, batchSize));
+        } else {
+            printf("%s:%d: Unsupported data type for compute_batch_C", __FILE__, __LINE__);
+            exit(-1);
+        }
+    }
+
+    template <typename InT, typename WeiT, typename OutT>
+    void compute_batch_A(int M, int N, int K, float *alphaList, const InT *A[], int *ldaList, const WeiT *packedBBatch[],
+            const float *scalesList[], OutT *C, int ldc, int *ldsList, int blockSize = 128, int batchSize = 1) {
+        if constexpr (std::is_same_v<WeiT, e4m3_t> && std::is_same_v<OutT, bfloat16_t> && std::is_same_v<InT, bfloat16_t>) {
+            GEMMVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A",
+                xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A(M, N, K, (const XDNN_BF16 **)A, ldaList, (const XDNN_E4M3 **)packedBBatch,
+                    (XDNN_BF16 *)C, ldc, scalesList, ldsList, blockSize, alphaList, batchSize));
+        } else {
+            printf("%s:%d: Unsupported data type for compute_residential_batch_A", __FILE__, __LINE__);
+            exit(-1);
+        }
+    }
+
     int getEngineCount() {
         int count = engine->get_count(kind);
         return count;
