@@ -90,6 +90,9 @@ public:
     // get Primitive Cache M
     int getPrimitiveCacheM() { return primitiveCacheM; }
 
+    // get MoE computing mode
+    int getMoEEngine() { return moeEngine; }
+
 private:
     Env() {
         // init Verbose
@@ -142,6 +145,9 @@ private:
 
         // init Primitive Cache M
         initPrimitiveCacheM();
+
+        // init MoE Engine
+        initMoEEngine();
     }
 
     // Verbose
@@ -352,5 +358,21 @@ private:
         } else {
             primitiveCacheM = 256;
         }
+    }
+
+    // XFT_MOE_ENGINE
+    // 0: batched tokens computing for each expert
+    // 1: batched experts computing for each token
+    int moeEngine = 1;
+    void initMoEEngine() {
+        char *xFTMoEEngineValue = getenv("XFT_MOE_ENGINE");
+        if (xFTMoEEngineValue != NULL) {
+            int value = atoi(xFTMoEEngineValue);
+            if (value >= 0)
+                moeEngine = value;
+            else
+                printf("[ERROR] XFT_MOE_ENGINE value need to be greater than or equal to 0.\n");
+        }
+        printf("[INFO] XFT_MOE_ENGINE is set %d enabled for MoE-MLP.\n", moeEngine);
     }
 };

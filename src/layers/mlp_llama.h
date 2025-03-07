@@ -16,7 +16,6 @@
 
 #include "bert_util.h"
 #include "copy_util.h"
-#include "add_util.h"
 #include "datatypes.h"
 #include "debugger.h"
 #include "decoder_util.h"
@@ -69,19 +68,22 @@ public:
         // for e4m3_t, size should be multiple of 128 (64 * 2)
         int gran = std::is_same_v<WeiT, e4m3_t> ? 2 : 1;
         auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, ctx->splitIdx);
+        this->splitSize = it.second - it.first;
+        this->splitOffset = it.first;
 
-        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, gateW, gateS, gateZ, true, quantizedGateWeight,
-                gateWeightScale, gateWeightZero, gateWeightSum);
-        ctx->mmHelper->convertWeight(ctx, trans, hiddenSize, imSize, upW, upS, upZ, true, quantizedUpWeight,
-                upWeightScale, upWeightZero, upWeightSum);
+	// the last "true" is placeholder, unused
+        ctx->mmHelper->convertWeight(trans, hiddenSize, imSize, gateW, gateS, gateZ, splitOffset, splitSize, true, quantizedGateWeight,
+                gateWeightScale, gateWeightZero, gateWeightSum, true);
+        ctx->mmHelper->convertWeight(trans, hiddenSize, imSize, upW, upS, upZ, splitOffset, splitSize, true, quantizedUpWeight,
+                upWeightScale, upWeightZero, upWeightSum, true);
 
         if (!Env::getInstance().getMlpCatEnabled()) {
             if (std::is_same_v<WeiT, e4m3_t>) {
                 xft::Logger::error("Internal Error: Not support split-GateUp MLP for fp8_e4m3.");
                 exit(-1);
             }
-            gateWeight.Resize(hiddenSize, it.second - it.first);
-            upWeight.Resize(hiddenSize, it.second - it.first);
+            gateWeight.Resize(hiddenSize, splitSize);
+            upWeight.Resize(hiddenSize, splitSize);
             ctx->mmHelper->packWeight(trans, quantizedGateWeight, gateWeight);
             ctx->mmHelper->packWeight(trans, quantizedUpWeight, upWeight);
         } else {
@@ -112,7 +114,7 @@ public:
                 downWeightScale, downWeightZero, downWeightSum);
 #ifdef XFT_GPU
         xft::Matrix<WeiT> downWeightT;
-        int downWeiRows = it.second - it.first;
+        int downWeiRows = splitSize;
         int downWeiCols = hiddenSize;
         downWeightT.Resize(downWeiRows, downWeiCols);
         ctx->mmHelper->transposeWeight(trans, quantizedDownWeight, downWeightT);
@@ -121,7 +123,7 @@ public:
         downWeight.Assign(downWeiData, downWeiRows, downWeiCols, downWeiCols);
         xft::memcopy(downWeight.Data(), downWeightT.Data(), downWeiRows * downWeiCols * sizeof(WeiT), ctx->device);
 #else
-        downWeight.Resize(it.second - it.first, hiddenSize);
+        downWeight.Resize(splitSize, hiddenSize);
         ctx->mmHelper->packWeight(trans, quantizedDownWeight, downWeight);
 #endif
         // Down bias
@@ -235,6 +237,10 @@ public:
         } else {
             auto M = inBuffer.Rows();
             auto N = catWeights.Cols();
+            //std::stringstream ss;
+            //ss << std::hex << reinterpret_cast<std::uintptr_t>(catWeights.Data());
+            //ImT *imbuf = (ImT *)SimpleMemPool::instance().getBuffer("im_buf" + ss.str(), sizeof(ImT) * M * N, ctx->device);
+            //xft::Matrix<ImT> imBuffer(imbuf, M, N, N);
             xft::Matrix<ImT> imBuffer((ImT *)ctx->imOut.Data(), M, N, N);
 
             // Need to allocate extra buffer as oneDNN does not support the case of stride > cols
@@ -439,11 +445,6 @@ private:
         }
 
         int stride = (param.output_dim + param.block_size1 - 1) / param.block_size1;
-        int splitTarget = bVerticalSplit ? param.output_dim : param.input_dim;
-        // for e4m3_t, size should be multiple of 128 (64 * 2)
-        auto it = SplitUtil::getTaskRange(splitTarget, 2, ctx->numSplit, ctx->splitIdx);
-        int splitSize = it.second - it.first;
-        int splitOffset = it.first;
         int rows, cols;
         if (bVerticalSplit) {
             rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
@@ -486,12 +487,7 @@ private:
         assert(param1.input_dim == param2.input_dim);
         assert(param1.output_dim == param2.output_dim);
 
-        int splitTarget = bVerticalSplit ? param1.output_dim : param1.input_dim;
         int stride = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
-        // for e4m3_t, size should be multiple of 128 (64 * 2)
-        auto it = SplitUtil::getTaskRange(splitTarget, 2, ctx->numSplit, ctx->splitIdx);
-        int splitSize = it.second - it.first;
-        int splitOffset = it.first;
         int rows, cols1, cols2;
         if (bVerticalSplit) {
             rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
@@ -521,7 +517,8 @@ private:
         }
     }
 
-protected:
+//protected:
+public:
     xft::Matrix<WeiT> gateWeight;
     xft::Vector<float> gateWeightScale; // For int8_t weight
     xft::Vector<float> gateWeightZero; // For int8_t weight
@@ -551,6 +548,8 @@ protected:
     NORM_CLS norm;
     
     int layerId;
+    int splitSize;
+    int splitOffset;
 
 #ifdef XFT_DEBUG
     Debugger dbg;
