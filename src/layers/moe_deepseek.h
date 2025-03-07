@@ -266,7 +266,8 @@ public:
 #endif
 
         // Call forward function of selected experts
-        if (M > 128 || Env::getInstance().getMoEEngine() == 0) {
+	// expert-wise for large M or bf16 for now
+        if (M > 128 || std::is_same_v<WeiT, bfloat16_t> || Env::getInstance().getMoEEngine() == 0) {
             // 5. Reorder the input and weight for each expert
             std::vector<int> idx[expertNum]; // index for each expert
             std::vector<float> weights[expertNum]; // weight for each expert
