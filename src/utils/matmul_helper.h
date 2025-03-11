@@ -691,27 +691,13 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
-            if (M <= 1) {
+            if (M <= 16) {
                 assert(blockSize == 128);
                 if (lds == -1) lds = (K + 127) / 128;
-                //int rows = (K + 127) / 128;
-                //int cols = (N + 127) / 128;
-                //float *transS = (float *)aligned_alloc(64, rows * cols * sizeof(float));
-
-//#pragma omp parallel for collapse(2)
-                //for (int j = 0; j < cols; j++) {
-                //    for (int i = 0; i < rows; ++i) {
-                //        int offset = j * rows + i;
-                //        int scaleOff = i * cols + j;
-                //        transS[offset] = scaleB[scaleOff];
-                //    }
-                //}
                 GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute",
                         xdnn_small_amx_sgemm_bf16f8bf16_compute(M, N, K, (const XDNN_BF16 *)A, lda,
                                 (const XDNN_E4M3 *)packedB, (XDNN_BF16 *)C, ldc, (float *)scaleB, lds, blockSize, alpha,
                                 beta, nullptr));
-                // Clean up
-                //free(transS);
             } else {
                 // Decode E4M3 to BF16
                 int rows = (K + 15) / 16 * 16;
@@ -726,7 +712,6 @@ public:
                 for (int j = 0; j < cols; j += 64) {
                     for (int i = 0; i < rows / 2; ++i) { // 2 rows merged into 1
                         int offset = j * rows + i * 128;
-                        //int scaleOff = (i / 64) * lds + j / 128;
                         int scaleOff = j / 128 * lds + i / 64;
                         e4m3_t::to_bf16(packedB + offset, (uint16_t *)decodedB + offset, 128, scaleB[scaleOff]);
                     }
@@ -1524,27 +1509,13 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
-            if (M <= 1) {
+            if (M <= 16) {
                 assert(blockSize == 128);
                 if (lds == -1) lds = (K + 127) / 128;
-                //int rows = (K + 127) / 128;
-                //int cols = (N + 127) / 128;
-                //float *transS = (float *)aligned_alloc(64, rows * cols * sizeof(float));
-
-//#pragma omp parallel for collapse(2)
-                //for (int j = 0; j < cols; j++) {
-                //    for (int i = 0; i < rows; ++i) {
-                //        int offset = j * rows + i;
-                //        int scaleOff = i * cols + j;
-                //        transS[offset] = scaleB[scaleOff];
-                //    }
-                //}
                 GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute_residential",
                         xdnn_small_amx_sgemm_bf16f8bf16_compute_residential(M, N, K, (const XDNN_BF16 *)A, lda,
                                 (const XDNN_E4M3 *)packedB, (XDNN_BF16 *)C, ldc, (float *)scaleB, lds, blockSize, alpha,
                                 beta, nullptr, (const XDNN_BF16 *)res, ldres));
-                // Clean up
-                //free(transS);
             } else {
                 // Decode E4M3 to BF16
                 int rows = (K + 15) / 16 * 16;
@@ -1559,7 +1530,6 @@ public:
                 for (int j = 0; j < cols; j += 64) {
                     for (int i = 0; i < rows / 2; ++i) { // 2 rows merged into 1
                         int offset = j * rows + i * 128;
-                        //int scaleOff = (i / 64) * lds + j / 128;
                         int scaleOff = j / 128 * lds + i / 64;
                         e4m3_t::to_bf16(packedB + offset, (uint16_t *)decodedB + offset, 128, scaleB[scaleOff]);
                     }
