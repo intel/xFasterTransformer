@@ -437,14 +437,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (batchSize > 1) {
-        int len = input.size();
-        input.resize(len * batchSize);
-        for (int i = 1; i < batchSize; i++) {
-            std::copy(input.begin(), input.begin() + len, input.begin() + i * len);
-        }
-    }
-
     if (isMaster) {
         std::cout << "[INFO] Model path is " << modelPath << std::endl;
         std::cout << "[INFO] Token path is " << tokenPath << std::endl;
