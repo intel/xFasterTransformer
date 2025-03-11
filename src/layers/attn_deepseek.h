@@ -97,6 +97,7 @@ public:
         // Pack the weights for q_b and kv_b
         packDenseWeights(ctx, mlap->q_b_proj, qBWeights, true);
         packDenseWeights(ctx, mlap->kv_b_proj, kvBWeights, true);
+        prepareKeyUpTrans(ctx, mlap->kv_b_proj, kUpTrans);
 
         // Pack the weights for output
         packDenseWeights(ctx, mlap->o_proj, outWeights, false);
@@ -110,6 +111,7 @@ public:
         if (std::is_same_v<WeiT, e4m3_t>) {
             prepareFP8Scales(mlap->q_a_proj, mlap->kv_a_proj, qkvAScales);
             prepareFP8Scales(ctx, mlap->q_b_proj, qBScales, true);
+            prepareFP8Scales(ctx, mlap->kv_b_proj, kvBScales, true);
             prepareFP8Scales(ctx, mlap->o_proj, outScales, false);
         }
     }
@@ -308,24 +310,8 @@ public:
             TimeLine t("kv_up_projection");
             ImT *compressedKV = loraBuffer.Data() + ctx->qLoraRank;
             ctx->mmHelper->compute(false, loraBuffer.Rows(), kvBWeights.Cols(), kvBWeights.Rows(), 1.0f,
-                    kvNormBuffer.Data(), kvNormBuffer.Stride(), kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f,
-                    kvBuffer.Data(), kvBuffer.Stride());
-        } else {
-            // Compute KV up projection using cache for all sequences in the batch
-            // TODO: optimization by combining into a single MatMul
-            TimeLine t("kv_up_projection");
-            for (int i = 0; i < batchSize; ++i) {
-                auto M = tokenSizes[i] + pastSeqLens[i]; // past data also needs to be re-computed
-                auto value = valueCaches[i]->getSequence(0, 0, 0);
-#ifdef XFT_DEBUG
-                dbg.debugPrint("cached kv_down: M=%d\n", M);
-                xft::Matrix<ImT> _cachedKvDown(value.first, M, ctx->kvLoraRank, ctx->kvLoraRank);
-                dbg.dumpMatrix(_cachedKvDown, false, ctx->device);
-#endif
-                ctx->mmHelper->compute(false, M, kvBWeights.Cols(), kvBWeights.Rows(), 1.0f, value.first,
-                        ctx->kvLoraRank, kvBWeights.Data(), nullptr, nullptr, nullptr, 0.0f, kvBuffer.Data(),
-                        kvBuffer.Stride());
-            }
+                    kvNormBuffer.Data(), kvNormBuffer.Stride(), kvBWeights.Data(), kvBScales.Data(), nullptr, nullptr,
+                    0.0f, kvBuffer.Data(), kvBuffer.Stride(), kvBScales.Stride());
         }
 
 #ifdef XFT_DEBUG
@@ -341,16 +327,18 @@ public:
         {
             TimeLine t("MHA");
             ImT *keyRope = loraBuffer.Data() + ctx->qLoraRank + ctx->kvLoraRank;
-            if (seqs[0]->getStep() == 0) { // prefill
+            if (bPrefill) { // prefill
                 selfAttention16bits(ctx, qBuffer.Data(), qBuffer.Stride(), keyRope, loraBuffer.Stride(),
                         kvBuffer.Data(), kvBuffer.Stride(), mhaOutBuffer.Data(), mhaOutSize, tokenSizes,
                         batchSize);
             } else { // decoding
                 const KVCacheT *keyRopes[batchSize];
+                const KVCacheT *kvDowns[batchSize];
                 for (int i = 0; i < batchSize; ++i) {
                     keyRopes[i] = keyCaches[i]->getSequence(0, 0, 0).first;
+                    kvDowns[i] = valueCaches[i]->getSequence(0, 0, 0).first;
                 }
-                fusedAttention(ctx, qBuffer.Data(), qBuffer.Stride(), keyRopes, ctx->ropeDim, kvBuffer.Data(),
+                fusedAttention(ctx, qBuffer.Data(), qBuffer.Stride(), keyRopes, kvDowns, ctx->ropeDim, kvBuffer.Data(),
                         kvBuffer.Stride(), mhaOutBuffer.Data(), mhaOutSize, tokenSizes, pastSeqLens, batchSize);
             }
         }
@@ -396,16 +384,49 @@ private:
                 ctx->numThreads);
     }
 
-    void fusedAttention(DecoderContext *ctx, const ImT *query, int qStride, const ImT **keyRopes, int krStride,
-            const ImT *keyValue, int kvStride, OutT *out, int oStride, int *tokenSizes, int *pastSeqLens,
+    void fusedAttention(DecoderContext *ctx, const ImT *query, int qStride, const ImT **keyRopes, const ImT **kvDowns,
+            int krStride, const ImT *keyValue, int kvStride, OutT *out, int oStride, int *tokenSizes, int *pastSeqLens,
             int batchSize) {
         static_assert(std::is_same_v<ImT, bfloat16_t> || std::is_same_v<ImT, float16_t>,
                 "The data type is not supported for DS attention.");
 
         auto headsOnDuty = endHead - startHead;
-        xft::crossAttnByHead_DS(out, query, keyRopes, keyValue, headsOnDuty, ctx->nopeDim, ctx->ropeDim, ctx->vHeadDim,
-                oStride, qStride, krStride, kvStride, batchSize, tokenSizes, pastSeqLens, ctx->attFactor,
-                ctx->numThreads);
+        // xft::crossAttnByHead_DS(out, query, keyRopes, keyValue, headsOnDuty, ctx->nopeDim, ctx->ropeDim, ctx->vHeadDim,
+        //         oStride, qStride, krStride, kvStride, batchSize, tokenSizes, pastSeqLens, ctx->attFactor,
+        //         ctx->numThreads);
+        // Note: wvp param needs to add offset based on kvBWeights
+        xft::crossAttnByHead_DS(out, query, keyRopes, kvDowns, kUpTrans.Data(), kvBWeights.Data() + 512 * 128,
+                kvBScales.Data(), headsOnDuty, ctx->nopeDim, ctx->ropeDim, ctx->vHeadDim, oStride, qStride, krStride,
+                kvStride, batchSize, tokenSizes, pastSeqLens, ctx->attFactor, ctx->numThreads);
+    }
+
+    // Tranposed weight of key up projection
+    template <typename TTarget>
+    void prepareKeyUpTrans(
+            DecoderContext *ctx, xft::DenseLayerParams &dense, xft::Matrix<TTarget> &kUpTrans) {
+        int dimPerHead = ctx->nopeDim;
+        int headStride = ctx->nopeDim + ctx->vHeadDim;
+        int splitOffset = startHead * dimPerHead;
+        int splitSize = (endHead - startHead) * dimPerHead;
+
+        // Direct pack for BF16 or E4M3
+        if (isSameWeiType<TTarget>(dense.wtype)) {
+            // Each head contains dense.input_dim(512) * dimPerHead(128) elements
+            kUpTrans.Resize(endHead - startHead, dense.input_dim * dimPerHead);
+
+#pragma omp parallel for
+            for (int h = startHead; h < endHead; ++h) {
+                xft::Matrix<TTarget> w(
+                        (TTarget *)dense.weight + h * headStride, dense.input_dim, dimPerHead, dense.output_dim);
+
+                xft::Matrix<TTarget> subMat(kUpTrans.Row(h - startHead), dimPerHead, dense.input_dim, dense.input_dim);
+                ctx->mmHelper->packWeight(true, w, subMat);
+            }
+        }
+        else {
+            xft::Logger::error("Unsupported data type for DS attention");
+            exit(-1);
+        }
     }
 
     template <typename TTarget>
@@ -508,7 +529,7 @@ private:
         // transpose for xddn fp8 kernel
         scales.Resize(cols, rows);
 
-#pragma omp parallel for collapse(2)
+#pragma omp parallel for
         for (int i = 0; i < cols; ++i) {
             for (int j = 0; j < rows; ++j) {
                 memcpy(scales.Row(i) + j, param.weight_scale + splitOffset + j * stride + i, sizeof(float));
@@ -541,13 +562,13 @@ private:
         // transpose for xddn fp8 kernel
         scales.Resize(cols1 + cols2, rows);
 
-#pragma omp parallel for collapse(2)
+#pragma omp parallel for
         for (int i = 0; i < cols1; ++i) {
             for (int j = 0; j < rows; ++j) {
                 memcpy(scales.Row(i) + j, param1.weight_scale + j * cols1 + i, sizeof(float));
             }
         }
-#pragma omp parallel for collapse(2)
+#pragma omp parallel for
         for (int i = 0; i < cols2; ++i) {
             for (int j = 0; j < rows; ++j) {
                 memcpy(scales.Row(i + cols1) + j, param2.weight_scale + j * cols2 + i, sizeof(float));
@@ -595,14 +616,17 @@ private:
 private:
     xft::Matrix<WeiT> qkvAWeights; // merged q_a and kv_a
     xft::Matrix<WeiT> qBWeights;
-    // Before optimized gemm of FP8_E4M3, we use bfloat16
-    xft::Matrix<bfloat16_t> kvBWeights;
-
+    xft::Matrix<WeiT> kvBWeights;
     xft::Matrix<WeiT> outWeights;
+
+    // Transposed weights for up projection of key
+    // This is part of kvBWeights, but transposed
+    xft::Matrix<WeiT> kUpTrans;
 
     // Scales
     xft::Matrix<float> qkvAScales;
     xft::Matrix<float> qBScales;
+    xft::Matrix<float> kvBScales;
     xft::Matrix<float> outScales;
 
     xft::RmsNorm inputNorm;

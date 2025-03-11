@@ -96,6 +96,12 @@ void gemmSV(
     const int N = headSize;
     if constexpr (std::is_same_v<T2, int8_t *>) {
         xft::small_gemm(A, B, scale, C, M, N, K, lds, ldv, ldo);
+    } else if constexpr (std::is_same_v<T2, const e4m3_t *>) {
+        static_assert(std::is_same_v<std::remove_const_t<T1>, bfloat16_t>
+                        && std::is_same_v<std::remove_const_t<T4>, bfloat16_t>,
+                "Only support BF16 activation for E4M3 gemm.");
+        xdnn_small_amx_sgemm_bf16f8bf16_compute_single(M, N, K, (XDNN_BF16 *)A, lds, (XDNN_E4M3 *)B, (XDNN_BF16 *)C,
+                ldo, scale, N / 128, 128, 1.0f, 0, nullptr);
     } else {
         xft::small_gemm(A, B, C, M, N, K, lds, ldv, ldo);
     }
@@ -1112,6 +1118,89 @@ void crossAttnByHead(T *output, const T *query, const T *key, const T *value, in
                     }
                 }
             } // end for inner head
+        } // end for b
+    } // end for outer head
+}
+
+// Cross attention for MLA, modified from crossAttnByHead
+// Note: 
+//     1) keyRope: array of pointers, each element is a pointer to the keyRope of a sample
+//     2) kvDowns: array of pointers, each element is a pointer to the KV_Down value of a sample
+//     3) wkt: packed weight for key up in transpose format, thus the shape is 128x512
+//     4) wvp: packed weight for value up, shape is 512x128
+//     5) wScales: weight scale for wkt and wvt, each has 4 scales, thus 8 elements for each head
+template <typename T, typename WT>
+void crossAttnByHead_DS(T *output, const T *query, const T **keyRope, const T **kvDowns, const WT *wkt, const WT *wvp,
+        float *wScales, int headNum, int nopeDim, int ropeDim, int vHeadDim, int oStride, int qStride, int krStride,
+        int kvStride /* unsed */, int batchSize, const int *inputSeqLens, const int *pastSeqLens, const float scale,
+        int threadNum) {
+    const int qkHeadDim = nopeDim + ropeDim;
+
+    // To get row offset for each sample/sequence inside the batch, and prepare score buffer
+    int qOffsets[batchSize];
+    int kvOffsets[batchSize];
+    size_t scoreSizePerThr = 0;
+    for (int i = 0; i < batchSize; ++i) {
+        scoreSizePerThr = std::max(scoreSizePerThr, (size_t)inputSeqLens[i] * (inputSeqLens[i] + pastSeqLens[i]));
+        qOffsets[i] = (i > 0 ? qOffsets[i - 1] + inputSeqLens[i - 1] : 0);
+        kvOffsets[i] = (i > 0 ? kvOffsets[i - 1] + (pastSeqLens[i - 1] + inputSeqLens[i - 1]) : 0);
+    }
+
+    scoreSizePerThr *= 2; // 2 times for Q * K (nope and rope), can be 1 after optimization
+    scoreSizePerThr = ALIGNED_SIZE(scoreSizePerThr, 16);
+    size_t scoreSize = scoreSizePerThr * threadNum;
+    float *scoreBuf = (float *)SimpleMemPool::instance().getBuffer("scoreBuf", sizeof(float) * scoreSize);
+
+#pragma omp parallel for collapse(2)
+    for (int h = 0; h < headNum; ++h) {
+        for (int b = 0; b < batchSize; ++b) {
+            const int queryLen = inputSeqLens[b];
+            const int keyLen = pastSeqLens[b] + inputSeqLens[b];
+
+            // Temporary buffer for Q*Wₖᵀ and S*Down
+            bfloat16_t tmp[queryLen * 512];
+
+            // Q*Kᵀ, Q*Kᵀ=Q1*(DWₖ)ᵀ+Q2*Krᵀ=Q1*Wₖᵀ*Dᵀ+Q2*Krᵀ
+            auto S = scoreBuf + omp_get_thread_num() * scoreSizePerThr;
+            {
+                auto Q = query + qOffsets[b] * qStride + h * qkHeadDim;
+                int m = queryLen;
+                int n = keyLen;
+                int lda = qStride;
+                int ldc = keyLen;
+
+                // nope part
+                auto wMatInfo = std::make_tuple(wkt + h * 128 * 512, 512, wScales + h * 8);
+                gemmSV(Q, wMatInfo, tmp, m, 512, 128, lda, 512); // borrow gemmSV for Q*Wₖᵀ
+                auto dMatInfo = std::make_tuple(kvDowns[b], 512, 1.0f);
+                gemmQK(tmp, dMatInfo, S, m, n, 512, 512, ldc);
+
+                // rope part
+                Q += nopeDim;
+                auto keyMatInfo = std::make_tuple(keyRope[b], krStride, 1.0f);
+                gemmQK(Q, keyMatInfo, S + m * n, m, n, ropeDim, lda, ldc);
+
+                // merge/add nope and rope
+                xft::addto(S, S + m * n, m * n);
+            }
+
+            // Softmax(Q * K)
+            for (int seq = 0; seq < queryLen; ++seq) {
+                int elements = pastSeqLens[b] + seq + 1;
+                small_softmax(S + seq * keyLen, scale, elements);
+                if (keyLen > elements) { memset(S + seq * keyLen + elements, 0, (keyLen - elements) * sizeof(float)); }
+            }
+
+            // Softmax*V, S*(D*Wᵥ)=(S*D)*Wᵥ
+            {
+                bfloat16_t *sd = tmp;
+                auto result = output + qOffsets[b] * oStride + h * vHeadDim;
+                small_gemm(S, kvDowns[b], sd, queryLen, 512, keyLen, keyLen, 512, 512);
+
+                auto valueMat = std::make_tuple(
+                        wvp + 512 * 128 * 2 * h, 128, wScales + h * 8 + 4); // wvp: 512x128, key and value are interleaved
+                gemmSV(sd, valueMat, result, queryLen, 128, 512, keyLen, oStride);
+            }
         } // end for b
     } // end for outer head
 }

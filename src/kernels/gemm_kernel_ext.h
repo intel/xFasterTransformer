@@ -68,6 +68,8 @@ void small_gemm(const float *A, const bfloat16_t *B, float *C, int M, int N, int
         bool acc = false);
 void small_gemm(const float *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
         bool acc = false);
+void small_gemm(const bfloat16_t *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+        bool acc = false);
 
 // INT8 KV Cache versions
 void small_gemm(const float *A, const int8_t *B, const float *bScale, float *C, int M, int N, int K, int lda, int ldb,

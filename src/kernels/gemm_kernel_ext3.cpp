@@ -207,4 +207,9 @@ void small_gemm(
     ::small_sgemm<float, bfloat16_t, bfloat16_t>(A, B, C, lda, ldb, ldc, M, N, K, acc);
 }
 
+void small_gemm(const bfloat16_t *A, const bfloat16_t *B, bfloat16_t *C, int M, int N, int K, int lda, int ldb, int ldc,
+    bool acc) {
+    ::small_sgemm<bfloat16_t, bfloat16_t, bfloat16_t>(A, B, C, lda, ldb, ldc, M, N, K, acc);
+}
+
 } // namespace xft

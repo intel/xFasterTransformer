@@ -300,6 +300,7 @@ public:
         this->stride = stride;
         this->data.Resize(rows, cols, stride);
     }
+    bool isShadow() { return data.shadow; }
     T *Data() { return data.buf; }
     const T *Data() const { return data.buf; }
     void SetQScheme(QuantizationScheme qscheme) { data.SetQScheme(qscheme); }

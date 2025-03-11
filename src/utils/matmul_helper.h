@@ -526,7 +526,7 @@ public:
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
             int amx_rows = (int)((K + 15) / 16) * 16;
             int amx_cols = (int)((N + 63) / 64) * 64;
-            weight.Resize(amx_rows, amx_cols);
+            if (!weight.isShadow()) weight.Resize(amx_rows, amx_cols);
             memset(weight.Data(), 0, sizeof(e4m3_t) * amx_rows * amx_cols);
             xdnn_small_amx_sgemm_bf16f8bf16_packb(trans, N, K, (const XDNN_E4M3 *)src.Data(), src.Stride(),
                     (XDNN_E4M3 *)weight.Data(), 64);
