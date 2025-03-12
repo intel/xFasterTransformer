@@ -236,12 +236,15 @@ std::vector<int> Model::set_input(std::vector<int32_t> &inputIds_, int batchSize
     SequencePool &seqPool = SequencePool::getInstance();
     KVCacheMgr &kvCacheMgr = KVCacheMgr::instance();
     workingGroup.clear();
+    auto it = inputIds.begin();
     for (int i = 0; i < batchSize; i++) {
-        auto group = seqPool.newGroupMeta(inputIds, samplingMeta);
+        std::vector<int32_t> input_(it, it + seqLen);
+        auto group = seqPool.newGroupMeta(input_, samplingMeta);
         workingGroup.push_back(group);
         seqIDs.push_back(group->getGroupID());
-        // TODO: inin KVCache for beamsearch
+        // TODO: init KVCache for beamsearch
         kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
+        it += seqLen;
     }
 
     return seqIDs;
@@ -333,10 +336,10 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
     }
 
     for (int i = 0; i < batchSize; i++) {
-        auto group = seqPool.newGroupMeta(inputIds, samplingMeta);
+        auto group = seqPool.newGroupMeta(inputIds_[i], samplingMeta);
         workingGroup.push_back(group);
         seqIDs.push_back(group->getGroupID());
-        // TODO: inin KVCache for beamsearch
+        // TODO: init KVCache for beamsearch
         kvCacheMgr.addSequence(group->getGroupID(), samplingMeta.config.maxLen);
     }
 

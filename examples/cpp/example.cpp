@@ -317,6 +317,9 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         // {100000, 10492, 2065, 245, 766, 11, 745, 22704, 245, 1585, 5075, 779, 12239, 276, 463, 25720, 13}
         return new FakeTokenizer(std::vector<int>(
                 {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16}));
+    } else if (modeltype == "qwen2") {
+        return new FakeTokenizer(std::vector<int>(
+                {151646, 12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13}));
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);
@@ -406,6 +409,11 @@ int main(int argc, char **argv) {
     float topP = args.get<float>("topP");
     float repetitionPenalty = args.get<float>("repetPen");
 
+    if (prefixLen > 0) {
+        std::cout << "[ERROR] Prefix is not supported in new path, please set --prefix_len to 0." << std::endl;
+        return 0;
+    }
+
     std::string modeltype = getModelType(modelPath);
 
     auto *tokenizer = getTokenizer(modeltype, tokenPath);
@@ -468,6 +476,8 @@ int main(int argc, char **argv) {
     // Set prefix
     if (prefixLen > 0) { model.setPrefix(perfixSeq); }
 
+    std::vector<std::vector<int>> inputs(batchSize, input);
+
     for (int i = 0; i < loop; ++i) {
         secondIdCount = 0;
 
@@ -479,7 +489,7 @@ int main(int argc, char **argv) {
         // model.input(input, batchSize);
 
         // New path
-        model.set_input(input, batchSize, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
+        model.set_input(inputs, /*maxLen*/ maxLen, /*numBeams*/ numBeams, /*numBeamHypsToKeep*/ 1,
                 /*lenPenalty*/ 1.0,
                 /*doEarlyStopping*/ false, /*eosTokenId*/ -1, /*padTokenId*/ -1,
                 /*doSample*/ doSample, /*temperature*/ temperature,
