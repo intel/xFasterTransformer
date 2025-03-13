@@ -118,6 +118,8 @@ class BaichuanConvert(BaseModelConvert):
             config["baichuan"]["start_id"] = str(hf_config["bos_token_id"])
             config["baichuan"]["end_id"] = str(hf_config["eos_token_id"])
             config["baichuan"]["weight_data_type"] = dtype
+            config["baichuan"]["attn_params_type"] = "GQAttnParams"
+            config["baichuan"]["ffn_params_type"] = "LlamaFFNParams"
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:

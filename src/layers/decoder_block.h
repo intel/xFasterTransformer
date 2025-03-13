@@ -391,8 +391,11 @@ private:
     xft::AttnParams *createAttnParams(DecoderContext *ctx, const std::string &modelPath, xft::DataType dt) {
         xft::AttnParams *attnParams = nullptr;
 
+        std::string attnParamsType;
+        ctx->GetAttr("attn_params_type", &attnParamsType, std::string("unknownParamsType"));
+
         // Deepseek model
-        if (fileExists(modelPath + "/model.layers.0.self_attn.q_a_proj.weight.bin")) {
+        if (ctx->sectionName == "deepseek_moe" or attnParamsType == "MLAttnParams") {
             attnParams = new xft::MLAttnParams(ctx->hiddenSize, ctx->qLoraRank, ctx->kvLoraRank, ctx->attHeadNum,
                     ctx->nopeDim, ctx->ropeDim, ctx->headDim, xftDT2PT(dt));
         } else {
@@ -406,14 +409,19 @@ private:
     xft::FFNParams *createFFNParams(DecoderContext *ctx, const std::string &modelPath, xft::DataType dt) {
         xft::FFNParams *ffnParams = nullptr;
 
-        if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
+        std::string ffnParamsType;
+        ctx->GetAttr("ffn_params_type", &ffnParamsType, std::string("unknownParamsType"));
+
+        if (ctx->sectionName.find("chatglm") != std::string::npos or ffnParamsType == "GptFFNParams"
+                or fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
             ffnParams = new xft::GptFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
-        } else if (fileExists(modelPath + "/model.layers.0.mlp.gate_proj.weight.0.bin")) {
+        } else if (ctx->sectionName.find("llama") != std::string::npos
+                or ctx->sectionName.find("qwen") != std::string::npos or ffnParamsType == "LlamaFFNParams") {
             ffnParams = new xft::LlamaFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
-        } else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
+        } else if (ctx->sectionName == "mixtral" or ffnParamsType == "MixtralFFNParams") {
             ffnParams = new xft::MixtralFFNParams(
                     ctx->sparseExperts, ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
-        } else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_layernorm.weight.bin")) {
+        } else if (ctx->sectionName == "deepseek_moe" or ffnParamsType == "DeepSeekFFNParams") {
             ffnParams = new xft::DeepSeekFFNParams(ctx->sparseExperts, ctx->denseExperts, ctx->hiddenSize,
                     ctx->intermediateSize, ctx->moeIntermediateSize, xftDT2PT(dt));
         } else {
@@ -438,6 +446,11 @@ private:
                 || std::is_same_v<WType, float16_t> || std::is_same_v<WType, e4m3_t>) {
             xft::GQAttnParams *gqap = dynamic_cast<xft::GQAttnParams *>(attnParams);
             xft::MLAttnParams *mlap = dynamic_cast<xft::MLAttnParams *>(attnParams);
+            xft::GptFFNParams *gptffn = dynamic_cast<xft::GptFFNParams *>(ffnParams);
+            xft::LlamaFFNParams *llamaffn = dynamic_cast<xft::LlamaFFNParams *>(ffnParams);
+            xft::MixtralFFNParams *mixtralffn = dynamic_cast<xft::MixtralFFNParams *>(ffnParams);
+            xft::DeepSeekFFNParams *deepseekffn = dynamic_cast<xft::DeepSeekFFNParams *>(ffnParams);
+
             if (gqap != NULL) {
                 loadGQAttnWeights<WType>(ctx, modelPath, layerIdx, gqap);
             } else if (mlap != NULL) {
@@ -448,23 +461,21 @@ private:
             }
 
             // Stardard 2 layer MLP
-            if (fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
-                loadGptFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::GptFFNParams *>(ffnParams));
+            if (gptffn != NULL) {
+                loadGptFFNWeights<WType>(ctx, modelPath, layerIdx, gptffn);
             }
             // Llama like models
-            else if (fileExists(modelPath + "/model.layers.0.mlp.gate_proj.weight.0.bin")) {
-                loadLlamaFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::LlamaFFNParams *>(ffnParams));
+            else if (llamaffn != NULL) {
+                loadLlamaFFNWeights<WType>(ctx, modelPath, layerIdx, llamaffn);
             }
             // For models like Mixtral
-            else if (fileExists(modelPath + "/model.layers.0.moe.gate.weight.bin")) {
-                loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, static_cast<xft::MixtralFFNParams *>(ffnParams));
+            else if (mixtralffn != NULL) {
+                loadMixtralFFNWeights<WType>(ctx, modelPath, layerIdx, mixtralffn);
             }
             // For DeepSeekV2+ models
-            else if (fileExists(modelPath + "/model.layers.0.self_attn.kv_a_proj_with_mqa.weight.bin")) {
-                loadDeepSeekFFNWeights<WType>(
-                        ctx, modelPath, layerIdx, static_cast<xft::DeepSeekFFNParams *>(ffnParams));
+            else if (deepseekffn != NULL) {
+                loadDeepSeekFFNWeights<WType>(ctx, modelPath, layerIdx, deepseekffn);
             } else {
-                xft::Logger::error("Unable to load FFN weights.");
                 std::exit(-1);
             }
         }

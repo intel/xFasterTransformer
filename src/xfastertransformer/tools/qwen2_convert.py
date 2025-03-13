@@ -145,6 +145,8 @@ class Qwen2Convert(BaseModelConvert):
             config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
             config[sec_name]["pad_id"] = str(gen_config.pad_token_id)
             config[sec_name]["weight_data_type"] = dtype
+            config[sec_name]["attn_params_type"] = "GQAttnParams"
+            config[sec_name]["ffn_params_type"] = "LlamaFFNParams"
             with open(os.path.join(saved_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
@@ -303,6 +305,8 @@ class Qwen2Convert(BaseModelConvert):
             config[sec_name]["start_id"] = str(hf_config["bos_token_id"])
             config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
             config[sec_name]["weight_data_type"] = dtype
+            config[sec_name]["attn_params_type"] = "GQAttnParams"
+            config[sec_name]["ffn_params_type"] = "LlamaFFNParams"
 
             self.wbits = quantize_config["bits"]
             assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"

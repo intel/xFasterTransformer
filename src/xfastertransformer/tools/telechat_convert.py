@@ -144,6 +144,8 @@ class TelechatConvert(BaseModelConvert):
             if pad_token_id is not None:
                 config[sec_name]["pad_id"] = str(pad_token_id)
             config[sec_name]["weight_data_type"] = dtype
+            config[sec_name]["attn_params_type"] = "GQAttnParams"
+            config[sec_name]["ffn_params_type"] = "LlamaFFNParams"
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:

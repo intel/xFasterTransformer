@@ -152,6 +152,8 @@ class YaRNLlamaConvert(BaseModelConvert):
             config["yarn_llama"]["start_id"] = str(hf_config["bos_token_id"])
             config["yarn_llama"]["end_id"] = str(hf_config["eos_token_id"])
             config["yarn_llama"]["weight_data_type"] = dtype
+            config["yarn_llama"]["attn_params_type"] = "GQAttnParams"
+            config["yarn_llama"]["ffn_params_type"] = "LlamaFFNParams"
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:

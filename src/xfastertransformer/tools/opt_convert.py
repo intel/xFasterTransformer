@@ -129,6 +129,8 @@ class OPTConvert(BaseModelConvert):
             config["gpt"]["start_id"] = str(hf_config["bos_token_id"])
             config["gpt"]["end_id"] = str(hf_config["eos_token_id"])
             config["gpt"]["weight_data_type"] = dtype
+            config["gpt"]["attn_params_type"] = "GQAttnParams"
+            config["gpt"]["ffn_params_type"] = "GptFFNParams"
             # config['gpt']['int8'] = str(save_int8) # really useful?
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)

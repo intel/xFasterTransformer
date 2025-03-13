@@ -131,6 +131,8 @@ class ChatGLMConvert(BaseModelConvert):
             config["chatglm"]["start_id"] = str(hf_config["bos_token_id"])
             config["chatglm"]["end_id"] = str(hf_config["eos_token_id"])
             config["chatglm"]["weight_data_type"] = dtype
+            config["chatglm"]["attn_params_type"] = "GQAttnParams"
+            config["chatglm"]["ffn_params_type"] = "GptFFNParams"
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:

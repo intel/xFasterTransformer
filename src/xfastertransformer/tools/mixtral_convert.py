@@ -116,7 +116,7 @@ class MixtralConvert(BaseModelConvert):
 
         # save parameters to config file
         config = configparser.ConfigParser()
-        sec_name = hf_config["model_type"]
+        sec_name = "mixtral"
         config[sec_name] = {}
         has_post_decoder_layernorm = True
         try:
@@ -151,6 +151,8 @@ class MixtralConvert(BaseModelConvert):
             if pad_token_id is not None:
                 config[sec_name]["pad_id"] = str(pad_token_id)
             config[sec_name]["weight_data_type"] = dtype
+            config[sec_name]["attn_params_type"] = "GQAttnParams"
+            config[sec_name]["ffn_params_type"] = "MixtralFFNParams"
             with open(os.path.join(output_dir, "config.ini"), "w") as configfile:
                 config.write(configfile)
         except Exception as e:
@@ -329,6 +331,8 @@ class MixtralConvert(BaseModelConvert):
             config["mixtral"]["start_id"] = str(hf_config["bos_token_id"])
             config["mixtral"]["end_id"] = str(hf_config["eos_token_id"])
             config["mixtral"]["weight_data_type"] = dtype
+            config["mixtral"]["attn_params_type"] = "GQAttnParams"
+            config["mixtral"]["ffn_params_type"] = "MixtralFFNParams"
 
             self.wbits = quantize_config["bits"]
             assert self.wbits == 8 or self.wbits == 4, "Only 4/8bits quantization is supported"

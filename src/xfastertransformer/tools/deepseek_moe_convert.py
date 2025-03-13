@@ -158,6 +158,8 @@ class DeepSeekV2Convert(BaseModelConvert):
             config[sec_name]["end_id"] = str(hf_config["eos_token_id"])
             config[sec_name]["pad_id"] = str(hf_config["eos_token_id"])
             config[sec_name]["weight_data_type"] = dtype
+            config[sec_name]["attn_params_type"] = "MLAttnParams"
+            config[sec_name]["ffn_params_type"] = "DeepSeekFFNParams"
             # for MLA
             config[sec_name]["q_lora_rank"] = str(hf_config.get("q_lora_rank", 0))
             config[sec_name]["kv_lora_rank"] = str(hf_config["kv_lora_rank"])

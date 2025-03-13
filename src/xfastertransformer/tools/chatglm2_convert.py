@@ -153,6 +153,9 @@ class ChatGLM2Convert(BaseModelConvert):
             config[self.model_type]["start_id"] = str(hf_config["bos_token_id"])
             config[self.model_type]["end_id"] = str(hf_config["eos_token_id"])
             config[self.model_type]["weight_data_type"] = dtype
+            
+            config[self.model_type]["attn_params_type"] = "GQAttnParams"
+            config[self.model_type]["ffn_params_type"] = "GptFFNParams"
 
             kv_channels = config[self.model_type]["kv_channels"] = str(hf_config["kv_channels"])
             config[self.model_type]["rmsnorm"] = "1" if str(hf_config["rmsnorm"]) == "True" else "0"
