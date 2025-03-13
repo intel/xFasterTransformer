@@ -192,8 +192,8 @@ public:
         const float ropeTheta = reader.GetFloat(modelType, "rope_theta", 10000.0);
         const float vextraPolFactor = 1;
         const float vattnFactor = 1;
-        const float vbetaFast = reader.GetInteger(modelType, "rope_scaling_beta_fast", 32);;
-        const float vbetaSlow = reader.GetInteger(modelType, "rope_scaling_beta_slow", 1);;
+        const float vbetaFast = reader.GetInteger(modelType, "rope_scaling_beta_fast", 32);
+        const float vbetaSlow = reader.GetInteger(modelType, "rope_scaling_beta_slow", 1);
         const float vmscale = reader.GetFloat(modelType, "rope_scaling_mscale", 1.0);
         const float vmscaleAllDim = reader.GetFloat(modelType, "rope_scaling_mscale_all_dim", 1.0);
         RopeParams *ropeParamsPtr = new RopeParams(ropeTheta, ropeType, ropeFactor, ropeOrgMaxPosEmbed,

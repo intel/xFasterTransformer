@@ -37,7 +37,7 @@ import csv
 def check_and_update_csv(file_path: str, data: dict):
     file_exists = os.path.exists(file_path)
 
-    with open(file_path, mode="a" if file_exists else "w", newline="", encoding='utf-8-sig') as csvfile:
+    with open(file_path, mode="a" if file_exists else "w", newline="", encoding="utf-8-sig") as csvfile:
         fieldnames = data.keys()
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
@@ -68,9 +68,10 @@ DTYPE_LIST = [
     "w8a8_int8",
     "w8a8_int4",
     "w8a8_nf4",
+    "fp8_e4m3",
 ]
 
-KVCACHE_DTYPE_LIST = ["fp16", "int8"]
+KVCACHE_DTYPE_LIST = ["fp16", "bf16", "int8"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default=None, help="Model name")
@@ -147,6 +148,8 @@ if __name__ == "__main__":
         model_prompt = prompt_pool["opt"]
     if "qwen" in args.model_name.lower():
         model_prompt = prompt_pool["qwen"]
+    if "deepseek" in args.model_name.lower():
+        model_prompt = prompt_pool["deepseek"]    
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.token_path, use_fast=False, padding_side="left", trust_remote_code=True, legacy=False

@@ -139,6 +139,41 @@ class AutoModel:
     def input(self, input_ids=None):
         self.model.input(input_ids)
 
+    def set_input(
+        self,
+        input_ids=None,
+        max_length=20,
+        num_beams=1,
+        num_return_sequences=1,
+        length_penalty=1.0,
+        early_stopping=False,
+        eos_token_id=-1,
+        pad_token_id=-1,
+        do_sample=False,
+        temperature=1.0,
+        top_k=50,
+        top_p=1.0,
+        repetition_penalty=1.0,
+        stop_words_ids: Union[List[List[int]], None] = None,
+        **kwargs,
+    ):
+        self.model.set_input(
+            input_ids,
+            max_length,
+            num_beams,
+            num_return_sequences,
+            length_penalty,
+            early_stopping,
+            eos_token_id,
+            pad_token_id,
+            do_sample,
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            stop_words_ids,
+        )
+
     def forward(self):
         return self.model.generate()
 
@@ -182,22 +217,41 @@ class AutoModel:
             if input_ids is not None:
                 streamer.put(input_ids.cpu())
 
-        self.config(
-            max_length,
-            num_beams,
-            num_return_sequences,
-            length_penalty,
-            early_stopping,
-            eos_token_id,
-            pad_token_id,
-            do_sample,
-            temperature,
-            top_k,
-            top_p,
-            repetition_penalty,
-            stop_words_ids,
-        )
-        self.input(input_ids)
+        # Greedy search will use continuous batching path.
+        if do_sample == False and num_beams == 1:
+            self.set_input(
+                input_ids,
+                max_length,
+                num_beams,
+                num_return_sequences,
+                length_penalty,
+                early_stopping,
+                eos_token_id,
+                pad_token_id,
+                do_sample,
+                temperature,
+                top_k,
+                top_p,
+                repetition_penalty,
+                stop_words_ids,
+            )
+        else:
+            self.config(
+                max_length,
+                num_beams,
+                num_return_sequences,
+                length_penalty,
+                early_stopping,
+                eos_token_id,
+                pad_token_id,
+                do_sample,
+                temperature,
+                top_k,
+                top_p,
+                repetition_penalty,
+                stop_words_ids,
+            )
+            self.input(input_ids)
 
         while not self.is_done():
             next_tokens = self.forward()

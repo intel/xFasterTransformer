@@ -21,6 +21,7 @@ TORCH_LIBRARY(xfastertransformer, m) {
             .def("get_rank", &TorchAutoModel::getRank)
             .def("input", &TorchAutoModel::input)
             .def("config", &TorchAutoModel::config)
+            .def("set_input", &TorchAutoModel::setInput)
             .def("set_input_cb", &TorchAutoModel::setInputCB)
             .def("is_done", &TorchAutoModel::isDone)
             .def("forward", &TorchAutoModel::forward)

@@ -141,6 +141,64 @@ public:
                 doSample, temperature, topK, topP, repetitionPenalty, stopWordsList_int32);
     }
 
+    void setInput(torch::optional<torch::Tensor> inputIds, torch::optional<int64_t> maxLength,
+            torch::optional<int64_t> numBeamsOpt, torch::optional<int64_t> numReturnSequencesOpt,
+            torch::optional<double> lenPenaltyOpt, torch::optional<bool> earlyStoppingOpt,
+            torch::optional<int64_t> eosTokenIdOpt, torch::optional<int64_t> padTokenIdOpt,
+            torch::optional<bool> doSampleOpt, torch::optional<double> temperaturOpt, torch::optional<int64_t> topKOpt,
+            torch::optional<double> topPOpt, torch::optional<double> repetitionPenaltyOpt,
+            torch::optional<std::vector<std::vector<int64_t>>> stopWordsListOpt) {
+        TORCH_CHECK(maxLength.has_value(), "Make sure master's maxLen is not None.")
+        int maxLen = static_cast<int>(maxLength.value());
+        int numBeams = numBeamsOpt.has_value() ? (int)numBeamsOpt.value() : 1;
+        int numBeamHypsToKeep = numReturnSequencesOpt.has_value() ? (int)numReturnSequencesOpt.value() : 1;
+        float lenPenalty = lenPenaltyOpt.has_value() ? static_cast<float>(lenPenaltyOpt.value()) : 1.0;
+        bool doEarlyStopping = earlyStoppingOpt.has_value() ? (bool)earlyStoppingOpt.value() : false;
+        int eosTokenId = eosTokenIdOpt.has_value() ? static_cast<int>(eosTokenIdOpt.value()) : -1;
+        int padTokenId = padTokenIdOpt.has_value() ? static_cast<int>(padTokenIdOpt.value()) : -1;
+        bool doSample = doSampleOpt.has_value() ? (bool)doSampleOpt.value() : false;
+        float temperature = temperaturOpt.has_value() ? static_cast<float>(temperaturOpt.value()) : 1.0;
+        int topK = topKOpt.has_value() ? (int)topKOpt.value() : 50;
+        float topP = topPOpt.has_value() ? static_cast<float>(topPOpt.value()) : 1.0;
+        float repetitionPenalty
+                = repetitionPenaltyOpt.has_value() ? static_cast<float>(repetitionPenaltyOpt.value()) : 1.0;
+
+        std::vector<std::vector<int>> stopWordsList_int32;
+        if (stopWordsListOpt.has_value()) {
+            std::vector<std::vector<int64_t>> &stopWordsList = stopWordsListOpt.value();
+            stopWordsList_int32.reserve(stopWordsList.size());
+            for (const auto &inner_vector : stopWordsList) {
+                std::vector<int> converted_vector;
+                converted_vector.reserve(inner_vector.size());
+
+                std::transform(inner_vector.begin(), inner_vector.end(), std::back_inserter(converted_vector),
+                        [](int64_t value) { return static_cast<int>(value); });
+
+                stopWordsList_int32.emplace_back(converted_vector);
+            }
+        }
+
+        int batchSize = 0;
+        if (model->getRank() == 0) {
+            TORCH_CHECK(inputIds.has_value(), "Make sure master's input is not None.")
+
+            batchSize = inputIds.value().size(0);
+            int seqLen = inputIds.value().size(1);
+
+            tokenIds.resize(batchSize * seqLen);
+            int64_t *p = inputIds.value().data_ptr<int64_t>();
+            if (model->getRank() == 0) {
+                for (int i = 0; i < batchSize * seqLen; ++i) {
+                    tokenIds[i] = static_cast<int>(*p);
+                    p += 1;
+                }
+            }
+        }
+
+        model->set_input(tokenIds, batchSize, maxLen, numBeams, numBeamHypsToKeep, lenPenalty, doEarlyStopping,
+                eosTokenId, padTokenId, doSample, temperature, topK, topP, repetitionPenalty, stopWordsList_int32);
+    }
+
     torch::Tensor forward(torch::Tensor &inputIds) {
         int batchSize = inputIds.size(0);
         int seqLen = inputIds.size(1);
@@ -280,7 +338,8 @@ public:
         }
 
         seqIDs = model->set_input(tokenIds, seqLens, seqIDs, maxLens);
-        torch::Tensor ret = torch::from_blob(seqIDs.data(), {static_cast<int>(seqIDs.size())}, torch::kInt32).to(torch::kInt64);
+        torch::Tensor ret
+                = torch::from_blob(seqIDs.data(), {static_cast<int>(seqIDs.size())}, torch::kInt32).to(torch::kInt64);
         return ret;
     }
 
