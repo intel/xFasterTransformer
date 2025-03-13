@@ -334,7 +334,6 @@ elif [ "${numa_nodes}" -eq 2 ]; then
         -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
         -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1"
     fi
-
 elif [ "${numa_nodes}" -eq 3 ]; then
     # GNR 1 socket SNC-3 model.
     Info "SNC-3 mode"
@@ -354,6 +353,24 @@ elif [ "${numa_nodes}" -eq 3 ]; then
     if [ "$sockets" == "3" ]; then
         run_cmd+=" : \
         -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
+    fi
+elif [ "${numa_nodes}" -eq 6 ]; then
+    # GNR 2 socket SNC-3 model.
+    Info "2 socket SNC-3 mode"
+    export OMP_NUM_THREADS=$((${cores_per_numa} / 2))
+    Info "OMP_NUM_THREADS: $((${cores_per_numa} / 2))"
+    run_cmd=""
+    if [ "$sockets" == "1" ]; then
+        run_cmd="mpirun \
+        -n 1 bash run.sh 0 0 ${OMP_NUM_THREADS} 0 : \
+        -n 1 bash run.sh 1 1 ${OMP_NUM_THREADS} 1 : \
+        -n 1 bash run.sh 2 2 ${OMP_NUM_THREADS} 2"
+    fi
+    if [ "$sockets" == "2" ]; then
+        run_cmd+=" : \
+        -n 1 bash run.sh 3 3 ${OMP_NUM_THREADS} 3 : \
+        -n 1 bash run.sh 4 4 ${OMP_NUM_THREADS} 4 : \
+        -n 1 bash run.sh 5 5 ${OMP_NUM_THREADS} 5"
     fi
 elif [ "${numa_nodes}" -eq 1 ]; then
     # General Test mode
