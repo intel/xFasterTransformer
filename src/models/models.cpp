@@ -310,6 +310,7 @@ std::vector<int> Model::set_input(std::vector<std::vector<int32_t>> &inputIds_, 
         batchSize = dims[0];
 
         inputIds.resize(dims[1]);
+        seqLens.resize(dims[1]);
 
         messenger.broadcast(seqLens.data(), batchSize);
         messenger.broadcast(inputIds.data(), dims[1]);
