@@ -215,8 +215,9 @@ if __name__ == "__main__":
         print("Start benchmark:")
         for i in range(args.iteration):
             print("iteration", i, ":")
-            model.config(max_length=max_len, num_beams=args.beam_width)
-            model.input(input_ids)
+            # model.config(max_length=max_len, num_beams=args.beam_width)
+            # model.input(input_ids)
+            model.set_input(input_ids, max_length=max_len, num_beams=args.beam_width)
             # first token
             start_time = time.perf_counter()
             next_tokens = model.forward()
