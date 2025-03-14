@@ -1,8 +1,8 @@
 -f https://download.pytorch.org/whl/torch_stable.html
 cmake==3.26.1
-sentencepiece==0.1.99
-torch==2.3.0+cpu
-transformers==4.41.2
-accelerate==0.23.0
-protobuf==4.25.3
-tiktoken==0.6.0
+sentencepiece==0.2.0
+torch==2.3.1+cpu
+transformers==4.48.3
+accelerate==1.5.1
+protobuf==5.29.3
+tiktoken==0.9.0

@@ -1,8 +1,0 @@
-gradio==5.18.0
-sentencepiece==0.1.99
-transformers==4.41.2
-transformers_stream_generator==0.0.5
-einops==0.8.0
-accelerate==0.26.1
-tiktoken==0.6.0
-protobuf==4.25.3

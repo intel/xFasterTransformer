@@ -26,8 +26,7 @@ Please refer to [Prepare model](../README.md#prepare-model)
 - Please refer to [Prepare Environment](#prepare-environment) to install oneCCL.
 - Python dependencies.
     ```bash
-    # requirements.txt in `examples/web_demo/`.
-    pip install -r requirements.txt
+    pip install gradio transformers accelerate tiktoken transformers_stream_generator
     ```
     ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 
