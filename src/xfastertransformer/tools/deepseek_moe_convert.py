@@ -36,7 +36,7 @@ class DeepSeekV2Convert(BaseModelConvert):
 
     def __init__(self):
         super().__init__()
-        self.default_dtype = "bf16"
+        self.default_dtype = "fp8_e4m3"
         self.hf_model_name_pattern = [
             "input_layernorm.weight",
             # MLA
