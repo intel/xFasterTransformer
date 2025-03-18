@@ -7,6 +7,9 @@
 
 xFasterTransformer is an exceptionally optimized solution for large language models (LLM) on the X86 platform, which is similar to FasterTransformer on the GPU platform. xFasterTransformer is able to operate in distributed mode across multiple sockets and nodes to support inference on larger models. Additionally, it provides both C++ and Python APIs, spanning from high-level to low-level interfaces, making it easy to adopt and integrate.
 
+## News🔥
+-  [xFastertransformer supports full-power 671B DeepSeek-R1 now! Click for details.](docs/en/deepseek.md)
+
 ## Table of Contents
 - [xFasterTransformer](#xfastertransformer)
   - [Table of Contents](#table-of-contents)
