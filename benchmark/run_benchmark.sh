@@ -206,6 +206,12 @@ fi
 
 export BENCHMARK=$benchmark_cmd
 
+if [ -f "${SCRIPT_DIR}/../3rdparty/mkl/lib/libiomp5.so" ]; then
+    export LD_PRELOAD="${SCRIPT_DIR}/../3rdparty/mkl/lib/libiomp5.so"
+else
+    export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
+fi
+
 if [ "${numa_nodes}" -eq 16 ]; then
     #HBM flat SNC-4 mode, Confirm that there are 8 HBM memory nodes and 8 DRAM memory nodes through "numactl -H"
     #0-7 is DRAM memory node, 8-15 is HBM node
