@@ -19,7 +19,7 @@ Execute the benchmark scripts to evaluate the model's performance using fake wei
     cd xFasterTransformer/benchmark
 
     export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
-    bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kdv bf16 -bs 1 -in 32 -out 32 -s 1
+    bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kvd bf16 -bs 1 -in 32 -out 32 -s 1
 ```
 - `-bs`: batch size.
 - `-in 32`: input token length, `[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]`.
