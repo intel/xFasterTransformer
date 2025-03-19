@@ -446,3 +446,6 @@ and
 
 - ***Q***: Why do I still encounter errors when converting already supported models?  
 ***A***: Try downgrading `transformer` to an appropriate version, such as the version specified in the `requirements.txt`. This is because different versions of Transformer may change the names of certain variables.
+
+- ***Q***: I encountered an error saying that `mkl.h` could not be found during compilation. What should I do?  
+***A***: Please check if the `onednn` folder under `3rdparty/` is empty. If it is, delete it and rerun CMake. Additionally, if the `3rdparty/mkl/` folder contains only a `local` directory, move all contents from `mkl/local/*` to `mkl/`.
