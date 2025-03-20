@@ -67,7 +67,8 @@ public:
 
         // for e4m3_t, size should be multiple of 128 (64 * 2)
         int gran = std::is_same_v<WeiT, e4m3_t> ? 2 : 1;
-        auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, ctx->splitIdx);
+        // use layerId to make sure the split is balanced in MoE
+        auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, (ctx->splitIdx + this->layerId) % ctx->numSplit);
         this->splitSize = it.second - it.first;
         this->splitOffset = it.first;
 
@@ -110,8 +111,8 @@ public:
 #endif
         }
         // Horizontally split the down weight
-        ctx->mmHelper->convertWeight(ctx, trans, imSize, hiddenSize, downW, downS, downZ, false, quantizedDownWeight,
-                downWeightScale, downWeightZero, downWeightSum);
+        ctx->mmHelper->convertWeight(trans, imSize, hiddenSize, downW, downS, downZ, splitOffset, splitSize, false, quantizedDownWeight,
+                downWeightScale, downWeightZero, downWeightSum, true);
 #ifdef XFT_GPU
         xft::Matrix<WeiT> downWeightT;
         int downWeiRows = splitSize;
