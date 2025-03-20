@@ -685,8 +685,17 @@ private:
             // Load gating weights and bias
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.bin", (bfloat16_t *)ffn->gating.weight,
                     ffn->gating.input_dim * ffn->gating.output_dim, xft::DataType::bf16);
-            loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin",
-                    ffn->gating, "read gating bias error", xft::DataType::bf16);
+            if (ctx->topkMethod == "noaux_tc") {
+                float *addr = (float *)xft::alloc(ffn->gating.output_dim * sizeof(float));
+                int ret = xft::loadWeight2<float>(
+                        modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin", addr,
+                        ffn->gating.output_dim, xft::DataType::bf16);
+                ffn->gating.setBiasValue(addr);
+                xft::dealloc(addr);
+            } else {
+                loadOptionalBias(modelPath + "/model.layers." + strIdx + ".mlp.gate.e_score_correction_bias.bin",
+                        ffn->gating, "read gating bias error", xft::DataType::bf16);
+            }
             // Load experts weights
             // Load shared expert weights
             xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.shared_experts.down_proj.weight.bin",
