@@ -317,8 +317,10 @@ public:
 #ifdef XFT_DEBUG
         dbg.debugPrint("qBuffer:\n");
         dbg.dumpMatrix(qBuffer, false, ctx->device);
-        dbg.debugPrint("kvBuffer:\n");
-        dbg.dumpMatrix(kvBuffer, false, ctx->device);
+        if (bPrefill) {
+            dbg.debugPrint("kvBuffer:\n");
+            dbg.dumpMatrix(kvBuffer, false, ctx->device);
+        }
         dbg.debugPrint("key rope:\n");
         dbg.dumpMatrix(_keyRope, false, ctx->device);
 #endif
