@@ -60,7 +60,7 @@ else
 fi
 
 # echo FIRST_TOKEN_WEIGHT_LOCATION=$1 NEXT_TOKEN_WEIGHT_LOCATION=$2 OMP_NUM_THREADS=$3 \
-# 	numactl --all -C $cpu_index -p $2 $BENCHMARK
+# 	numactl --all -C $cpu_index -m $2 $BENCHMARK
 
 FIRST_TOKEN_WEIGHT_LOCATION=$1 NEXT_TOKEN_WEIGHT_LOCATION=$2 OMP_NUM_THREADS=$3 \
-	numactl --all -C $cpu_index -p $2 $BENCHMARK
+	numactl --all -C $cpu_index -m $2 $BENCHMARK
