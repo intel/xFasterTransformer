@@ -205,7 +205,7 @@ if(WITH_TIMELINE)
     include("cmake/jsoncpp.cmake")
     include_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/include)
     link_directories(${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/${CMAKE_INSTALL_LIBDIR})
-    list(APPEND 3RDPART_LIB_LIST "jsoncpp")
+    list(APPEND 3RDPART_LIB_LIST "jsoncpp_static")
     list(APPEND DEPEND_LIST "jsoncpp_lib")
 endif()
 
