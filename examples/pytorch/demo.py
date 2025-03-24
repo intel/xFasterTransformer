@@ -66,7 +66,7 @@ parser.add_argument("--padding", help="Enable padding, Default to False.", type=
 parser.add_argument("--streaming", help="Streaming output, Default to True.", type=boolean_string, default=True)
 parser.add_argument("--num_beams", help="Num of beams, default to 1 which is greedy search.", type=int, default=1)
 parser.add_argument("-o", "--output_len", help="max tokens can generate excluded input.", type=int, default=100)
-parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
+parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=True)
 parser.add_argument("--do_sample", help="Enable sampling search, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--temperature", help="value used to modulate next token probabilities.", type=float, default=1.0)
 parser.add_argument("--top_p", help="retain minimal tokens above topP threshold.", type=float, default=1.0)
@@ -293,7 +293,12 @@ if __name__ == "__main__":
                 input_prompt = DEFAULT_PROMPT
                 print("[Use default prompt]:" + input_prompt)
 
-            if "glm-4" in args.model_path.lower():
+            if args.chat:
+                input_prompt = tokenizer.apply_chat_template(
+                    [{"role": "user", "content": input_prompt}], add_generation_prompt=True, tokenize=False
+                )
+                input_ids = tokenizer(input_prompt, return_tensors="pt", padding=args.padding).input_ids
+            elif "glm-4" in args.model_path.lower():
                 input_ids = build_inputs_chatglm4(tokenizer, input_prompt, args.padding)
                 stop_words_ids = [[151329], [151336], [151338]]
             elif args.chat and "chatglm" in args.model_path.lower():
