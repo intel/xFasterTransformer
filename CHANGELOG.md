@@ -1,4 +1,13 @@
 # CHANGELOG
+# [Version v2.0.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.0.0)
+v2.0.0 DeepSeek-R1 671B supported!🎉
+
+# Models
+- Support DeepSeek-R1 671B with `fp8_e4m3` dtype, using `bf16` kv cache dtype.
+- Support Mixtral MoE series models.
+- Support TeleChat model.
+
+
 # [Version v1.8.2](https://github.com/intel/xFasterTransformer/releases/tag/v1.8.2)
 v1.8.2 
 
