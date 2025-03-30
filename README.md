@@ -2,7 +2,8 @@
 
 <p align="center">
   <a href="./README.md">English</a> |
-  <a href="./README_CN.md">简体中文</a>
+  <a href="./README_CN.md">简体中文</a> |
+  <a href="./README_JP.md">日本語</a>
 </p>
 
 xFasterTransformer is an exceptionally optimized solution for large language models (LLM) on the X86 platform, which is similar to FasterTransformer on the GPU platform. xFasterTransformer is able to operate in distributed mode across multiple sockets and nodes to support inference on larger models. Additionally, it provides both C++ and Python APIs, spanning from high-level to low-level interfaces, making it easy to adopt and integrate.
