@@ -43,9 +43,9 @@ foreach(src ${sources})
     get_filename_component(executable ${src} NAME_WE)
 
     if(${executable} STREQUAL "messenger_test")
-        add_executable(messenger_test ${src} ${SRC_DIR}/utils/shm_reduction.cpp)
+        add_executable(messenger_test ${src} ${SRC_DIR}/utils/shm_ccl.cpp)
     elseif(${executable} STREQUAL "shm_test")
-        add_executable(shm_test ${src} ${SRC_DIR}/utils/shm_reduction.cpp)
+        add_executable(shm_test ${src} ${SRC_DIR}/utils/shm_ccl.cpp)
     elseif(${executable} STREQUAL "token_embedding_test")
         add_executable(token_embedding_test
                        ${src}
@@ -53,7 +53,7 @@ foreach(src ${sources})
                        ${SRC_DIR}/models/opt_decoder.cpp
                        ${SRC_DIR}/models/kvcache_manager.cpp
                        ${SRC_DIR}/utils/numa_allocator.cpp
-                       ${SRC_DIR}/utils/shm_reduction.cpp
+                       ${SRC_DIR}/utils/shm_ccl.cpp
                        ${SRC_DIR}/kernels/token_embedding_kernels.cpp)
     elseif(${executable} STREQUAL "kv_reorder_test")
         add_executable(kv_reorder_test
@@ -62,7 +62,7 @@ foreach(src ${sources})
                        ${SRC_DIR}/models/opt_decoder.cpp
                        ${SRC_DIR}/models/kvcache_manager.cpp
                        ${SRC_DIR}/utils/numa_allocator.cpp
-                       ${SRC_DIR}/utils/shm_reduction.cpp
+                       ${SRC_DIR}/utils/shm_ccl.cpp
                        ${SRC_DIR}/kernels/gemm_kernel_ext.cpp)
     elseif(${executable} STREQUAL "alibi_embedding_test")
         add_executable(alibi_embedding_test ${src} ${SRC_DIR}/layers/alibi_embedding.cpp)

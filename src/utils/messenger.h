@@ -24,7 +24,7 @@
 #include "compile_util.h"
 #include "environment.h"
 #include "oneapi/ccl.hpp"
-#include "shm_reduction.h"
+#include "shm_ccl.h"
 #include "simple_mem_pool.h"
 #include "timeline.h"
 #include "verbose.h"
@@ -76,7 +76,7 @@ private:
 #ifdef USE_SHM
         if (sameHostnames && !Env::getInstance().getOneCCLEnabled()) {
             localRanksFlag = true;
-            pshm = new ShmReduction(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
+            pshm = new ShmCCL(rank, size, [this](int *pidFd, size_t count) { this->broadcast(pidFd, count); });
         } else {
             localRanksFlag = false;
         }
@@ -264,7 +264,7 @@ private:
     bool localRanksFlag;
 
 #ifdef USE_SHM
-    ShmReduction *pshm;
+    ShmCCL *pshm;
 #endif
     void *commHelperHanlde;
     int (*helperInit)(int *, int *, int *);

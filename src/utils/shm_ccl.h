@@ -124,11 +124,11 @@ inline void close_shm(ShmContext *ctx) {
 
 } // namespace xft
 
-class ShmReduction {
+class ShmCCL {
 public:
-    ShmReduction(int rank, size_t size, std::function<void(int *, size_t)> callback);
+    ShmCCL(int rank, size_t size, std::function<void(int *, size_t)> callback);
 
-    ~ShmReduction() { xft::close_shm(&shmCtx_); }
+    ~ShmCCL() { xft::close_shm(&shmCtx_); }
 
     size_t getSHMSize();
 

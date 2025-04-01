@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================================
-#include "shm_reduction.h"
+#include "shm_ccl.h"
 #include "intrinsics_util.h"
 
 static inline void multiThreadCopy(char *dst, char *src, size_t nbytes) {
@@ -26,7 +26,7 @@ static inline void multiThreadCopy(char *dst, char *src, size_t nbytes) {
     }
 }
 
-ShmReduction::ShmReduction(int rank, size_t size, std::function<void(int *, size_t)> callback)
+ShmCCL::ShmCCL(int rank, size_t size, std::function<void(int *, size_t)> callback)
     : rank_(rank), rank_size_(size) {
     shmCtx_.name = SHM_NAME;
     shmCtx_.nstates = size;
@@ -43,7 +43,7 @@ ShmReduction::ShmReduction(int rank, size_t size, std::function<void(int *, size
     if (rank != 0) { xft::connect_shm(&shmCtx_); }
 }
 
-void ShmReduction::ShmResize(int rank, size_t size) {
+void ShmCCL::ShmResize(int rank, size_t size) {
     // remove old shm
     size_t total_size = sizeof(int) * shmCtx_.nstates + shmCtx_.nbytes + shmCtx_.nblocks * shmCtx_.nstates;
     munmap(shmCtx_.address, total_size);
@@ -75,12 +75,12 @@ void ShmReduction::ShmResize(int rank, size_t size) {
     }
 }
 
-size_t ShmReduction::getSHMSize() {
+size_t ShmCCL::getSHMSize() {
     return shmCtx_.nbytes;
 }
 
 template <typename T>
-void ShmReduction::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int rankSize) {
+void ShmCCL::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int rankSize) {
     size_t nbytes = sizeof(T) * size;
     size_t nBlockBytes = sizeof(T) * SHM_BLOCK_SIZE;
     int nblocks = (size + SHM_BLOCK_SIZE - 1) / SHM_BLOCK_SIZE;
@@ -144,8 +144,8 @@ void ShmReduction::reduceAdd(T *sendBuf, T *recvBuf, size_t size, int rank, int 
     }
 }
 
-template void ShmReduction::reduceAdd<float>(float *sendBuf, float *recvBuf, size_t size, int rank, int rankSize);
-template void ShmReduction::reduceAdd<bfloat16_t>(
+template void ShmCCL::reduceAdd<float>(float *sendBuf, float *recvBuf, size_t size, int rank, int rankSize);
+template void ShmCCL::reduceAdd<bfloat16_t>(
         bfloat16_t *sendBuf, bfloat16_t *recvBuf, size_t size, int rank, int rankSize);
-template void ShmReduction::reduceAdd<float16_t>(
+template void ShmCCL::reduceAdd<float16_t>(
         float16_t *sendBuf, float16_t *recvBuf, size_t size, int rank, int rankSize);
