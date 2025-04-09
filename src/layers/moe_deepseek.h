@@ -66,21 +66,18 @@ public:
 
         const int expertNum = ffn->routedExperts.size();
 
-#ifdef XFT_DEBUG
-        dbg.debugPrint("RMS norm weight: [%d]\n", ctx->hiddenSize);
-        dbg.dumpMatrix(ffn->norm.gamma, 1, ctx->hiddenSize, ctx->hiddenSize);
-#endif
         // setWeights for mlp layer, mlp in firstKDenseReplace, moe for the rest
         // ffn->routedExperts.size() == 0 means the firstKDenseReplace is used
         if (layerId < ctx->firstKDenseReplace || expertNum == 0) {
             memcpy(ffn->mlp.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
             shared_expert->template setWeights<WType>(ctx, &ffn->mlp);
         } else {
-            this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
             prepareGateWeightBias(ctx, &(ffn->gating));
-            memcpy(ffn->sharedExpert.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
-
-            shared_expert->template setWeights<WType>(ctx, &ffn->sharedExpert);
+            if (ctx->denseExperts > 0) {
+                this->norm.setWeight(ffn->norm.gamma, nullptr, ctx->hiddenSize);
+                memcpy(ffn->sharedExpert.norm.gamma, ffn->norm.gamma, sizeof(float) * ffn->norm.hidden_size);
+                shared_expert->template setWeights<WType>(ctx, &ffn->sharedExpert);
+            }
             // setWeights for each expert
 #pragma omp parallel for num_threads(std::min(omp_get_max_threads(), 64))
             for (int i = 0; i < expertNum; ++i) {
@@ -180,6 +177,7 @@ public:
 
         ImT *normBuf = (doLnBefore ? normBuffer.Data() : inBuffer.Data());
         int normStride = (doLnBefore ? normBuffer.Stride() : inBuffer.Stride());
+
         // Gating
         OutT *gateLogits = ctx->getBuffer<OutT>("gateLogits", M * expertNum, ctx->device);
         {
@@ -193,9 +191,6 @@ public:
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
 #endif
 
-        // TODO: special case, we could do some optimization here
-        if (M == 1) {}
-
         {
             TimeLine t("MoE_Sigmoid");
             // computing gating scores
@@ -208,12 +203,32 @@ public:
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
 #endif
 
-        // topK method: noaux_tc
-        assert((ctx->topkMethod) == "noaux_tc");
+        forwardExpertsWithLogits(ctx, normBuf, output, M, normStride, oStride, gateLogits);
+    }
+
+
+    void forwardExpertsWithLogits(DecoderContext *ctx, ImT *normBuf, OutT *output, int M, int normStride, int oStride, OutT *gateLogits) {
+        int topkExpert = ctx->numExpertsPerTok;
+        int *selExperts = ctx->getBuffer<int>("selExperts", M * topkExpert, ctx->device);
+        float *expertWeight = ctx->getBuffer<float>("expertWeight", M * topkExpert, ctx->device);
+        if (ctx->topkMethod == "noaux_tc") {
+            topkNoauxTc(ctx, M, gateLogits, selExperts, expertWeight);
+        } else {
+            xft::Logger::error("Unsupported topk method: %s", ctx->topkMethod.c_str());
+            exit(-1);
+        }
+        forwardExperts(ctx, normBuf, output, M, normStride, oStride, selExperts, expertWeight);
+    }
+
+    void topkNoauxTc(DecoderContext *ctx, int M, OutT *gateLogits, int *selExperts, float *expertWeight) {
+        const int hiddenSize = ctx->hiddenSize;
+        const int expertNum = this->experts.size();
         int nGroups = ctx->nGroup;
         int topkGroup = ctx->topkGroup;
         int topkExpert = ctx->numExpertsPerTok;
 
+        // topK method: noaux_tc
+        assert((ctx->topkMethod) == "noaux_tc");
         // 1. Select top 2 experts and sum-up for each group of tokens [M, n_group]
         float *groupWeight = ctx->getBuffer<float>("groupWeight", M * nGroups, ctx->device);
         {
@@ -237,8 +252,6 @@ public:
 #endif
 
         // 3. Select top 8 experts in selected 4 groups for each token idx-> [M, topk_expert] wei-> [M, topk_expert]
-        int *selExperts = ctx->getBuffer<int>("selExperts", M * topkExpert, ctx->device);
-        float *expertWeight = ctx->getBuffer<float>("expertWeight", M * topkExpert, ctx->device);
         {
             TimeLine t("MoE_SelectExperts");
             maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
@@ -262,11 +275,17 @@ public:
 
 #ifdef XFT_DEBUG
         dbg.debugPrint(
-                "Selected experts: [%d]=%f [%d]=%f\n", selExperts[0], expertWeight[0], selExperts[1], expertWeight[1]);
+            "Selected experts: [%d]=%f [%d]=%f\n", selExperts[0], expertWeight[0], selExperts[1], expertWeight[1]);
 #endif
+    }
+
+    void forwardExperts(DecoderContext *ctx, ImT *normBuf, OutT *output, int M, int normStride, int oStride, int *selExperts, float *expertWeight) {
+        const int hiddenSize = ctx->hiddenSize;
+        const int expertNum = this->experts.size();
+        int topkExpert = ctx->numExpertsPerTok;
 
         // Call forward function of selected experts
-	// expert-wise for large M or bf16 for now
+        // expert-wise for large M or bf16 for now
         if (M > 128 || std::is_same_v<WeiT, bfloat16_t> || Env::getInstance().getMoEEngine() == 0) {
             // 5. Reorder the input and weight for each expert
             std::vector<int> idx[expertNum]; // index for each expert
@@ -276,6 +295,7 @@ public:
                 for (int i = 0; i < M; ++i) {
                     // fill idx and weights for each expert
                     for (int j = 0; j < topkExpert; ++j) {
+                        if (selExperts[i * topkExpert + j] < 0) break;
                         idx[selExperts[i * topkExpert + j]].push_back(i);
                         weights[selExperts[i * topkExpert + j]].push_back(expertWeight[i * topkExpert + j]);
                     }
@@ -310,8 +330,13 @@ public:
             for (int i = 0; i < M; ++i) {
                 TimeLine t("MoE_TokenSparseFW");
                 OutT *tokenData = ctx->getBuffer<OutT>("tokenData", 1 * hiddenSize, ctx->device);
+                int nExperts = 0;
+                for (int j = 0; j < topkExpert; ++j) {
+                    if (selExperts[i * topkExpert + j] < 0) break;
+                    ++nExperts;
+                }
                 sparseForward(ctx, normBuf + i * normStride, selExperts + i * topkExpert, expertWeight + i * topkExpert,
-                    topkExpert, tokenData, hiddenSize, output + i * oStride, oStride);
+                    nExperts, tokenData, hiddenSize, output + i * oStride, oStride);
             }
         } else {
             xft::Logger::error("Unsupported MoE engine: %d", Env::getInstance().getMoEEngine());
@@ -328,16 +353,18 @@ private:
         int M = ctx->hiddenSize;
         int N = ctx->sparseExperts;
 
-        using GateType = typename GateTypeSelector<WeiT>::type;
+        if (denseParams->weight != nullptr) {
+            using GateType = typename GateTypeSelector<WeiT>::type;
 
-        xft::Matrix<GateType> quantizedGatingW;
+            xft::Matrix<GateType> quantizedGatingW;
 
-        //ctx->mmHelper->convertWeight(ctx, false, M, N, (const GateType *)denseParams->weight, denseParams->weight_scale,
-        //    denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
-        quantizedGatingW.Resize(M, N);
-        xft::copy(quantizedGatingW.Data(), (const GateType *)denseParams->weight, M * N);
-        gatingWeight.Resize(M, N);
-        ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
+            //ctx->mmHelper->convertWeight(ctx, false, M, N, (const GateType *)denseParams->weight, denseParams->weight_scale,
+            //    denseParams->weight_zp, true, quantizedGatingW, gatingWScale, gatingWZero, gatingWSum);
+            quantizedGatingW.Resize(M, N);
+            xft::copy(quantizedGatingW.Data(), (const GateType *)denseParams->weight, M * N);
+            gatingWeight.Resize(M, N);
+            ctx->mmHelper->packWeight(false, quantizedGatingW, gatingWeight);
+        }
 
         if (denseParams->bias != nullptr) {
             gatingScoreCorrBias.Resize(N);
@@ -502,17 +529,17 @@ private:
         }
     }
 
-    void sparseForward(DecoderContext *ctx, ImT *input, int *selExperts, float *expertWeight, int topkExpert, OutT *tokenData,
+    void sparseForward(DecoderContext *ctx, ImT *input, int *selExperts, float *expertWeight, int nExperts, OutT *tokenData,
             int hiddenSize, OutT *output, int oStride) {
-        const WeiT *weightsGUList[topkExpert];
-        const WeiT *weightsDList[topkExpert];
-        const float *scalesGUList[topkExpert];
-        const float *scalesDList[topkExpert];
-        int ldaGUScales[topkExpert];
-        int ldaDScales[topkExpert];
+        const WeiT *weightsGUList[nExperts];
+        const WeiT *weightsDList[nExperts];
+        const float *scalesGUList[nExperts];
+        const float *scalesDList[nExperts];
+        int ldaGUScales[nExperts];
+        int ldaDScales[nExperts];
         int blockSize = 128;
-        float alpha[topkExpert];
-        OutT *imOuts[topkExpert];
+        float alpha[nExperts];
+        OutT *imOuts[nExperts];
 
          // just for 1 token
         int M = 1;
@@ -526,7 +553,7 @@ private:
 
         {
             TimeLine t("SparseFW_Prepare");
-            for (int i = 0; i < topkExpert; ++i) {
+            for (int i = 0; i < nExperts; ++i) {
                 weightsGUList[i] = this->experts[selExperts[i]]->catWeights.Data();
                 scalesGUList[i] = this->experts[selExperts[i]]->catGUScales.Data();
                 ldaGUScales[i] = (K1 + blockSize - 1) / blockSize;
@@ -540,8 +567,8 @@ private:
         }
 
         int lda1 = hiddenSize;
-        int ldc1[topkExpert];
-        for (int i = 0; i < topkExpert; ++i) {
+        int ldc1[nExperts];
+        for (int i = 0; i < nExperts; ++i) {
             ldc1[i] = N1;
         }
 
@@ -552,10 +579,10 @@ private:
         {
             TimeLine t("SparseFW_GateUp");
             ctx->mmHelper->compute_batch_C(M, N1, K1, alpha, input, lda1, weightsGUList, scalesGUList, imOuts, ldc1, ldaGUScales,
-                blockSize, topkExpert);
+                blockSize, nExperts);
         }
 #ifdef XFT_DEBUG
-        dbg.debugPrint("Sparse_GateUp %d x (%d %d):\n", topkExpert, lda1, ldc1[0]);
+        dbg.debugPrint("Sparse_GateUp %d x (%d %d):\n", nExperts, lda1, ldc1[0]);
         dbg.dumpMatrix(imOuts[0], 1, N1, ldc1[0]);
         dbg.dumpMatrix(imOuts[1], 1, N1, ldc1[0]);
         dbg.dumpMatrix(imOuts[2], 1, N1, ldc1[0]);
@@ -563,21 +590,21 @@ private:
         dbg.dumpMatrix(imOuts[4], 1, N1, ldc1[0]);
         dbg.dumpMatrix(imOuts[5], 1, N1, ldc1[0]);
         dbg.dumpMatrix(imOuts[6], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[topkExpert - 1], 1, N1, ldc1[0]);
+        dbg.dumpMatrix(imOuts[nExperts - 1], 1, N1, ldc1[0]);
 #endif
 
         {
             TimeLine t("SparseFW_Silu");
             // Compute silu on the left half and then add it with the right half
             if (ctx->actType == DecoderContext::SILU) {
-                DecoderUtil::siluSumBatch(imOuts, imOuts, topkExpert, M, N1);
+                DecoderUtil::siluSumBatch(imOuts, imOuts, nExperts, M, N1);
             } else {
                 printf("ERROR: unsupported activation in MLP.\n");
                 exit(-1);
             }
         }
 #ifdef XFT_DEBUG
-        dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", topkExpert, 1, N1 / 2, ldc1[0]);
+        dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", nExperts, 1, N1 / 2, ldc1[0]);
         dbg.dumpMatrix(imOuts[0], 1, N1 / 2, ldc1[0]);
         dbg.dumpMatrix(imOuts[1], 1, N1 / 2, ldc1[0]);
         dbg.dumpMatrix(imOuts[2], 1, N1 / 2, ldc1[0]);
@@ -585,11 +612,11 @@ private:
         dbg.dumpMatrix(imOuts[4], 1, N1 / 2, ldc1[0]);
         dbg.dumpMatrix(imOuts[5], 1, N1 / 2, ldc1[0]);
         dbg.dumpMatrix(imOuts[6], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[topkExpert - 1], 1, N1 / 2, ldc1[0]);
+        dbg.dumpMatrix(imOuts[nExperts - 1], 1, N1 / 2, ldc1[0]);
 #endif
 
-        int lda2[topkExpert];
-        for (int i = 0; i < topkExpert; ++i) {
+        int lda2[nExperts];
+        for (int i = 0; i < nExperts; ++i) {
             lda2[i] = ldc1[i];
         }
 
@@ -597,7 +624,7 @@ private:
         {
             TimeLine t("SparseFW_Down");
             ctx->mmHelper->compute_batch_A(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
-                scalesDList, tokenData, ldc2, ldaDScales, blockSize, topkExpert);
+                scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
             xft::addto(output, tokenData, 1.0, hiddenSize);
         }
 #ifdef XFT_DEBUG

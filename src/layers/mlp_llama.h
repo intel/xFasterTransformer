@@ -89,7 +89,7 @@ public:
             ctx->mmHelper->packWeight(trans, quantizedUpWeight, upWeight);
         } else {
             xft::Matrix<WeiT> quantizedCatWeights;
-            catGateUpWeights(quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, gateWeightSum,
+            catGateUpWeights(trans, quantizedGateWeight, quantizedUpWeight, gateWeightScale, gateWeightZero, gateWeightSum,
                     upWeightScale, upWeightZero, upWeightSum, quantizedCatWeights, catWeightsScale, catWeightsZero,
                     catWeightsSum);
             quantizedGateWeight.Release();
@@ -157,26 +157,28 @@ public:
             exit(-1);
         }
 
+        bool trans = llamaFFN->gate.wtrans;
         setWeights(ctx, (WType *)llamaFFN->gate.weight, llamaFFN->gate.weight_scale, llamaFFN->gate.weight_zp,
                 llamaFFN->gate.bias, (WType *)llamaFFN->up.weight, llamaFFN->up.weight_scale, llamaFFN->up.weight_zp,
                 llamaFFN->up.bias, llamaFFN->norm.gamma, llamaFFN->norm.beta, (WType *)llamaFFN->down.weight,
-                llamaFFN->down.weight_scale, llamaFFN->down.weight_zp, llamaFFN->down.bias, false);
+                llamaFFN->down.weight_scale, llamaFFN->down.weight_zp, llamaFFN->down.bias, trans);
 
         if (std::is_same_v<WeiT, e4m3_t>) {
-            prepareFP8Scales(ctx, llamaFFN->gate, llamaFFN->up, catGUScales, true);
-            prepareFP8Scales(ctx, llamaFFN->down, downScales, false);
+            prepareFP8Scales(ctx, llamaFFN->gate, llamaFFN->up, catGUScales, true, trans);
+            prepareFP8Scales(ctx, llamaFFN->down, downScales, false, trans);
         }
     }
 
     template <typename WType>
     void setWeights(DecoderContext *ctx, xft::ExpertParams &ffn) {
+        bool trans = ffn.gate.wtrans;
         setWeights(ctx, (WType *)ffn.gate.weight, ffn.gate.weight_scale, ffn.gate.weight_zp, ffn.gate.bias,
                 (WType *)ffn.up.weight, ffn.up.weight_scale, ffn.up.weight_zp, ffn.up.bias, nullptr, nullptr,
-                (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, false);
+                (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, trans);
 
         if (std::is_same_v<WeiT, e4m3_t>) {
-            prepareFP8Scales(ctx, ffn.gate, ffn.up, catGUScales, true);
-            prepareFP8Scales(ctx, ffn.down, downScales, false);
+            prepareFP8Scales(ctx, ffn.gate, ffn.up, catGUScales, true, trans);
+            prepareFP8Scales(ctx, ffn.down, downScales, false, trans);
         }
     }
 
@@ -402,28 +404,35 @@ private:
         }
     }
 
-    void catGateUpWeights(xft::Matrix<WeiT> &gateWeight, xft::Matrix<WeiT> &upWeight,
+    void catGateUpWeights(bool trans, xft::Matrix<WeiT> &gateWeight, xft::Matrix<WeiT> &upWeight,
             xft::Vector<float> &gateWeightScale, xft::Vector<float> &gateWeightZero, xft::Vector<float> &gateWeightSum,
             xft::Vector<float> &upWeightScale, xft::Vector<float> &upWeightZero, xft::Vector<float> &upWeightSum,
             xft::Matrix<WeiT> &catWeights, xft::Vector<float> &catWeightsScale, xft::Vector<float> &catWeightsZero,
             xft::Vector<float> &catWeightsSum) {
-        catWeights.Resize(gateWeight.Rows(), gateWeight.Cols() + upWeight.Cols());
+        int M, N, stride;
+        M = gateWeight.Rows();
+        N = gateWeight.Cols();
+        if (trans) {
+            stride = N;
+            catWeights.Resize(2 * M, N, stride);
+        } else {
+            stride = 2 * N;
+            catWeights.Resize(M, 2 * N, stride);
+        }
         catWeightsScale.Resize(gateWeightScale.Size() + upWeightScale.Size());
         catWeightsZero.Resize(gateWeightZero.Size() + upWeightZero.Size());
         catWeightsSum.Resize(gateWeightSum.Size() + upWeightSum.Size());
 
-        int M = catWeights.Rows();
-        int Stride = catWeights.Cols();
-        int N = gateWeight.Cols();
         if (std::is_same_v<WeiT, uint4x2_t> || std::is_same_v<WeiT, nf4x2_t>) {
             // two values are packed into one byte
-            Stride /= 2;
+            stride /= 2;
             N /= 2;
         }
+        int catStride = trans ? stride * 2 * M : stride;
 #pragma omp parallel for
         for (uint64_t i = 0; i < M; ++i) {
-            memcpy(catWeights.Data() + i * Stride, gateWeight.Data() + i * N, N * sizeof(WeiT));
-            memcpy(catWeights.Data() + i * Stride + N, upWeight.Data() + i * N, N * sizeof(WeiT));
+            memcpy(catWeights.Data() + i * stride, gateWeight.Data() + i * N, N * sizeof(WeiT));
+            memcpy(catWeights.Data() + i * stride + catStride / 2, upWeight.Data() + i * N, N * sizeof(WeiT));
         }
 
         M = gateWeightScale.Size();
@@ -438,42 +447,46 @@ private:
         memcpy(catWeightsSum.Data() + M, upWeightSum.Data(), N * sizeof(float));
     }
 
-    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param, xft::Matrix<float> &scales, bool bVerticalSplit) {
+    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param, xft::Matrix<float> &scales, bool bVerticalSplit, bool trans = true) {
         // Check weight type
         if (param.wtype != xft::ParamType::FP8_E4M3) {
             xft::Logger::error("The weight type is not FP8_E4M3, no scales.");
             exit(-1);
         }
 
-        int stride = (param.output_dim + param.block_size1 - 1) / param.block_size1;
-        int rows, cols;
+        int rows, cols, offset;
         if (bVerticalSplit) {
             rows = (param.input_dim + param.block_size0 - 1) / param.block_size0;
             cols = (splitSize + param.block_size1 - 1) / param.block_size1;
-            splitOffset = (splitOffset + param.block_size1 - 1) / param.block_size1;
+            offset = (splitOffset + param.block_size1 - 1) / param.block_size1;
         } else {
             rows = (splitSize + param.block_size0 - 1) / param.block_size0;
             cols = (param.output_dim + param.block_size1 - 1) / param.block_size1;
-            splitOffset = (splitOffset + param.block_size0 - 1) / param.block_size0 * cols;
+            offset = (splitOffset + param.block_size0 - 1) / param.block_size0;
         }
-        //scales.Resize(rows, cols);
 
-        //for (int i = 0; i < rows; ++i) {
-        //    memcpy(scales.Row(i), param.weight_scale + i * cols, cols * sizeof(float));
-        //}
         // transpose for xddn fp8 kernel
         scales.Resize(cols, rows);
 
+        if (trans) {
+            int stride = (param.input_dim + param.block_size0 - 1) / param.block_size0;
+#pragma omp parallel for
+            for (int i = 0; i < cols; ++i) {
+                memcpy(scales.Row(i), param.weight_scale + offset + i * stride, rows * sizeof(float));
+            }
+	} else {
+            int stride = (param.output_dim + param.block_size1 - 1) / param.block_size1;
 #pragma omp parallel for collapse(2)
-        for (int i = 0; i < cols; ++i) {
-            for (int j = 0; j < rows; ++j) {
-                memcpy(scales.Row(i) + j, param.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            for (int i = 0; i < cols; ++i) {
+                for (int j = 0; j < rows; ++j) {
+                    memcpy(scales.Row(i) + j, param.weight_scale + (offset + j) * stride + i, sizeof(float));
+                }
             }
         }
     }
 
     // Prepare FP8 scales by merging 2 scales into 1
-    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales, bool bVerticalSplit) {
+    void prepareFP8Scales(DecoderContext *ctx, xft::DenseLayerParams &param1, xft::DenseLayerParams &param2, xft::Matrix<float> &scales, bool bVerticalSplit, bool trans = true) {
         // Check weight type
         if (param1.wtype != xft::ParamType::FP8_E4M3 || param2.wtype != xft::ParamType::FP8_E4M3) {
             xft::Logger::error("Internal Error: The weight type is not FP8_E4M3, no scales.");
@@ -488,32 +501,44 @@ private:
         assert(param1.input_dim == param2.input_dim);
         assert(param1.output_dim == param2.output_dim);
 
-        int stride = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
-        int rows, cols1, cols2;
+        int rows, cols1, cols2, offset;
         if (bVerticalSplit) {
             rows = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
             cols1 = (splitSize + param1.block_size1 - 1) / param1.block_size1;
-            splitOffset = (splitOffset + param1.block_size1 - 1) / param1.block_size1;
+            offset = (splitOffset + param1.block_size1 - 1) / param1.block_size1;
         } else {
             rows = (splitSize + param1.block_size0 - 1) / param1.block_size0;
             cols1 = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
-            splitOffset = (splitOffset + param1.block_size0 - 1) / param1.block_size0 * cols1;
+            offset = (splitOffset + param1.block_size0 - 1) / param1.block_size0;
         }
 
         cols2 = cols1;
         // transpose for xddn fp8 kernel
         scales.Resize(cols1 + cols2, rows);
 
-#pragma omp parallel for collapse(2)
-        for (int i = 0; i < cols1; ++i) {
-            for (int j = 0; j < rows; ++j) {
-                memcpy(scales.Row(i) + j, param1.weight_scale + splitOffset + j * stride + i, sizeof(float));
+        if (trans) {
+            int stride = (param1.input_dim + param1.block_size0 - 1) / param1.block_size0;
+#pragma omp parallel for
+            for (int i = 0; i < cols1; ++i) {
+                memcpy(scales.Row(i), param1.weight_scale + (offset + i) * stride, rows * sizeof(float));
             }
-        }
+#pragma omp parallel for
+            for (int i = 0; i < cols2; ++i) {
+                memcpy(scales.Row(i + cols1), param2.weight_scale + (offset + i) * stride, rows * sizeof(float));
+            }
+        } else {
+            int stride = (param1.output_dim + param1.block_size1 - 1) / param1.block_size1;
 #pragma omp parallel for collapse(2)
-        for (int i = 0; i < cols2; ++i) {
-            for (int j = 0; j < rows; ++j) {
-                memcpy(scales.Row(i + cols1) + j, param2.weight_scale + splitOffset + j * stride + i, sizeof(float));
+            for (int i = 0; i < cols1; ++i) {
+                for (int j = 0; j < rows; ++j) {
+                    memcpy(scales.Row(i) + j, param1.weight_scale + offset + j * stride + i, sizeof(float));
+                }
+            }
+#pragma omp parallel for collapse(2)
+            for (int i = 0; i < cols2; ++i) {
+                for (int j = 0; j < rows; ++j) {
+                    memcpy(scales.Row(i + cols1) + j, param2.weight_scale + offset + j * stride + i, sizeof(float));
+                }
             }
         }
     }

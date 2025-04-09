@@ -26,4 +26,18 @@ void invokeMoEDeepSeek(DataType dt, ActivationType at, int numTokens, int hidden
         int numSharedExperts, int numRoutedExperts, void *output, int outputStride, const void *input, int inputStride, const void *gatingWeight,
         const void *gatingBias, const void *gateWeight, const void *upWeight, const void *downWeight);
 
+// Create an object of DeepSeekMoE
+// need expert map?
+void *createDeepSeekMoE(int layerId, int numExperts, int numExpPerTok, int hiddenSize, int intermediateSize, bool normTopKProb, int nGroup,
+        int topkGroup, const void *gateUpWeights, const void *downWeights, const void *gateUpScales, const void *downScales,
+        const void *gatingCorrBias=nullptr, int blockSize=128, int tpRank=0, int tpSize=1);
+
+// Foward function for DeepSeekMoE
+void forwardDeepSeekMoE(void *moe, void *input, void *output, int nTokens, void *routingLogits, int iStride=0, int oStride=0);
+
+void forwardDeepSeekMoE(void *moe, void *input, void *output, int nTokens, int *selExperts, float *expertWeights, int iStride=0, int oStride=0);
+
+// Destroy the object of DeepSeekMoE
+void destroyDeepSeekMoE(void *moe);
+
 } // namespace xft

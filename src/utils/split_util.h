@@ -87,7 +87,9 @@ public:
         }
 
         // split key-value based on queries
-        int expandFactor = qHeads / kvHeads;
+        int expandFactor = 1;
+        if (kvHeads > 0)
+            expandFactor = qHeads / kvHeads;
         kvStartId = startId / expandFactor;
         kvEndId = (endId - 1) / expandFactor + 1;
 
