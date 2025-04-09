@@ -12,14 +12,48 @@ Notice: DeepSeek-R1 671B only supports dtype `fp8_e4m3` and kvcache dtype `bf16`
 - [oneCCL](../../README.md#command-line)
 - vllm-xft >= 0.5.5.3
 
+
+### Using Docker
+Notice: 
+- Docker image only contains `xfastertransformer` and `oneCCL`, `vllm-xft` isn't installed. Using `pip install vllm-xft` to install `vllm-xft`.
+- Docker image exports the `libiomp5.so` env by default, so it doesn't need to preload `libiomp5.so` manually.
+```bash
+docker pull intel/xfastertransformer:latest
+
+# Run the docker with the command (Assume model files are in `/data/` directory):  
+docker run -it \
+    --name xfastertransformer \
+    --privileged \
+    --shm-size=16g \
+    -v /data/:/data/ \
+    -e "http_proxy=$http_proxy" \
+    -e "https_proxy=$https_proxy" \
+    intel/xfastertransformer:latest
+```
+
+### Tips
+- If you encounter an error such as `mpirun: command not found`, please refer to the "Requirements" section to install oneCCL or using docker image.
+- By default, the benchmark script utilizes 1 CPU, using `-s` option to modify.
+- For better performance, pls consider clearing all caches using command: `sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches`.
+- If the performance does not meet expectations, try setting the environment variable `export XDNN_N64=64` or `export XDNN_N64=16` before the benchmark.
+
 ### Running Benchmarks
 Execute the benchmark scripts to evaluate the model's performance using fake weight without downloading 600GB+ weight.
+
+#### Manually Environment
 ```
     git clone https://github.com/intel/xFasterTransformer.git
     cd xFasterTransformer/benchmark
 
     export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
     bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kvd bf16 -bs 1 -in 32 -out 32 -s 1
+```
+
+#### In Docker
+```
+    cd /root/xFasterTransformer/benchmark
+    bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kvd bf16 -bs 1 -in 32 -out 32 -s 1
+
 ```
 - `-bs`: batch size.
 - `-in 32`: input token length, `[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]`.

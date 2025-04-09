@@ -12,14 +12,49 @@
 - [oneCCL](../../README.md#command-line)
 - vllm-xft >= 0.5.5.3
 
+### 使用 Docker
+注意：
+- Docker 镜像仅包含 `xfastertransformer` 和 `oneCCL`，未安装 `vllm-xft`，可通过 `pip install vllm-xft` 安装。
+- Docker 镜像默认设置了 `libiomp5.so` 环境变量，因此无需手动预加载 `libiomp5.so`。
+
+```bash
+docker pull intel/xfastertransformer:latest
+
+# 使用以下命令运行 Docker（假设模型文件位于 `/data/` 目录）：
+docker run -it \
+    --name xfastertransformer \
+    --privileged \
+    --shm-size=16g \
+    -v /data/:/data/ \
+    -e "http_proxy=$http_proxy" \
+    -e "https_proxy=$https_proxy" \
+    intel/xfastertransformer:latest
+
+```
+
+### 提示
+- 如果遇到 `mpirun: command not found` 错误，请参考“软件要求”部分安装 oneCCL 或使用 Docker 镜像。
+- 默认情况下，基准测试脚本使用 1 个 CPU，可通过 `-s` 选项修改。
+- 为了获得更好的性能，请考虑使用以下命令清除所有缓存：`sudo sync; echo 3 | sudo tee /proc/sys/vm/drop_caches`。
+- 如果性能未达到预期，请在运行基准测试前尝试设置环境变量：`export XDNN_N64=64` 或 `export XDNN_N64=16`。
+
 ### 运行基准测试
 执行基准测试脚本，使用假权重评估模型性能，无需下载超过 600GB 的权重。
+
+#### 手动配置环境
 ```
     git clone https://github.com/intel/xFasterTransformer.git
     cd xFasterTransformer/benchmark
 
     export $(python -c 'import xfastertransformer as xft; print(xft.get_env())')
     bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kvd bf16 -bs 1 -in 32 -out 32 -s 1
+```
+
+#### 在Docker容器中
+```
+    cd /root/xFasterTransformer/benchmark
+    bash run_benchmark.sh -m deepseek-r1 -d fp8_e4m3 -kvd bf16 -bs 1 -in 32 -out 32 -s 1
+
 ```
 - `-bs`：batch size大小。
 - `-in 32`：输入令牌长度，`[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]`。
