@@ -43,8 +43,33 @@ def get_xft_version() -> str:
     return version
 
 
+variant = os.environ.get("XFT_PYPKG_TYPE", "release")
+if variant not in ["release", "devel"]:
+    raise ValueError(f"Invalid XFT_PYPKG_TYPE '{variant}'. Expected 'release' or 'devel'.")
+
+if variant == "release":
+    project_name = "xfastertransformer"
+    package_dir = {"": "src"}
+    packages = find_packages(where="src", include=["xfastertransformer"])
+    package_data = {
+        "xfastertransformer": ["*.so", "tools/*.*"],
+    }
+    ext_modules = [CMakeExtension(name="xft")]
+    cmdclass = {"build_ext": BuildCMakeExt}
+    data_files = []
+elif variant == "devel":
+    project_name = "xfastertransformer-devel"
+    package_dir = {"": "build"}
+    packages = ["xfastertransformer-devel"]
+    package_data = {
+        "xfastertransformer-devel": ["lib/*.so", "lib/*.a", "include/*.h"],
+    }
+    ext_modules = []
+    cmdclass = {}
+
+
 setup(
-    name="xfastertransformer",
+    name=project_name,
     version=get_xft_version(),
     keywords="LLM",
     description="Boost large language model inference performance on CPU platform.",
@@ -55,13 +80,11 @@ setup(
     author="xFasterTransformer",
     author_email="xft.maintainer@intel.com",
     python_requires=">=3.8",
-    package_dir={"": "src"},
-    packages=find_packages(where="src", include=["xfastertransformer"]),
-    package_data={
-        "xfastertransformer": ["*.so", "tools/*.*"],
-    },
+    package_dir=package_dir,
+    packages=packages,
+    package_data=package_data,
     platforms="x86_64",
-    ext_modules=[CMakeExtension(name="xft")],
-    cmdclass={"build_ext": BuildCMakeExt},
+    ext_modules=ext_modules,
+    cmdclass=cmdclass,
     install_requires=["torch>=2.3.0, <2.4.0"],
 )

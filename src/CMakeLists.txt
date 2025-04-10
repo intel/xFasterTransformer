@@ -51,3 +51,18 @@ if(${EXIT_CODE} EQUAL 0)
 else()
     message(STATUS "PyTorch not found. Skipping torch extension compliling...")
 endif()
+
+# Custom target to copy specific libraries and include folder to xft-devel
+set(XFT_DEVEL_DIR "${CMAKE_BINARY_DIR}/xfastertransformer-devel")
+file(MAKE_DIRECTORY "${XFT_DEVEL_DIR}/lib")
+file(MAKE_DIRECTORY "${XFT_DEVEL_DIR}/include")
+
+add_custom_target(copy_to_xft_devel ALL
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/libxfastertransformer.so ${XFT_DEVEL_DIR}/lib
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/src/libxfastertransformer_static.a ${XFT_DEVEL_DIR}/lib
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/libxft_comm_helper.so ${XFT_DEVEL_DIR}/lib
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/include ${XFT_DEVEL_DIR}/include
+    COMMENT "Copying specific libraries and include folder to xfastertransformer-devel"
+)
+
+add_dependencies(copy_to_xft_devel xfastertransformer xfastertransformer_static)
