@@ -92,9 +92,10 @@ public:
             const float *fc2Scales, const float *fc2Zeros, const float *fc2Bias, const float *ln2Gamma,
             const float *ln2Beta, const OriWeiT *fc3Weight, const float *fc3Scales, const float *fc3Zeros,
             const float *fc3Bias, bool trans = true) {
+        // TODO: Adapt the QK norm parameters or deprecated this method.
         attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
                 valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero, attnOutBias,
-                true, ln1Gamma, ln1Beta, trans);
+                true, ln1Gamma, ln1Beta, nullptr, nullptr, nullptr, nullptr, trans);
 
         mlp.setWeights(ctx, fc1Weight, fc1Scales, fc1Zeros, fc1Bias, fc2Weight, fc2Scales, fc2Zeros, fc2Bias, ln2Gamma,
                 ln2Beta, fc3Weight, fc3Scales, fc3Zeros, fc3Bias, trans);
@@ -132,9 +133,14 @@ public:
             const float *lnGamma = gqap->norm.gamma;
             const float *lnBeta = gqap->norm.beta;
 
+            const float *qNormGamma = gqap->qNorm.gamma;
+            const float *qNormBeta = gqap->qNorm.beta;
+            const float *kNormGamma = gqap->kNorm.gamma;
+            const float *kNormBeta = gqap->kNorm.beta;
+
             attn.setWeights(ctx, queryWeight, queryScale, queryZero, queryBias, keyWeight, keyScale, keyZero, keyBias,
                     valueWeight, valueScale, valueZero, valueBias, attnOutWeight, attnOutScale, attnOutZero,
-                    attnOutBias, true, lnGamma, lnBeta, false);
+                    attnOutBias, true, lnGamma, lnBeta, qNormGamma, qNormBeta, kNormGamma, kNormBeta, false);
         } else if (mlap != NULL) {
             attn.setWeights(ctx, attnParams);
         }

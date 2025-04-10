@@ -1,0 +1,9 @@
+{
+  "bos_token_id": 151643,
+  "pad_token_id": 151643,
+  "eos_token_id": [
+    151645,
+    151643
+  ],
+  "transformers_version": "4.40.0.dev0"
+}

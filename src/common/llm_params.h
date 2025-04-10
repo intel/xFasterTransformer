@@ -75,8 +75,8 @@ struct DenseLayerParams {
         , wtrans(other.wtrans)
         , input_dim(other.input_dim)
         , output_dim(other.output_dim)
-	, block_size0(other.block_size0)
-	, block_size1(other.block_size1) {
+        , block_size0(other.block_size0)
+        , block_size1(other.block_size1) {
         other.weight = nullptr;
         other.bias = nullptr;
         other.weight_scale = nullptr;
@@ -155,12 +155,16 @@ struct GQAttnParams : public AttnParams {
     DenseLayerParams qkv;
     DenseLayerParams out;
     NormParams norm;
+    NormParams qNorm;
+    NormParams kNorm;
 
-    GQAttnParams() : qkv {}, out {}, norm {} {}
+    GQAttnParams() : qkv {}, out {}, norm {}, qNorm {}, kNorm {} {}
     GQAttnParams(int hiddenSize, int qHeads, int kvHeads, int headSize, ParamType weiType, bool wTrans = false)
         : qkv(hiddenSize, headSize * (qHeads + kvHeads * 2), weiType, wTrans)
         , out(headSize * qHeads, hiddenSize, weiType, wTrans)
-        , norm(hiddenSize) {}
+        , norm(hiddenSize)
+        , qNorm(headSize)
+        , kNorm(headSize) {}
 };
 
 // MLA/DeepSeek
@@ -270,6 +274,21 @@ struct DeepSeekFFNParams : public FFNParams {
         //for (int i = 0; i < routedExpertsNum; ++i) {
         //   routedExperts.emplace_back(hiddenSize, moeIntermediateSize, denseWType, wTrans);
         //}
+    }
+};
+
+// Qwen3 MOE
+struct Qwen3MOEParams : public FFNParams {
+    NormParams norm;
+    DenseLayerParams gating; // Gating for MOE
+    std::vector<ExpertParams> experts; // List of experts
+
+    Qwen3MOEParams() : norm {}, gating {}, experts {} {}
+    Qwen3MOEParams(int expertNum, int hiddenSize, int intermediateSize, ParamType denseWType, bool wTrans = false)
+        : norm(hiddenSize), gating(hiddenSize, expertNum, denseWType, wTrans) {
+        for (int i = 0; i < expertNum; ++i) {
+            experts.emplace_back(hiddenSize, intermediateSize, denseWType, wTrans);
+        }
     }
 };
 

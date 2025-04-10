@@ -221,11 +221,10 @@ public:
         DataType attnWeightType = ATTN_CLS::getWeightDataType();
 
         DataType dt = DataType::fp32;
-        if ((attnWeightType == DataType::bf16 || attnWeightType == DataType::fp16) && srcWeightType == attnWeightType) {
+        if (attnWeightType == srcWeightType && 
+            (attnWeightType == DataType::bf16 || attnWeightType == DataType::fp16 || attnWeightType == DataType::fp8_e4m3)) {
             dt = srcWeightType;
         }
-
-        if (attnWeightType == DataType::fp8_e4m3 && srcWeightType == DataType::fp8_e4m3) { dt = srcWeightType; }
 
         if (quantQweightDataType == "int8" || quantQweightDataType == "uint4") {
             dt = quantQweightDataType == "int8" ? DataType::int8 : DataType::int4;
@@ -266,6 +265,9 @@ public:
         ctx->topkMethod = reader.Get(modelType, "topk_method", "");
         ctx->scoringFunc = reader.Get(modelType, "scoring_func", "");
         ctx->routedScalingFac = reader.GetFloat(modelType, "routed_scaling_factor", 1.0);
+
+        // For Qwen3
+        ctx->doQKNorm = reader.GetBoolean(modelType, "do_qk_norm", false);
 
         if (ctx->nopeDim && ctx->ropeDim) { // scale in MLA is different
             float mscale = 0.1 * std::log(40) + 1.0;

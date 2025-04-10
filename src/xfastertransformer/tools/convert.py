@@ -18,6 +18,7 @@ from pathlib import Path
 import json
 import traceback
 import transformers
+import torch
 
 from typing import Any, Callable, ContextManager, Iterator, Sequence, TypeVar, cast
 
@@ -64,11 +65,25 @@ def get_name_and_param(model_dir: Path):
                 yield name, model_part.get_tensor(name)
 
 
+def map_np_dtype_to_torch(dtype: np.dtype):
+    MAPPING = {
+        np.float32: [torch.float32, torch.float32],
+        np.float16: [torch.float16, torch.float16],
+        np.uint16: [torch.bfloat16, torch.uint16],
+    }
+    if dtype in MAPPING:
+        return MAPPING[dtype]
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype}. Supported dtypes are {list(MAPPING.keys())}.")
+
+
 class BaseModelConvert:
     SUPPORTED_DTYPES = {"fp32": np.float32, "fp16": np.float16}
 
     def __init__(self):
         self.dtype = np.float32
+        self.torch_dtype = torch.float32
+        self.torch_view_dtype = torch.float32
         self.default_dtype = "fp16"
 
     def __call__(self, input_dir, output_dir=None, dtype: str = None, processes=8, from_quantized_model=None):
@@ -87,6 +102,8 @@ class BaseModelConvert:
             dtype = self.default_dtype
 
         self.dtype = self.get_weight_data_type(dtype)
+        # Since numpy not support bf16, weight should be converted to bfloat16 and then view as uint16
+        self.torch_dtype, self.torch_view_dtype = map_np_dtype_to_torch(self.dtype)
         if output_dir is None:
             input_dir = input_dir.rstrip(os.path.sep)
             output_dir = os.path.join(os.path.dirname(input_dir), os.path.basename(input_dir) + "-xft")

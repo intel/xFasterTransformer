@@ -1,0 +1,5 @@
+{
+    "framework": "pytorch",
+    "task": "fill-mask",
+    "allow_remote": true
+}

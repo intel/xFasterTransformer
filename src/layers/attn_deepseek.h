@@ -53,7 +53,8 @@ public:
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
             const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
             const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
-            const float *attnOutBias, bool doLNorm, const float *gamma1, const float *beta1, bool trans = true) {
+            const float *attnOutBias, bool doLNorm, const float *gamma1, const float *beta1, const float *gamma2,
+            const float *beta2, const float *gamma3, const float *beta3, bool trans = true) {
         xft::Logger::error("Cannot use the old API to set weights in DeepSeekAttention.");
         exit(-1);
     }

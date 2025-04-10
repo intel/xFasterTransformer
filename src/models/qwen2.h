@@ -21,15 +21,15 @@
 #include "token_embedding.h"
 #include "type_selector.h"
 
-template <typename WeiT, typename KVCacheT>
+template <typename WeiT, typename KVCacheT,
+        typename MLP_CLS = LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
+                typename TypeSelector<WeiT>::OutType>>
 class Qwen2LLM
     : public CommonDecoder<Attention<WeiT, LlamaRotaryEmbedding, RmsNorm, typename TypeSelector<WeiT>::InType,
                                    typename TypeSelector<WeiT>::ImType, typename TypeSelector<WeiT>::OutType, true>,
-              LlamaMLP<WeiT, typename TypeSelector<WeiT>::InType, typename TypeSelector<WeiT>::ImType,
-                      typename TypeSelector<WeiT>::OutType>,
-              KVCacheT> {
+              MLP_CLS, KVCacheT> {
 public:
-    Qwen2LLM(const std::string &modelPath);
+    Qwen2LLM(const std::string &modelPath, const std::string &modelType = "qwen2");
     ~Qwen2LLM();
 
     void prepareAttnMask(int *ids, int step);

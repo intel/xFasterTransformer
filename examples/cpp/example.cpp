@@ -318,8 +318,12 @@ TokenizerBase *getTokenizer(std::string &modeltype, std::string &tokenPath) {
         return new FakeTokenizer(std::vector<int>(
                 {0, 16600, 4465, 260, 1014, 14, 1031, 26463, 260, 2961, 6482, 995, 18428, 304, 611, 39415, 16}));
     } else if (modeltype == "qwen2") {
+        // the begin "151646" just for the deepseek distill version.
         return new FakeTokenizer(std::vector<int>(
                 {151646, 12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13}));
+    } else if (modeltype == "qwen3" or modeltype == "qwen3_moe") {
+        return new FakeTokenizer(std::vector<int>(
+                {12522, 5193, 264, 882, 11, 1052, 24295, 264, 2632, 3743, 879, 14915, 311, 614, 30978, 13}));
     } else {
         std::cout << "[Error] Token list of loaded model is unsupported yet.\n" << std::endl;
         exit(-1);

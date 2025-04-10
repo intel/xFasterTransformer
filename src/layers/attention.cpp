@@ -104,7 +104,8 @@ void AttentionLLaMAImpl(DataType dt, int batchSize, int inputSeqLen, int attHead
         llama_attention = new ATTENTION(0, ctx);
         llama_attention->setWeights(ctx, (const float *)queryWeight, nullptr, nullptr, queryBias,
                 (const float *)keyWeight, nullptr, nullptr, keyBias, (const float *)valueWeight, nullptr, nullptr,
-                valueBias, (const float *)attnOutWeight, nullptr, nullptr, attnOutBias, false, nullptr, nullptr, false);
+                valueBias, (const float *)attnOutWeight, nullptr, nullptr, attnOutBias, false, nullptr, nullptr,
+                nullptr, nullptr, nullptr, nullptr, false);
         llama_attention_hub[llama_attention_key] = llama_attention;
         printf(">> create llama_attention_key: %s\n", llama_attention_key.c_str());
     } else {

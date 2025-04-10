@@ -292,7 +292,10 @@ public:
     }
 
     // General version
-    static void computeSoftmax(float *data, int size) {
+    template <typename T,
+            typename std::enable_if_t<std::is_same_v<T, float> || std::is_same_v<T, bfloat16_t>
+                    || std::is_same_v<T, float16_t>> * = nullptr>
+    static void computeSoftmax(T *data, int size) {
         int vecs = (size + 15) / 16; // how many avx512 vectors
         __mmask16 tailMask = (size % 16 == 0 ? 0xffff : (1 << (size % 16)) - 1); // mask of last vector
 
@@ -305,7 +308,7 @@ public:
         int i = 0;
         for (i = 0; i < vecs; ++i) {
             __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
-            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
             vmax = _mm512_mask_max_ps(vmax, k, vmax, vx);
         }
 
@@ -315,9 +318,9 @@ public:
         // Compute vexp(vx - vmax) and sum it
         for (i = 0; i < vecs; ++i) {
             __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
-            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
             vx = BertUtil::vexp(vx - vmax);
-            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            xft::store_avx512(data + i * 16, k, vx);
             vsum = _mm512_mask_add_ps(vsum, k, vsum, vx);
         }
 
@@ -327,9 +330,9 @@ public:
         // Compute exp/sum(exp) and store
         for (i = 0; i < vecs; ++i) {
             __mmask16 k = (i == vecs - 1 ? tailMask : 0xffff);
-            __m512 vx = _mm512_maskz_loadu_ps(k, data + i * 16);
+            __m512 vx = xft::load_avx512(k, data + i * 16);
             vx = vx * vrsum;
-            _mm512_mask_storeu_ps(data + i * 16, k, vx);
+            xft::store_avx512(data + i * 16, k, vx);
         }
     }
 
@@ -525,7 +528,7 @@ public:
         int stride = hiddenSize;
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
-        #pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3)
         for (int64_t b = 0; b < batchSize; ++b) {
             for (int64_t i = 0; i < seqLen; ++i) {
                 for (int64_t j = 0; j < N; j += 16) {

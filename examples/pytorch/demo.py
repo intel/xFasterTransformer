@@ -268,7 +268,7 @@ if __name__ == "__main__":
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
-            args.token_path, use_fast=False, padding_side="left", trust_remote_code=True
+            args.token_path, padding_side="left", trust_remote_code=True
         )
     except Exception as e:
         traceback.print_exc()

@@ -34,6 +34,8 @@
 #include "opt_decoder.h"
 #include "qwen.h"
 #include "qwen2.h"
+#include "qwen3.h"
+#include "qwen3_moe.h"
 #include "sampling.h"
 #include "search_utils.h"
 #include "searcher.h"

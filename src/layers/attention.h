@@ -53,7 +53,7 @@ template <typename WeiT, typename QKPO_CLS, typename NORM_CLS, typename InT = fl
 class Attention {
 public:
     Attention(int layerId, DecoderContext *ctx)
-        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(ctx) {
+        : layerId(layerId), qkpo(ctx->attHeadSize, ctx->maxPosEmbed), norm(ctx), qNorm(ctx), kNorm(ctx) {
 
         //todo(marvin): clear this code after all rotary_emb refactor
         if constexpr (std::is_same<QKPO_CLS, LlamaRotaryEmbedding>::value) { qkpo = LlamaRotaryEmbedding(ctx); }
@@ -79,6 +79,7 @@ public:
         }
 
         alibiSlopes = nullptr;
+        doQKNorm = ctx->doQKNorm;
     }
 
     static xft::DataType getWeightDataType() { return xft::getDataType<WeiT>(); }
@@ -95,7 +96,8 @@ public:
             const float *queryBias, const OriWeiT *keyWeight, const float *keyScale, const float *keyZero,
             const float *keyBias, const OriWeiT *valueWeight, const float *valueScale, const float *valueZero,
             const float *valueBias, const OriWeiT *attnOutWeight, const float *attnOutScale, const float *attnOutZero,
-            const float *attnOutBias, bool doLNorm, const float *gamma1, const float *beta1, bool trans = true) {
+            const float *attnOutBias, bool doLNorm, const float *gamma1, const float *beta1, const float *gamma2,
+            const float *beta2, const float *gamma3, const float *beta3, bool trans = true) {
         int hiddenSize = ctx->hiddenSize;
         int headSize = ctx->attHeadSize;
 
@@ -233,6 +235,10 @@ public:
 
         // LayerNorm
         if (doLNorm) this->norm.setWeight(gamma1, beta1, hiddenSize);
+
+        // QK Norm
+        this->qNorm.setWeight(gamma2, beta2, headSize);
+        this->kNorm.setWeight(gamma3, beta3, headSize);
     }
 
 #ifdef XFT_DEBUG
@@ -324,6 +330,29 @@ public:
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
         dbg.dumpMatrix(value, false, ctx->device);
 #endif
+
+        // Apply QK norm for each head
+        if (doQKNorm) {
+            // TODO: optimize
+            TimeLine qkNorm("QK.norm");
+            for (int i = 0; i < query.Rows(); i++) {
+                qNorm.forward(query.Data() + i * query.Stride(), query.Data() + i * query.Stride(),
+                        this->endQHead - this->startQHead, headSize, headSize, epsilon);
+            }
+            for (int i = 0; i < key.Rows(); i++) {
+                kNorm.forward(key.Data() + i * key.Stride(), key.Data() + i * key.Stride(),
+                        this->endKVHead - this->startKVHead, headSize, headSize, epsilon);
+            }
+
+            qkNorm.release();
+
+#ifdef XFT_DEBUG
+            dbg.debugPrint("Q[%d,%d](%d) after norm:\n", query.Rows(), query.Cols(), query.Stride());
+            dbg.dumpMatrix(query, false, ctx->device);
+            dbg.debugPrint("K[%d,%d](%d) after norm:\n", key.Rows(), key.Cols(), key.Stride());
+            dbg.dumpMatrix(key, false, ctx->device);
+#endif
+        }
 
         // Apply post operations on query and key
         TimeLine t3("QKPO");
@@ -475,13 +504,15 @@ public:
             std::vector<KVCacheTensor<KVCacheT> *> &valueCaches, bool doLnBefore = true) {
 
         auto hiddenSize = ctx->hiddenSize;
+        int headSize = ctx->attHeadSize;
         xft::Matrix<InT> inputBuffer(input, totInSeqLen, hiddenSize, hiddenSize);
-        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", totInSeqLen * hiddenSize, ctx->device);
+        // in case headSize * QHeadNum > hiddenSize like Qwen3.
+        int tmpSize = std::max(totInSeqLen * hiddenSize, totInSeqLen * headSize * ctx->attHeadNum);
+        ImT *imBuf = (ImT *)ctx->getBuffer<ImT>("tmp", tmpSize, ctx->device);
         xft::Matrix<ImT> imBuffer(imBuf, totInSeqLen, hiddenSize, hiddenSize);
         xft::Matrix<OutT> outBuffer(output, totInSeqLen, hiddenSize, hiddenSize);
 
         float epsilon = ctx->epsilon;
-        int headSize = ctx->attHeadSize;
         auto qkvRows = totInSeqLen;
         int qCols = (this->endQHead - this->startQHead) * headSize;
         int kvCols = (this->endKVHead - this->startKVHead) * headSize;
@@ -535,6 +566,29 @@ public:
         dbg.debugPrint("V[%d,%d](%d):\n", value.Rows(), value.Cols(), value.Stride());
         dbg.dumpMatrix(value, false, ctx->device);
 #endif
+
+        // Apply QK norm for each head
+        if (doQKNorm) {
+            // TODO: optimize
+            TimeLine qkNorm("QK.norm");
+            for (int i = 0; i < query.Rows(); i++) {
+                qNorm.forward(query.Data() + i * query.Stride(), query.Data() + i * query.Stride(),
+                        this->endQHead - this->startQHead, headSize, headSize, epsilon);
+            }
+            for (int i = 0; i < key.Rows(); i++) {
+                kNorm.forward(key.Data() + i * key.Stride(), key.Data() + i * key.Stride(),
+                        this->endKVHead - this->startKVHead, headSize, headSize, epsilon);
+            }
+
+            qkNorm.release();
+
+#ifdef XFT_DEBUG
+            dbg.debugPrint("Q[%d,%d](%d) after norm:\n", query.Rows(), query.Cols(), query.Stride());
+            dbg.dumpMatrix(query, false, ctx->device);
+            dbg.debugPrint("K[%d,%d](%d) after norm:\n", key.Rows(), key.Cols(), key.Stride());
+            dbg.dumpMatrix(key, false, ctx->device);
+#endif
+        }
 
         // Apply post operations on query and key
         TimeLine t3("QKPO");
@@ -1238,6 +1292,11 @@ protected:
     // layerNorm param
     NORM_CLS norm;
     int layerId;
+
+    // Q/K norm
+    NORM_CLS qNorm;
+    NORM_CLS kNorm;
+    bool doQKNorm;
 
     // Alibi Slopes
     float *alibiSlopes;

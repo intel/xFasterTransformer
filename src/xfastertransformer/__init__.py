@@ -52,6 +52,7 @@ _import_structure = {
         "DeepSeekV2Convert",
         "DeepSeekV3Convert",
         "DeepSeekR1Convert",
+        "Qwen3Convert",
     ],
     "env": ["get_env"],
 }
@@ -77,6 +78,7 @@ if TYPE_CHECKING:
     from .tools import DeepSeekV2Convert
     from .tools import DeepSeekV3Convert
     from .tools import DeepSeekR1Convert
+    from .tools import Qwen3Convert
     from .env import get_env
 else:
     # This LazyImportModule is refer to optuna.integration._IntegrationModule

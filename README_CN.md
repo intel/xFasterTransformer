@@ -73,6 +73,7 @@ xFasterTransformer 提供了一系列 C++ 和 Python 应用程序接口，终端
 |     Baichuan2      | &#10004; | &#10004; |  &#10004;  |
 |        QWen        | &#10004; | &#10004; |  &#10004;  |
 |        QWen2       | &#10004; | &#10004; |  &#10004;  |
+|        QWen3       | &#10004; | &#10004; |  &#10004;  |
 | SecLLM(YaRN-Llama) | &#10004; | &#10004; |  &#10004;  |
 |        Opt         | &#10004; | &#10004; |  &#10004;  |
 |   Deepseek-coder   | &#10004; | &#10004; |  &#10004;  |
@@ -191,6 +192,7 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
     - BaichuanConvert
     - QwenConvert
     - Qwen2Convert
+    - Qwen3Convert
     - DeepseekConvert
     - TelechatConvert
     - MixtralConvert

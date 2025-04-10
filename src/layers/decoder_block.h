@@ -395,7 +395,7 @@ private:
         ctx->GetAttr("attn_params_type", &attnParamsType, std::string("unknownParamsType"));
 
         // Deepseek model
-        if (ctx->sectionName == "deepseek_moe" or attnParamsType == "MLAttnParams") {
+        if (ctx->sectionName == "deepseek_moe" || attnParamsType == "MLAttnParams") {
             attnParams = new xft::MLAttnParams(ctx->hiddenSize, ctx->qLoraRank, ctx->kvLoraRank, ctx->attHeadNum,
                     ctx->nopeDim, ctx->ropeDim, ctx->headDim, xftDT2PT(dt));
         } else {
@@ -412,18 +412,22 @@ private:
         std::string ffnParamsType;
         ctx->GetAttr("ffn_params_type", &ffnParamsType, std::string("unknownParamsType"));
 
-        if (ctx->sectionName.find("chatglm") != std::string::npos or ffnParamsType == "GptFFNParams"
-                or fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
+        if (ctx->sectionName.find("chatglm") != std::string::npos || ffnParamsType == "GptFFNParams"
+                || fileExists(modelPath + "/model.layers.0.mlp.dense_h_to_4h.weight.0.bin")) {
             ffnParams = new xft::GptFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
         } else if (ctx->sectionName.find("llama") != std::string::npos
-                or ctx->sectionName.find("qwen") != std::string::npos or ffnParamsType == "LlamaFFNParams") {
+                || (ctx->sectionName.find("qwen") != std::string::npos
+                        && ctx->sectionName.find("qwen3_moe") == std::string::npos)
+                || ffnParamsType == "LlamaFFNParams") {
             ffnParams = new xft::LlamaFFNParams(ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
-        } else if (ctx->sectionName == "mixtral" or ffnParamsType == "MixtralFFNParams") {
+        } else if (ctx->sectionName == "mixtral" || ffnParamsType == "MixtralFFNParams") {
             ffnParams = new xft::MixtralFFNParams(
                     ctx->sparseExperts, ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
-        } else if (ctx->sectionName == "deepseek_moe" or ffnParamsType == "DeepSeekFFNParams") {
+        } else if (ctx->sectionName == "deepseek_moe" || ffnParamsType == "DeepSeekFFNParams") {
             ffnParams = new xft::DeepSeekFFNParams(ctx->sparseExperts, ctx->denseExperts, ctx->hiddenSize,
                     ctx->intermediateSize, ctx->moeIntermediateSize, xftDT2PT(dt));
+        } else if (ffnParamsType == "Qwen3MOEParams") {
+            ffnParams = new xft::Qwen3MOEParams(ctx->sparseExperts, ctx->hiddenSize, ctx->intermediateSize, xftDT2PT(dt));
         } else {
             xft::Logger::error("Unable to detect FFN parameters.");
             std::exit(-1);
@@ -450,6 +454,7 @@ private:
             xft::LlamaFFNParams *llamaffn = dynamic_cast<xft::LlamaFFNParams *>(ffnParams);
             xft::MixtralFFNParams *mixtralffn = dynamic_cast<xft::MixtralFFNParams *>(ffnParams);
             xft::DeepSeekFFNParams *deepseekffn = dynamic_cast<xft::DeepSeekFFNParams *>(ffnParams);
+            xft::Qwen3MOEParams *qwen3moeffn = dynamic_cast<xft::Qwen3MOEParams *>(ffnParams);
 
             if (gqap != NULL) {
                 loadGQAttnWeights<WType>(ctx, modelPath, layerIdx, gqap);
@@ -475,6 +480,10 @@ private:
             // For DeepSeekV2+ models
             else if (deepseekffn != NULL) {
                 loadDeepSeekFFNWeights<WType>(ctx, modelPath, layerIdx, deepseekffn);
+            }
+            // For Qwen3 MOE models
+            else if (qwen3moeffn != NULL) {
+                loadQwen3MOEWeights<WType>(ctx, modelPath, layerIdx, qwen3moeffn);
             } else {
                 std::exit(-1);
             }
@@ -505,6 +514,13 @@ private:
                 "read attn dense bias error");
         loadOptionalBias(modelPath + "/model.layers." + strIdx + ".input_layernorm.bias.bin", attn->norm,
                 "read LN1(attention) beta error");
+
+        if (ctx->doQKNorm) {
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.q_norm.weight.bin", attn->qNorm.gamma,
+                    ctx->attHeadSize);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".attention.k_norm.weight.bin", attn->kNorm.gamma,
+                    ctx->attHeadSize);
+        }
     }
 
     template <typename T>
@@ -776,6 +792,38 @@ private:
                 }
             }
         }
+    }
+
+    template <typename T>
+    void loadQwen3MOEWeights(
+            DecoderContext *ctx, const std::string &modelPath, int layerIdx, xft::Qwen3MOEParams *ffn) {
+        std::string strIdx = std::to_string(layerIdx);
+
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.gate.weight.0.bin", (T *)ffn->gating.weight,
+                ffn->gating.input_dim * ffn->gating.output_dim);
+
+        // Load expert weights
+        if (ffn->experts.empty()) {
+            for (int i = 0; i < ctx->sparseExperts; ++i) {
+                ffn->experts.emplace_back(ctx->hiddenSize, ctx->intermediateSize, xft::ParamType::FP32, false);
+            }
+        }
+
+        for (int i = 0; i < ctx->sparseExperts; ++i) {
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                            + ".gate_proj.weight.0.bin",
+                    (T *)ffn->experts[i].gate.weight, ctx->hiddenSize * ctx->intermediateSize);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                            + ".up_proj.weight.0.bin",
+                    (T *)ffn->experts[i].up.weight, ctx->hiddenSize * ctx->intermediateSize);
+            xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".mlp.experts." + std::to_string(i)
+                            + ".down_proj.weight.0.bin",
+                    (T *)ffn->experts[i].down.weight, ctx->hiddenSize * ctx->intermediateSize);
+        }
+
+        // Norm params
+        xft::loadWeight2(modelPath + "/model.layers." + strIdx + ".post_attention_layernorm.weight.bin",
+                ffn->norm.gamma, ffn->norm.hidden_size);
     }
 
     void loadOptionalBias(const std::string &filename, xft::DenseLayerParams &dense, const char *errmsg,

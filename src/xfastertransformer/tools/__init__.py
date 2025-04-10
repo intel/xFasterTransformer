@@ -32,3 +32,4 @@ from .mixtral_convert import MixtralConvert
 from .deepseek_moe_convert import DeepSeekV2Convert
 from .deepseek_moe_convert import DeepSeekV2Convert as DeepSeekV3Convert
 from .deepseek_moe_convert import DeepSeekV2Convert as DeepSeekR1Convert
+from .qwen3_convert import Qwen3Convert

@@ -82,6 +82,7 @@ struct DecoderContext {
     int maxSeqLength; // From Qwen model's seq_length
     bool useLogN; // From Qwen model
     bool useNTK; // From Qwen model
+    bool doQKNorm; // From Qwen3 model
     int layers;
     int hiddenSize;
     int intermediateSize;
