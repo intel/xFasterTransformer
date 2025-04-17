@@ -274,9 +274,10 @@ if __name__ == "__main__":
         print(f"Next token Min Latency:\t{np.min(next_token_times):.2f} ms")
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
-        print(f"Throughput without 1st token:\t{1000 / np.mean(next_token_times) * args.batch_size:.2f} tokens/s")
+        print(f"Average Input Length:\t{input_token_nums}")
         print(f"TTFT:\t{np.mean(first_token_times):.2f} ms")
         print(f"TPOT:\t{np.mean(next_token_times):.2f} ms")
+        print(f"Throughput:\t{1000 / np.mean(next_token_times) * args.batch_size:.2f} tokens/s")
         print("=" * 120, "\n" * 3)
 
         if args.csv != "":
