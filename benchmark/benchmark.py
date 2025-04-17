@@ -77,7 +77,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default=None, help="Model name")
 parser.add_argument("--token_in", type=str, default="32", help="Input Token Len")
 parser.add_argument("--token_out", type=int, default=32, help="Output Token Len, MaxLen=IN+OUT")
-parser.add_argument("--beam_width", type=int, default=1, help="Beam Search Width")
 parser.add_argument("--input_prompt", type=str, default=None, help="Input Prompt")
 parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
 parser.add_argument("--iteration", type=int, default=3, help=" Benchmakr Iterations")
@@ -88,7 +87,6 @@ parser.add_argument("--token_path", type=str, default=None, help="Path to token 
 parser.add_argument("--model_path", type=str, default=None, help="Path to model file")
 parser.add_argument("--prompt_path", type=str, default="prompt.json", help="Path to model file")
 parser.add_argument("--padding", help="Enable padding, Default to True.", type=boolean_string, default=True)
-parser.add_argument("--chat", help="Enable chat mode, Default to False.", type=boolean_string, default=False)
 parser.add_argument("--csv", type=str, default="", help="Path to csv file")
 
 
@@ -103,11 +101,41 @@ def build_inputs_chatglm(tokenizer, query: List[str], padding, history: List[Tup
     inputs = tokenizer(prompts, return_tensors="pt", padding=padding).input_ids
     return inputs
 
+def get_inputs(args, prompt_pool, tokenizer):
+    input_prompts=[]
+    inputs = []
+    max_lens = []
+    if isinstance(prompt_pool, dict):
+        input_prompt=""
+        if args.input_prompt is not None:
+            input_prompt = args.input_prompt
+        elif args.token_in in prompt_pool:
+            input_prompt = prompt_pool[args.token_in]
+        else:
+            raise SystemExit("[ERROR] Plese use --input_prompt if you want custom input.")
+        print(input_prompt)
+        for _ in range(args.batch_size):
+            input_prompts.append(input_prompt)
+    else:
+        input_prompts = prompt_pool
+    grouped_prompts = [input_prompts[i:i + args.batch_size] for i in range(0, len(input_prompts), args.batch_size)]
+    for prompts in grouped_prompts:
+        input_ids = tokenizer(prompts, return_tensors="pt", padding=args.padding).input_ids
+        max_len = input_ids.shape[1] + args.token_out
+        inputs.append(input_ids)
+        max_lens.append(max_len)
+    return inputs, max_lens
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    with open(args.prompt_path, "r") as json_file:
-        prompt_pool = json.load(json_file)
+    if args.prompt_path.endswith('.txt'):
+        with open(args.prompt_path, "r") as txt_file:
+            prompt_pool = txt_file.read().splitlines()
+    elif args.prompt_path.endswith('.json'):
+        with open(args.prompt_path, "r") as json_file:
+            prompt_pool = json.load(json_file)
+    else:
+        raise ValueError("Unsupported file format. Only .txt and .json are allowed.")
 
     _config = configparser.ConfigParser()
     _config.read(os.path.join(args.model_path, "config.ini"))
@@ -128,26 +156,27 @@ if __name__ == "__main__":
         else:
             print(f"The folder '{_weight_path}' does not exist. Using fake weight!")
 
-    if "chatglm" in args.model_name.lower():
-        model_prompt = prompt_pool["chatglm"]
-    if "chatglm2" in args.model_name.lower():
-        model_prompt = prompt_pool["chatglm2"]
-    if "chatglm3" in args.model_name.lower():
-        model_prompt = prompt_pool["chatglm3"]
-    if "llama" in args.model_name.lower():
-        model_prompt = prompt_pool["llama"]
-    if "gemma" in args.model_name.lower():
-        model_prompt = prompt_pool["llama"]
-    if "baichuan" in args.model_name.lower():
-        model_prompt = prompt_pool["baichuan"]
-    if "baichuan2" in args.model_name.lower():
-        model_prompt = prompt_pool["baichuan2"]
-    if "opt" in args.model_name.lower():
-        model_prompt = prompt_pool["opt"]
-    if "qwen" in args.model_name.lower():
-        model_prompt = prompt_pool["qwen"]
-    if "deepseek" in args.model_name.lower():
-        model_prompt = prompt_pool["deepseek"]    
+    if isinstance(prompt_pool, dict):
+        if "chatglm" in args.model_name.lower():
+            prompt_pool = prompt_pool["chatglm"]
+        if "chatglm2" in args.model_name.lower():
+            prompt_pool = prompt_pool["chatglm2"]
+        if "chatglm3" in args.model_name.lower():
+            prompt_pool = prompt_pool["chatglm3"]
+        if "llama" in args.model_name.lower():
+            prompt_pool = prompt_pool["llama"]
+        if "gemma" in args.model_name.lower():
+            prompt_pool = prompt_pool["llama"]
+        if "baichuan" in args.model_name.lower():
+            prompt_pool = prompt_pool["baichuan"]
+        if "baichuan2" in args.model_name.lower():
+            prompt_pool = prompt_pool["baichuan2"]
+        if "opt" in args.model_name.lower():
+            prompt_pool = prompt_pool["opt"]
+        if "qwen" in args.model_name.lower():
+            prompt_pool = prompt_pool["qwen"]
+        if "deepseek" in args.model_name.lower():
+            prompt_pool = prompt_pool["deepseek"]    
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.token_path, use_fast=False, padding_side="left", trust_remote_code=True, legacy=False
@@ -175,31 +204,22 @@ if __name__ == "__main__":
         # input prompt
         print("======start=======")
         print("[INFO] input argparse = ", args)
-        if args.input_prompt is not None:
-            input_prompt = args.input_prompt
-        elif args.token_in in model_prompt:
-            input_prompt = model_prompt[args.token_in]
-            print(input_prompt)
-        else:
-            raise SystemExit("[ERROR] Plese use --input_prompt if you want custom input.")
-        for _ in range(args.batch_size):
-            input_prompts.append(input_prompt)
+        inputs, max_lens = get_inputs(args, prompt_pool, tokenizer)
         # Master
-        if args.chat and "chatglm" in args.model_name.lower():
-            if args.batch_size > 1:
-                print("[INFO] chat mode only support batchsize=1")
-            input_ids = build_inputs_chatglm(tokenizer, input_prompts, args.padding)
-        else:
-            input_ids = tokenizer(input_prompts, return_tensors="pt", padding=args.padding).input_ids
-        input_token_nums = int(torch.numel(input_ids) / args.batch_size)
-        if args.token_in is not None and int(args.token_in) != input_token_nums:
-            print(f"[WARN] input_token_size ({input_token_nums}) != required_input_size ({args.token_in})")
-        print("Input token Length is", input_token_nums)
+        input_token_nums = sum([torch.numel(input_ids) for input_ids in inputs])
+        if isinstance(prompt_pool, dict):
+            input_token_nums = input_token_nums / args.batch_size
+            if args.token_in is not None and int(args.token_in) != input_token_nums:
+                print(f"[WARN] input_token_size ({input_token_nums}) != required_input_size ({args.token_in})")
+            print("Input token Length is:", input_token_nums)
+            if max_lens[0] > model_max_seq_len and model_max_seq_len > 0:
+                raise SystemExit(f"[ERROR] input_token length + output_token length{max_lens[0]} > max_pos_seq_len{model_max_seq_len}.")
+            print("Max_len:", max_lens[0])
+        elif isinstance(prompt_pool, list):
+            input_token_nums = input_token_nums / len(prompt_pool)
+            print("The average input token Length is:", input_token_nums)
+            print("The total num of input prompts is:", len(prompt_pool))
         print("Batch_size:", args.batch_size)
-        max_len = input_token_nums + args.token_out
-        if max_len > model_max_seq_len and model_max_seq_len > 0:
-            raise SystemExit("[ERROR] input_token length + output_token length > max_pos_seq_len.")
-        print("Max_len:", max_len)
         print("=" * 50)
         # Perform 100 runs and store execution times in a list
         execution_times = []
@@ -208,33 +228,39 @@ if __name__ == "__main__":
         total_times = []
         # warm up
         for i in range(args.warmup):
-            model.generate(input_ids, num_beams=args.beam_width, max_length=max_len, streamer=None)
+            for i, input_ids in enumerate(inputs):
+                model.generate(input_ids, max_length=max_lens[i], streamer=None)
 
         print("Start benchmark:")
         for i in range(args.iteration):
             print("iteration", i, ":")
-            # model.config(max_length=max_len, num_beams=args.beam_width)
-            # model.input(input_ids)
-            model.set_input(input_ids, max_length=max_len, num_beams=args.beam_width)
-            # first token
-            start_time = time.perf_counter()
-            next_tokens = model.forward()
-            first_token_time = time.perf_counter() - start_time
-            first_token_times.append(first_token_time)
-            # remaining tokens
-            cost_list = []
-            token_list = [next_tokens.view(-1).tolist()[0]]
-            while not model.is_done():
+            for i, input_ids in enumerate(inputs):
+                model.set_input(input_ids, max_length=max_lens[i])
+                # first token
                 start_time = time.perf_counter()
                 next_tokens = model.forward()
-                next_time = time.perf_counter() - start_time
-                cost_list.append(next_time)
-                token_list.append(next_tokens.view(-1).tolist()[0])
-            generated_ids = model.finalize()
-            total_times.append(first_token_time + sum(cost_list))
-            next_token_times += cost_list
-            response = tokenizer.decode(token_list, skip_special_tokens=True)
-            print(f"    Response: {response}")
+                first_token_time = time.perf_counter() - start_time
+                first_token_times.append(first_token_time)
+                # remaining tokens
+                cost_list = []
+                token_list = [next_tokens.view(-1).tolist()[0]]
+                while not model.is_done():
+                    start_time = time.perf_counter()
+                    next_tokens = model.forward()
+                    next_time = time.perf_counter() - start_time
+                    cost_list.append(next_time)
+                    token_list.append(next_tokens.view(-1).tolist()[0])
+                generated_ids = model.finalize()
+                total_times.append(first_token_time + sum(cost_list))
+                next_token_times += cost_list
+                if isinstance(prompt_pool, dict):
+                    response = tokenizer.decode(token_list, skip_special_tokens=True)
+                    print(f"    Response: {response}")
+                else:
+                    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+                    print(f"    Response:")
+                    for r in response:
+                        print(f"    \t{r}")
 
         total_times = list(map(lambda x: x * 1000, total_times))
         first_token_times = list(map(lambda x: x * 1000, first_token_times))
@@ -248,8 +274,9 @@ if __name__ == "__main__":
         print(f"Next token Min Latency:\t{np.min(next_token_times):.2f} ms")
         print(f"Next token P90 Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Next token Avg Latency:\t{np.mean(next_token_times):.2f} ms")
-        print(f"Next token Latency:\t{np.percentile(next_token_times, 90):.2f} ms")
         print(f"Throughput without 1st token:\t{1000 / np.mean(next_token_times) * args.batch_size:.2f} tokens/s")
+        print(f"TTFT:\t{np.mean(first_token_times):.2f} ms")
+        print(f"TPOT:\t{np.mean(next_token_times):.2f} ms")
         print("=" * 120, "\n" * 3)
 
         if args.csv != "":
@@ -274,7 +301,6 @@ if __name__ == "__main__":
                 "Fake_model": True if os.environ.get("XFT_FAKE_MODEL", "-1") == "1" else False,
                 "Response": response,
             }
-            # print(rst)
             check_and_update_csv(args.csv, rst)
 
     else:

@@ -96,10 +96,6 @@ while [ -n "$1" ]; do
         output_tokens=$2
         shift 2
         ;;
-    -b | --beam_width)
-        beam_width=$2
-        shift 2
-        ;;
     -i | --iter)
         iter=$2
         shift 2
@@ -114,6 +110,10 @@ while [ -n "$1" ]; do
         ;;
     -kvd | --kv_cache_dtype)
         kv_cache_dtype=$2
+        shift 2
+        ;;
+    -p | --prompt_path)
+        prompt_path=$2
         shift 2
         ;;
     "")
@@ -144,11 +144,12 @@ sockets_id=${sockets_id:-0}
 batch_size=${batch_size:-1}
 input_tokens=${input_tokens:-32}
 output_tokens=${output_tokens:-32}
-beam_width=${beam_width:-1}
 iter=${iter:-10}
 warmup=${warmup:-2}
+prompt_path=${prompt_path:-"${SCRIPT_DIR}"/prompt.json}
 
-Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens}, beam width ${beam_width} and iteration ${iter} on ${sockets} sockets system."
+Info "You are using model ${model_name}, dtype ${dtype}, kvcache dtype ${kv_cache_dtype}, batch size ${batch_size}, input tokens ${input_tokens}, output tokens ${output_tokens} and iteration ${iter} on ${sockets} sockets system."
+Info "Prompt path is ${prompt_path}."
 
 if [ "$sockets" == 1 ]; then
     Info "Using the socket ${sockets_id}."
@@ -163,22 +164,15 @@ export XFT_CLOUD_ENV=${XFT_CLOUD_ENV:-0}
 benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_path "${token_path}" \
     --model_path "${model_path}" \
-    --prompt_path "${SCRIPT_DIR}"/prompt.json \
+    --prompt_path "${prompt_path}" \
     --model_name "${model_name}" \
     --dtype "${dtype}" \
     --kv_cache_dtype "${kv_cache_dtype}" \
     --batch_size "${batch_size}" \
     --token_in ${input_tokens}	\
     --token_out ${output_tokens} \
-    --beam_width ${beam_width} \
     --iteration ${iter} \
     --warmup ${warmup}"
-
-if [[ ${model_name} == *"llama"* ]] || [[ ${model_name} == *"baichuan-"* ]] || [[ ${model_name} == *"qwen-"* ]]; then
-    benchmark_cmd+=" --padding=False"
-else
-    benchmark_cmd+=" --padding=True"
-fi
 
 if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"

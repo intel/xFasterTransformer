@@ -58,7 +58,6 @@ Specify batch size using `-tp` or `--token_path`. (If not been specified, will u
 Specify batch size using `-bs` or `--batch_size`. (default 1)
 Specify input tokens using `-in` or `--input_tokens`. (default 32)
 Specify output tokens using `-out` or `--output_tokens`. (default 32)
-Specify beam width using `-b` or `--beam_width`. (default 1)
 Specify inference iteration using `-i` or `--iter`. (default 10)
 
 
