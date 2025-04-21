@@ -182,14 +182,14 @@ void *createDeepSeekMoE(int layerId, int numExperts, int numExpPerTok, int hidde
         ffnParams->routedExperts[i].up.weight_scale = (float *)const_cast<void *>(gateUpScales) + i * guSOffset + guSOffset / 2;
         ffnParams->routedExperts[i].down.weight_scale = (float *)const_cast<void *>(downScales) + i * dSOffset;
 
-        // gating router default on GPU
-        ffnParams->gating.weight = nullptr;
-        // if topkMethod on CPU
-        if (gatingCorrBias != nullptr)
-	    ffnParams->gating.bias = (float *)const_cast<void *>(gatingCorrBias) + i * ctx->sparseExperts;
-        else
-            ffnParams->gating.bias = nullptr;
     }
+    // gating router default on GPU
+    ffnParams->gating.weight = nullptr;
+    // if topkMethod on CPU
+    if (gatingCorrBias != nullptr)
+        ffnParams->gating.bias = (float *)const_cast<void *>(gatingCorrBias);
+    else
+        ffnParams->gating.bias = nullptr;
 
     deepseekMoE->template setWeights<e4m3_t>(ctx, ffnParams);
 

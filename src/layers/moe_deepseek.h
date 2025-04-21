@@ -191,6 +191,13 @@ public:
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
 #endif
 
+        forwardExpertsWithLogits(ctx, normBuf, output, M, normStride, oStride, gateLogits);
+    }
+
+
+    void forwardExpertsWithLogits(DecoderContext *ctx, ImT *normBuf, OutT *output, int M, int normStride, int oStride, OutT *gateLogits) {
+        const int expertNum = this->experts.size();
+        // print each value in gateLogits
         {
             TimeLine t("MoE_Sigmoid");
             // computing gating scores
@@ -203,11 +210,6 @@ public:
         dbg.dumpMatrix(gateLogits, M, expertNum, expertNum);
 #endif
 
-        forwardExpertsWithLogits(ctx, normBuf, output, M, normStride, oStride, gateLogits);
-    }
-
-
-    void forwardExpertsWithLogits(DecoderContext *ctx, ImT *normBuf, OutT *output, int M, int normStride, int oStride, OutT *gateLogits) {
         int topkExpert = ctx->numExpertsPerTok;
         int *selExperts = ctx->getBuffer<int>("selExperts", M * topkExpert, ctx->device);
         float *expertWeight = ctx->getBuffer<float>("expertWeight", M * topkExpert, ctx->device);
@@ -440,8 +442,8 @@ private:
             float *expertWeight, int topkExpert) {
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
-            topKMasked(gateLogits + i * N, N, topkExpert, selGroups + i * topkGroup, nGroups, selExperts + i * topkExpert,
-                expertWeight + i * topkExpert);
+            topKMasked(gateLogits + i * N, topkExpert, selGroups + i * topkGroup, N / nGroups, topkGroup,
+                selExperts + i * topkExpert, expertWeight + i * topkExpert);
         }
     }
 
@@ -479,8 +481,9 @@ private:
         int idx2 = -1;
         for (int j = 0; j < N; ++j) {
             float val = logits[j];
-	    if (corrBias != nullptr)
+            if (corrBias != nullptr) {
                 val += corrBias[j];
+            }
             if (val > max1) {
                 max2 = max1;
                 idx2 = idx1;
@@ -511,15 +514,13 @@ private:
 
     // the main difference between this topKMasked and topK is that this function will ignore the elements that are not in selGroups
     template <typename T>
-    void topKMasked(T *array, int N, int topk, int *selGroups, int nGroups, int *selIdx, float *selWeight) {
+    void topKMasked(T *array, int topk, int *selGroups, int groupSize, int topkGroup, int *selIdx, float *selWeight) {
         // groupId for each element is i / groupSize
         std::vector<std::pair<T, int>> vec;
-        int groupSize = N / nGroups;
-        for (int i = 0; i < nGroups; ++i) {
-            if (std::find(selGroups, selGroups + nGroups, i) != selGroups + nGroups) {
-                for (int j = 0; j < groupSize; ++j)
-                    vec.emplace_back(array[i * groupSize + j], i * groupSize + j);
-            }
+        for (int i = 0; i < topkGroup; ++i) {
+            int groupId = selGroups[i];
+            for (int j = 0; j < groupSize; ++j)
+                vec.emplace_back(array[groupId * groupSize + j], groupId * groupSize + j);
         }
         std::partial_sort(vec.begin(), vec.begin() + topk, vec.end(), std::greater<std::pair<T, int>>());
         for (int i = 0; i < topk; ++i) {
@@ -583,14 +584,9 @@ private:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("Sparse_GateUp %d x (%d %d):\n", nExperts, lda1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[0], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[1], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[2], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[3], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[4], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[5], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[6], 1, N1, ldc1[0]);
-        dbg.dumpMatrix(imOuts[nExperts - 1], 1, N1, ldc1[0]);
+        for (int i = 0; i < nExperts; ++i) {
+            dbg.dumpMatrix(imOuts[i], 1, N1, ldc1[i]);
+        }
 #endif
 
         {
@@ -605,14 +601,9 @@ private:
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", nExperts, 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[0], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[1], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[2], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[3], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[4], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[5], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[6], 1, N1 / 2, ldc1[0]);
-        dbg.dumpMatrix(imOuts[nExperts - 1], 1, N1 / 2, ldc1[0]);
+        for (int i = 0; i < nExperts; ++i) {
+            dbg.dumpMatrix(imOuts[i], 1, N1 / 2, ldc1[i]);
+        }
 #endif
 
         int lda2[nExperts];
