@@ -199,12 +199,12 @@ if __name__ == "__main__":
 
     model_max_seq_len = _config[_config.sections()[0]]["max_pos_seq_len"]
     model_max_seq_len = int(model_max_seq_len) if model_max_seq_len.isdigit() else 0
+    inputs, max_lens = get_inputs(args, prompt_pool, tokenizer)
 
     if model.rank == 0:
         # input prompt
         print("======start=======")
         print("[INFO] input argparse = ", args)
-        inputs, max_lens = get_inputs(args, prompt_pool, tokenizer)
         # Master
         input_token_nums = sum([torch.numel(input_ids) for input_ids in inputs])
         if isinstance(prompt_pool, dict):
@@ -305,5 +305,5 @@ if __name__ == "__main__":
             check_and_update_csv(args.csv, rst)
 
     else:
-        for i in range(args.warmup + args.iteration):
+        for i in range((args.warmup + args.iteration) * len(inputs)):
             model.generate()
