@@ -86,5 +86,5 @@ setup(
     platforms="x86_64",
     ext_modules=ext_modules,
     cmdclass=cmdclass,
-    install_requires=["torch>=2.3.0, <2.4.0"],
+    install_requires=["torch>=2.7.0, <2.8.0"],
 )

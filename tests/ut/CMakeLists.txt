@@ -17,19 +17,6 @@ cmake_minimum_required(VERSION 3.15.1)
 
 project(LLM_DISTRIBUTED_INFER)
 
-# GTEST uses ABI=1 and Pytorch defaultly uses ABI=0
-string(FIND "${CMAKE_CXX_FLAGS}" "-D_GLIBCXX_USE_CXX11_ABI=0" FLAG_INDEX)
-
-if(FLAG_INDEX GREATER -1)
-    message(STATUS
-                "Found -D_GLIBCXX_USE_CXX11_ABI=0 in CMAKE_CXX_FLAGS. Replacing with -D_GLIBCXX_USE_CXX11_ABI=1."
-    )
-    string(REPLACE "-D_GLIBCXX_USE_CXX11_ABI=0" "-D_GLIBCXX_USE_CXX11_ABI=1" CMAKE_CXX_FLAGS
-                   "${CMAKE_CXX_FLAGS}")
-else()
-    message(STATUS "Did not find -D_GLIBCXX_USE_CXX11_ABI=0 in CMAKE_CXX_FLAGS.")
-endif()
-
 find_package(GTest REQUIRED)
 find_package(oneCCL REQUIRED)
 include_directories(${GTEST_INCLUDE_DIRS})

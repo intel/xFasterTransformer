@@ -137,8 +137,6 @@ docker run -it \
   pip install torch --index-url https://download.pytorch.org/whl/cpu
   ```
 
-- 对于 GPU 版本的 xFT，由于 DPC++ 要求 ABI=1，因此需要安装 [torch-whl-list](https://download.pytorch.org/whl/torch/) 中 ABI=1 的 [torch==2.3.0+cpu.cxx11.abi](https://download.pytorch.org/whl/cpu-cxx11-abi/torch-2.3.0%2Bcpu.cxx11.abi-cp38-cp38-linux_x86_64.whl#sha256=c34512c3e07efe9b7fb5c3a918fef1a7c6eb8969c6b2eea92ee5c16a0583fe12)。
-
 ##### 安装依赖的库
 
 请安装所依赖的libnuma库:
