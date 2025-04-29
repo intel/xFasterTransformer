@@ -1,4 +1,14 @@
 # CHANGELOG
+# [Version v2.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.0)
+v2.1.0 Qwen3 Series models supported!🎉
+
+# Models
+- Support Qwen3 series models.
+
+## Performance
+- Optimize DeepSeek-R1 fp8_e4m3 performance.
+
+
 # [Version v2.0.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.0.0)
 v2.0.0 DeepSeek-R1 671B supported!🎉
 
