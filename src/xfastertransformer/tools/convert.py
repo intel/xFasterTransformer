@@ -51,7 +51,7 @@ def get_name_and_param(model_dir: Path):
         if num_parts > 1
         else safetensors_files
     )
-    print(f"Found {num_parts} model parts: {file_list}")
+    print(f"Found {num_parts} model parts")
     for part_name in file_list:
         ctx: ContextManager[Any]
         from safetensors import safe_open
@@ -63,6 +63,38 @@ def get_name_and_param(model_dir: Path):
         with ctx as model_part:
             for name in model_part.keys():
                 yield name, model_part.get_tensor(name)
+
+# generator, total_tensors = get_name_and_param_with_count(model_dir)
+# for name, tensor in tqdm(generator, total=total_tensors, desc="Processing tensors"):
+#     pass
+def get_name_and_param_with_count(model_dir: Path):
+    all_files = os.listdir(model_dir)
+    safetensors_files = [f for f in all_files if f.endswith(".safetensors")]
+    num_parts = len(safetensors_files)
+    file_list = (
+        [f"model-{n:05}-of-{num_parts:05}.safetensors" for n in range(1, num_parts + 1)]
+        if num_parts > 1
+        else safetensors_files
+    )
+    print(f"Found {num_parts} model parts")
+
+    # Count total tensors
+    total_tensors = 0
+    for part_name in file_list:
+        from safetensors import safe_open
+
+        with safe_open(Path(model_dir) / part_name, framework="pt", device="cpu") as model_part:
+            total_tensors += len(model_part.keys())
+
+    def generator():
+        for part_name in file_list:
+            from safetensors import safe_open
+
+            with safe_open(Path(model_dir) / part_name, framework="pt", device="cpu") as model_part:
+                for name in model_part.keys():
+                    yield name, model_part.get_tensor(name)
+
+    return generator(), total_tensors
 
 
 def map_np_dtype_to_torch(dtype: np.dtype):

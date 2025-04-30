@@ -20,11 +20,15 @@ import os
 import torch
 from tqdm import tqdm
 import sys
+from pathlib import Path
 
 from transformers import AutoModelForCausalLM, AutoConfig
 from transformers.generation import GenerationConfig
 
-from .convert import BaseModelConvert, get_name_and_param
+from .convert import BaseModelConvert, get_name_and_param_with_count
+
+from glob import glob
+from safetensors.torch import safe_open
 
 
 class Qwen3Convert(BaseModelConvert):
@@ -172,19 +176,16 @@ class Qwen3Convert(BaseModelConvert):
         )
         hf_config = vars(model_config)
 
-        # load the model
-        model = AutoModelForCausalLM.from_pretrained(
-            input_dir,
-            low_cpu_mem_usage=True,
-        )
-
         config_ini = self.save_model_config(hf_config, output_dir, dtype)
         sec_name = hf_config["model_type"]
         num_attention_heads = config_ini[sec_name]["head_num"]
         num_key_value_heads = config_ini[sec_name]["kv_head_num"]
 
         print("Processing ...")
-        state_dict = model.state_dict()
+        state_dict = dict()
+        generator, total_tensors = get_name_and_param_with_count(Path(input_dir))
+        for name, tensor in tqdm(generator, total=total_tensors, desc="Loading weights"):
+            state_dict[name] = tensor
         model_named_parameters = dict()
         for name, param in state_dict.items():
             # print(f"name = {name}")
@@ -209,21 +210,23 @@ class Qwen3Convert(BaseModelConvert):
             else:
                 model_named_parameters[name] = param.permute(1, 0) if len(param.shape) == 2 else param
 
+        del state_dict
+
         pool = multiprocessing.Pool(processes)
         with tqdm(total=len(model_named_parameters)) as pbar:
             for name, param in model_named_parameters.items():
                 if name == "model.embed_tokens.weight":
-                    param.detach().cpu().to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(os.path.join(output_dir, "model.wte.bin"))
+                    param.to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(os.path.join(output_dir, "model.wte.bin"))
                     if hf_config["tie_word_embeddings"] == True:
                         param.detach().to(self.torch_dtype).view(self.torch_view_dtype).cpu().numpy().tofile(
                             os.path.join(output_dir, "model.lm_head.weight.bin")
                         )
                 elif name == "model.norm.weight":
-                    param.detach().cpu().to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(
+                    param.to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(
                         os.path.join(output_dir, "model.final_layernorm.weight.bin")
                     )
                 elif name == "lm_head.weight":
-                    param.detach().cpu().to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(
+                    param.to(self.torch_dtype).view(self.torch_view_dtype).numpy().tofile(
                         os.path.join(saved_dir, "model.lm_head.weight.bin")
                     )
                 else:
@@ -238,7 +241,7 @@ class Qwen3Convert(BaseModelConvert):
                                     saved_dir,
                                     factor,
                                     new_name,
-                                    param.detach().cpu().to(self.torch_dtype).view(self.torch_view_dtype).numpy(),
+                                    param.to(self.torch_dtype).view(self.torch_view_dtype).numpy(),
                                     num_attention_heads,
                                     num_key_value_heads,
                                 )
