@@ -116,6 +116,14 @@ while [ -n "$1" ]; do
         prompt_path=$2
         shift 2
         ;;
+    -splen | --sonnet_prefix_len)
+        sonnet_prefix_len=$2
+	shift 2
+	;;
+    -sc | --sonnet_count)
+        sonnet_count=$2
+	shift 2
+	;;
     "")
         shift
         break
@@ -173,6 +181,14 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --token_out ${output_tokens} \
     --iteration ${iter} \
     --warmup ${warmup}"
+
+if [ -n $sonnet_prefix_len ]; then
+    benchmark_cmd+=" --sonnet_prefix_len ${sonnet_prefix_len}"
+fi
+
+if [ -n $sonnet_count ]; then
+    benchmark_cmd+=" --sonnet_count ${sonnet_count}"
+fi
 
 if [ -n $csv ]; then
     benchmark_cmd+=" --csv=$csv"
