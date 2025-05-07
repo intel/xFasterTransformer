@@ -1,4 +1,11 @@
 # CHANGELOG
+# [Version v2.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.1)
+v2.1.1
+
+## Performance
+- Optimize Qwen3 MOE models conversion.
+
+
 # [Version v2.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.0)
 v2.1.0 Qwen3 Series models supported!🎉
 
