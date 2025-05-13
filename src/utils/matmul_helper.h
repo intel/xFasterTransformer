@@ -1711,6 +1711,10 @@ public:
             GEMMVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_C",
                 xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_C(M, N, K, (const XDNN_BF16 *)A, lda, (const XDNN_E4M3 **)packedBBatch,
                     (XDNN_BF16 **)CList, ldcList, scalesList, ldsList, blockSize, alphaList, batchSize));
+        } else if constexpr (std::is_same_v<WeiT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t> && std::is_same_v<InT, bfloat16_t>) {
+            GEMMVERBOSE("xdnn_small_amx_sgemm_bf16bf16bf16_compute_batch_C",
+                xdnn_small_amx_sgemm_bf16bf16bf16_compute_BA16a64b2a_batch_C(M, N, K, (const XDNN_BF16 *)A, lda, (const XDNN_BF16 **)packedBBatch,
+                    (XDNN_BF16 **)CList, ldcList, alphaList, batchSize));
         } else {
             printf("%s:%d: Unsupported data type for compute_batch_C", __FILE__, __LINE__);
             exit(-1);
@@ -1724,7 +1728,11 @@ public:
             GEMMVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A",
                 xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A(M, N, K, (const XDNN_BF16 **)A, ldaList, (const XDNN_E4M3 **)packedBBatch,
                     (XDNN_BF16 *)C, ldc, scalesList, ldsList, blockSize, alphaList, batchSize));
-        } else {
+        } else if constexpr (std::is_same_v<WeiT, bfloat16_t> && std::is_same_v<OutT, bfloat16_t> && std::is_same_v<InT, bfloat16_t>) {
+            GEMMVERBOSE("xdnn_small_amx_sgemm_bf16bf16bf16_compute_batch_A",
+                xdnn_small_amx_sgemm_bf16bf16bf16_compute_BA16a64b2a_batch_A(M, N, K, (const XDNN_BF16 **)A, ldaList, (const XDNN_BF16 **)packedBBatch,
+                    (XDNN_BF16 *)C, ldc, alphaList, batchSize));
+        } else{
             printf("%s:%d: Unsupported data type for compute_residential_batch_A", __FILE__, __LINE__);
             exit(-1);
         }
