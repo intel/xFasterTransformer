@@ -182,15 +182,15 @@ benchmark_cmd="python "${SCRIPT_DIR}"/benchmark.py \
     --iteration ${iter} \
     --warmup ${warmup}"
 
-if [ -n $sonnet_prefix_len ]; then
+if [ -n "${sonnet_prefix_len}" ]; then
     benchmark_cmd+=" --sonnet_prefix_len ${sonnet_prefix_len}"
 fi
 
-if [ -n $sonnet_count ]; then
+if [ -n "${sonnet_count}" ]; then
     benchmark_cmd+=" --sonnet_count ${sonnet_count}"
 fi
 
-if [ -n $csv ]; then
+if [ -n "${csv}" ]; then
     benchmark_cmd+=" --csv=$csv"
 fi
 
