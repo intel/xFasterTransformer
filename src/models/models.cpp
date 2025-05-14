@@ -696,6 +696,9 @@ bool Model::freeSeqs(std::vector<int> &seqIDs) {
         ret = ret && kvCacheMgr.delSequence(id);
         ret = ret && seqPool.remove(id);
     }
+
+    TimeLine t("dumpFile");
+    t.dumpFile("timeline.json");
     return ret;
 }
 
