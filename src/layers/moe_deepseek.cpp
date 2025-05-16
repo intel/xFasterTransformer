@@ -155,7 +155,8 @@ void *createDeepSeekMoE(int layerId, int numExperts, int numExpPerTok, int hidde
         ctx->normTopKProb = normTopKProb;
 
         ctx->topkMethod = "noaux_tc";
-        ctx->routedScalingFac = 2.5;
+        // set routedScalingFac 1.0, since vllm/sglang not using factor here
+        ctx->routedScalingFac = 1.0;
     }
 
 

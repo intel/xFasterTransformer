@@ -256,7 +256,7 @@ public:
         // 3. Select top 8 experts in selected 4 groups for each token idx-> [M, topk_expert] wei-> [M, topk_expert]
         {
             TimeLine t("MoE_SelectExperts");
-            maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert);
+            maskedSelectTopKExperts(gateLogits, M, expertNum, nGroups, selGroups, topkGroup, selExperts, expertWeight, topkExpert, gatingScoreCorrBias.Data());
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("seleted Experts & Weight: \n");
@@ -439,11 +439,11 @@ private:
 
     template <typename T>
     void maskedSelectTopKExperts(T *gateLogits, int M, int N, int nGroups, int *selGroups, int topkGroup, int *selExperts,
-            float *expertWeight, int topkExpert) {
+            float *expertWeight, int topkExpert, float *corrBias) {
 #pragma omp parallel for
         for (int i = 0; i < M; ++i) {
             topKMasked(gateLogits + i * N, topkExpert, selGroups + i * topkGroup, N / nGroups, topkGroup,
-                selExperts + i * topkExpert, expertWeight + i * topkExpert);
+                selExperts + i * topkExpert, expertWeight + i * topkExpert, corrBias);
         }
     }
 
@@ -514,19 +514,22 @@ private:
 
     // the main difference between this topKMasked and topK is that this function will ignore the elements that are not in selGroups
     template <typename T>
-    void topKMasked(T *array, int topk, int *selGroups, int groupSize, int topkGroup, int *selIdx, float *selWeight) {
+    void topKMasked(T *array, int topk, int *selGroups, int groupSize, int topkGroup, int *selIdx, float *selWeight, float *corrBias) {
         // groupId for each element is i / groupSize
-        std::vector<std::pair<T, int>> vec;
+        std::vector<std::pair<float, int>> vec;
         for (int i = 0; i < topkGroup; ++i) {
-            int groupId = selGroups[i];
+            int startId = selGroups[i] * groupSize;
             for (int j = 0; j < groupSize; ++j)
-                vec.emplace_back(array[groupId * groupSize + j], groupId * groupSize + j);
+                if (corrBias != nullptr)
+                    vec.emplace_back((float)array[startId + j] + corrBias[startId + j], startId + j);
+                else
+                    vec.emplace_back((float)array[startId + j], startId + j);
         }
-        std::partial_sort(vec.begin(), vec.begin() + topk, vec.end(), std::greater<std::pair<T, int>>());
+        std::partial_sort(vec.begin(), vec.begin() + topk, vec.end(), std::greater<std::pair<float, int>>());
         for (int i = 0; i < topk; ++i) {
             selIdx[i] = vec[i].second;
             if (selWeight != nullptr)
-                selWeight[i] = vec[i].first;
+                selWeight[i] = (float)array[selIdx[i]];
         }
     }
 
