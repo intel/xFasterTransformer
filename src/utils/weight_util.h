@@ -209,7 +209,7 @@ int loadWeight2(std::string filename, void *ptr, int size, ParamType type, DataT
         case ParamType::INT8: file_size = loadWeight2<int8_t>(filename, (int8_t*)ptr, size, w_type, required); break;
         case ParamType::INT4: file_size = loadWeight2<uint4x2_t>(filename, (uint4x2_t*)ptr, size, w_type, required); break;
         case ParamType::FP8_E4M3: file_size = loadWeight2<e4m3_t>(filename, (e4m3_t*)ptr, size, w_type, required); break;
-        default: printf("Not support loading %s with ParamType=%d", filename.c_str(), type);
+        default: printf("Not support loading %s with ParamType=%d", filename.c_str(), static_cast<int>(type));
     }
     return file_size;
 }

@@ -112,7 +112,7 @@ struct DenseLayerParams {
             case ParamType::BF16: return sizeof(uint16_t);
             case ParamType::FP32: return sizeof(float);
             case ParamType::FP8_E4M3: return 1;
-            default: printf("Unsupported data type in DenseLayerParams::getWidth: %d\n", type); return 0;
+            default: printf("Unsupported data type in DenseLayerParams::getWidth: %d\n", static_cast<int>(type)); return 0;
         }
     }
 };
