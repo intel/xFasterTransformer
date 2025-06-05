@@ -102,6 +102,7 @@ def map_np_dtype_to_torch(dtype: np.dtype):
         np.float32: [torch.float32, torch.float32],
         np.float16: [torch.float16, torch.float16],
         np.uint16: [torch.bfloat16, torch.uint16],
+        np.uint8: [torch.float8_e4m3fn, torch.uint8],
     }
     if dtype in MAPPING:
         return MAPPING[dtype]

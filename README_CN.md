@@ -172,7 +172,7 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
 1. 首先下载 huggingface 格式的模型。
 2. 然后，使用 xfastertransformer 中的模型转换模块将模型转换为 xFasterTransformer 格式。如果没有提供输出目录，转换后的模型将被默认放置到 `${HF_DATASET_DIR}-xft`.
     ```
-    python -c 'import xfastertransformer as xft; xft.LlamaConvert().convert("${HF_DATASET_DIR}","${OUTPUT_DIR}")'
+    python -c "import xfastertransformer as xft; xft.DeepSeekR1Convert().convert('${HF_DATASET_DIR}', '${OUTPUT_DIR}')"
     ```
     ***PS: 由于模型文件和 `transformers` 版本之间可能存在兼容性问题，请选择相应的 `transformers` 版本。***
     
