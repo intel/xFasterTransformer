@@ -2,4 +2,4 @@
 line-length = 120
 target-version = ["py38", "py39", "py310", "py311"]
 [build-system]
-requires = ["setuptools", "cmake"]
+requires = ["setuptools", "cmake<4.0"]
