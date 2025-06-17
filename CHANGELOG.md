@@ -1,5 +1,14 @@
 # CHANGELOG
-# [Version v2.1.0](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.1)
+# [Version v2.1.2](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.2)
+v2.1.2
+
+# Models
+- Fix DeepSeek-R1 convert issue.
+
+## Performance
+- Upgrade xDNN to add new method of FP8 conversion to optimize DeepSeek-R1.
+
+# [Version v2.1.1](https://github.com/intel/xFasterTransformer/releases/tag/v2.1.1)
 v2.1.1
 
 ## Performance
