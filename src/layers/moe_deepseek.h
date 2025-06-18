@@ -81,6 +81,7 @@ public:
             // setWeights for each expert
 #pragma omp parallel for num_threads(std::min(omp_get_max_threads(), 64))
             for (int i = 0; i < expertNum; ++i) {
+                ffn->routedExperts[i].expid = i;
                 experts[i]->template setWeights<WType>(ctx, ffn->routedExperts[i]);
             }
         }
@@ -337,6 +338,7 @@ public:
                     if (selExperts[i * topkExpert + j] < 0) break;
                     ++nExperts;
                 }
+		if (nExperts == 0) continue;
                 sparseForward(ctx, normBuf + i * normStride, selExperts + i * topkExpert, expertWeight + i * topkExpert,
                     nExperts, tokenData, hiddenSize, output + i * oStride, oStride);
             }
@@ -544,15 +546,13 @@ private:
         int blockSize = 128;
         float alpha[nExperts];
         OutT *imOuts[nExperts];
+        int N1[nExperts], ldc1[nExperts], K2[nExperts];
 
          // just for 1 token
         int M = 1;
 
         int K1 = hiddenSize;
-        // concat gate and up weights
-        int N1 = this->experts[0]->splitSize * 2;
-
-        int K2 = this->experts[0]->splitSize;
+        int lda1 = hiddenSize;
         int N2 = hiddenSize;
 
         {
@@ -562,33 +562,40 @@ private:
                 scalesGUList[i] = this->experts[selExperts[i]]->catGUScales.Data();
                 ldaGUScales[i] = (K1 + blockSize - 1) / blockSize;
                 alpha[i] = 1.0;
-                imOuts[i] = ctx->getBuffer<OutT>("sparseImOut_" + std::to_string(i), M * N1, ctx->device);
 
+                // concat gate and up weights
+                N1[i] = this->experts[selExperts[i]]->splitSize * 2;
+                ldc1[i] = N1[i];
+                K2[i] = N1[i] / 2;
+
+                imOuts[i] = ctx->getBuffer<OutT>("sparseImOut_" + std::to_string(i), M * N1[i], ctx->device);
                 weightsDList[i] = this->experts[selExperts[i]]->downWeight.Data();
-                ldaDScales[i] = (K2 + blockSize - 1) / blockSize;
+                ldaDScales[i] = (K2[i] + blockSize - 1) / blockSize;
                 scalesDList[i] = this->experts[selExperts[i]]->downScales.Data();
             }
-        }
-
-        int lda1 = hiddenSize;
-        int ldc1[nExperts];
-        for (int i = 0; i < nExperts; ++i) {
-            ldc1[i] = N1;
         }
 
 #ifdef XFT_DEBUG
         dbg.debugPrint("SparseFW_Input (%d %d):\n", 1, hiddenSize);
         dbg.dumpMatrix(input, 1, hiddenSize, lda1);
+        dbg.dumpMatrix(N1, 1, nExperts, nExperts);
 #endif
         {
             TimeLine t("SparseFW_GateUp");
-            ctx->mmHelper->compute_batch_C(M, N1, K1, alpha, input, lda1, weightsGUList, scalesGUList, imOuts, ldc1, ldaGUScales,
-                blockSize, nExperts);
-        }
+            if (Env::getInstance().getMoESplitBalanceDim() == 1) {
+                // For sparse mlp, we use compute_batch_CM to compute experts in different dimensions
+                ctx->mmHelper->compute_batch_CM(M, N1, K1, alpha, input, lda1, weightsGUList, scalesGUList, imOuts, ldc1,
+                    ldaGUScales, blockSize, nExperts);
+            } else {
+                // For sparse mlp with concat experts, we use compute_batch_C to compute experts in the same dimension
+                ctx->mmHelper->compute_batch_C(M, N1[0], K1, alpha, input, lda1, weightsGUList, scalesGUList, imOuts, ldc1,
+                    ldaGUScales, blockSize, nExperts);
+            }
+	}
 #ifdef XFT_DEBUG
         dbg.debugPrint("Sparse_GateUp %d x (%d %d):\n", nExperts, lda1, ldc1[0]);
         for (int i = 0; i < nExperts; ++i) {
-            dbg.dumpMatrix(imOuts[i], 1, N1, ldc1[i]);
+            dbg.dumpMatrix(imOuts[i], 1, N1[i], ldc1[i]);
         }
 #endif
 
@@ -603,9 +610,9 @@ private:
             }
         }
 #ifdef XFT_DEBUG
-        dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", nExperts, 1, N1 / 2, ldc1[0]);
+        dbg.debugPrint("Sparse_Silu %d x (%d %d, %d):\n", nExperts, 1, N1[0] / 2, ldc1[0]);
         for (int i = 0; i < nExperts; ++i) {
-            dbg.dumpMatrix(imOuts[i], 1, N1 / 2, ldc1[i]);
+            dbg.dumpMatrix(imOuts[i], 1, N1[i] / 2, ldc1[i]);
         }
 #endif
 
@@ -617,8 +624,15 @@ private:
         int ldc2 = oStride;
         {
             TimeLine t("SparseFW_Down");
-            ctx->mmHelper->compute_batch_A(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
-                scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
+            if (Env::getInstance().getMoESplitBalanceDim() == 1) {
+                // For sparse mlp, we use compute_batch_AM to compute experts in different dimensions
+                ctx->mmHelper->compute_batch_AM(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
+                    scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
+            } else {
+                // For sparse mlp with concat experts, we use compute_batch_A to compute experts in the same dimension
+                ctx->mmHelper->compute_batch_A(M, N2, K2[0], expertWeight, (const bfloat16_t**)imOuts, lda2,
+                    weightsDList, scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
+            }
             xft::addto(output, tokenData, 1.0, hiddenSize);
         }
 #ifdef XFT_DEBUG

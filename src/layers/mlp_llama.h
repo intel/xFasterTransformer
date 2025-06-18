@@ -51,7 +51,7 @@ public:
     void setWeights(DecoderContext *ctx, const OriWeiT *gateW, const float *gateS, const float *gateZ,
             const float * /*unused*/, const OriWeiT *upW, const float *upS, const float *upZ, const float * /*unused*/,
             const float *normW, const float * /*unused*/, const OriWeiT *downW, const float *downS, const float *downZ,
-            const float *downB, bool trans = true) {
+            const float *downB, bool trans = true, int expid = 0) {
         int hiddenSize = ctx->hiddenSize;
         int imSize = ctx->intermediateSize;
         if (layerId >= ctx->firstKDenseReplace && ctx->moeIntermediateSize > 0) {
@@ -67,12 +67,18 @@ public:
 
         // for e4m3_t, size should be multiple of 128 (64 * 2)
         int gran = std::is_same_v<WeiT, e4m3_t> ? 2 : 1;
-        // use layerId to make sure the split is balanced in MoE
-        auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, (ctx->splitIdx + this->layerId) % ctx->numSplit);
+        // make sure the split of memory footprint is balanced in MoE
+        int blncIdx = ctx->splitIdx;
+        if (Env::getInstance().getMoESplitBalanceDim() == 0) {
+            blncIdx = (blncIdx + this->layerId) % ctx->numSplit;
+        } else if (Env::getInstance().getMoESplitBalanceDim() == 1) {
+            blncIdx = (blncIdx + expid) % ctx->numSplit;
+        }
+        auto it = SplitUtil::getTaskRange(imSize, gran, ctx->numSplit, blncIdx);
         this->splitSize = it.second - it.first;
         this->splitOffset = it.first;
 
-	// the last "true" is placeholder, unused
+        // the last "true" is placeholder, unused
         ctx->mmHelper->convertWeight(trans, hiddenSize, imSize, gateW, gateS, gateZ, splitOffset, splitSize, true, quantizedGateWeight,
                 gateWeightScale, gateWeightZero, gateWeightSum, true);
         ctx->mmHelper->convertWeight(trans, hiddenSize, imSize, upW, upS, upZ, splitOffset, splitSize, true, quantizedUpWeight,
@@ -174,7 +180,7 @@ public:
         bool trans = ffn.gate.wtrans;
         setWeights(ctx, (WType *)ffn.gate.weight, ffn.gate.weight_scale, ffn.gate.weight_zp, ffn.gate.bias,
                 (WType *)ffn.up.weight, ffn.up.weight_scale, ffn.up.weight_zp, ffn.up.bias, nullptr, nullptr,
-                (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, trans);
+                (WType *)ffn.down.weight, ffn.down.weight_scale, ffn.down.weight_zp, ffn.down.bias, trans, ffn.expid);
 
         if (std::is_same_v<WeiT, e4m3_t>) {
             prepareFP8Scales(ctx, ffn.gate, ffn.up, catGUScales, true, trans);

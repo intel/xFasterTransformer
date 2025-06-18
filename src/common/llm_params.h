@@ -233,6 +233,7 @@ struct ExpertParams {
     DenseLayerParams gate;
     DenseLayerParams up;
     DenseLayerParams down;
+    int expid;
 
     ExpertParams() : gate {}, up {}, down {} {}
     ExpertParams(int hiddenSize, int intermediateSize, ParamType denseWType, bool wTrans = false)

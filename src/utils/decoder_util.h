@@ -523,21 +523,19 @@ public:
     }
 #else
     template <typename T1, typename T2>
-    static void siluSumBatch(T1 *input[], T2 *output[], int batchSize, int seqLen, int hiddenSize) {
-        int N = hiddenSize / 2;
-        int stride = hiddenSize;
+    static void siluSumBatch(T1 *input[], T2 *output[], int batchSize, int seqLen, int *cols) {
         __m512 one = _mm512_set1_ps(1.f);
         __m512 negOne = _mm512_set1_ps(-1.f);
-#pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(2)
         for (int64_t b = 0; b < batchSize; ++b) {
             for (int64_t i = 0; i < seqLen; ++i) {
-                for (int64_t j = 0; j < N; j += 16) {
-                    T1 *src = input[b] + i * stride + j;
-                    T2 *dst = output[b] + i * stride + j;
-                    int remain = N - j;
+                for (int64_t j = 0; j < cols[b] / 2; j += 16) {
+                    T1 *src = input[b] + i * cols[b] + j;
+                    T2 *dst = output[b] + i * cols[b] + j;
+                    int remain = cols[b] / 2 - j;
                     __mmask16 mask = (remain >= 16 ? 0xffff : (1 << remain) - 1);
                     auto left = xft::load_avx512(mask, src);
-                    auto right = xft::load_avx512(mask, src + N);
+                    auto right = xft::load_avx512(mask, src + cols[b] / 2);
                     auto x0 = BertUtil::vexp(_mm512_mul_ps(left, negOne));
                     auto x1 = _mm512_add_ps(one, x0);
                     auto x2 = _mm512_div_ps(left, x1);

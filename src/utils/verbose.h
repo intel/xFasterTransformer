@@ -58,3 +58,26 @@ public:
         TimeLine t(api_func);                              \
         compute_func;                                      \
     }
+
+
+#define GEMVKVERBOSE(api_func, compute_func)                  \
+    if (Env::getInstance().getVerbose() >= 1) {               \
+        TimeLine t(api_func);                                 \
+        FunTimer timer;                                       \
+        compute_func;                                         \
+        Printer::gemm(api_func, M, N, K[0], timer.elapsed()); \
+    } else {                                                  \
+        TimeLine t(api_func);                                 \
+        compute_func;                                         \
+    }
+
+#define GEMVNVERBOSE(api_func, compute_func)                  \
+    if (Env::getInstance().getVerbose() >= 1) {               \
+        TimeLine t(api_func);                                 \
+        FunTimer timer;                                       \
+        compute_func;                                         \
+        Printer::gemm(api_func, M, N[0], K, timer.elapsed()); \
+    } else {                                                  \
+        TimeLine t(api_func);                                 \
+        compute_func;                                         \
+    }

@@ -93,6 +93,9 @@ public:
     // get MoE computing mode
     int getMoEEngine() { return moeEngine; }
 
+    // get MoE split balance method
+    int getMoESplitBalanceDim() { return moeSplitBalanceDim; }
+
 private:
     Env() {
         // init Verbose
@@ -148,6 +151,9 @@ private:
 
         // init MoE Engine
         initMoEEngine();
+
+        // init MoE Split Method
+        initMoESplitBalanceDim();
     }
 
     // Verbose
@@ -374,5 +380,20 @@ private:
                 printf("[ERROR] XFT_MOE_ENGINE value need to be greater than or equal to 0.\n");
         }
         printf("[INFO] XFT_MOE_ENGINE is set %d enabled for MoE-MLP.\n", moeEngine);
+    }
+
+    // XFT_MOE_SPLIT_BALANCE_DIM
+    // 0: split balance across layers, 1: split balance across experts
+    int moeSplitBalanceDim = 0;
+    void initMoESplitBalanceDim() {
+        char *xFTMoESplitBalanceDimValue = getenv("XFT_MOE_SPLIT_BALANCE_DIM");
+        if (xFTMoESplitBalanceDimValue != NULL) {
+            int value = atoi(xFTMoESplitBalanceDimValue);
+            if (value >= 0)
+                moeSplitBalanceDim = value;
+            else
+                printf("[ERROR] XFT_MOE_SPLIT_BALANCE_DIM value need to be greater than or equal to 0.\n");
+        }
+        printf("[INFO] XFT_MOE_SPLIT_BALANCE_DIM is set %d enabled for MoE-MLP.\n", moeSplitBalanceDim);
     }
 };
