@@ -30,6 +30,10 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+
 namespace xft {
 
 #define SHM_NAME "xft_shm_buffer"

@@ -8,6 +8,7 @@ if [ ! -d "$dir" ]; then
         cd $dir
         git checkout 2021.10
         sed -i 's/cpu_gpu_dpcpp/./g' cmake/templates/oneCCLConfig.cmake.in
+        sed -i '17i#include <cstdint>' src/ccl_cpp_utils.cpp
         mkdir build && cd build
         cmake ..
         make -j install
