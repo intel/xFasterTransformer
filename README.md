@@ -153,7 +153,9 @@ Please install libnuma package:
   git checkout <latest-tag>
   # Please make sure torch is installed when run python example
   mkdir build && cd build
+  # Notice: use gcc-13 or higher
   cmake ..
+  # If you see the error "numa.h: No such file or directory", install libnuma first, then build with "CPATH=$CONDA_PATH/include/:$CPATH make -j".
   make -j
   ```
 - Using `python setup.py`

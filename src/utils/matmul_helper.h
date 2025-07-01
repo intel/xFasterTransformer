@@ -524,12 +524,12 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
-            int amx_rows = (int)((K + 15) / 16) * 16;
-            int amx_cols = (int)((N + 63) / 64) * 64;
-            if (!weight.isShadow()) weight.Resize(amx_rows, amx_cols);
-            memset(weight.Data(), 0, sizeof(e4m3_t) * amx_rows * amx_cols);
+            int packBlkSize = 32;
+            size_t pack_size = xdnn_small_amx_sgemm_bf16f8bf16_packb_size(K, N, packBlkSize);
+            if (!weight.isShadow()) weight.Resize((pack_size + N - 1) / N, N);
+            memset(weight.Data(), 0, sizeof(e4m3_t) * pack_size);
             xdnn_small_amx_sgemm_bf16f8bf16_packb(trans, N, K, (const XDNN_E4M3 *)src.Data(), src.Stride(),
-                    (XDNN_E4M3 *)weight.Data(), 64);
+                    (XDNN_E4M3 *)weight.Data(), packBlkSize);
         }
     }
 
@@ -691,7 +691,7 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
-            if (M <= 16) {
+            if (true) {
                 assert(blockSize == 128);
                 if (lds == -1) lds = (K + 127) / 128;
                 GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute",
@@ -1509,7 +1509,7 @@ public:
 
         // E4M3
         else if constexpr (std::is_same_v<WeiT, e4m3_t>) {
-            if (M <= 16) {
+            if (true) {
                 assert(blockSize == 128);
                 if (lds == -1) lds = (K + 127) / 128;
                 GEMMVERBOSE("xdnn_gemm_bf16f8bf16_compute_residential",
