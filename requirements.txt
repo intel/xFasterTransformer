@@ -1,7 +1,7 @@
 -f https://download.pytorch.org/whl/torch_stable.html
 cmake==3.26.1
 sentencepiece==0.2.0
-torch==2.7.0+cpu
+torch==2.7.1
 transformers==4.50.0
 accelerate==1.5.1
 protobuf==5.29.5
