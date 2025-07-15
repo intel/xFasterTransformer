@@ -202,7 +202,13 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
 首先，请安装依赖项。
 - Python 依赖项
   ```bash
-  pip install -r requirements.txt
+cmake==3.26.1
+sentencepiece==0.2.0
+torch==2.7.0+cpu
+transformers==4.50.0
+accelerate==1.5.1
+protobuf==5.29.3
+tiktoken==0.9.0
   ```
   ***PS: 由于模型文件和 `transformers`版本之间可能存在兼容性问题，请选择适当的 `transformers`版本。***
 - oneCCL (用于多进程)  
@@ -449,7 +455,7 @@ and
 ***答***:这是因为通过 MPI 启动的程序读取的是 `OMP_NUM_THREADS=1`，无法从环境中正确获取相应的值。有必要根据实际情况手动设置 `OMP_NUM_THREADS` 的值。
 
 - ***问***: 为什么在转换已支持的模型时仍会遇到错误？  
-***答***: 尝试将 `transformer` 降级到合适的版本，如 `requirements.txt` 中指定的版本。这是因为不同版本的 Transformer 可能会更改某些变量的名称。
+***答***: 尝试将 `transformer` 降级到合适的版本。这是因为不同版本的 Transformer 可能会更改某些变量的名称。
 
 - ***问***：编译时遇到错误，提示找不到 `mkl.h`，我该怎么办？  
 ***答***：请检查 `3rdparty/` 目录下的 `onednn` 文件夹是否为空。如果为空，请将其删除并重新运行 CMake。此外，如果 `3rdparty/mkl/` 文件夹内仅包含 `local` 目录，请将 `mkl/local/*` 中的所有内容移动到 `mkl/` 目录下。

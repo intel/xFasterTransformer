@@ -202,7 +202,13 @@ For more details, please see API document and [examples](examples/README.md).
 Firstly, please install the dependencies.
 - Python dependencies
   ```bash
-  pip install -r requirements.txt
+cmake==3.26.1
+sentencepiece==0.2.0
+torch==2.7.0+cpu
+transformers==4.50.0
+accelerate==1.5.1
+protobuf==5.29.3
+tiktoken==0.9.0
   ```
   ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 - oneCCL (For multi ranks)  
@@ -446,7 +452,7 @@ and
 ***A***:This is because the program launched through MPI reads `OMP_NUM_THREADS=1`, which cannot correctly retrieve the appropriate value from the environment. It is necessary to manually set the value of `OMP_NUM_THREADS` based on the actual situation.
 
 - ***Q***: Why do I still encounter errors when converting already supported models?  
-***A***: Try downgrading `transformer` to an appropriate version, such as the version specified in the `requirements.txt`. This is because different versions of Transformer may change the names of certain variables.
+***A***: Try downgrading `transformer` to an appropriate version. This is because different versions of Transformer may change the names of certain variables.
 
 - ***Q***: I encountered an error saying that `mkl.h` could not be found during compilation. What should I do?  
 ***A***: Please check if the `onednn` folder under `3rdparty/` is empty. If it is, delete it and rerun CMake. Additionally, if the `3rdparty/mkl/` folder contains only a `local` directory, move all contents from `mkl/local/*` to `mkl/`.
