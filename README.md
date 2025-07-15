@@ -201,14 +201,14 @@ For more details, please see API document and [examples](examples/README.md).
 ### Python API(PyTorch)
 Firstly, please install the dependencies.
 - Python dependencies
-  ```bash
-cmake==3.26.1
-sentencepiece==0.2.0
-torch==2.7.0+cpu
-transformers==4.50.0
-accelerate==1.5.1
-protobuf==5.29.3
-tiktoken==0.9.0
+  ```
+  cmake==3.26.1
+  sentencepiece==0.2.0
+  torch==2.7.0+cpu
+  transformers==4.50.0
+  accelerate==1.5.1
+  protobuf==5.29.3
+  tiktoken==0.9.0
   ```
   ***PS: Due to the potential compatibility issues between the model file and the `transformers` version, please select the appropriate `transformers` version.***
 - oneCCL (For multi ranks)  
