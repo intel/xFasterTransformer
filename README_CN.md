@@ -201,14 +201,14 @@ xFasterTransformer 支持的模型格式与 Huggingface 有所不同，但与 Fa
 ### Python API(PyTorch)
 首先，请安装依赖项。
 - Python 依赖项
-  ```bash
-cmake==3.26.1
-sentencepiece==0.2.0
-torch==2.7.0+cpu
-transformers==4.50.0
-accelerate==1.5.1
-protobuf==5.29.3
-tiktoken==0.9.0
+  ```
+  cmake==3.26.1
+  sentencepiece==0.2.0
+  torch==2.7.0+cpu
+  transformers==4.50.0
+  accelerate==1.5.1
+  protobuf==5.29.3
+  tiktoken==0.9.0
   ```
   ***PS: 由于模型文件和 `transformers`版本之间可能存在兼容性问题，请选择适当的 `transformers`版本。***
 - oneCCL (用于多进程)  
