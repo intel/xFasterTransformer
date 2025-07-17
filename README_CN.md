@@ -154,7 +154,9 @@ docker run -it \
   git checkout <latest-tag>
   # 如果使用python示例，请确保已经安装torch。
   mkdir build && cd build
+  # 注意使用gcc-13及以上版本
   cmake ..
+  # 若遇到错误 "numa.h: No such file or directory"，需要先安装numa包，然后使用 "CPATH=$CONDA_PATH/include/:$CPATH make -j"完成编译
   make -j
   ```
 - 使用 `python setup.py`
