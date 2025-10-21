@@ -24,11 +24,14 @@
 #include "mlp_llama.h"
 #include "type_selector.h"
 #include "timeline.h"
+#include "numa_allocator.h"
 
 template <typename WeiT, typename InT = bfloat16_t, typename ImT = bfloat16_t, typename OutT = bfloat16_t>
 class DeepSeekMoE {
 public:
     DeepSeekMoE(int layerId, DecoderContext *ctx) : layerId(layerId), norm(ctx) {
+        // tp method numa affinity
+        if (ctx->numSplit > 1) xft_set_preferred_node(ctx->splitIdx);
         //dense mlp or concatted all shared experts
         shared_expert = new LlamaMLP<WeiT, InT, ImT, OutT>(layerId, ctx);
         if (layerId >= ctx->firstKDenseReplace) {
@@ -289,7 +292,8 @@ public:
 
         // Call forward function of selected experts
         // expert-wise for large M or bf16 for now
-        if (M > 128 || std::is_same_v<WeiT, bfloat16_t> || Env::getInstance().getMoEEngine() == 0) {
+        if (M * topkExpert / expertNum > 2 || std::is_same_v<WeiT, bfloat16_t> || (M != 1 && Env::getInstance().getMoEEngine() == 0)) {
+        //if (M * std::min(topkExpert, expertNum) / expertNum > 2 || std::is_same_v<WeiT, bfloat16_t> || Env::getInstance().getMoEEngine() == 0) {
             // 5. Reorder the input and weight for each expert
             std::vector<int> idx[expertNum]; // index for each expert
             std::vector<float> weights[expertNum]; // weight for each expert
@@ -328,22 +332,64 @@ public:
                 // Scatter output of expert i (critical section)
                 scatterOutput(output, oStride, expertData, hiddenSize, idx[i], weights[i]);
             }
-        } else if (Env::getInstance().getMoEEngine() == 1) {
+        } else if (M == 1 || Env::getInstance().getMoEEngine() == 1) {
             // call sparse mlp for each token
             for (int i = 0; i < M; ++i) {
                 TimeLine t("MoE_TokenSparseFW");
-                OutT *tokenData = ctx->getBuffer<OutT>("tokenData", 1 * hiddenSize, ctx->device);
                 int nExperts = 0;
                 for (int j = 0; j < topkExpert; ++j) {
                     if (selExperts[i * topkExpert + j] < 0) break;
                     ++nExperts;
                 }
-		if (nExperts == 0) continue;
-                sparseForward(ctx, normBuf + i * normStride, selExperts + i * topkExpert, expertWeight + i * topkExpert,
+                if (nExperts == 0) continue;
+                OutT *tokenData = ctx->getBuffer<OutT>("tokenData", 1 * hiddenSize, ctx->device);
+                sparseForward(ctx, normBuf + i * normStride, selExperts + i * topkExpert, expertWeight + i * topkExpert, 1,
                     nExperts, tokenData, hiddenSize, output + i * oStride, oStride);
             }
+        } else if (Env::getInstance().getMoEEngine() == 2) {
+            // token-batched for small expertNum and medium M
+            //const char* env_toks_reorder = std::getenv("TOKS_REORDER");
+            //const char* env_zero_cpy = std::getenv("CPU_ZERO_COPY");
+            //if ((env_toks_reorder && std::strcmp(env_toks_reorder, "0") == 0) || (env_zero_cpy && std::strcmp(env_zero_cpy, "0") == 0)) {
+                //xft::Logger::warning("Unsupported MoE engine 2: TOKS_REORDER should be set as 1");
+                //exit(-1);
+            //}
+
+            // collect all selected experts without duplicate
+            std::vector<int> uniqueExperts;
+            std::unordered_map<int, int> expertIdMap;
+            for (int i = 0; i < M; ++i) {
+                for (int j = 0; j < topkExpert; ++j) {
+                    int eid = selExperts[i * topkExpert + j];
+                    if (eid < 0) break;
+                    if (expertIdMap.find(eid) == expertIdMap.end()) {
+                        expertIdMap[eid] = uniqueExperts.size();
+                        uniqueExperts.push_back(eid);
+                    }
+                }
+            }
+
+            //and pad to nExpertsPadded, set 0 for padding expertWeights
+            int nExpertsPadded = uniqueExperts.size();
+            int *selExpertsPadded = uniqueExperts.data();
+            float *expertWeightPadded = ctx->getBuffer<float>("expertWeightPadded", nExpertsPadded * M, ctx->device);
+            memset(expertWeightPadded, 0, nExpertsPadded * M * sizeof(float));
+            for (int i = 0; i < M; ++i) {
+                for (int j = 0; j < std::min(topkExpert, expertNum); ++j) {
+                // Fill selected expert weights
+                    int eid = selExperts[i * topkExpert + j];
+                    if (eid < 0) break;
+                    int idx = expertIdMap[eid];
+                    expertWeightPadded[idx * M + i] = expertWeight[i * topkExpert + j];
+                    //expertWeightPadded[i * nExpertsPadded + idx] = expertWeight[i * topkExpert + j];
+                }
+            }
+
+            OutT *tokenData = ctx->getBuffer<OutT>("tokenData", M * hiddenSize, ctx->device);
+            sparseForward(ctx, normBuf, selExpertsPadded, expertWeightPadded, M, nExpertsPadded, tokenData, hiddenSize,
+                output, oStride);
         } else {
-            xft::Logger::error("Unsupported MoE engine: %d", Env::getInstance().getMoEEngine());
+            xft::Logger::error("Unsupported MoE engine");
             exit(-1);
         }
 #ifdef XFT_DEBUG
@@ -535,7 +581,7 @@ private:
         }
     }
 
-    void sparseForward(DecoderContext *ctx, ImT *input, int *selExperts, float *expertWeight, int nExperts, OutT *tokenData,
+    void sparseForward(DecoderContext *ctx, ImT *input, int *selExperts, float *expertWeight, int M, int nExperts, OutT *tokenData,
             int hiddenSize, OutT *output, int oStride) {
         const WeiT *weightsGUList[nExperts];
         const WeiT *weightsDList[nExperts];
@@ -546,10 +592,8 @@ private:
         int blockSize = 128;
         float alpha[nExperts];
         OutT *imOuts[nExperts];
+        float *expertWeightPadded[nExperts];
         int N1[nExperts], ldc1[nExperts], K2[nExperts];
-
-         // just for 1 token
-        int M = 1;
 
         int K1 = hiddenSize;
         int lda1 = hiddenSize;
@@ -572,6 +616,7 @@ private:
                 weightsDList[i] = this->experts[selExperts[i]]->downWeight.Data();
                 ldaDScales[i] = (K2[i] + blockSize - 1) / blockSize;
                 scalesDList[i] = this->experts[selExperts[i]]->downScales.Data();
+                expertWeightPadded[i] = expertWeight + i * M;
             }
         }
 
@@ -626,14 +671,21 @@ private:
             TimeLine t("SparseFW_Down");
             if (Env::getInstance().getMoESplitBalanceDim() == 1) {
                 // For sparse mlp, we use compute_batch_AM to compute experts in different dimensions
-                ctx->mmHelper->compute_batch_AM(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
+                ctx->mmHelper->compute_batch_AM_MA(M, N2, K2, expertWeightPadded, (const bfloat16_t**)imOuts, lda2, weightsDList,
                     scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
+                //ctx->mmHelper->compute_batch_AM(M, N2, K2, expertWeight, (const bfloat16_t**)imOuts, lda2, weightsDList,
+                //    scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
             } else {
                 // For sparse mlp with concat experts, we use compute_batch_A to compute experts in the same dimension
-                ctx->mmHelper->compute_batch_A(M, N2, K2[0], expertWeight, (const bfloat16_t**)imOuts, lda2,
+                //ctx->mmHelper->compute_batch_A(M, N2, K2[0], expertWeight, (const bfloat16_t**)imOuts, lda2,
+                //    weightsDList, scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
+                ctx->mmHelper->compute_batch_A_MA(M, N2, K2[0], expertWeightPadded, (const bfloat16_t**)imOuts, lda2,
                     weightsDList, scalesDList, tokenData, ldc2, ldaDScales, blockSize, nExperts);
             }
-            xft::addto(output, tokenData, 1.0, hiddenSize);
+#pragma omp parallel for
+            for (int i = 0; i < M; ++i) {
+                xft::addto(output + i * hiddenSize, tokenData + i * hiddenSize, 1.0, hiddenSize);
+            }
         }
 #ifdef XFT_DEBUG
         dbg.debugPrint("tokenData (%d %d):\n", 1, hiddenSize);

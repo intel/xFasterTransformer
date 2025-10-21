@@ -369,6 +369,7 @@ private:
     // XFT_MOE_ENGINE
     // 0: batched tokens computing for each expert
     // 1: batched experts computing for each token
+    // 2: batched experts computing for batched token (may have redundant computing)
     int moeEngine = 1;
     void initMoEEngine() {
         char *xFTMoEEngineValue = getenv("XFT_MOE_ENGINE");
