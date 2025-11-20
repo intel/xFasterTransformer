@@ -1721,7 +1721,7 @@ public:
         }
     }
 
-        template <typename InT, typename WeiT, typename OutT>
+    template <typename InT, typename WeiT, typename OutT>
     void compute_batch_CM(int M, int *N, int K, float *alphaList, const InT *A, int lda, const WeiT *packedBBatch[],
             const float *scalesList[], OutT *CList[], int *ldcList, int *ldsList, int blockSize = 128,
             int batchSize = 1) {
@@ -1736,7 +1736,8 @@ public:
             exit(-1);
         }
     }
-	    template <typename InT, typename WeiT, typename OutT>
+
+    template <typename InT, typename WeiT, typename OutT>
     void compute_batch_AM(int M, int N, int *K, float *alphaList, const InT *A[], int *ldaList,
             const WeiT *packedBBatch[], const float *scalesList[], OutT *C, int ldc, int *ldsList, int blockSize = 128,
             int batchSize = 1) {
@@ -1763,7 +1764,36 @@ public:
             GEMMVERBOSE("xdnn_small_amx_sgemm_bf16bf16bf16_compute_batch_A",
                 xdnn_small_amx_sgemm_bf16bf16bf16_compute_BA16a64b2a_batch_A(M, N, K, (const XDNN_BF16 **)A, ldaList, (const XDNN_BF16 **)packedBBatch,
                     (XDNN_BF16 *)C, ldc, alphaList, batchSize));
-        } else{
+        } else {
+            printf("%s:%d: Unsupported data type for compute_residential_batch_A", __FILE__, __LINE__);
+            exit(-1);
+        }
+    }
+
+    template <typename InT, typename WeiT, typename OutT>
+    void compute_batch_AM_MA(int M, int N, int *K, float *alphaList[], const InT *A[], int *ldaList,
+            const WeiT *packedBBatch[], const float *scalesList[], OutT *C, int ldc, int *ldsList, int blockSize = 128,
+            int batchSize = 1) {
+        if constexpr (std::is_same_v<WeiT, e4m3_t> && std::is_same_v<OutT, bfloat16_t>
+                && std::is_same_v<InT, bfloat16_t>) {
+            GEMVKVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_AM",
+                    xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_AM_MA(M, N, K, (const XDNN_BF16 **)A, ldaList,
+                            (const XDNN_E4M3 **)packedBBatch, (XDNN_BF16 *)C, ldc, scalesList, ldsList, blockSize,
+                            (const float**)alphaList, batchSize));
+        } else {
+            printf("%s:%d: Unsupported data type for compute_residential_batch_A", __FILE__, __LINE__);
+            exit(-1);
+        }
+    }
+
+    template <typename InT, typename WeiT, typename OutT>
+    void compute_batch_A_MA(int M, int N, int K, float *alphaList[], const InT *A[], int *ldaList, const WeiT *packedBBatch[],
+            const float *scalesList[], OutT *C, int ldc, int *ldsList, int blockSize = 128, int batchSize = 1) {
+        if constexpr (std::is_same_v<WeiT, e4m3_t> && std::is_same_v<OutT, bfloat16_t> && std::is_same_v<InT, bfloat16_t>) {
+            GEMMVERBOSE("xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A",
+                xdnn_small_amx_sgemm_bf16f8bf16_compute_batch_A_MA(M, N, K, (const XDNN_BF16 **)A, ldaList, (const XDNN_E4M3 **)packedBBatch,
+                    (XDNN_BF16 *)C, ldc, scalesList, ldsList, blockSize, (const float**)alphaList, batchSize));
+        } else {
             printf("%s:%d: Unsupported data type for compute_residential_batch_A", __FILE__, __LINE__);
             exit(-1);
         }
